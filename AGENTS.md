@@ -1,6 +1,7 @@
 # Airicraft Agent Notes
 
 ## Current Project State
+
 - This repo is a Fabric mod for Minecraft `1.21.8`.
 - It currently uses Yarn mappings, not Mojang official mappings.
 - Java target is `21`.
@@ -9,7 +10,10 @@
   - `wrapper/`: standalone Java CLI for agent-driven control
 
 ## Build And Run
+
 - Full build: `./gradlew build`
+- Requires git submodules: `git submodule update --init --recursive` (build fails on `action-plan-advisor` if absent).
+- `ffmpeg` must be on PATH or `PlaytestVideoRecorder`-related tests fail with `IOException` (playtest screen recording spawns it). Install: `brew install ffmpeg`.
 - Normal Minecraft launches (`./gradlew runClient`, `scripts/codex-driver`, `scripts/arthas kickstart`) enable all supported mod integrations by default.
 - `runClient` starts JDWP by default on `127.0.0.1:5005` with `suspend=n`
 - Attach a debugger with `jdb -attach 127.0.0.1:5005` or any JDWP client
@@ -53,6 +57,7 @@
 - CLI artifact is built by the `wrapper` subproject as a runnable jar and application distribution.
 
 ## Architecture
+
 - The public control surface is the standalone `wrapper` CLI.
 - The Fabric mod exposes an internal localhost HTTP bridge.
 - Bridge discovery defaults to `~/.airicraft/bridge-state.json`.
@@ -61,6 +66,7 @@
 - The CLI reads the selected state file, calls the localhost bridge, and deletes stale state if the bridge is unreachable.
 
 ## Key Mod-Side Files
+
 - `src/client/java/ai/moeru/airicraft/ModBridgeServer.java`
   - localhost bridge entrypoint
   - bridge auth, routing, error mapping
@@ -74,12 +80,14 @@
   - list and join saved multiplayer servers
 
 ## Key Wrapper Files
+
 - `wrapper/src/main/java/ai/moeru/airicraft/wrapper/AiricraftCliMain.java`
   - CLI command tree, text output, error handling
 - `wrapper/src/main/java/ai/moeru/airicraft/wrapper/HttpBridgeTransport.java`
   - bridge HTTP client and stale-state handling
 
 ## Current CLI Commands
+
 - `airicraft status`
 - `airicraft reload`
 - `airicraft worlds list`
@@ -115,6 +123,7 @@
 - `airicraft help [command...]`
 
 ## CLI Output Contract
+
 - Operational commands print deterministic plain text to `stdout`.
 - Success starts with:
   - `status: ok`
@@ -133,6 +142,7 @@
   - `1` unexpected internal failure
 
 ## Current Bridge Endpoints
+
 - `GET /v1/status`
 - `POST /v1/reload`
 - `GET /v1/worlds`
@@ -144,6 +154,7 @@
 - `GET|POST|DELETE /v1/highlights`
 
 ## Behavior Notes
+
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.
 - Recall/forget accept exact name or stable ID; duplicate names require IDs. JourneyMap native and death waypoints are ordinary entries. Notes and preserved areas live in waypoint custom data.
 - New location-memory consumers use `LocationMemoryService`/`LocationMemoryBridge`; only the fallback provider accesses the local file store. Protection follows the selected backend and fails closed when its data is unavailable.
@@ -166,6 +177,7 @@
   - list, clear-one, clear-all
 
 ## Important Caveat
+
 - If behavior changes in bridge handlers do not appear in a running dev client, restart `runClient`.
 - A running Minecraft dev process keeps the old classes loaded even if the repo has already been rebuilt.
 - The in-mod verification scenarios are stateful. Running multiple planner/follow scenarios back to back in one client session can produce cross-scenario interference.

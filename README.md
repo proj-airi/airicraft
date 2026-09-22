@@ -2,13 +2,22 @@
 
 Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for automating common tasks. It targets Minecraft `1.21.8` with Java `21`, plus a `wrapper/` CLI subproject.
 
-
 ## Development And Verification
 
-Run these after Java is configured. Source `.envrc` before Gradle build, test, or run commands:
+Prerequisites:
+
+- JDK 21 on `PATH`. JetBrains Runtime is recommended: enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) only works on JBR, while other JDKs silently degrade HotSwap to method-body-only changes. The repo pins `21` in `.java-version`, so jenv, asdf, or jolta can supply the JDK automatically (for jenv: `jenv add <jdk-home>` once, then the pin applies). A plain install, such as `brew install openjdk@21` or a `.jdk` bundle under `~/Library/Java/JavaVirtualMachines`, works too.
+- Git submodules initialized; the build fails on a missing `action-plan-advisor`:
+
+  ```shell
+  git submodule update --init --recursive
+  ```
+
+- `ffmpeg` on `PATH`; playtest screen recording and its tests spawn it. Install: `brew install ffmpeg`.
+
+`.envrc` is optional, gitignored, and only sourced when present (`scripts/*` handle this themselves). Use it for machine-local environment variables; it is not required for builds.
 
 ```shell
-source .envrc
 ./gradlew --version
 ./gradlew build
 ./gradlew test wrapper:test --rerun-tasks
@@ -102,7 +111,7 @@ scenarios/unpack-worlds farm_easy --force
 Normal development runs include all supported integrations, use the production-style Fabric client with HotSwap, and open JDWP on `127.0.0.1:5005`.
 
 ```shell
-source .envrc && ./gradlew runClient
+./gradlew runClient
 jdb -attach 127.0.0.1:5005
 ```
 
@@ -143,12 +152,7 @@ Visual context is intentionally off by default because screenshot capture and PN
 
 All existing client tasks use HotSwap by default. This includes `runClient`, `scripts/compat run`, and `scripts/eval run`.
 
-The first client start downloads these pinned development tools:
-
-- JetBrains Runtime SDK `21.0.11-b1163.116` for macOS ARM64.
-- HotswapAgent `2.0.3`.
-
-Gradle verifies each download with a pinned SHA-512 value. It stores the files in the Gradle user cache.
+HotswapAgent `2.0.3` is a regular Maven dependency; Gradle resolves it on first use. Enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) is a JetBrains Runtime feature: run the client on a JBR-built JDK 21 for more than method-body-only reloads. Other JDKs ignore the flag and fall back to standard JDWP redefinition.
 
 Fabric uses its Knot class loader. HotswapAgent cannot watch Knot class roots directly.
 
@@ -160,7 +164,7 @@ Use two terminals:
 2. Start the continuous main-mod build in the second terminal:
 
    ```shell
-   source .envrc && ./gradlew hotswapMain --continuous
+   ./gradlew hotswapMain --continuous
    ```
 
 3. Edit Java code under the main Airicraft mod.
@@ -172,8 +176,8 @@ The task watches named output for the normal client. It watches remapped root-mo
 
 HotSwap has these limits:
 
-- It supports macOS ARM64 only.
-- The first setup needs network access. An offline first setup fails without a partial installation.
+- It is set up and verified on macOS ARM64; other platforms are untested.
+- The first setup needs network access (Gradle toolchain and Maven downloads). An offline first setup fails without a partial installation.
 - Only main Airicraft mod classes reload.
 - Evaluator-addon and compatibility-addon changes need a client restart.
 - Mixin changes, resource changes, and Fabric initialization changes need a client restart.
@@ -184,11 +188,10 @@ HotSwap has these limits:
 - A final evaluator proof needs a clean client start.
 - A code change during an evaluator run invalidates that run as final evidence.
 
-Use the official runtime sources when the pinned versions need an update:
+Related upstream references:
 
 - [JetBrains Runtime](https://github.com/JetBrains/JetBrainsRuntime)
-- [JetBrains Runtime 21.0.11-b1163.116](https://github.com/JetBrains/JetBrainsRuntime/releases/tag/jbr-release-21.0.11b1163.116)
-- [HotswapAgent 2.0.3](https://github.com/HotswapProjects/HotswapAgent/releases/tag/RELEASE-2.0.3)
+- [HotswapAgent](https://github.com/HotswapProjects/HotswapAgent)
 - [Fabric HotSwap guide](https://docs.fabricmc.net/develop/getting-started/intellij-idea/launching-the-game)
 
 ### Agent debug CLI
@@ -200,7 +203,6 @@ A frame capture uses the first rendered frame for its client tick. The next clie
 Build the CLI before its first use or after a wrapper change:
 
 ```shell
-source .envrc
 ./gradlew wrapper:installDist
 AIRICRAFT_CLI=wrapper/build/install/airicraft/bin/airicraft
 "$AIRICRAFT_CLI" agent debug --help
@@ -488,7 +490,7 @@ Airicraft includes dev-only Gradle helpers for attaching the Arthas CLI to the r
 Start the client:
 
 ```shell
-source .envrc && ./gradlew runClient
+./gradlew runClient
 ```
 
 For a cold dev client, use the helper to start the client, wait for the bridge, join the first saved world, open LAN, and attach Arthas. This command is cold-only and fails fast if a client is already running:
@@ -500,7 +502,7 @@ scripts/arthas kickstart
 Attach Arthas manually when the client is already running:
 
 ```shell
-source .envrc && ./gradlew arthasAttach
+./gradlew arthasAttach
 ```
 
 Use the low-noise HTTP helper for probes after Arthas is attached. It auto-selects the Minecraft Arthas HTTP port when possible and prints compact results:
@@ -524,7 +526,7 @@ If process-name selection misses the dev client, find the JVM and attach by PID:
 
 ```shell
 jps -lv
-source .envrc && ./gradlew arthasAttach -Pairicraft.arthas.pid=<pid>
+./gradlew arthasAttach -Pairicraft.arthas.pid=<pid>
 ```
 
 Useful Airicraft inspection commands include `sc`, `sm`, `jad`, `watch`, `trace`, `stack`, `tt`, `thread`, `dashboard`, and `ognl`.
@@ -532,13 +534,7 @@ Useful Airicraft inspection commands include `sc`, `sm`, `jad`, `watch`, `trace`
 Arthas starts with full command power by default. Mutation commands such as `ognl`, `vmtool`, `sysprop`, `vmoption`, `redefine`, `retransform`, and `mc` can alter the live JVM; use them deliberately. To restrict commands for a session, pass a comma-separated list:
 
 ```shell
-source .envrc && ./gradlew arthasShell -Pairicraft.arthas.disabledCommands=stop,dump,heapdump,redefine,retransform,mc
-```
-
-```text
-> ./gradlew runClient
-The operation couldn't be completed. Unable to locate a Java Runtime.
-Please visit http://www.java.com for information on installing Java.
+./gradlew arthasShell -Pairicraft.arthas.disabledCommands=stop,dump,heapdump,redefine,retransform,mc
 ```
 
 ## Weave / OpenTelemetry Observability Setup
@@ -631,56 +627,19 @@ If all are false, only non-content structural tracing metadata is sent.
 
 ### `./gradlew runClient` says `Unable to locate a Java Runtime`
 
-Check:
+No JDK 21 is visible to the shell that launched Gradle. Check:
 
 ```shell
-java --version
+java -version
 which java
-jenv version
-jenv doctor
+/usr/libexec/java_home -V   # lists JVMs under Library/Java/JavaVirtualMachines
 ```
 
 Fix:
 
-1. Ensure `~/.zshrc` contains:
-   - `export PATH="$HOME/.jenv/bin:$PATH"`
-   - `eval "$(jenv init -)"`
-2. Enable plugin and reload shell:
-   - `jenv enable-plugin export`
-   - `exec zsh`
-3. Re-add JDK:
-   - `jenv add /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`
-4. Re-select Java version:
-   - `jenv global openjdk64-21.0.10`
-
-### `jenv versions` only shows `system`
-
-Cause: JDK not added into jenv, or shell init not loaded.
-
-```shell
-jenv add /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
-exec zsh
-jenv versions
-```
-
-### `JAVA_HOME` is empty
-
-```shell
-jenv enable-plugin export
-exec zsh
-env | grep JAVA_
-```
-
-If still empty, recheck `~/.zshrc` and run `jenv doctor`.
-
-### `jenv` command not found
-
-```shell
-brew list jenv
-cat ~/.zshrc | rg 'jenv'
-exec zsh
-which jenv
-```
+1. Install a JDK 21 (any distro; JBR recommended for full HotSwap). Either drop a `.jdk` bundle into `~/Library/Java/JavaVirtualMachines`, or use a version manager that reads the repo's `.java-version`.
+2. Make sure `java` is on `PATH` (or `JAVA_HOME` is set) in the shell that runs Gradle.
+3. Re-run `./gradlew --version` to confirm Gradle sees Java.
 
 ## Notes
 
