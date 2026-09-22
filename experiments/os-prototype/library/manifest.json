@@ -1,7 +1,101 @@
 {
-  "interfaceVersion": "generator-effects/v1",
+  "interfaceVersion": "work-contexts/v3",
   "definitions": {
-    "farm": { "source": "farm.js", "priority": 10, "actions": ["tend_crops"] },
-    "fishing": { "source": "fishing.js", "priority": 0, "actions": ["fish_once"] }
+    "farm": {
+      "source": "farm.js",
+      "priority": 10,
+      "actions": [
+        "tend_crops"
+      ]
+    },
+    "fishing": {
+      "source": "fishing.js",
+      "priority": 0,
+      "actions": [
+        "fish_once"
+      ]
+    },
+    "birch": {
+      "source": "birch.js",
+      "priority": 8,
+      "actions": [
+        "plant_birch",
+        "harvest_birch",
+        "collect_birch"
+      ]
+    },
+    "compost": {
+      "source": "compost.js",
+      "priority": 6,
+      "actions": [
+        "compost_seeds",
+        "collect_compost",
+        "fertilize_crops"
+      ]
+    },
+    "storage": {
+      "source": "storage.js",
+      "mode": "rules",
+      "scope": "storage",
+      "priority": 14,
+      "contexts": ["chest:home"],
+      "actions": [
+        "store_output"
+      ]
+    },
+    "farm-supplies": {
+      "source": "farm-supplies.js",
+      "mode": "rules",
+      "scope": "storage",
+      "priority": 12,
+      "contexts": ["chest:home"],
+      "actions": ["ensure_stock"]
+    },
+    "sheep-supplies": {
+      "source": "sheep-supplies.js",
+      "mode": "rules",
+      "scope": "storage",
+      "priority": 12,
+      "contexts": ["chest:home"],
+      "actions": ["ensure_stock"]
+    },
+    "shearing": {
+      "source": "shearing.js",
+      "mode": "rules",
+      "priority": 12,
+      "actions": [
+        "shear_sheep"
+      ],
+      "contexts": [
+        "pen:sheep"
+      ],
+      "scope": "sheep"
+    },
+    "breeding": {
+      "source": "breeding.js",
+      "mode": "rules",
+      "priority": 12,
+      "actions": [
+        "breed_sheep"
+      ],
+      "contexts": [
+        "pen:sheep"
+      ],
+      "scope": "sheep"
+    },
+    "sheep-care": {
+      "source": "sheep-care.js",
+      "mode": "rules",
+      "priority": 13,
+      "actions": [
+        "recover_sheep",
+        "cull_sheep",
+        "collect_wool"
+      ],
+      "contexts": [
+        "pen:sheep"
+      ],
+      "scope": "sheep"
+    }
   }
 }

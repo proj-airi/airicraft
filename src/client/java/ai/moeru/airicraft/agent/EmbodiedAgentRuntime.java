@@ -2760,7 +2760,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				boolean cancelled = smeltingProcessManager.cancel(processId);
 				yield "Tool result for cancel_smelting: accepted processId=" + processId + " tracked=" + cancelled;
 			}
-			case PlannerToolCatalog.CLOSE_CONTAINER -> ContainerInventoryController.close(MinecraftClient.getInstance());
+			case PlannerToolCatalog.CLOSE_CONTAINER -> ContainerInventoryController.close(MinecraftClient.getInstance(), intArg(args, "syncId").orElse(null));
 			case PlannerToolCatalog.INSPECT_CONTAINER -> ContainerInventoryController.inspect(MinecraftClient.getInstance());
 			case PlannerToolCatalog.TRANSFER_CONTAINER -> ContainerInventoryController.transfer(MinecraftClient.getInstance(),
 				intArg(args, "syncId").orElseThrow(), stringArg(args, "direction").orElseThrow(),
@@ -2871,6 +2871,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var observation = ai.moeru.airicraft.agent.tasks.CropPlotObservation.inspect(plot);
 				observation.addProperty("actuatorReleased", worldTaskExecutor.released());
 				observation.addProperty("actuatorState", worldTaskExecutor.snapshot().state().name());
+				observation.addProperty("reflexHold", survivalReflexRuntime.snapshot().holdId());
+				yield observation.toString();
+			}
+			case PlannerToolCatalog.INSPECT_WORKSITE -> {
+				var observation = ai.moeru.airicraft.agent.tasks.WorksiteObservation.inspect(ai.moeru.airicraft.agent.tasks.WorksiteObservation.parse(args));
+				observation.addProperty("actuatorReleased", worldTaskExecutor.released());
 				observation.addProperty("reflexHold", survivalReflexRuntime.snapshot().holdId());
 				yield observation.toString();
 			}
@@ -3169,6 +3175,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (activeTask.isEmpty() || activeTask.get().type() != expectedTaskType) {
 			return CompletableFuture.completedFuture("TOOL_ERROR: " + toolName + " task_not_started");
 		}
+		if (codexDriverActive) return CompletableFuture.completedFuture(admittedJobReceipt(toolName));
 
 		CompletableFuture<String> future = new CompletableFuture<>();
 		PendingBlockModificationToolResult replacement = pendingBlockModificationToolResult.getAndSet(new PendingBlockModificationToolResult(

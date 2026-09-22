@@ -1,6 +1,6 @@
 > Historical Node prototype evidence. The active runtime is now the Java/GraalJS mod implementation; see the archived-directory README and docs/embedded-os.md. Results below do not qualify the new execution path.
 
-# Crop/fishing prototype trials — 2026-09-15
+# OS driver prototype trials — 2026-09-15
 
 These are engineering trials in the user's `OS-Exp` survival world. They are not the planned 30-minute mixed-duty benchmark or a baseline comparison. The client ran in verified external Codex-driver mode. Codex prepared inventory and configured locations before each run; the host performed gameplay during runs. No growth-speed change, item spawning, teleportation, or manual crop-maturity injection was used.
 
@@ -73,10 +73,81 @@ This replay verifies the corrected harvest/replant/return path. Its potatoes wer
 
 The protocol now has concrete seams for code-defined behaviors, suspended waits, scoped effects, one player owner, and confirmed release. The persistent wrapper addresses an observed control-transport bottleneck. This does not establish optimal scheduling, exact physical utilization, inventory sustainability, or recovery after a hard host crash.
 
-Before extending the reference scenario, settle resource reserves and tool replenishment, worker request/result contracts, and native lease expiry after host loss. Sheep, birch, compost, LLM workers, and durable running instances are not implemented in this slice. The current cast is allowed to finish before ready land work takes over; finer interruption policy remains a measured design question.
+At the end of the crop/fishing slice, sheep, birch, compost, LLM workers, and durable running instances were still unimplemented. The mixed-duty extension below adds stock floors and the homestead behaviors; tool replenishment, worker contracts, and native lease expiry remain open. The current cast is allowed to finish before ready land work takes over; finer interruption policy remains a measured design question.
 
 ## Automated checks
 
 Seven host tests cover guest computation/allocation/output bounds, capability isolation, repeated farm/fishing handoffs, stale observations, and failure to confirm native release. Sixty-six distinct focused native tests passed for fishing, dispatch, crop passes and geometry, active jobs, and tool schemas, including both cancellation/session-pause regressions and the recorded crop approach case. Seventy-seven distinct wrapper tests passed across the focused CLI and stream runs, including compact loaded-world status. `git diff --check` passes.
 
 Raw trial directories are local ignored artifacts. `node src/audit.mjs artifacts/<run>` writes a reproducible protocol audit beside each trace. These trials do not complete the full Airicraft OS or its reference evaluation.
+
+## Mixed homestead extension
+
+The next implementation adds scoped sheep, birch, compost, and output-storage behaviors alongside the three crop instances and fishing. It adds consumer-owned stock floors, temporary claims, bounded client-visible worksite observations, and postconditions on sheep containment and gate closure. Host definition source remains persistent; running continuations do not.
+
+Preparation in the same world withdrew the supplied iron axe, two shears, and eight birch saplings, verifying the settled chest contents. Two verified grass plots at (-314,64,-388) and (-314,64,-396) are managed birch roots. The pen interior is X -295..-289, Z -386..-382 at Y64, with gates at (-292,64,-381) and (-292,64,-387). The composter is (-300,64,-383), and the output chest is (-299,64,-382).
+
+`mixed-02` completed storage, two sheep-shearing visits, a pass on each of the three crops, two verified birch plantings, and a fishing activity in 1,646 advancing ticks before diagnostic interruption. There were no recorded overlapping grants or native admissions. Actual inventory contained three brown wool and six remaining birch saplings. The crop observations showed nine growing wheat, 22 potatoes, and 15 carrots after those passes. This was **not** a successful containment trial: a sheep escaped during gate use.
+
+Subsequent recovery replays exposed several distinct contract gaps:
+
+- An exit opened the gate before walking over from the back of the pen. Opening now requires an adjacent player, and exit navigation approaches the closed gate first.
+- Recovering one sheep could tempt another through the open gate. Recovery includes the other managed sheep when possible, and ordinary visits put wheat away before exiting.
+- The pathfinder opened the second gate. Cleanup now reconciles every fence gate on the pen boundary, including unconfigured entrances, and the adapter checks closure before releasing the visit.
+- A two-row lure destination was too small for the followers' stopping distance. Recovery uses the full pen interior; a separate gather step moves the herd away from the entrance before exit.
+- Escaped sheep wandered beyond the regional scan. Optional known UUIDs can now be located among client-loaded entities within 128 blocks, with an approach before the native lure action's 32-block admission limit. Unobserved animals are not assumed contained.
+- A stop request could race required exit cleanup and cancel it again. Cleanup now has a separate bounded execution scope while the scheduler remains stopped; a regression covers that race.
+
+`mixed-03` demonstrated a successful single-animal lure, but later lost containment. `mixed-04` included a failed narrow-destination lure and an interrupted exit with unconfirmed cleanup. `mixed-05` exposed the regional observation limitation. Their local exports preserve the failure evidence; these attempts must not be described as an uninterrupted successful mixed run.
+
+A later client restart crashed in JourneyMap's `JmUI.getQuarterMaxScale`, which dereferenced a null window monitor. The crash reproduced before host gameplay began and left its JVM stuck during shutdown. A save copy was retained before terminating the task-owned crashed process. The compatibility module now returns JourneyMap's ordinary scale of 1 when the monitor is unavailable; integrations remain enabled. This correction is separate from behavior scheduling.
+
+`mixed-07` ran for 6,205 advancing world ticks on the restarted client. It recovered both original escaped sheep, completed three shearing visits and one feeding visit, and observed the herd grow from two to three. All five visit postconditions observed closed gates and no sheep outside the configured pen bounds. It also completed two potato passes, one carrot pass, and five fishing activities. A separate potato approach failed before harvesting; its later retry succeeded. No overlapping ownership was recorded, and interruption left no unresolved owner or native work. The native replay contains 9,279 observations with frames and reports no truncation.
+
+Containment is not established over the whole run: the new sheep was subsequently flagged outside the configured bounds, leaving recovery ready when the host stopped. A later read-only final observation found all three sheep inside those bounds and both gates closed. Whether the intervening detection represents an escape or a pen-geometry issue remains unresolved. The two birch saplings were still waiting for growth during the run; live birch harvest/replant, compost production, and surplus culling remain unverified.
+
+The user identified a scheduling defect visible in this replay: every individual shearing or feeding action owns a complete pen entry and exit. Serial action ownership prevents overlap but does not amortize travel and gate use. The next design discussion concerns exposing ready work and shared access contexts so the runtime can serve several independent actions during one bounded pen visit. That scheduling change is not implemented in this trial. The host and task-owned client were stopped after preserving evidence.
+
+The mixed extension passed 23 host tests, 62 distinct focused native tests, and 20 JourneyMap/location compatibility tests. These checks cover policy, ownership, cleanup, observation bounds, and the compatibility change; they do not replace the missing live outcomes above.
+
+## Shared pen contexts
+
+The next experiment replaces the combined sheep generator with independent shearing, breeding, and sheep-care rules. Each publishes a bounded set of eligible operations. The runtime deduplicates identical requests, acquires their shared `pen:sheep` context, and selects operations across behavior definitions without exiting between them. The context provider owns entry, gate reconciliation, and exit. Scheduling uses base priority, one aging point per 15 seconds, and a three-point context-reuse preference. Visits have an eight-operation/60-second budget checked between operations; cleanup remains mandatory when another task wins or the host stops.
+
+`context-live-01` exercised the actual definitions in the prepared world for 2,413 advancing ticks before manual interruption. Its first visit served six operations from **three independent behaviors**: three adult shears, wool collection, feeding a pair, and another shear after one adult's wool regrew. The visit entered once and exited once. At exit the herd had grown from three to four, all observed inside the pen, with both gates closed. Wheat and potato passes then completed, followed by fishing.
+
+A second visit served two shears and wool collection before releasing the player for more crop work. Across the replay, nine completed sheep operations used two pen entries and two exits. The audit recorded six successful shears, two collections, one feeding operation, a wheat pass, a potato pass, and one fishing activity, with no failed completed activities or overlapping ownership. The final crop pass was interrupted; its exact native job was reconciled before shutdown. No owner, native work, or context remained unresolved. The replay export contains 3,229 observations with frames and no truncation. These are observed visit counts, not a controlled throughput comparison against the prior implementation.
+
+`context-stop-01` specifically tested stopping a retained context. A local parent process watched the host snapshot and sent SIGINT at 11:22:33.061 UTC while the pen context was active and shearing owned the player. This happened before a sheep interaction was admitted, so it verifies cleanup of an active visit, not mid-interaction native cancellation. Cleanup exited the pen, verified four sheep inside and both gates closed, and released the context at 11:22:40.988 UTC. The host exited successfully. The audit found one entry, one exit, no overlap, and no unresolved work or context. Its untruncated export contains 3,838 observations with frames; the rolling recording includes earlier retained observations. A later direct observation again found four contained sheep, both gates closed, and the player outside. The task-owned client was then stopped.
+
+Thirty-seven distinct host tests passed. New coverage includes independent behaviors sharing a visit, duplicate subscribers receiving one outcome, breeding-pair identity independent of ordering, capability/selection validation, disappearing targets after entry, urgent work, visit budgets, aging of waiting work, retry after an operation failure, rejected cleanup retaining ownership, and interruption during an operation through the context provider. After the live replays, a missing-gate guard and regression were added so a destroyed entrance cannot be mistaken for a secured pen. The crop/fishing simulation also passed its ownership audit. No native Java changes were needed for this scheduling step.
+
+Both live trials used the localhost control bridge with the singleplayer world already ticking. Automatic approval review rejected opening the world to LAN; no LAN opening or substitute network exposure was performed.
+
+The result supports explicit work requests and reusable contexts as a useful composition contract. Only the sheep operations currently share a context; generalized route optimization, other context providers, native hard-stop/lease expiry, durable queues, worker calls, and sustained production evaluation remain future work. Gate and containment observations in these replays do not establish that every possible route or interruption is safe.
+
+## Shared chest contexts
+
+`work-contexts/v3` adds `chest:home` as a second provider for the same scheduler. Independent output-storage, farm-supply, and sheep-supply definitions offer work without calling one another or opening/closing the chest themselves. Restock requests name an item; the host derives a fresh deficit from the sum of configured consumer floors. Duplicate goals share that request rather than increasing its quantity. Deposits use the same floors and temporary claims. Every operation is bounded to 64 items and rechecks the current window, inventory, and source stock.
+
+The native worksite observation now exposes screen-handler kind, sync ID, and cursor state. `close_container` accepts an optional exact window ID guard. The provider verifies both sides of a transfer twice after submission and confirms the GUI is closed before releasing the context. Empty sources and full destinations defer a request while healthy compatible work continues. A relevant resource change wakes deferred work; otherwise a 1,200-world-tick retry bounds probing of unavailable stock. The final host refinement removes the generic failure cooldown from these provider-owned deferrals, so freeing a slot can immediately unblock a withdrawal in the same visit.
+
+The live fixture used existing items only: eight potatoes and three wheat were moved into the home chest, and sixteen stored cod were withdrawn to make depositing ready. No items were spawned and no crop growth was accelerated. `chest-fixture-preparation.json` records those ordinary verified transfers separately from the trial.
+
+`chest-live-01` ran for 2,599 advancing world ticks before diagnostic interruption. Its first chest visit served **five requests from three independent definitions** with one open and one close:
+
+| Request | Observed result |
+| --- | --- |
+| Store cod | Deposited 23; carried 23 → 0, stored 18 → 41. |
+| Restock wheat seeds | Deferred: no source stock. |
+| Restock potatoes | Withdrew 2; carried 6 → 8, stored 8 → 6. |
+| Restock carrots | Deferred: no source stock. |
+| Restock sheep wheat | Withdrew 2; carried 0 → 2, stored 3 → 1. |
+
+The retained visit ran from 12:51:52.022 to 12:52:08.397 UTC on 2026-09-15. The GUI was confirmed closed before acquiring the pen context. The next visit served three shears, one pair feeding, and wool collection; each of the three crop passes also completed. One later sheep recovery failed, and a subsequent recovery was interrupted and reconciled. That gameplay containment/recovery issue is a separate scope, not the next OS roadmap milestone. This replay establishes shared chest service and context handoffs, not sustained homestead efficiency. Its audit reports no overlapping ownership, unresolved native work, retained context, or open chest window.
+
+Before a second run, a live `close_container` call deliberately supplied the wrong sync ID. The native guard rejected it with `container_changed`; inspection confirmed the original window remained open. Preparation then withdrew sixteen cod to make output work ready. In `chest-stop-01`, a parent process sent SIGINT at 12:56:17.032 UTC while the chest context was active and storage owned the player. Stop occurred before transfer submission. Cleanup verified the owned chest closed at 12:56:18.085 UTC, and the host exited successfully with no unresolved owner, native action, or context. This proves interruption of an active chest visit; the separate host test covers stopping after a transfer has been submitted and waiting for its verification before closure.
+
+The two replay exports contain 3,554 and 4,224 native observations with frames and completed, untruncated export markers; the later export also includes earlier retained observations. The final host revision passed all **50 host tests**, including duplicate demands, additive consumer floors, full/empty storage, urgent restocking unblocked by a deposit, native preflight refusal, stale source/inventory/window observations, and interruption/uncertain-transfer cleanup. Twelve focused native tests passed for container transfer planning and tool contracts. The crop/fishing simulation and both live protocol audits passed. Both hosts and the task-owned client were stopped after saving evidence.
+
+This completes the second-context experiment. It provides evidence for the open behavior-composition and resource-contract tickets; it does not resolve parent/child skill ownership, structured cancellation, durable continuations, worker calls, or the full reference evaluation.

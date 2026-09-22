@@ -59,6 +59,7 @@ public final class PlannerToolCatalog {
 	public static final String BREAK_BLOCKS = "break_blocks";
 	public static final String TEND_CROPS = "tend_crops";
 	public static final String INSPECT_CROP_PLOT = "inspect_crop_plot";
+	public static final String INSPECT_WORKSITE = "inspect_worksite";
 	public static final String FISH_ONCE = "fish_once";
 	public static final String START_CROP_PASS = "start_crop_pass";
 	public static final String LURE_ENTITIES = "lure_entities";
@@ -130,7 +131,15 @@ public final class PlannerToolCatalog {
 				prop("nearbyRequiredVerticalRadius", integer("Vertical radius for nearbyRequiredBlockIds. Default 1, maximum 8."))
 			), List.of("mode", "scope")), PlannerToolCatalog::validateInspectWorldArguments),
 		builtInTool(CLOSE_CONTAINER, false, tool(CLOSE_CONTAINER,
-			"Close the current chest, barrel or chest-style entity container after transfers. Refuses a nonempty cursor. Use before resuming travel or other work.", properties(), List.of()), NO_ARGUMENT_VALIDATION),
+			"Close the current chest, barrel or chest-style entity container after transfers. Refuses a nonempty cursor. Pass syncId to reject a changed window. Use before resuming travel or other work.", properties(
+				prop("syncId", integer("Optional expected container syncId from inspect_container; a different window is never closed."))
+			), List.of()), args -> {
+				if (args.has("syncId")) {
+					var value = args.get("syncId");
+					if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber() || value.getAsBigDecimal().intValueExact() < 1)
+						throw new JsonParseException("syncId must be a positive integer");
+				}
+			}),
 		builtInTool(INSPECT_CONTAINER, true, tool(INSPECT_CONTAINER,
 			"Inspect the currently open chest, barrel, chest minecart or chest boat, including syncId, slots and carried storage. Open blocks with use_block; find entity containers with inspect_nearby_entities and open their copied uuid with use_entity. No remote or unopened inventory access.", properties(), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(TRANSFER_CONTAINER, false, tool(TRANSFER_CONTAINER,
@@ -339,6 +348,13 @@ public final class PlannerToolCatalog {
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),
 			prop("z1", integer("Minimum plot z.")), prop("x2", integer("Maximum plot x.")), prop("z2", integer("Maximum plot z."))
 		), List.of("seedItemId", "x1", "y", "z1", "x2", "z2")), ai.moeru.airicraft.agent.tasks.CropTendingStepArgs::parse),
+		builtInTool(INSPECT_WORKSITE, true, tool(INSPECT_WORKSITE, "Read client-visible sheep, crop/birch/composter blocks, dropped items, inventory, and selected points in one loaded region up to 32 by 16 by 32. Sheep include a 16-block surrounding margin for recovering known escapees. Returns bounded JSON; unknown/truncated regions cannot establish readiness. Sheep breeding cooldowns are not synchronized and are marked unknown. Does not inspect closed chests or acquire player control.", properties(
+			prop("x1", integer("Minimum x.")), prop("y1", integer("Minimum y.")), prop("z1", integer("Minimum z.")),
+			prop("x2", integer("Maximum x.")), prop("y2", integer("Maximum y.")), prop("z2", integer("Maximum z.")),
+			prop("sheepIds", array("Optional full UUIDs of up to 32 managed sheep to also locate among loaded entities within 128 blocks. Unloaded animals remain unobserved.", string("Full managed sheep UUID."))),
+			prop("points", array("Up to eight points inside the region, with their support blocks and nearby birch leaf counts.", Map.of("type", "object", "additionalProperties", false,
+				"properties", properties(prop("x", integer("X.")), prop("y", integer("Y.")), prop("z", integer("Z."))), "required", List.of("x", "y", "z"))))
+		), List.of("x1","y1","z1","x2","y2","z2")), ai.moeru.airicraft.agent.tasks.WorksiteObservation::parse),
 		builtInTool(FISH_ONCE, false, tool(FISH_ONCE, "Cast a held fishing rod from your current dry standing position toward water within 12 blocks. Reels on a bite or at maxWaitTicks, then releases the hook before completing. Does not navigate or equip the rod. Returns an accepted workId immediately; inspect_work provides completion. One bounded cast; inspect inventory for actual yield.", properties(
 			prop("x", integer("Target water block x.")), prop("y", integer("Target water block y.")), prop("z", integer("Target water block z.")),
 			prop("maxWaitTicks", integer("Cast budget in active ticks, 100..2400, default 1200.")),

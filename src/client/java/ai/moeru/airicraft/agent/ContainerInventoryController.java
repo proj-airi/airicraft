@@ -13,8 +13,9 @@ import java.util.Objects;
 /** Ordinary screen clicks only; no access to unopened block or entity inventories. */
 final class ContainerInventoryController {
 
-	static String close(MinecraftClient client) {
+	static String close(MinecraftClient client, Integer expectedSyncId) {
 		var handler = requireContainer(client);
+		if (expectedSyncId != null && handler.syncId != expectedSyncId) throw new IllegalStateException("container_changed inspect_container_again");
 		if (!handler.getCursorStack().isEmpty()) throw new IllegalStateException("cursor_not_empty");
 		client.player.closeHandledScreen();
 		return "Tool result for close_container: closed syncId=" + handler.syncId;

@@ -7,6 +7,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PlannerToolCatalogTest {
+	@Test void containerCleanupAcceptsAnOptionalExactWindowIdentity() {
+		PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.CLOSE_CONTAINER,"{}"));
+		assertEquals(7, PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.CLOSE_CONTAINER,"{\"syncId\":7}")).arguments().get("syncId").getAsInt());
+		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.CLOSE_CONTAINER,"{\"syncId\":7.5}")));
+		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.CLOSE_CONTAINER,"{\"syncId\":\"7\"}")));
+	}
+	@Test void validatesWorksiteBoundsAndPointSupport() {
+		String args = "{\"x1\":0,\"y1\":63,\"z1\":0,\"x2\":31,\"y2\":78,\"z2\":31,\"points\":[{\"x\":4,\"y\":64,\"z\":4}]}";
+		assertEquals(PlannerToolCatalog.INSPECT_WORKSITE, PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.INSPECT_WORKSITE,args)).name());
+		String tracked=args.substring(0,args.length()-1)+",\"sheepIds\":[\"d8528a67-8ea2-4738-89c4-7c3de62eac9c\"]}";
+		PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.INSPECT_WORKSITE,tracked));
+		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.INSPECT_WORKSITE,tracked.replace("d8528a67-8ea2-4738-89c4-7c3de62eac9c","invalid"))));
+		for (String bad : java.util.List.of(args.replace("\"x2\":31", "\"x2\":32"), args.replace("\"y2\":78", "\"y2\":79"),
+			args.replace("\"y\":64", "\"y\":63"), args.replace("\"x\":4", "\"x\":4.5"), args.replace("\"x\":4", "\"x\":\"4\""),
+			args.replace("\"z\":4", "\"other\":4"), args.replace("\"points\"", "\"typo\""), args.replace("\"x2\":31", "\"x2\":-1")))
+			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.INSPECT_WORKSITE,bad)));
+	}
 	@Test void validatesAtomicReflexPolicyAndEmptyQuery() {
 		assertEquals("configure_reflex", PlannerToolCatalog.parseToolCall(toolCall("configure_reflex", "{}")).name());
 		String policy = "{\"combatEnabled\":false,\"drowningEnabled\":true,\"maxThreatDistance\":16,\"requireLineOfSight\":true}";
