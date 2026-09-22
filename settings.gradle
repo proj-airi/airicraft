@@ -55,3 +55,7 @@ if (includeAllCompat || gradle.startParameter.projectProperties.get("airicraft.i
 if (includeAllCompat || gradle.startParameter.projectProperties.get("airicraft.includeJourneyMapCompat") == "true") {
 	include("compat:journeymap")
 }
+
+if (gradle.startParameter.projectProperties.getOrDefault("airicraft.includeSim", "true") == "true") {
+	include("sim")
+}

@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "ai.moeru.airicraft.sim.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [
+		"MinecraftServerTickGateMixin",
+		"PlayerDeathEventMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
