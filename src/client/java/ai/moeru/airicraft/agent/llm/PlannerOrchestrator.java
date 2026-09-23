@@ -336,16 +336,60 @@ public final class PlannerOrchestrator {
 		}
 		PlannerDecisionContext context = decisionContextSource.get();
 		conversation = deferredWorkReceipts.deliver(conversation, context.current());
+		if (endsWithObservation(conversation)) return contextAggregator.retainConversation(conversation);
+		var messages = new ArrayList<>(conversation.messages());
+		var notices = takeTrailingNotices(messages);
+		messages.addAll(PlannerObservation.exchange(observation(context, notices)));
+		// Commit to the role's history, not to a provider response. Retries reuse this conversation.
+		return contextAggregator.retainConversation(LlmConversation.of(messages));
+	}
+
+	/** Advances the event cursor: every observation is committed to the role's history. */
+	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices) {
 		if (!context.worldSessionId().equals(decisionWorldSessionId)) {
 			decisionWorldSessionId = context.worldSessionId();
 			incorporatedDecisionEventSequence = 0;
 		}
-		LlmConversation updated = conversation.withAppended(context.message(incorporatedDecisionEventSequence, decisionRefreshPending));
+		var payload = new java.util.LinkedHashMap<>(context.observation(incorporatedDecisionEventSequence, decisionRefreshPending));
 		decisionRefreshPending = false;
-		// Commit to the role's history, not to a provider response. Retries reuse this conversation.
-		updated = contextAggregator.retainConversation(updated);
 		incorporatedDecisionEventSequence = context.observations().latestSeqNo();
-		return updated;
+		if (usesToolQueue()) payload.put("toolQueue", queueState());
+		if (!notices.isEmpty()) payload.put("notices", notices);
+		return payload;
+	}
+
+	private String observeToolResult() {
+		if (decisionContextSource == null) return "observation_unavailable";
+		return PlannerObservation.render(observation(decisionContextSource.get(), List.of()));
+	}
+
+	/** A trailing observe result already delivered current state. */
+	private static boolean endsWithObservation(LlmConversation conversation) {
+		var messages = conversation.messages();
+		if (messages.isEmpty() || !"tool".equals(messages.getLast().role())) return false;
+		String callId = messages.getLast().toolCallId();
+		for (int index = messages.size() - 2; index >= 0; index--) {
+			for (var call : messages.get(index).toolCalls()) {
+				if (call.id().equals(callId)) return PlannerObservation.TOOL_NAME.equals(normalizedToolName(call));
+			}
+		}
+		return false;
+	}
+
+	/** Runtime notices after the last model turn become observation fields instead of user turns. */
+	private static List<String> takeTrailingNotices(List<LlmChatMessage> messages) {
+		var notices = new ArrayList<String>();
+		int start = messages.size();
+		while (start > 0 && "user".equals(messages.get(start - 1).role())) start--;
+		for (int index = start; index < messages.size(); ) {
+			LlmChatMessage message = messages.get(index);
+			if (message.kind() == LlmMessageKind.NOTICE && !message.hasImageAttachment()) {
+				notices.add(ContextMessageRenderer.noticeText(message.content()));
+				messages.remove(index);
+			}
+			else index++;
+		}
+		return notices;
 	}
 
 	public long lastObservedEventSeqNo() {
@@ -362,7 +406,6 @@ public final class PlannerOrchestrator {
 		currentSafetyHoldId = holdId;
 		// A reflex owns actuators, not reasoning. Executor policies gate physical tools.
 		safetyLaunchBlocked = false;
-		toolRegistry.setSafetyHoldActive(holdId != null && !holdId.isBlank());
 	}
 
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
@@ -609,7 +652,7 @@ public final class PlannerOrchestrator {
 				return rejectToolRequest(
 					plannerResult,
 					toolRegistry.isKnownTool(toolName)
-						? (toolRegistry.hasFixedPrefix() ? "tool_not_available_for_role: " : "tool_not_discovered: ") + toolName
+						? "tool_not_available_for_role: " + toolName
 						: "Planner requested an invalid tool"
 				);
 			}
@@ -935,7 +978,9 @@ public final class PlannerOrchestrator {
 			&& (now - toolQueue.lastResultMs < 250 || nextReadRunning) && now - toolQueue.firstResultMs < 1000) return;
 		PlannerRequest seed = toolQueue.seed;
 		submit(PlannerRequest.ofTrigger(toolQueue.observationTick, now, seed.sessionMode(), seed.primaryInteractionPlayer(), seed.activeGoal(),
-			PlannerTriggerType.SYSTEM, "tool_queue", "Review any completed results and the current TOOL QUEUE. Assuming the running task succeeds, what should you do next? Queue as much reasonable follow-up work as current evidence supports; execution continues independently. Running work is not yet confirmed successful, and unknown results must not be invented.", null)
+			PlannerTriggerType.SYSTEM, "tool_queue", toolQueue.reports.isEmpty()
+				? "Queued work is still running. Plan the next steps assuming it succeeds, without treating it as succeeded."
+				: "Queued tool results are ready for review.", null)
 			.withSafetyContext(minimumSafetyEpoch, currentSafetyHoldId));
 	}
 
@@ -992,15 +1037,18 @@ public final class PlannerOrchestrator {
 		}
 		if (plannerExecutor.managesConversationHistory()) backendHistoryImages += toolQueue.images.size();
 		toolQueue.reports.clear(); toolQueue.images.clear();
+		if (decisionContextSource == null) messages.add(LlmChatMessage.user("TOOL QUEUE: " + GSON.toJson(queueState()), LlmMessageKind.NOTICE));
+		return LlmConversation.of(messages);
+	}
+
+	private Map<String, Object> queueState() {
 		var state = new java.util.LinkedHashMap<String, Object>();
 		state.put("active", toolQueue.tools.active() == null ? null : queuedCallView(toolQueue.tools.active()));
 		state.put("workId", toolQueue.tools.activeWorkId());
 		state.put("pending", toolQueue.tools.pending().stream().map(PlannerOrchestrator::queuedCallView).toList());
 		state.put("aborting", toolQueue.abort != null);
 		if (toolQueue.tools.pending().isEmpty()) toolQueue.reviewedLoneCall = toolQueue.tools.active();
-		messages.add(LlmChatMessage.user("TOOL QUEUE: " + GSON.toJson(state)
-			+ "\nExecution continues while you think. continue retains the plan and resumes resolved safety holds; clear_queue aborts active work and discards pending calls.", LlmMessageKind.NOTICE));
-		return LlmConversation.of(messages);
+		return state;
 	}
 
 	private static Map<String, Object> queuedCallView(PlannerToolCall call) {
@@ -1124,7 +1172,6 @@ public final class PlannerOrchestrator {
 		backendHistoryImages = 0;
 		deferredWorkReceipts.clear();
 		contextAggregator.clear();
-		toolRegistry.resetToolSurface();
 		turnJournal.clear(reason);
 		pendingSubmitRequest = null;
 		lastCompactionResult = null;
@@ -1543,8 +1590,8 @@ public final class PlannerOrchestrator {
 
 	private CompletableFuture<ToolExecutionOutcome> requestPlannerTool(PlannerToolCall toolCall, boolean preserveImageAttachment) {
 		return switch (normalizedToolName(toolCall)) {
-			case PlannerToolCatalog.DISCOVER_TOOLS -> CompletableFuture.completedFuture(new TextToolExecutionOutcome(discoverToolsResult(toolCall)));
 			case VISUAL_TOOL_NAME -> preserveImageAttachment ? requestNativeVisionTool(toolCall) : requestVisionTool(toolCall);
+			case PlannerObservation.TOOL_NAME -> CompletableFuture.completedFuture(new TextToolExecutionOutcome(observeToolResult()));
 			case INVENTORY_TOOL_NAME -> inventoryTool.inspectInventory(toolPrompt(toolCall)).thenApply(TextToolExecutionOutcome::new);
 			case CRAFTABLES_TOOL_NAME -> inventoryTool.checkCraftables(toolCall.arguments()).thenApply(TextToolExecutionOutcome::new);
 			case NEARBY_ENTITIES_TOOL_NAME -> inventoryTool.inspectNearbyEntities(toolCall.arguments()).thenApply(TextToolExecutionOutcome::new);
@@ -1892,15 +1939,6 @@ public final class PlannerOrchestrator {
 			case VISUAL_TOOL_NAME -> visionMode == PlannerVisionMode.NATIVE_TOOL_IMAGE || !toolPrompt(toolCall).isBlank();
 			default -> true;
 			};
-	}
-
-	private String discoverToolsResult(PlannerToolCall toolCall) {
-		JsonObject arguments = toolCall == null ? null : toolCall.arguments();
-		String query = stringArgument(arguments, "query");
-		int maxResults = arguments != null && arguments.has("maxResults") && arguments.get("maxResults").isJsonPrimitive()
-			? arguments.get("maxResults").getAsInt()
-			: 4;
-		return toolRegistry.discoverTools(query, maxResults).renderToolResult();
 	}
 
 	private static String normalizedToolType(PlannerToolRequest toolRequest) {

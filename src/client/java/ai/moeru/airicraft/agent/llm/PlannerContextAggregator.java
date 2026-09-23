@@ -16,6 +16,7 @@ import java.util.Objects;
 
 public final class PlannerContextAggregator {
 	private static final int DEFAULT_PENDING_SEMANTIC_EVENT_CAP = 128;
+	private static final String OVERFLOW_FLUSH_NOTICE = "Pending events reached capacity and were delivered early.";
 	private static final String OVERFLOW_FLUSH_INSTRUCTION = "Pending semantic context reached capacity. Review the context updates above and respond once if any reply or action is needed.";
 
 	private final Clock clock;
@@ -165,7 +166,8 @@ public final class PlannerContextAggregator {
 			combinedRequest,
 			PlannerSnapshotMode.TRIGGERED,
 			triggerBatch,
-			composeConversation(nowMs, snapshotNotices, triggerBatch.toTerminalMessage()),
+			composeConversation(nowMs, snapshotNotices, decisionContextEnabled
+				? triggerBatch.toObservedMessages() : List.of(triggerBatch.toTerminalMessage())),
 			state.pendingSemanticEvents().isEmpty() ? 0L : state.pendingSemanticEvents().getLast().seqNo(),
 			state.pendingSemanticGapVersion(),
 			ambientContext,
@@ -191,7 +193,9 @@ public final class PlannerContextAggregator {
 			request,
 			PlannerSnapshotMode.OVERFLOW_FLUSH,
 			PlannerTriggerBatch.of(List.of()),
-			composeConversation(nowMs, snapshotNotices, LlmChatMessage.user(OVERFLOW_FLUSH_INSTRUCTION, LlmMessageKind.TASK)),
+			composeConversation(nowMs, snapshotNotices, List.of(decisionContextEnabled
+				? LlmChatMessage.user(OVERFLOW_FLUSH_NOTICE, LlmMessageKind.NOTICE)
+				: LlmChatMessage.user(OVERFLOW_FLUSH_INSTRUCTION, LlmMessageKind.TASK))),
 			state.pendingSemanticEvents().getLast().seqNo(),
 			state.pendingSemanticGapVersion(),
 			ambientContext,
@@ -251,7 +255,7 @@ public final class PlannerContextAggregator {
 			}
 		}
 		PlannerContextSnapshot snapshot = freezePlannerSnapshot(request);
-		return snapshot == null ? composeConversation(request.timestampMs(), List.of(), null) : snapshot.plannerConversation();
+		return snapshot == null ? composeConversation(request.timestampMs(), List.of(), List.of()) : snapshot.plannerConversation();
 	}
 
 	public LlmConversation buildPlannerFollowUpConversation(PlannerContextSnapshot snapshot, JsonElement priorAssistantRawContent, String toolResult) {
@@ -397,7 +401,7 @@ public final class PlannerContextAggregator {
 		return composeConversation(
 			clock.millis(),
 			List.of(),
-			LlmChatMessage.user(PlannerPromptPolicy.compactionInstruction(), LlmMessageKind.TASK)
+			List.of(LlmChatMessage.user(PlannerPromptPolicy.compactionInstruction(), LlmMessageKind.TASK))
 		);
 	}
 
@@ -536,13 +540,13 @@ public final class PlannerContextAggregator {
 	private LlmConversation composeConversation(
 		long anchorTimeMs,
 		List<LlmChatMessage> snapshotNotices,
-		LlmChatMessage terminalMessage
+		List<LlmChatMessage> terminalMessages
 	) {
 		ArrayList<LlmChatMessage> messages = new ArrayList<>();
 		if (toolRegistry.hasFixedPrefix() && retainedConversation != null) {
 			messages.addAll(retainedConversation.messages());
 			messages.addAll(snapshotNotices);
-			if (terminalMessage != null) messages.add(terminalMessage);
+			messages.addAll(terminalMessages);
 			return microCompactor == null ? LlmConversation.of(messages) : microCompactor.update(LlmConversation.of(messages));
 		}
 		messages.add(LlmChatMessage.system(systemPrompt()));
@@ -553,9 +557,7 @@ public final class PlannerContextAggregator {
 			messages.addAll(renderAcceptedHistory(anchorTimeMs));
 		}
 		messages.addAll(snapshotNotices);
-		if (terminalMessage != null) {
-			messages.add(terminalMessage);
-		}
+		messages.addAll(terminalMessages);
 		return microCompactor == null ? LlmConversation.of(messages) : microCompactor.update(LlmConversation.of(messages));
 	}
 

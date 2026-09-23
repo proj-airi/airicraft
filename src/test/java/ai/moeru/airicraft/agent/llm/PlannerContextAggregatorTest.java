@@ -57,7 +57,7 @@ class PlannerContextAggregatorTest {
 	}
 
 	@Test
-	void fixedRolePrefixSurvivesDiscoveryAndGoalUpdates() {
+	void fixedRolePrefixSurvivesGoalUpdates() {
 		var data = new java.util.concurrent.atomic.AtomicReference<>("goal=prepare shelter");
 		var provider = new PlannerToolProvider() {
 			public String id() { return "test_context"; }
@@ -75,8 +75,6 @@ class PlannerContextAggregatorTest {
 		var first = freezeSnapshot(aggregator, requestAt(1_000L, "Alice", "start"));
 		aggregator.commitAcceptedTriggerBatch(first);
 		data.set("goal=build shelter");
-		registry.discoverTools("mining", 3);
-		registry.setSafetyHoldActive(true);
 		var second = freezeSnapshot(aggregator, requestAt(2_000L, "Alice", "continue"));
 		assertEquals(tools, registry.openAiTools());
 		var a = first.plannerConversation().messages();

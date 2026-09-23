@@ -111,14 +111,13 @@ class CodexAppServerLlmBackendTest {
 	}
 
 	@Test
-	void refreshesActiveToolSchemasInAdditionalContextAcrossTurns() throws Exception {
+	void sendsTheFullToolCatalogInAdditionalContextOnEveryTurn() throws Exception {
 		Path log = tempDir.resolve("tool-schema-refresh.log");
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
 		CodexAppServerLlmBackend backend = backend(log, registry);
 		try {
 			backend.generate(request(1L, "first"));
 			backend.acceptGeneration(1L);
-			registry.discoverTools("observation", 4);
 			backend.generate(request(2L, "second"));
 			backend.acceptGeneration(2L);
 		}
@@ -130,16 +129,16 @@ class CodexAppServerLlmBackendTest {
 			.filter(line -> line.startsWith("turn/start additionalContext "))
 			.toList();
 		assertEquals(2, schemaContexts.size());
-		assertFalse(schemaContexts.get(0).contains("inspect_world"));
-		assertTrue(schemaContexts.get(1).contains("inspect_world"));
-		assertTrue(schemaContexts.get(1).contains("inspect_area"));
-		assertTrue(schemaContexts.get(1).contains("find_placement_sites"));
+		for (String context : schemaContexts) {
+			assertTrue(context.contains("inspect_world"));
+			assertTrue(context.contains("inspect_area"));
+			assertTrue(context.contains("find_placement_sites"));
+		}
 	}
 
 	@Test
 	void invalidArgumentsIdentifyTheRejectedToolForSchemaRepair() {
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		registry.discoverTools("observation", 4);
 		CodexPlannerResponseCodec codec = new CodexPlannerResponseCodec(registry);
 
 		LlmBackendException exception = assertThrows(LlmBackendException.class, () -> codec.parse("""

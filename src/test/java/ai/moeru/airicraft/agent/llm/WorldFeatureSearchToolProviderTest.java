@@ -20,7 +20,6 @@ class WorldFeatureSearchToolProviderTest {
 	void exposesFindWorldFeaturesTool() {
 		WorldFeatureSearchToolProvider provider = new WorldFeatureSearchToolProvider(stubTool(List.of()));
 		PlannerToolRegistry registry = PlannerToolRegistry.of(provider);
-		registry.discoverTools("feature", 4);
 
 		List<String> toolNames = registry.openAiTools().stream().map(WorldFeatureSearchToolProviderTest::toolName).toList();
 

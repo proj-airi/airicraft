@@ -212,17 +212,11 @@ class OpenAiCompatibleLlmBackendTest {
 			assertEquals("auto", body.get("tool_choice").getAsString());
 			JsonArray tools = body.getAsJsonArray("tools");
 			assertNotNull(tools);
-			assertEquals(5, tools.size());
-			assertEquals(PlannerToolCatalog.DISCOVER_TOOLS, tools.get(0).getAsJsonObject()
+			assertEquals(PlannerToolCatalog.openAiTools().size(), tools.size());
+			assertEquals(PlannerToolCatalog.OBSERVE, tools.get(0).getAsJsonObject()
 				.getAsJsonObject("function").get("name").getAsString());
-			assertEquals(PlannerToolCatalog.START_ACTION_GOAL, tools.get(1).getAsJsonObject()
-				.getAsJsonObject("function").get("name").getAsString());
-			JsonObject discoverSchema = tools.get(0).getAsJsonObject()
-				.getAsJsonObject("function")
-				.getAsJsonObject("parameters")
-				.getAsJsonObject("properties")
-				.getAsJsonObject("query");
-			assertEquals("string", discoverSchema.get("type").getAsString());
+			assertTrue(tools.asList().stream().anyMatch(tool -> PlannerToolCatalog.START_ACTION_GOAL.equals(tool.getAsJsonObject()
+				.getAsJsonObject("function").get("name").getAsString())));
 			assertEquals("planner-model", body.get("model").getAsString());
 		}
 	}
@@ -252,32 +246,6 @@ class OpenAiCompatibleLlmBackendTest {
 			assertEquals(-8, toolCall.arguments().get("z").getAsInt());
 			assertTrue(toolCall.arguments().get("exactY").getAsBoolean());
 			assertEquals("", result.payload().replyText());
-		}
-	}
-
-	@Test
-	void chatClientUsesTheCurrentSurfaceOnEachPlannerRequest() throws Exception {
-		AtomicReference<String> bodyRef = new AtomicReference<>();
-		PlannerToolRegistry registry = PlannerToolRegistry.of();
-		try (TestServer server = TestServer.start(bodyRef, plaintextResponse("Done."))) {
-			OpenAiCompatibleChatClient client = new OpenAiCompatibleChatClient(config(server.port(), false), registry);
-			LlmConversation conversation = LlmConversation.of(List.of(LlmChatMessage.system("system")));
-
-			client.complete(conversation, LlmRequestOptions.planner());
-			List<String> initialToolNames = toolNames(JsonParser.parseString(bodyRef.get()).getAsJsonObject().getAsJsonArray("tools"));
-			assertEquals(List.of(
-				PlannerToolCatalog.DISCOVER_TOOLS,
-				PlannerToolCatalog.START_ACTION_GOAL,
-				PlannerToolCatalog.INSPECT_ACTION_GOAL,
-				PlannerToolCatalog.CANCEL_ACTION_GOAL,
-				PlannerToolCatalog.CLEAR_GOAL
-			), initialToolNames);
-
-			registry.discoverTools("navigation", 3);
-			client.complete(conversation, LlmRequestOptions.planner());
-			List<String> discoveredToolNames = toolNames(JsonParser.parseString(bodyRef.get()).getAsJsonObject().getAsJsonArray("tools"));
-			assertTrue(discoveredToolNames.contains(PlannerToolCatalog.NAVIGATE_TO));
-			assertFalse(discoveredToolNames.contains(PlannerToolCatalog.CRAFT_RECIPE));
 		}
 	}
 

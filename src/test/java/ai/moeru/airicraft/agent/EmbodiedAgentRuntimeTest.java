@@ -109,7 +109,7 @@ class EmbodiedAgentRuntimeTest {
 			.filter(event -> expected.entrySet().stream().allMatch(entry -> entry.getValue().equals(String.valueOf(event.payload().get(entry.getKey())))))
 			.toList();
 		assertFalse(matching.isEmpty(), "Expected identified task evidence: " + expected);
-		String context = runtime.currentPlannerDecisionContext().message(0).content();
+		String context = ai.moeru.airicraft.agent.llm.PlannerObservation.render(runtime.currentPlannerDecisionContext().observation(0));
 		assertTrue(context.contains(type), context);
 		for (String value : expected.values()) assertTrue(context.contains(value), context);
 	}
@@ -983,7 +983,7 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
 		assertTrue(result.contains("does not mean completed"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.DROP_ITEMS, request.type());
 		assertEquals(new WorldTaskRequest.DropItems(new DropItemsStepArgs("minecraft:oak_log", 2, null)), request.task());
 	}
@@ -1022,7 +1022,7 @@ class EmbodiedAgentRuntimeTest {
 	}
 
 	@Test
-	void mineBlocksToolResultWarnsPlannerToWaitForTaskUpdate() {
+	void mineBlocksToolResultWarnsPlannerToWaitForTerminalResult() {
 		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
 		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
 		runtime.overrideSessionSnapshotForTests(new SessionSnapshot(
@@ -1050,7 +1050,7 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
 		assertTrue(result.contains("does not mean completed"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.MINE, request.type());
 		assertEquals(new GoalMineSpec(List.of("minecraft:dirt"), 1), request.goal().mineSpec());
 	}
@@ -1226,7 +1226,7 @@ class EmbodiedAgentRuntimeTest {
 		WorldTaskRequest request = executor.lastActiveTask.orElseThrow();
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.MINE, request.type());
 		assertEquals(new GoalMineSpec(List.of("minecraft:dirt"), 3), request.goal().mineSpec());
 	}
@@ -1755,7 +1755,7 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
 		assertTrue(result.contains("does not mean completed"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.ATTACK_ENTITY, request.type());
 		assertEquals(new EntityInteractionStepArgs(
 			new EntitySelector(null, null, "minecraft:sheep"),
@@ -1827,7 +1827,7 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
 		assertTrue(result.contains("does not mean completed"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.USE_ENTITY, request.type());
 		assertEquals(new EntityInteractionStepArgs(
 			new EntitySelector(null, "Dinner", null),
@@ -2785,7 +2785,7 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(result.contains("accepted"));
 		assertTrue(result.contains("queued"));
 		assertTrue(result.contains("does not mean completed"));
-		assertTrue(result.contains("TASK UPDATE"));
+		assertTrue(result.contains("terminal result in a later observation"), result);
 		assertEquals(WorldTaskType.DROP_ITEMS, request.type());
 		assertEquals(new WorldTaskRequest.DropItems(new DropItemsStepArgs("minecraft:oak_log", 2, "Alice")), request.task());
 	}

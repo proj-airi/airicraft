@@ -24,7 +24,7 @@ class DashboardObservationCollectorTest {
 		var dispatch = new java.util.concurrent.atomic.AtomicLong(12);
 		recorder.configureClock(dispatch::get, () -> dispatch.get() - 2);
 		recorder.recordRequest("planner", "one", "test", java.net.URI.create("http://localhost"), "qwen", 1000,
-			ai.moeru.airicraft.agent.llm.LlmConversation.of(List.of(context.message(0))), "request");
+			ai.moeru.airicraft.agent.llm.LlmConversation.of(ai.moeru.airicraft.agent.llm.PlannerObservation.exchange(context.observation(0))), "request");
 		dispatch.set(30);
 		var store = new DashboardObservationStore(1024L * 1024L);
 		store.advanceClock(28, false, true);

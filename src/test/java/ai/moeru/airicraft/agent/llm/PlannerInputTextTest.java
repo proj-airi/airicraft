@@ -24,10 +24,11 @@ class PlannerInputTextTest {
 		for (var sample : samples) for (var message : sample.getAsJsonObject().getAsJsonArray("messages")) {
 			var m = message.getAsJsonObject();
 			String raw = m.get("content").getAsString();
-			String prose = PlannerInputText.message(m.get("role").getAsString(), raw);
+			boolean observation = raw.startsWith("DECISION CONTEXT: ");
+			var context = observation ? JsonParser.parseString(raw.substring("DECISION CONTEXT: ".length())).getAsJsonObject() : null;
+			String prose = observation ? PlannerInputText.observation(context.deepCopy()) : PlannerInputText.message(m.get("role").getAsString(), raw);
 			before += raw.length(); after += prose.length();
-			if (raw.startsWith("DECISION CONTEXT: ")) {
-				var context = JsonParser.parseString(raw.substring("DECISION CONTEXT: ".length())).getAsJsonObject();
+			if (observation) {
 				assertTrue(prose.contains("Evidence after " + context.get("afterEventSequence") + " through " + context.get("throughEventSequence")));
 				assertTrue(prose.contains(context.get("worldSessionId").getAsString()));
 				assertTrue(prose.contains(context.getAsJsonObject("current").getAsJsonObject("objective").get("objective").getAsString()));
@@ -55,7 +56,7 @@ class PlannerInputTextTest {
 			"missingEventRange", Map.of("from", 2, "to", 4), "current", Map.of("physical", Map.of("grounded", false, "touchingWater", true, "climbing", false, "newFlag", true), "newFact", Map.of("a", 7)),
 			"future", Map.of("opaque", "minecraft:leave_native_identifier"));
 		String original = new Gson().toJson(payload);
-		String prose = PlannerInputText.decision(payload);
+		String prose = PlannerInputText.observation(payload);
 		for (String fact : java.util.List.of("thinker", "reflex", "MISSING evidence", "\"from\":2", "\"to\":4", "off ground", "touching water", "not climbing", "\"newFlag\":true", "\"newFact\"", "leave_native_identifier")) assertTrue(prose.contains(fact), prose);
 		assertEquals(original, new Gson().toJson(payload));
 	}
@@ -75,25 +76,11 @@ class PlannerInputTextTest {
 		var payload = Map.<String,Object>of("current", Map.of("work", java.util.List.of(work)), "events", java.util.List.of(
 			Map.of("seqNo", 2, "tick", 8, "type", "work.changed", "payload", different),
 			Map.of("seqNo", 3, "tick", 9, "type", "work.changed", "payload", work)));
-		String prose = PlannerInputText.decision(payload);
+		String prose = PlannerInputText.observation(payload);
 		assertTrue(prose.contains("Event 3 at tick 9: work.changed: same snapshot as current work JOB:one."));
 		assertTrue(prose.contains("state FAILED"));
 		assertTrue(prose.contains("blocked"));
 		assertEquals(1, prose.split("approaching target", -1).length - 1);
-	}
-
-	@Test void goalContinuationWrapperDoesNotHideItsDecisionContext() {
-		String context = "DECISION CONTEXT: {\"worldSessionId\":\"world\",\"tick\":9,\"serverTick\":7,\"decisionOwner\":\"controller\",\"actuatorOwner\":\"idle\",\"current\":{\"inventory\":{\"minecraft:dirt\":4}},\"afterEventSequence\":2,\"throughEventSequence\":3,\"events\":[]}";
-		String prefix = "Current planner goal (stored intent): preserve this exact constraint.\n\nGOAL CONTINUATION: continue.";
-		String wrapped = prefix + "\n\n" + context;
-		String prose = PlannerInputText.message("user", wrapped);
-		assertTrue(prose.startsWith(prefix + "\n\nDECISION CONTEXT:\n"));
-		assertTrue(prose.contains("Carrying 4 dirt."));
-		assertTrue(prose.contains("Evidence after 2 through 3."));
-		assertFalse(prose.contains("DECISION CONTEXT: {"));
-		assertEquals(prose, PlannerInputText.message("user", prose));
-		assertEquals(wrapped, PlannerInputText.message("assistant", wrapped));
-		assertEquals("Other text\n\nDECISION CONTEXT: {incomplete", PlannerInputText.message("user", "Other text\n\nDECISION CONTEXT: {incomplete"));
 	}
 
 	@Test void debugPanelSharesModelReferencesAndLeavesCanonicalMessagesIntact() {
