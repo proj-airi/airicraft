@@ -323,6 +323,28 @@ are directly comparable) the frontier crossed the dominance line:
   low-damage/high-kills corner and lost some mid-tradeoff members — the
   frontier gained strict dominators but narrowed elsewhere.
 
+#### Round 3: parameter polish on the dominators (`optimize_polish.py`)
+
+Freezing each dominator's rule structure and running NSGA-II over only its
+numeric constants (cond `v`/`r` thresholds + act `range`/`slack`/
+`sprintBeyond`/`attackRange`/`readyTicks`/`flipTicks`; 35 gens, pop 16)
+pushed the frontier strictly outward — on fresh 24-scenario evals every
+final front member still dominates the baseline, and most dominate the
+*unpolished* program they started from:
+
+- 2-rule hybrid (dominator_11, 10 genes): 10/14 front members dominate the
+  original. Champion `[3.33, -3.33, 1.0, 1.0, -139]` — +18% kills, 3.8×
+  less damage, perfect clear/survival, **11% faster than baseline**.
+  Damage extreme `[3.04, -1.39, 1.0, 1.0, -147]` takes 9× less damage.
+- 5-rule variant (dominator_8, 26 genes): 11/11 dominate baseline, 5/11
+  dominate the original; best `[2.96, -3.14, .96, .96, -134.5]` — 14%
+  faster than baseline at equal clear.
+- Net effect of rounds 2-3: the frontier now contains policies that beat
+  the hand-written baseline on **all five objectives simultaneously** —
+  kills, damage taken, clear rate, survival, and speed — which is the
+  first point where the evolved rules are strictly better rather than a
+  tradeoff.
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.
