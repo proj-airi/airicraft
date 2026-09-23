@@ -73,27 +73,31 @@ public final class AstPolicy implements CombatPolicy {
 		JsonObject ranged;   // nearest ranged hostile
 		JsonObject melee;    // nearest melee hostile
 		JsonObject farthest;
+		JsonObject targeting; // nearest hostile actively targeting the player
 		double cx, cz;       // hostile centroid
+		double hpSum;        // total hostile health
 
 		static View of(JsonObject obs) {
 			View v = new View();
 			v.player = obs.getAsJsonObject("player");
 			JsonArray entities = obs.getAsJsonArray("entities");
 			double nD = Double.MAX_VALUE, hD = Double.MAX_VALUE;
-			double rD = Double.MAX_VALUE, mD = Double.MAX_VALUE, fD = -1;
+			double rD = Double.MAX_VALUE, mD = Double.MAX_VALUE, fD = -1, tD = Double.MAX_VALUE;
 			for (JsonElement el : entities) {
 				JsonObject e = el.getAsJsonObject();
 				boolean hostile = e.has("hostile") && e.get("hostile").getAsBoolean();
-				boolean targeting = e.has("targetingPlayer") && e.get("targetingPlayer").getAsBoolean();
-				if (!e.has("health") || (!hostile && !targeting)) {
+				boolean isTargeting = e.has("targetingPlayer") && e.get("targetingPlayer").getAsBoolean();
+				if (!e.has("health") || (!hostile && !isTargeting)) {
 					continue;
 				}
 				v.hostiles.add(e);
 				double d = e.get("dist").getAsDouble();
+				v.hpSum += e.get("health").getAsDouble();
 				v.cx += e.getAsJsonObject("pos").get("x").getAsDouble();
 				v.cz += e.getAsJsonObject("pos").get("z").getAsDouble();
 				if (d < nD) { nD = d; v.nearest = e; }
 				if (d > fD) { fD = d; v.farthest = e; }
+				if (isTargeting && d < tD) { tD = d; v.targeting = e; }
 				if (e.get("health").getAsDouble() < hD) { hD = e.get("health").getAsDouble(); v.lowestHp = e; }
 				if (isRanged(e.get("type").getAsString())) {
 					if (d < rD) { rD = d; v.ranged = e; }
@@ -104,6 +108,19 @@ public final class AstPolicy implements CombatPolicy {
 				v.cz /= v.hostiles.size();
 			}
 			return v;
+		}
+
+		JsonObject nearestOfType(String suffix) {
+			JsonObject best = null;
+			double bd = Double.MAX_VALUE;
+			for (JsonObject e : hostiles) {
+				if (e.get("type").getAsString().contains(suffix)
+						&& e.get("dist").getAsDouble() < bd) {
+					bd = e.get("dist").getAsDouble();
+					best = e;
+				}
+			}
+			return best;
 		}
 
 		static double dist(JsonObject e) {
@@ -123,6 +140,9 @@ public final class AstPolicy implements CombatPolicy {
 				case "mobCount" -> count(r, null);
 				case "meleeCount" -> count(r, false);
 				case "rangedCount" -> count(r, true);
+				case "targetingCount" -> countTargeting(r);
+				case "mobHpSum" -> hpSum;
+				case "usingItem" -> player.has("usingItem") && player.get("usingItem").getAsBoolean() ? 1 : 0;
 				case "selfHp" -> player.get("health").getAsDouble();
 				case "cooldown" -> player.get("lastAttackedTicks").getAsInt();
 				case "cdFrac" -> player.get("attackCooldown").getAsDouble();
@@ -139,6 +159,15 @@ public final class AstPolicy implements CombatPolicy {
 						|| rangedOnly == isRanged(e.get("type").getAsString())) {
 					n++;
 				}
+			}
+			return n;
+		}
+
+		double countTargeting(double r) {
+			double n = 0;
+			for (JsonObject e : hostiles) {
+				if (e.get("dist").getAsDouble() >= r) continue;
+				if (e.has("targetingPlayer") && e.get("targetingPlayer").getAsBoolean()) n++;
 			}
 			return n;
 		}
@@ -195,11 +224,16 @@ public final class AstPolicy implements CombatPolicy {
 	// ------------------------------------------------------------- actions
 
 	private static JsonObject pick(View v, String target) {
+		if (target.startsWith("type:")) {
+			JsonObject e = v.nearestOfType(target.substring(5));
+			return e != null ? e : v.nearest;
+		}
 		return switch (target) {
 			case "lowestHp" -> v.lowestHp;
 			case "ranged" -> v.ranged != null ? v.ranged : v.nearest;
 			case "melee" -> v.melee != null ? v.melee : v.nearest;
 			case "farthest" -> v.farthest;
+			case "targeting" -> v.targeting != null ? v.targeting : v.nearest;
 			default -> v.nearest;
 		};
 	}
@@ -283,7 +317,14 @@ public final class AstPolicy implements CombatPolicy {
 			case "hold" -> { /* no move */ }
 			default -> { // approach
 				if (tdist > range + slack) {
-					b.moveDir(dx, dz);
+					if (act.has("zigzag") && act.get("zigzag").getAsBoolean()) {
+						// serpentine approach: weave around the target vector —
+						// spoils projectile aim while closing distance
+						b.moveDir(dx * 0.75 - dz * strafeSign * 0.55,
+								dz * 0.75 + dx * strafeSign * 0.55);
+					} else {
+						b.moveDir(dx, dz);
+					}
 					double sprintBeyond = num(act, "sprintBeyond", 4.0);
 					b.sprint(act.has("sprint") ? act.get("sprint").getAsBoolean()
 							: tdist > sprintBeyond);
@@ -293,6 +334,16 @@ public final class AstPolicy implements CombatPolicy {
 					b.moveDir(-dz * strafeSign, dx * strafeSign);
 				}
 			}
+		}
+
+		if (act.has("jump") && act.get("jump").getAsBoolean()
+				&& v.player.has("onGround") && v.player.get("onGround").getAsBoolean()) {
+			b.jump(true); // airborne hits are critical hits in vanilla
+		}
+		if (act.has("use")) {
+			b.useHand(act.get("use").getAsString()); // e.g. "off" raises a shield
+		} else if (act.has("stopUse") && act.get("stopUse").getAsBoolean()) {
+			b.stopUsing(true);
 		}
 
 		String attack = act.has("attack") ? act.get("attack").getAsString() : "ready";

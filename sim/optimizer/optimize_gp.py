@@ -25,13 +25,16 @@ from optimize_cmaes import (  # noqa: E402
     _nd_fronts, _crowding, hypervolume, random_scenario, random_terrain)
 
 NUM_FEATURES = ["nearestDist", "rangedDist", "meleeDist", "farthestDist",
-                "nearestHp", "lowestHp", "selfHp", "cooldown", "cdFrac", "food"]
-COUNT_FEATURES = ["mobCount", "meleeCount", "rangedCount"]
+                "nearestHp", "lowestHp", "selfHp", "cooldown", "cdFrac",
+                "mobHpSum", "usingItem", "food"]
+COUNT_FEATURES = ["mobCount", "meleeCount", "rangedCount", "targetingCount"]
 COMPARE_OPS = ["lt", "le", "gt", "ge"]
 TYPE_CHECKS = ["nearestType", "rangedType", "meleeType", "lowestHpType"]
 TYPES = ["zombie", "skeleton", "creeper", "spider"]
 MODES = ["approach", "flee", "orbit", "kite", "hold"]
-TARGETS = ["nearest", "lowestHp", "ranged", "melee", "farthest", "centroid"]
+TARGETS = ["nearest", "lowestHp", "ranged", "melee", "farthest",
+           "centroid", "targeting",
+           "type:zombie", "type:skeleton", "type:creeper", "type:spider"]
 ATTACKS = ["ready", "always", "never"]
 
 MAX_RULES = 6
@@ -41,6 +44,10 @@ MAX_COND_NODES = 8
 def rconst(rng, feature):
     if feature in ("nearestDist", "rangedDist", "meleeDist", "farthestDist"):
         return round(float(rng.uniform(1.5, 12)), 2)
+    if feature == "mobHpSum":
+        return round(float(rng.uniform(10, 140)), 0)
+    if feature == "usingItem":
+        return 0.5
     if feature in ("nearestHp", "lowestHp", "selfHp"):
         return round(float(rng.uniform(1, 20)), 1)
     if feature in ("cooldown",):
@@ -81,6 +88,15 @@ def rand_act(rng):
     if rng.random() < 0.5:
         a["readyTicks"] = int(rng.integers(5, 20))
         a["flipTicks"] = int(rng.integers(15, 60))
+    if rng.random() < 0.2:
+        a["zigzag"] = True
+    if rng.random() < 0.15:
+        a["jump"] = True
+    if rng.random() < 0.2:
+        if rng.random() < 0.6:
+            a["use"] = "off"   # raise the shield
+        else:
+            a["stopUse"] = True
     return a
 
 

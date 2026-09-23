@@ -493,9 +493,10 @@ class Sim:
 
     def reset_and_spawn(self, name, scenario, jitter=None, terrain=None):
         call("POST", "/v1/reset", {"arena": name})
-        # reset() clears the inventory -> re-equip the weapon afterwards
+        # reset() clears the inventory -> re-equip weapon + shield afterwards
         call("POST", "/v1/equip", {"arena": name, "items": [
-            {"id": "minecraft:iron_sword", "slot": "main"}]})
+            {"id": "minecraft:iron_sword", "slot": "main"},
+            {"id": "minecraft:shield", "slot": "off"}]})
         cx, cy, cz = self.center[name]
         if terrain:
             for block, pts in terrain:

@@ -224,6 +224,29 @@ higher survival, at the cost of more damage taken and slower clears) —
 evidence the structural space holds real improvements that parameter search
 cannot reach.
 
+### MAP-Elites (diversity-preserving): `optimize_mapelites.py`
+
+The archive is a 64-cell behavior grid — (mean kills) × (mean damage taken)
+— each cell keeping up to 3 non-dominated elite programs. Emitters mutate /
+crossover cell elites with novelty-biased cell selection, so niche
+specialists survive instead of being dominated out. Extra action primitives:
+`use:"off"` (shield block), `stopUse`, `jump` (crits), `zigzag` (serpentine
+approach), `type:<mob>` / `targeting` targets; extra features
+`targetingCount`, `mobHpSum`, `usingItem`. Players carry sword + shield.
+
+```
+python3 sim/optimizer/optimize_mapelites.py --gens 25 --pop 12 --nscen 12 --seed 11
+```
+
+Result (25 gens): training coverage 39% of the grid; the evolved standout is
+a **shield-kite** structure (`use:"off"` + kite zombies at ~1.9m + always
+attack): on 24 fresh scenarios — **100% clears, 100% survival, damage taken
+4.9** (baseline: 87.5%/87.5%/10.7) at the cost of ~25% slower clears. A
+second elite reaches baseline-level kills (3.0) with 40% less damage taken
+(6.4 vs 10.7) and better survival (91.7%) — again only slower. Both are
+non-dominated vs the hand baseline: the frontier now contains points the
+baseline cannot reach in survival and damage-avoidance.
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.
