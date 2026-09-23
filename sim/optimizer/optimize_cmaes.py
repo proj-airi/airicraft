@@ -510,7 +510,8 @@ class Sim:
                                        "pos": [x, cy, z],
                                        "minDist": 5.0})
 
-    def run_batch(self, params_list, scenario, jitter_rng=None, scenarios=None, terrains=None):
+    def run_batch(self, params_list, scenario, jitter_rng=None, scenarios=None,
+                  terrains=None, policy="baseline-melee"):
         """One episode per arena against `scenario`; returns score dicts in order.
 
         scenarios: optional per-arena scenario list (overrides `scenario`) for
@@ -548,7 +549,7 @@ class Sim:
         except RuntimeError:
             pass
         for name, params in zip(self.arenas, params_list):
-            body = {"arena": name, "policy": "baseline-melee",
+            body = {"arena": name, "policy": policy,
                     "maxTicks": MAX_TICKS, "obsRadius": 20.0}
             if params:
                 body["params"] = params

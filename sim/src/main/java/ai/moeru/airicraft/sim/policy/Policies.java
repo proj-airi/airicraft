@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 public final class Policies {
 	private static final Map<String, Supplier<CombatPolicy>> REGISTRY = Map.of(
 			"baseline-melee", BaselineMeleePolicy::new,
+			"ast", AstPolicy::new,
 			"idle", IdlePolicy::new);
 
 	private Policies() {}

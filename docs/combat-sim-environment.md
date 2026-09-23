@@ -197,6 +197,33 @@ explicit never-die/careful vs fast/aggressive trade-off axis the scalar
 fitness could not express. Outputs land in `results_mo*/`
 (`history.jsonl`, `final_report.json`).
 
+### Structural search (GP): `optimize_gp.py`
+
+`ast` policy (`AstPolicy.java`) interprets a JSON rule list shipped via
+episode `params`: ordered rules `{when: <cond-tree>, act: <action>}`, first
+match wins. Conditions are and/or/not trees over scalar obs features
+(distances, per-type counts within a radius, self/mob HP, cooldown) plus
+nearest-type substring checks; actions resolve a target
+(`nearest|lowestHp|ranged|melee|farthest|centroid`) and a movement mode
+(`approach|flee|orbit|kite|hold`) plus an attack rule.
+
+`optimize_gp.py` evolves these programs with subtree mutation (constants,
+features, comparators, rule add/remove/reorder, NOT wrap) and rule-swap
+crossover under the same shared-scenario-set NSGA-II selection:
+
+```
+python3 sim/optimizer/optimize_gp.py --gens 18 --pop 12 --nscen 12 --seed 8
+```
+
+Result so far: template-seeded GP expands the trade-off front (HV 71k→103k
+during search) but no evolved program strictly dominates the hand baseline
+on the fresh 24-scenario eval — gains are trade-off shifts (e.g. +kills
+against −survived). A hand-probed "charge ranged attackers first" template
+does sit non-dominated vs baseline on a paired 24-scenario set (more kills,
+higher survival, at the cost of more damage taken and slower clears) —
+evidence the structural space holds real improvements that parameter search
+cannot reach.
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.
