@@ -41,7 +41,8 @@ done (max 30s).
 | `POST /v1/equip` | equip player `{arena, items:[{slot,id,count?}]}` |
 | `POST /v1/episode` | start episode `{arena, policy, params?, maxTicks?, obsRadius?}` |
 | `GET /v1/episode?id=` / `POST /v1/episode/stop?id=` | query/stop; non-running replies include `score` |
-| `POST /v1/reset` | reset arena `{arena}` |
+| `POST /v1/reset` | reset arena `{arena}` — rebuilds the platform, wiping terrain features |
+| `POST /v1/terrain` | place blocks `{arena, block, pos:[[x,y,z],...]}` — region-bounded, y ∈ [floor, floor+3] |
 | `POST /v1/tick` | `{mode: freeze|run|sprint, ticks?}` — `sprint` is synchronous: the HTTP call returns after the batch has ticked |
 
 ## Architecture
@@ -152,18 +153,36 @@ cooldown-gated attack) exposing 8 tunables: `engageDistance`, `engageSlack`,
 ## Optimizer (`sim/optimizer/`)
 
 `optimize_cmaes.py` runs the full loop over the HTTP API: N parallel arenas →
-CMA-ES (μ/λ_w, CSA, rank-μ) samples candidates → each candidate is evaluated
-as `mean score over fixed scenarios × reps` → tell. Sprint makes one
-evaluation batch (~650 ticks × 8 arenas) take ~0.5s.
+an evolutionary algorithm samples policy tunables → each candidate is
+evaluated on a freshly-sampled **shared scenario set** (common random
+numbers) → tell. Sprint makes one evaluation batch (~650 ticks × 8 arenas)
+take ~0.5s.
+
+### Multi-objective mode (default): `--algo nsga2`
+
+No scalarization. Each candidate's objective is the raw 5-dim metric vector
+`[kills, −damageTaken, clear, survived, −ticks]` (all maximized), averaged
+over `--nscen` random scenarios drawn fresh per generation and shared across
+the population. Selection is NSGA-II (non-dominated sort + crowding
+distance); per-generation progress is tracked as the front's hypervolume in
+a fixed reference box. The final report re-evaluates the surviving front on
+a large fresh scenario set and dumps every frontier member's params +
+metrics so a trade-off can be chosen *after* optimization.
 
 ```
-python3 sim/optimizer/optimize_cmaes.py --gens 18 --pop 8 --arenas 8 --reps 2 --seed 1
+python3 sim/optimizer/optimize_cmaes.py --algo nsga2 --gens 15 --pop 8 --nscen 12
 ```
 
-Fitness: `100·kills + dealt − 3·taken + 60·clear − 500·death − 0.2·ticks`,
-mean over 4 fixed spawn formations (zombie crowd, mixed ranged/melee,
-creeper/spider mix, 5-zombie surround), repeated `--reps` times with ±1.25b
-per-mob positional jitter so repeated evals never see identical layouts.
+Randomization axes per scenario: mob mix (weighted zombie/skeleton/creeper/
+spider), count 3–7, formation (ring/arc/cluster/pincer), radius 5.5–9 with
+±0.8 baked jitter re-clamped to ≥5.5m and ≥1.6m between spawn points, plus
+terrain features via `POST /v1/terrain` (pillars, walls, mounds, water
+pools, cobwebs; ≥2m from player, ≥1.6m from mob points).
+
+### Scalar mode (legacy): `--algo cmaes`
+
+`J = 100·kills + dealt − 3·taken + 60·clear − 500·death − 0.2·ticks` —
+kept for reference/comparison only.
 
 `kills`/`damageDealt` are **player-credited** (`SimRuntime.isPlayerCredit`
 on the last `DamageSource` seen per mob): damage by the player, mob-vs-mob
@@ -171,12 +190,12 @@ friendly fire, and falls count — baiting mobs into each other or off ledges
 is positioning strategy. Explosions, entity cramming, and suffocation do
 not. `damageTaken` is raw player health loss.
 
-Result (14 gens, pop 8, reps 2): population mean 277 → 368 (σ 0.92→0.41);
-tuned params 281.5 vs baseline 245.5 on a 3-rep jittered head-to-head.
-The corrected scoring exposed that baseline *dies on the mixed
-ranged/melee scenario every rep* (−550 episodes) — previously masked by
-the cheap death penalty and un-attributed friendly-fire credit. Outputs
-land in `results/` (`history.jsonl`, `final_report.json`).
+Result (NSGA-II, 15 gens, pop 8, nscen 12): front hypervolume 92.5k → 109.7k
+(+19%); the final frontier on 24 fresh scenarios spans survived∈[0.42,1.0],
+clear∈[0.42,0.875], ticks∈[118,275], damageTaken∈[2.1,19.1] — exposing an
+explicit never-die/careful vs fast/aggressive trade-off axis the scalar
+fitness could not express. Outputs land in `results_mo*/`
+(`history.jsonl`, `final_report.json`).
 
 ## Verified end-to-end
 

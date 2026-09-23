@@ -98,6 +98,10 @@ public final class SimHttpControl {
 				return o;
 			});
 		}));
+		server.createContext("/v1/terrain", ex -> respond(ex, () -> {
+			JsonObject body = body(ex);
+			return run(mc, () -> setTerrain(body));
+		}));
 		server.createContext("/v1/tick", ex -> respond(ex, () -> {
 			JsonObject body = body(ex);
 			return tick(body, mc);
@@ -204,6 +208,22 @@ public final class SimHttpControl {
 		}
 		JsonObject o = new JsonObject();
 		o.addProperty("equipped", equipped);
+		return o;
+	}
+
+	private static JsonObject setTerrain(JsonObject body) {
+		Arena arena = SimRuntime.get().arena(body.get("arena").getAsString());
+		net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK
+				.get(Identifier.of(body.get("block").getAsString()));
+		java.util.List<int[]> positions = new java.util.ArrayList<>();
+		for (com.google.gson.JsonElement el : body.getAsJsonArray("pos")) {
+			com.google.gson.JsonArray p = el.getAsJsonArray();
+			positions.add(new int[]{p.get(0).getAsInt(), p.get(1).getAsInt(), p.get(2).getAsInt()});
+		}
+		int placed = arena.setFeature(positions, block);
+		JsonObject o = new JsonObject();
+		o.addProperty("placed", placed);
+		o.addProperty("requested", positions.size());
 		return o;
 	}
 

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -148,7 +149,27 @@ public final class Arena {
 		for (FakePlayerEntity player : players) {
 			resetPlayer(player);
 		}
+		buildPlatform(); // restore flat floor — wipes any terrain features laid for the last episode
 		resetCount++;
+	}
+
+	/**
+	 * Lay terrain feature blocks inside the arena region. Positions outside the
+	 * region or above floor+3 are rejected; the floor itself may be replaced
+	 * (e.g. dug-out water pools) but never below it.
+	 */
+	public int setFeature(List<int[]> positions, Block block) {
+		int floorY = (int) Math.floor(playerSpawn.y) - 1;
+		int placed = 0;
+		for (int[] p : positions) {
+			BlockPos bp = new BlockPos(p[0], p[1], p[2]);
+			if (p[1] < floorY || p[1] > floorY + 3 || !region.contains(bp.getX() + 0.5, p[1] + 0.5, bp.getZ() + 0.5)) {
+				continue;
+			}
+			world.setBlockState(bp, block.getDefaultState());
+			placed++;
+		}
+		return placed;
 	}
 
 	private boolean isArenaDebris(Entity entity) {
