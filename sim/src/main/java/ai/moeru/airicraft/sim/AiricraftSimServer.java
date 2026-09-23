@@ -32,6 +32,12 @@ public final class AiricraftSimServer implements DedicatedServerModInitializer {
 		net.minecraft.world.GameRules rules = overworld.getGameRules();
 		rules.get(net.minecraft.world.GameRules.DO_DAYLIGHT_CYCLE).set(false, server);
 		rules.get(net.minecraft.world.GameRules.DO_WEATHER_CYCLE).set(false, server);
+		// permanent night on a flat world would otherwise accumulate wild mobs
+		// (and wandering traders) forever; all sim mobs are spawned explicitly
+		rules.get(net.minecraft.world.GameRules.DO_MOB_SPAWNING).set(false, server);
+		rules.get(net.minecraft.world.GameRules.DO_TRADER_SPAWNING).set(false, server);
+		rules.get(net.minecraft.world.GameRules.DO_INSOMNIA).set(false, server);
+		rules.get(net.minecraft.world.GameRules.DO_PATROL_SPAWNING).set(false, server);
 		overworld.setTimeOfDay(18000);
 	}
 }

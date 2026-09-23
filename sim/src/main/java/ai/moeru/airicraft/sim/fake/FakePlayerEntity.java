@@ -5,6 +5,7 @@ import ai.moeru.airicraft.sim.input.SimInputExecutor;
 import com.mojang.authlib.GameProfile;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.server.MinecraftServer;
@@ -102,6 +103,24 @@ public class FakePlayerEntity extends ServerPlayerEntity {
 	public void onDeath(DamageSource source) {
 		SimRuntime.onEntityDeath(this, source);
 		super.onDeath(source);
+	}
+
+	/**
+	 * Vanilla removes a dead player entity ~20 ticks after death. For fake
+	 * players that path leaks the whole per-player server state: every respawn
+	 * goes through onPlayerConnect which allocates a new advancement tracker /
+	 * network handler, and disconnecting a fake connection does not release the
+	 * old one — thousands of dead players and ~1.5k advancement criterion
+	 * entries each accumulate in the heap until full GC death-spirals. Keeping
+	 * the corpse in the world lets arena reset revive the same entity
+	 * ({@link #reviveForSim}) so a fake player never needs a fresh entity.
+	 */
+	@Override
+	public void remove(Entity.RemovalReason reason) {
+		if (reason == Entity.RemovalReason.KILLED) {
+			return;
+		}
+		super.remove(reason);
 	}
 
 	public static FakePlayerEntity spawn(MinecraftServer server, ServerWorld world, String name, Vec3d pos, float yaw) {

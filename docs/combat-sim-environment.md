@@ -247,6 +247,45 @@ second elite reaches baseline-level kills (3.0) with 40% less damage taken
 non-dominated vs the hand baseline: the frontier now contains points the
 baseline cannot reach in survival and damage-avoidance.
 
+#### Long-budget run + saturation study
+
+`--patience N` stops the run after N consecutive generations without a
+union-front hypervolume gain, and `--resume grid_final.json` warm-starts the
+archive so long runs can be continued instead of restarted. A chained run
+(me3 archive → 583 generations total, stopped by patience-100) gives a clear
+saturation picture: hypervolume climbs in **discrete jumps separated by
+40–125-generation plateaus** — 129k → 136k (g35) → 143k (g78) → 151k (g196)
+→ 153k (g321) → 154k (g421) → 154.2k (g482) → flat for the final 100 gens.
+Each jump is a structural discovery (a rule reordering or a new
+condition/target combination unlocking a whole niche); plateaus are dead
+flat, not slowly creeping. Gains shrink after ~gen 320 — marginal structural
+novelty is exhausted at this grammar/primitive set.
+
+Final frontier (24 fresh scenarios; baseline `[3.17, -10.6, .875, .875,
+-154]` on the same set):
+
+- ~18 fighting elites now dominate baseline on 4 of 5 dimensions, e.g.
+  `[3.21, -4.16, 1.0, 1.0, -161]` — more kills, 2.5× less damage taken,
+  perfect clear + survival, only ~7 ticks slower. Still no strict dominator
+  (baseline keeps the speed crown at the balanced end).
+- Tank extreme `[3.17, -1.47, 1.0, 1.0, -194]`: same kills, **7× less damage
+  taken**, perfect clear/survival, 26% slower.
+- Kills extreme `[3.42, -5.96, .92, .96, -227]`: highest kill count; learned
+  to sprint out of creeper clumps (`mobCount(r3.5)>=3 → flee creeper`).
+- Winning structure family: shield-up kiting — `use:"off"` + kite/approach
+  `targeting` mobs, `hold` on zombies with ready-attacks. Degenerate
+  stall-for-survival programs (survive 1.0, kills ~0, run the whole clock)
+  do exist on the front — they hold the `survived=1.0` extremes — but stay
+  ~3/24 of the front and never invade fighting cells.
+
+Three environment bugs were found and fixed by this run: natural-spawn
+accumulation on the permanent-night flat world (now `doMobSpawning`,
+`doTraderSpawning`, `doInsomnia`, `doPatrolSpawning` all off), an
+advancement-tracker heap leak (dead fake players were re-spawned through
+`onPlayerConnect` but never released — now corpses stay in the world and are
+revived in place on reset, ~7000 leaked players / 4 GB was the failure
+mode), and episode-log disk exhaustion (logs are deleted after scoring).
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.

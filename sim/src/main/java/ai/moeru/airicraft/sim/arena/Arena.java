@@ -139,10 +139,18 @@ public final class Arena {
 			}
 		}
 		trackedMobs.clear();
-		for (Entity entity : world.getEntitiesByClass(Entity.class, region,
+		// Clean with a margin: explosions and knockback fling drops/mobs past the
+		// region edge, where they would otherwise accumulate forever. Living
+		// entities: 12 blocks stays clear of neighbouring arenas (~15-block gap).
+		// Inert debris (items, orbs, projectiles) can't affect a neighbour's
+		// episode, so it gets a wider radius covering the inter-arena dead zone.
+		Box cleanup = region.expand(12);
+		Box debrisBox = region.expand(17);
+		for (Entity entity : world.getEntitiesByClass(Entity.class, debrisBox,
 				e -> !(e instanceof FakePlayerEntity))) {
+			boolean inMargin = cleanup.contains(entity.getX(), entity.getY(), entity.getZ());
 			if (entity instanceof net.minecraft.entity.player.PlayerEntity
-					|| entity instanceof LivingEntity || isArenaDebris(entity)) {
+					|| (inMargin && entity instanceof LivingEntity) || isArenaDebris(entity)) {
 				entity.remove(Entity.RemovalReason.DISCARDED);
 			}
 		}
@@ -180,10 +188,13 @@ public final class Arena {
 
 	private void resetPlayer(FakePlayerEntity player) {
 		if (player.isRemoved()) {
-			// Dead players are remove()d ~20 ticks after onDeath; a removed
-			// entity can never be teleported or ticked again — swap in a fresh
-			// fake player carrying over its executor.
-			world.getServer().getPlayerManager().remove(player);
+			// Corpse-keeping (FakePlayerEntity.remove vetoes KILLED) makes this
+			// path rare; still guard the disconnect so a fake-connection quirk
+			// cannot abort the reset mid-removal.
+			try {
+				world.getServer().getPlayerManager().remove(player);
+			} catch (Exception ignored) {
+			}
 			FakePlayerEntity fresh = FakePlayerEntity.spawn(world.getServer(), world,
 					player.getNameForScoreboard(), playerSpawn, playerYaw);
 			fresh.setSimExecutor(player.getSimExecutor());

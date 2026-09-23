@@ -59,6 +59,10 @@ def main():
     ap.add_argument("--arenas", type=int, default=12)
     ap.add_argument("--nscen", type=int, default=12)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--patience", type=int, default=0,
+                    help="early stop after N generations without hypervolume improvement")
+    ap.add_argument("--resume", default=None,
+                    help="warm-start the archive from a saved grid_final.json")
     ap.add_argument("--out", default=str(Path(__file__).parent / "results_me"))
     args = ap.parse_args()
 
@@ -115,10 +119,15 @@ def main():
     def occupied():
         return list(grid.keys())
 
-    # ---- seed archive ----
-    seeds = [gp.baseline_program(), gp.template_ranged_first(),
-             gp.template_lowhp_first()] + [gp.rand_program(rng)
-                                           for _ in range(args.pop - 3)]
+    # ---- seed / resume archive ----
+    if args.resume:
+        saved = json.loads(Path(args.resume).read_text())
+        seeds = [p for ms in saved.values() for p in ms]
+        print(f"[resume] {len(seeds)} programs from {args.resume}", flush=True)
+    else:
+        seeds = [gp.baseline_program(), gp.template_ranged_first(),
+                 gp.template_lowhp_first()] + [gp.rand_program(rng)
+                                               for _ in range(args.pop - 3)]
     seeds = [gp.prune(p) for p in seeds]
     objs = eval_pop(seeds, sample_eval_set(np.random.default_rng(args.seed + 1),
                                            args.nscen))
@@ -130,6 +139,12 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     hist_path = out / "history.jsonl"
 
+    def save_grid():
+        (out / "grid_final.json").write_text(json.dumps({
+            f"{k[0]},{k[1]}": [p for p, _o in ms]
+            for k, ms in grid.items()}, indent=2))
+
+    best_hv, stale = -1.0, 0
     with open(hist_path, "a") as hf:
         for gen in range(args.gens):
             t0 = time.time()
@@ -170,16 +185,29 @@ def main():
             cov = len(grid) / (GRID[0] * GRID[1])
             rec = {"gen": gen, "coverage": round(cov, 3),
                    "cells": len(grid), "front_size": len(front),
-                   "hv": round(hv, 2), "sec": round(time.time() - t0, 1)}
+                   "hv": round(hv, 2), "stale": stale,
+                   "sec": round(time.time() - t0, 1)}
             hf.write(json.dumps(rec) + "\n")
             hf.flush()
             print(f"[gen {gen}] cells={len(grid)} cov={cov:.0%} "
                   f"front={len(front)} hv={hv:7.1f} ({rec['sec']}s)", flush=True)
+            if hv > best_hv + 1.0:
+                best_hv = hv
+                stale = 0
+            else:
+                stale += 1
+            if args.patience and stale >= args.patience:
+                print(f"[stop] no HV improvement for {stale} gens "
+                      f"(best={best_hv:.1f})", flush=True)
+                break
+            if stale and stale % 25 == 0:
+                print(f"  [stale] {stale} gens since last HV gain", flush=True)
+            if gen % 25 == 0:
+                save_grid()
 
     # ---- final: union of cell elites re-evaluated on a fresh large set ----
     print("[final] re-evaluating map elites on fresh scenarios ...", flush=True)
-    (out / "grid_final.json").write_text(json.dumps({
-        f"{k[0]},{k[1]}": [p for p, _o in ms] for k, ms in grid.items()}, indent=2))
+    save_grid()
     union = [(p, o) for ms in grid.values() for p, o in ms]
     finalists = [p for p, _o in union]
     eval_rng = np.random.default_rng(555)

@@ -379,14 +379,19 @@ def episode_score(ep_log: str) -> dict:
     p = Path(ep_log)
     if not p.is_absolute():
         p = RUN_DIR / p
-    last = None
+    # scan backwards: a tail line can be truncated mid-write if the log is
+    # read while the episode is still flushing records
+    last_rec = None
     with open(p) as f:
         for line in f:
-            last = line
-    if last is None:
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            last_rec = r
+    if last_rec is None:
         return {}
-    rec = json.loads(last)
-    return rec.get("score", {}) if rec.get("type") == "end" else {}
+    return last_rec.get("score", {}) if last_rec.get("type") == "end" else {}
 
 
 # ----------------------------------------------------------------- cma-es --
@@ -561,13 +566,30 @@ class Sim:
             call("POST", "/v1/tick", {"mode": "sprint", "ticks": MAX_TICKS + 50})
         except RuntimeError as e:
             print(f"  [warn] sprint call: {e}", flush=True)
-        deadline = time.time() + 240
+        deadline = time.time() + 900
         while time.time() < deadline:
             st = call("GET", "/v1/status")
             if st.get("gate") == "RUN" and len(st.get("episodes", [])) == 0:
                 break
+            if st.get("gate") == "RUN":
+                # sprint budget drained while episodes still run -> top up
+                try:
+                    call("POST", "/v1/tick", {"mode": "sprint",
+                                               "ticks": MAX_TICKS + 50})
+                except RuntimeError:
+                    pass
             time.sleep(0.3)
-        return [episode_score(lg) for lg in logs]
+        scores = []
+        for lg in logs:
+            scores.append(episode_score(lg))
+            # per-tick obs logs are ~MBs each — hundreds of episodes per
+            # generation would fill the disk if every one were kept
+            try:
+                p = Path(lg)
+                (p if p.is_absolute() else RUN_DIR / p).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return scores
 
 
 def main():
