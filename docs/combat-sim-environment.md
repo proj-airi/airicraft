@@ -286,6 +286,43 @@ advancement-tracker heap leak (dead fake players were re-spawned through
 revived in place on reset, ~7000 leaked players / 4 GB was the failure
 mode), and episode-log disk exhaustion (logs are deleted after scoring).
 
+#### Round 2: threat-state features → strict baseline domination
+
+The me7 saturation verdict ("add primitives, not budget") was tested by
+adding three threat-state observation features the grammar could not
+express — `creeperFuse` (max creeper fuse fraction in radius, from
+`CreeperEntity.getLerpedFuseTime`), `litCreeperCount` (fuse > 0.4 in
+radius), `aimingCount` (mobs drawing a `RangedWeaponItem` in radius), and
+`offhandPct` (offhand item durability fraction). The archive was
+warm-started from the me7 grid (118 elites) and run to a second
+patience-100 stop: 330 generations, HV 113k → 145k → 149.2k with the same
+plateau-then-jump shape (last gain at gen ~231, then 100 flat).
+
+On the *identical* 24-scenario final eval set (seed 555, so me7/me8 finals
+are directly comparable) the frontier crossed the dominance line:
+
+- **Three strict dominators of the baseline AST now exist** — e.g.
+  `[2.917, -3.46, 1.0, 1.0, -147]` beats baseline
+  `[2.92, -12.04, .958, .958, -151]` on all five axes (same kills, 3.5×
+  less damage taken, perfect clear + survival, 3% faster). me7 had zero.
+- Winning effective structure (dead trailing rules aside): `use:"off"`
+  shield-hold with zigzag against ranged mobs while not blocking, else
+  approach-and-attack nearest — a two-rule hybrid, not the 6-rule monsters.
+- High-performance neighbors: `[3.21, -1.83, 1.0, 1.0, -177]` (kills up,
+  6.6× less damage, slower) and `[3.08, -3.40, 1.0, 1.0, -161]`.
+- New features appear on the final front but not in the dominators
+  (`aimingCount` x2, `offhandPct` x1); their main contribution was
+  enlarging the mutation space so the winning two-rule hybrid was
+  reachable. `creeperFuse`/`litCreeperCount` live in archive cells, not on
+  the front.
+- Degenerate audit: 0 stall programs in the mid-run archive (gen ~125);
+  the final front has 1/25 stall-shaped member (`survived=1.0`, 0.08
+  clear, runs all 600 ticks) — same confined-to-extremes pattern as me7.
+- Honest caveat: `hypervolume_final` is slightly *lower* than me7's
+  (104.3k vs 106.6k) because the front shifted toward the
+  low-damage/high-kills corner and lost some mid-tradeoff members — the
+  frontier gained strict dominators but narrowed elsewhere.
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.
