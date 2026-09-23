@@ -160,16 +160,23 @@ evaluation batch (~650 ticks × 8 arenas) take ~0.5s.
 python3 sim/optimizer/optimize_cmaes.py --gens 18 --pop 8 --arenas 8 --reps 2 --seed 1
 ```
 
-Fitness: `100·kills + dealt − 3·taken + 60·clear − 50·death − 0.05·ticks`,
+Fitness: `100·kills + dealt − 3·taken + 60·clear − 500·death − 0.2·ticks`,
 mean over 4 fixed spawn formations (zombie crowd, mixed ranged/melee,
-creeper/spider mix, 5-zombie surround). `--reps` repeats each scenario eval —
-single-eval candidates pick up lucky draws, so reported "best" params must be
-re-verified on a larger paired eval against baseline.
+creeper/spider mix, 5-zombie surround), repeated `--reps` times with ±1.25b
+per-mob positional jitter so repeated evals never see identical layouts.
 
-Result (18 gens, pop 8, reps 2): population mean fitness 316 → 477 (σ
-0.85→0.36); tuned params beat baseline 515.7 vs 455.7 on a 3-rep paired
-head-to-head, winning 10/12 evals. Outputs land in `results/`
-(`history.jsonl`, `final_report.json`).
+`kills`/`damageDealt` are **player-credited** (`SimRuntime.isPlayerCredit`
+on the last `DamageSource` seen per mob): damage by the player, mob-vs-mob
+friendly fire, and falls count — baiting mobs into each other or off ledges
+is positioning strategy. Explosions, entity cramming, and suffocation do
+not. `damageTaken` is raw player health loss.
+
+Result (14 gens, pop 8, reps 2): population mean 277 → 368 (σ 0.92→0.41);
+tuned params 281.5 vs baseline 245.5 on a 3-rep jittered head-to-head.
+The corrected scoring exposed that baseline *dies on the mixed
+ranged/melee scenario every rep* (−550 episodes) — previously masked by
+the cheap death penalty and un-attributed friendly-fire credit. Outputs
+land in `results/` (`history.jsonl`, `final_report.json`).
 
 ## Verified end-to-end
 

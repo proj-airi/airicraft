@@ -90,6 +90,7 @@ public final class SimHttpControl {
 			JsonObject body = body(ex);
 			return run(mc, () -> {
 				Arena arena = SimRuntime.get().arena(body.get("arena").getAsString());
+				SimRuntime.clearDamageSources();
 				arena.reset();
 				JsonObject o = new JsonObject();
 				o.addProperty("arena", arena.name());

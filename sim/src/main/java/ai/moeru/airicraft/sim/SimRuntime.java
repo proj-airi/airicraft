@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.server.MinecraftServer;
@@ -28,6 +29,8 @@ public final class SimRuntime {
 	private final MinecraftServer server;
 	private final Map<String, Arena> arenas = new ConcurrentHashMap<>();
 	private final Map<String, Episode> episodes = new ConcurrentHashMap<>();
+	/** Last damage source seen per entity (all living entities, keyed by uuid). */
+	private static final Map<UUID, DamageSource> LAST_DAMAGE = new ConcurrentHashMap<>();
 	private final Path episodeLogDir;
 	private long serverTick;
 	private int episodeSeq;
@@ -78,6 +81,7 @@ public final class SimRuntime {
 	}
 
 	public static void onEntityDeath(LivingEntity entity, DamageSource source) {
+		LAST_DAMAGE.remove(entity.getUuid());
 		SimRuntime rt = instance;
 		if (rt == null) {
 			return;
@@ -85,6 +89,40 @@ public final class SimRuntime {
 		for (Episode episode : rt.episodes.values()) {
 			episode.onEntityDeath(entity, source);
 		}
+	}
+
+	public static void recordDamageSource(LivingEntity entity, DamageSource source) {
+		LAST_DAMAGE.put(entity.getUuid(), source);
+	}
+
+	public static DamageSource lastDamageSource(UUID entityId) {
+		return LAST_DAMAGE.get(entityId);
+	}
+
+	/** Drops attribution state — called on arena resets between batches. */
+	public static void clearDamageSources() {
+		LAST_DAMAGE.clear();
+	}
+
+	/**
+	 * Whether a mob's health loss counts toward the player's score. Credited:
+	 * damage caused by the player, mob-vs-mob friendly fire, and falls (kiting
+	 * mobs into each other / off ledges is part of positioning strategy).
+	 * Explosions, entity cramming and suffocation are excluded.
+	 */
+	public static boolean isPlayerCredit(DamageSource source, LivingEntity player) {
+		if (source == null) {
+			return false;
+		}
+		String name = source.getName();
+		if (name.startsWith("explosion") || name.equals("cramming") || name.equals("inWall")) {
+			return false;
+		}
+		Entity attacker = source.getAttacker();
+		if (attacker != null) {
+			return true;
+		}
+		return name.equals("fall");
 	}
 
 	public MinecraftServer server() {

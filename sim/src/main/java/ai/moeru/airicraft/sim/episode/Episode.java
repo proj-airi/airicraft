@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.sim.episode;
 
+import ai.moeru.airicraft.sim.SimRuntime;
 import ai.moeru.airicraft.sim.arena.Arena;
 import ai.moeru.airicraft.sim.fake.FakePlayerEntity;
 import ai.moeru.airicraft.sim.input.ActionProfile;
@@ -137,7 +138,8 @@ public final class Episode {
 			if (mob instanceof LivingEntity living) {
 				float hp = living.getHealth();
 				Float prev = lastMobHealth.put(living.getUuid(), hp);
-				if (prev != null && hp < prev) {
+				if (prev != null && hp < prev
+						&& SimRuntime.isPlayerCredit(SimRuntime.lastDamageSource(living.getUuid()), player)) {
 					damageDealt += prev - hp;
 				}
 			}
@@ -160,7 +162,10 @@ public final class Episode {
 
 	public void onEntityDeath(LivingEntity entity, DamageSource source) {
 		if (arena.trackedMobs().contains(entity)) {
-			kills++;
+			if (!arena.players().isEmpty()
+					&& SimRuntime.isPlayerCredit(source, arena.players().get(0))) {
+				kills++;
+			}
 			event("kill:" + entity.getType().toString() + " by:" + source.getName());
 		}
 		if (entity instanceof FakePlayerEntity) {

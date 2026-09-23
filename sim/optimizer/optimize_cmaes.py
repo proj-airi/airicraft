@@ -58,14 +58,20 @@ PARAMS = [
 DIM = len(PARAMS)
 
 def score_of(score: dict) -> float:
-    """Scalar episode reward: kill credit, damage efficiency, clear bonus, speed."""
+    """Scalar episode reward.
+
+    kills/damageDealt are player-credited only (mob friendly-fire and falls
+    count — baiting mobs into each other is positioning strategy; creeper
+    explosions, cramming and suffocation do not). Death is catastrophic,
+    slow clears cost real points.
+    """
     kills = score.get("kills", 0)
     dealt = score.get("damageDealt", 0.0)
     taken = score.get("damageTaken", 0.0)
     ticks = score.get("ticks", MAX_TICKS)
     cleared = 60.0 if score.get("outcome") == "ALL_MOBS_CLEARED" else 0.0
-    died = -50.0 if score.get("outcome") == "PLAYER_DIED" else 0.0
-    return 100 * kills + dealt - 3 * taken + cleared + died - 0.05 * ticks
+    died = -500.0 if score.get("outcome") == "PLAYER_DIED" else 0.0
+    return 100 * kills + dealt - 3 * taken + cleared + died - 0.2 * ticks
 
 
 # ------------------------------------------------------------------- http --
@@ -204,22 +210,44 @@ class Sim:
         call("POST", "/v1/equip", {"arena": name, "items": [
             {"id": "minecraft:iron_sword", "slot": "main"}]})
 
-    def reset_and_spawn(self, name, scenario):
+    def reset_and_spawn(self, name, scenario, jitter=None):
         call("POST", "/v1/reset", {"arena": name})
         # reset() clears the inventory -> re-equip the weapon afterwards
         call("POST", "/v1/equip", {"arena": name, "items": [
             {"id": "minecraft:iron_sword", "slot": "main"}]})
         cx, cy, cz = self.center[name]
-        for typ, dx, dz in scenario:
+        for i, (typ, dx, dz) in enumerate(scenario):
+            jx = jz = 0.0
+            if jitter is not None:
+                jx, jz = jitter[i]
+            x, z = cx + dx + jx, cz + dz + jz
             call("POST", "/v1/spawn", {"arena": name, "type": typ,
-                                       "pos": [cx + dx, cy, cz + dz],
+                                       "pos": [x, cy, z],
                                        "minDist": 5.0})
 
-    def run_batch(self, params_list, scenario):
-        """One episode per arena against `scenario`; returns score dicts in order."""
+    def run_batch(self, params_list, scenario, jitter_rng=None):
+        """One episode per arena against `scenario`; returns score dicts in order.
+
+        jitter_rng: when given, every mob gets an independent +-1.25 block
+        positional jitter (resampled per arena per call) so repeated evals
+        of the same params don't see identical spawn layouts — deconfounds
+        lucky formations from policy quality. Radius is kept >= 5.6m so the
+        spawn-distance rule never trips.
+        """
         logs = []
         for name, params in zip(self.arenas, params_list):
-            self.reset_and_spawn(name, scenario)
+            jitter = None
+            if jitter_rng is not None:
+                jitter = []
+                for _typ, dx, dz in scenario:
+                    j = jitter_rng.uniform(-1.25, 1.25, 2)
+                    r = math.hypot(dx + j[0], dz + j[1])
+                    if r < 5.6:
+                        scale = 5.6 / max(r, 1e-6)
+                        j = np.array([(dx + j[0]) * scale - dx,
+                                      (dz + j[1]) * scale - dz])
+                    jitter.append(j)
+            self.reset_and_spawn(name, scenario, jitter)
         # Let spawned mobs finish chunk-entity loading before the episode starts
         # (entities spawned into a still-loading chunk only materialize on the
         # next entity-load pass; a few ticks guarantees they are in the live set).
@@ -301,12 +329,14 @@ def main():
             xs = es.ask()
             xs = np.clip(xs, lo, hi)
             # Evaluate: each candidate sees every scenario; pop <= arenas so each
-            # scenario batch covers all candidates in parallel.
+            # scenario batch covers all candidates in parallel. Fresh spawn
+            # jitter per batch deconfounds fixed formations from policy quality.
             cand_f = np.zeros(args.pop)
+            jit_rng = np.random.default_rng(args.seed * 100003 + gen)
             for rep in range(args.reps):
                 for scen in SCENARIOS:
                     params_batch = [encode(x) for x in xs]
-                    scores = sim.run_batch(params_batch, scen)
+                    scores = sim.run_batch(params_batch, scen, jit_rng)
                     for i, s in enumerate(scores):
                         cand_f[i] += score_of(s)
             cand_f /= len(SCENARIOS) * args.reps
@@ -325,10 +355,11 @@ def main():
     # ---- final head-to-head: baseline vs best on fresh eval ----
     print("[final] head-to-head baseline vs best ...", flush=True)
     final = {"baseline": [], "best": []}
+    eval_rng = np.random.default_rng(777)
     for rep in range(3):
         for scen in SCENARIOS:
             batch = [defaults()] + [best[1]] + [defaults()] * (n_arenas - 2)
-            scores = sim.run_batch(batch, scen)
+            scores = sim.run_batch(batch, scen, eval_rng)
             final["baseline"].append(score_of(scores[0]))
             final["best"].append(score_of(scores[1]))
     report = {
