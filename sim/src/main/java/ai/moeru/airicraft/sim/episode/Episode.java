@@ -92,6 +92,11 @@ public final class Episode {
 		return logPath;
 	}
 
+	/** Final score JSON (populated when the episode finishes; partial while running). */
+	public JsonObject scoreJson() {
+		return score;
+	}
+
 	/** HEAD-of-server-tick: snapshot obs, run policy on delayed obs, queue intent. */
 	public void preTick() {
 		if (state != State.RUNNING || arena.players().isEmpty()) {
@@ -175,6 +180,12 @@ public final class Episode {
 		}
 		outcome = o;
 		state = State.DONE;
+		if (!arena.players().isEmpty()) {
+			FakePlayerEntity player = arena.players().get(0);
+			if (player.getSimExecutor() != null) {
+				player.getSimExecutor().setIntent(Intent.IDLE);
+			}
+		}
 		score.addProperty("outcome", o.name());
 		score.addProperty("ticks", tick);
 		score.addProperty("kills", kills);

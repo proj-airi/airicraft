@@ -57,6 +57,17 @@ public class FakePlayerEntity extends ServerPlayerEntity {
 	}
 
 	/**
+	 * In-place revive for arena resets: clears the dead flag and restores full
+	 * health without going through PlayerManager respawn (the fake player is
+	 * never disconnected, so vanilla respawn would replace the entity).
+	 */
+	public void reviveForSim() {
+		this.dead = false;
+		this.deathTime = 0;
+		setHealth(getMaxHealth());
+	}
+
+	/**
 	 * Vanilla returns false on the server (player movement is client-authoritative);
 	 * for a simulated player the executor is the local controller, so voluntary
 	 * movement is allowed and the full input→travel physics path runs.

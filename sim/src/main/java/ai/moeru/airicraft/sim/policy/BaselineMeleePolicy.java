@@ -37,6 +37,22 @@ public final class BaselineMeleePolicy implements CombatPolicy {
 	}
 
 	@Override
+	public void configure(JsonObject params) {
+		engageDistance = num(params, "engageDistance", engageDistance);
+		engageSlack = num(params, "engageSlack", engageSlack);
+		sprintBeyond = num(params, "sprintBeyond", sprintBeyond);
+		crowdRadius = num(params, "crowdRadius", crowdRadius);
+		crowdThreshold = (int) num(params, "crowdThreshold", crowdThreshold);
+		attackRange = num(params, "attackRange", attackRange);
+		minLastAttackTicks = (int) num(params, "minLastAttackTicks", minLastAttackTicks);
+		strafeFlipTicks = (int) num(params, "strafeFlipTicks", strafeFlipTicks);
+	}
+
+	private static double num(JsonObject params, String key, double fallback) {
+		return params.has(key) && params.get(key).isJsonPrimitive() ? params.get(key).getAsDouble() : fallback;
+	}
+
+	@Override
 	public Intent decide(JsonObject obs) {
 		tick++;
 		if (tick % strafeFlipTicks == 0) {

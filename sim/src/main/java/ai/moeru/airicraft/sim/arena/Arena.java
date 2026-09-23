@@ -42,8 +42,26 @@ public final class Arena {
 
 	public static Arena createFlat(String name, ServerWorld world, Vec3d center, int size, float playerYaw) {
 		Arena arena = new Arena(name, world, center, size, playerYaw);
+		arena.forceLoadChunks();
 		arena.buildPlatform();
 		return arena;
+	}
+
+	/**
+	 * Force-load every chunk overlapping the region (like /forceload). Without
+	 * this, entities in edge chunks can unload mid-episode (isAlive() flips
+	 * false and untracked copies can materialize from pending chunk data).
+	 */
+	private void forceLoadChunks() {
+		int minCX = (int) Math.floor(region.minX) >> 4;
+		int maxCX = (int) Math.floor(region.maxX) >> 4;
+		int minCZ = (int) Math.floor(region.minZ) >> 4;
+		int maxCZ = (int) Math.floor(region.maxZ) >> 4;
+		for (int cx = minCX; cx <= maxCX; cx++) {
+			for (int cz = minCZ; cz <= maxCZ; cz++) {
+				world.setChunkForced(cx, cz, true);
+			}
+		}
 	}
 
 	public String name() {
@@ -140,6 +158,23 @@ public final class Arena {
 	}
 
 	private void resetPlayer(FakePlayerEntity player) {
+		if (player.isRemoved()) {
+			// Dead players are remove()d ~20 ticks after onDeath; a removed
+			// entity can never be teleported or ticked again — swap in a fresh
+			// fake player carrying over its executor.
+			world.getServer().getPlayerManager().remove(player);
+			FakePlayerEntity fresh = FakePlayerEntity.spawn(world.getServer(), world,
+					player.getNameForScoreboard(), playerSpawn, playerYaw);
+			fresh.setSimExecutor(player.getSimExecutor());
+			int idx = players.indexOf(player);
+			if (idx >= 0) {
+				players.set(idx, fresh);
+			}
+			player = fresh;
+		}
+		if (player.isDead()) {
+			player.reviveForSim();
+		}
 		player.teleport(world, playerSpawn.x, playerSpawn.y, playerSpawn.z,
 				Set.<net.minecraft.network.packet.s2c.play.PositionFlag>of(), playerYaw, 0.0f, false);
 		player.setVelocity(Vec3d.ZERO);

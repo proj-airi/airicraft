@@ -8,17 +8,17 @@ import net.minecraft.server.MinecraftServer;
  * <ul>
  *   <li>RUN – every tick proceeds (normal 20 TPS).</li>
  *   <li>FREEZE – every tick is cancelled (world fully paused).</li>
- *   <li>SPRINT – only the dedicated sprint worker thread may run ticks;
- *       the normal server loop is cancelled meanwhile, so the worker can
- *       execute N ticks back-to-back as fast as the CPU allows.</li>
+ *   <li>SPRINT – all ticks pass; the sprint batch itself is enqueued on the
+ *       server thread via {@code server.execute}, so N ticks run back-to-back
+ *       inside one queue-drain with no concurrent world mutation.</li>
  * </ul>
+ * World state is single-threaded: running the batch on the server thread (not
+ * a worker thread) is what keeps the chunk/lighting queues safe.
  */
 public final class SimTickGate {
 	public enum Mode { FREEZE, RUN, SPRINT }
 
 	private static volatile Mode mode = Mode.RUN;
-	private static volatile Thread sprintThread;
-	private static volatile CompletableFuture<Integer> sprintFuture;
 
 	private SimTickGate() {}
 
@@ -28,35 +28,30 @@ public final class SimTickGate {
 
 	/** Called at the HEAD of MinecraftServer.tick. */
 	public static boolean beginTick() {
-		Mode m = mode;
-		if (m == Mode.RUN) {
-			return true;
-		}
-		if (m == Mode.FREEZE) {
-			return false;
-		}
-		return Thread.currentThread() == sprintThread;
+		return mode != Mode.FREEZE;
 	}
 
 	public static synchronized void freeze() {
-		cancelSprint();
 		mode = Mode.FREEZE;
 	}
 
 	public static synchronized void run() {
-		cancelSprint();
 		mode = Mode.RUN;
 	}
 
-	/** Executes {@code ticks} server ticks on a worker thread, as fast as possible. */
+	/**
+	 * Executes {@code ticks} server ticks back-to-back on the server thread.
+	 * The returned future completes when the batch finishes (mode restored to
+	 * RUN). All world access stays on the server thread, so no synchronization
+	 * against the chunk/entity queues is needed.
+	 */
 	public static synchronized CompletableFuture<Integer> sprint(MinecraftServer server, int ticks) {
 		if (mode == Mode.SPRINT) {
 			return CompletableFuture.failedFuture(new IllegalStateException("sprint already running"));
 		}
 		mode = Mode.SPRINT;
 		CompletableFuture<Integer> future = new CompletableFuture<>();
-		sprintFuture = future;
-		Thread worker = new Thread(() -> {
+		server.execute(() -> {
 			int done = 0;
 			try {
 				for (; done < ticks; done++) {
@@ -67,25 +62,12 @@ public final class SimTickGate {
 				future.completeExceptionally(t);
 			} finally {
 				synchronized (SimTickGate.class) {
-					sprintThread = null;
-					sprintFuture = null;
 					if (mode == Mode.SPRINT) {
 						mode = Mode.RUN;
 					}
 				}
 			}
-		}, "airicraft-sim-sprint");
-		worker.setDaemon(true);
-		sprintThread = worker;
-		worker.start();
+		});
 		return future;
-	}
-
-	private static void cancelSprint() {
-		CompletableFuture<Integer> f = sprintFuture;
-		if (f != null) {
-			f.completeExceptionally(new IllegalStateException("sprint cancelled"));
-			sprintFuture = null;
-		}
 	}
 }

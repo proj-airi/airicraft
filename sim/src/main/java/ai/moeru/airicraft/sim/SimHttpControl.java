@@ -212,6 +212,9 @@ public final class SimHttpControl {
 			throw new IllegalStateException("arena has no fake player");
 		}
 		CombatPolicy policy = Policies.create(body.get("policy").getAsString());
+		if (body.has("params") && body.get("params").isJsonObject()) {
+			policy.configure(body.getAsJsonObject("params"));
+		}
 		int maxTicks = body.has("maxTicks") ? body.get("maxTicks").getAsInt() : 1200;
 		double obsRadius = body.has("obsRadius") ? body.get("obsRadius").getAsDouble() : 24.0;
 		ActionProfile profile = ActionProfile.defaults();
@@ -232,6 +235,9 @@ public final class SimHttpControl {
 		}
 		o.addProperty("tick", e.tick());
 		o.addProperty("log", e.logPath().toString());
+		if (e.state() != Episode.State.RUNNING) {
+			o.add("score", e.scoreJson());
+		}
 		return o;
 	}
 

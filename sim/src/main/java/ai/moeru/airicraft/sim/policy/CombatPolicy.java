@@ -14,5 +14,8 @@ public interface CombatPolicy {
 	/** Called once when the episode resets. */
 	void reset();
 
+	/** Apply optimizer-supplied tunables before the episode starts (default: none). */
+	default void configure(JsonObject params) {}
+
 	Intent decide(JsonObject observation);
 }

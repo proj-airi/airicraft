@@ -12,6 +12,7 @@ public final class AiricraftSimServer implements DedicatedServerModInitializer {
 	@Override
 	public void onInitializeServer() {
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+			applyWorldRules(server);
 			SimRuntime.attach(server);
 			SimHttpControl.start(server);
 			LOGGER.info("airicraft-sim ready (control port {})", SimHttpControl.port());
@@ -20,5 +21,17 @@ public final class AiricraftSimServer implements DedicatedServerModInitializer {
 			SimHttpControl.stop();
 			SimRuntime.detach();
 		});
+	}
+
+	/**
+	 * Fixed combat-lab environment: permanent midnight (undead mobs never
+	 * burn), no daylight or weather cycle. Everything else stays vanilla.
+	 */
+	private static void applyWorldRules(net.minecraft.server.MinecraftServer server) {
+		net.minecraft.server.world.ServerWorld overworld = server.getOverworld();
+		net.minecraft.world.GameRules rules = overworld.getGameRules();
+		rules.get(net.minecraft.world.GameRules.DO_DAYLIGHT_CYCLE).set(false, server);
+		rules.get(net.minecraft.world.GameRules.DO_WEATHER_CYCLE).set(false, server);
+		overworld.setTimeOfDay(18000);
 	}
 }

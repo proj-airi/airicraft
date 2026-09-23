@@ -39,10 +39,10 @@ done (max 30s).
 | `POST /v1/player` | spawn fake player `{arena, name?, pos?, yaw?}` |
 | `POST /v1/spawn` | spawn mobs `{arena, type, pos? | count?, minDist?, targetPlayer?}` |
 | `POST /v1/equip` | equip player `{arena, items:[{slot,id,count?}]}` |
-| `POST /v1/episode` | start episode `{arena, policy, maxTicks?, obsRadius?}` |
-| `GET /v1/episode?id=` / `POST /v1/episode/stop?id=` | query/stop |
+| `POST /v1/episode` | start episode `{arena, policy, params?, maxTicks?, obsRadius?}` |
+| `GET /v1/episode?id=` / `POST /v1/episode/stop?id=` | query/stop; non-running replies include `score` |
 | `POST /v1/reset` | reset arena `{arena}` |
-| `POST /v1/tick` | `{mode: freeze|run|sprint, ticks?}` |
+| `POST /v1/tick` | `{mode: freeze|run|sprint, ticks?}` — `sprint` is synchronous: the HTTP call returns after the batch has ticked |
 
 ## Architecture
 
@@ -86,12 +86,32 @@ produces — never calling `attack()` directly on a desired target:
 
 - `RUN` — normal ticking (default)
 - `FREEZE` — every server tick is cancelled; the world is fully paused
-- `SPRINT` — only the dedicated sprint thread's `server.tick()` calls pass;
-  used to burst N ticks without waiting for real time
+- `SPRINT` — the gate stays open while the server thread itself bursts N
+  `server.tick()` calls back-to-back (synchronous HTTP response after)
 
 `SimRuntime.beforeTick/afterTick` bracket each accepted tick: `preTick`
 (snapshots obs → policy decides on `obsDelayTicks`-stale obs → queues intent)
 and `postTick` (damage accounting, executor events, termination checks).
+
+Sprint batches run on the **server thread** via `server.execute` — a dedicated
+sprint thread calling `server.tick` races the main loop's chunk/task drain and
+crashes the world state. Throughput: ~1100 ticks/s (~55× realtime).
+
+### World rules for training
+
+`applyWorldRules` pins `DO_DAYLIGHT_CYCLE`/`DO_WEATHER_CYCLE` off and sets the
+clock to 18000 (midnight): zombies/skeletons must not burn mid-episode.
+
+Arena creation **force-loads** its chunks (`setChunkForced`) — entities spawned
+into a not-entity-loaded chunk go to pending storage and are invisible to
+`world.getEntitiesByClass` until they materialize later. Required episode
+recipe: create arena → warm-up ticks → spawn → settle ticks → start episode.
+
+`reset()` also clears player inventory (re-equip afterwards) and revives a
+dead player (`reviveForSim`). A player dead ~20+ ticks is `remove()`d by
+vanilla `updatePostDeath`; a removed entity can never be teleported or ticked,
+so `resetPlayer` swaps in a fresh `FakePlayerEntity` carrying over the
+executor.
 
 ### Arena + spawn rules (`arena/`, `spawn/`)
 
@@ -120,11 +140,36 @@ dist, tracked, hostile, health, targetingPlayer).
 
 ### Policies (`policy/`)
 
-`CombatPolicy { id(); reset(); Intent decide(JsonObject obs) }` consumes the
-delayed observation JSON — the same contract a learned policy will use.
+`CombatPolicy { id(); reset(); configure(params); Intent decide(JsonObject obs) }`
+consumes the delayed observation JSON — the same contract a learned policy
+will use. `configure` applies optimizer-supplied tunables (`params` in
+`POST /v1/episode`) before the episode starts.
 `baseline-melee` is a hand-tuned melee script (approach/orbit/flee-centroid +
-cooldown-gated attack) that clears a 4-zombie crowd on a flat arena.
-`idle` does nothing. Parameterized policies tuned by CMA-ES land here later.
+cooldown-gated attack) exposing 8 tunables: `engageDistance`, `engageSlack`,
+`sprintBeyond`, `crowdRadius`, `crowdThreshold`, `attackRange`,
+`minLastAttackTicks`, `strafeFlipTicks`. `idle` does nothing.
+
+## Optimizer (`sim/optimizer/`)
+
+`optimize_cmaes.py` runs the full loop over the HTTP API: N parallel arenas →
+CMA-ES (μ/λ_w, CSA, rank-μ) samples candidates → each candidate is evaluated
+as `mean score over fixed scenarios × reps` → tell. Sprint makes one
+evaluation batch (~650 ticks × 8 arenas) take ~0.5s.
+
+```
+python3 sim/optimizer/optimize_cmaes.py --gens 18 --pop 8 --arenas 8 --reps 2 --seed 1
+```
+
+Fitness: `100·kills + dealt − 3·taken + 60·clear − 50·death − 0.05·ticks`,
+mean over 4 fixed spawn formations (zombie crowd, mixed ranged/melee,
+creeper/spider mix, 5-zombie surround). `--reps` repeats each scenario eval —
+single-eval candidates pick up lucky draws, so reported "best" params must be
+re-verified on a larger paired eval against baseline.
+
+Result (18 gens, pop 8, reps 2): population mean fitness 316 → 477 (σ
+0.85→0.36); tuned params beat baseline 515.7 vs 455.7 on a 3-rep paired
+head-to-head, winning 10/12 evals. Outputs land in `results/`
+(`history.jsonl`, `final_report.json`).
 
 ## Verified end-to-end
 
