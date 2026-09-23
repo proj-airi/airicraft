@@ -26,8 +26,10 @@ from optimize_cmaes import (  # noqa: E402
 
 NUM_FEATURES = ["nearestDist", "rangedDist", "meleeDist", "farthestDist",
                 "nearestHp", "lowestHp", "selfHp", "cooldown", "cdFrac",
-                "mobHpSum", "usingItem", "food"]
-COUNT_FEATURES = ["mobCount", "meleeCount", "rangedCount", "targetingCount"]
+                "mobHpSum", "usingItem", "offhandPct", "food"]
+# radius-arg features (take "r"): counts plus creeperFuse (max fuse 0..1 in r)
+COUNT_FEATURES = ["mobCount", "meleeCount", "rangedCount", "targetingCount",
+                  "litCreeperCount", "aimingCount", "creeperFuse"]
 COMPARE_OPS = ["lt", "le", "gt", "ge"]
 TYPE_CHECKS = ["nearestType", "rangedType", "meleeType", "lowestHpType"]
 TYPES = ["zombie", "skeleton", "creeper", "spider"]
@@ -54,6 +56,8 @@ def rconst(rng, feature):
         return int(rng.integers(2, 20))
     if feature in ("cdFrac",):
         return round(float(rng.uniform(0.2, 1.0)), 2)
+    if feature in ("creeperFuse", "offhandPct"):
+        return round(float(rng.uniform(0.1, 0.9)), 2)
     if feature == "food":
         return int(rng.integers(2, 20))
     return round(float(rng.uniform(1, 7)), 1)  # counts

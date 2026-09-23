@@ -9,8 +9,11 @@ import java.util.Set;
 import java.util.UUID;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.CreeperEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.RangedWeaponItem;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
@@ -57,6 +60,9 @@ public final class ObservationSnapshot {
 		o.addProperty("sprinting", p.isSprinting());
 		o.addProperty("mainHand", p.getMainHandStack().getItem().toString());
 		o.addProperty("offHand", p.getOffHandStack().getItem().toString());
+		ItemStack off = p.getOffHandStack();
+		o.addProperty("offhandPct", off.isDamageable()
+				? 1.0 - (double) off.getDamage() / off.getMaxDamage() : 1.0);
 		JsonObject dbg = new JsonObject();
 		dbg.addProperty("canMoveVoluntarily", p.canMoveVoluntarily());
 		dbg.addProperty("canActVoluntarily", p.canActVoluntarily());
@@ -86,6 +92,15 @@ public final class ObservationSnapshot {
 		}
 		if (e instanceof MobEntity mob) {
 			o.addProperty("targetingPlayer", mob.getTarget() == player);
+		}
+		if (e instanceof CreeperEntity creeper) {
+			o.addProperty("fuse", Math.max(0, Math.min(1,
+					creeper.getLerpedFuseTime(1.0f))));
+		}
+		if (e instanceof LivingEntity living
+				&& living.isUsingItem()
+				&& living.getActiveItem().getItem() instanceof RangedWeaponItem) {
+			o.addProperty("aiming", true);
 		}
 		return o;
 	}

@@ -142,6 +142,10 @@ public final class AstPolicy implements CombatPolicy {
 				case "rangedCount" -> count(r, true);
 				case "targetingCount" -> countTargeting(r);
 				case "mobHpSum" -> hpSum;
+				case "creeperFuse" -> maxFuse(r);
+				case "litCreeperCount" -> countLitCreepers(r);
+				case "aimingCount" -> countAiming(r);
+				case "offhandPct" -> player.has("offhandPct") ? player.get("offhandPct").getAsDouble() : 1;
 				case "usingItem" -> player.has("usingItem") && player.get("usingItem").getAsBoolean() ? 1 : 0;
 				case "selfHp" -> player.get("health").getAsDouble();
 				case "cooldown" -> player.get("lastAttackedTicks").getAsInt();
@@ -168,6 +172,33 @@ public final class AstPolicy implements CombatPolicy {
 			for (JsonObject e : hostiles) {
 				if (e.get("dist").getAsDouble() >= r) continue;
 				if (e.has("targetingPlayer") && e.get("targetingPlayer").getAsBoolean()) n++;
+			}
+			return n;
+		}
+
+		double maxFuse(double r) {
+			double m = 0;
+			for (JsonObject e : hostiles) {
+				if (e.get("dist").getAsDouble() >= r || !e.has("fuse")) continue;
+				m = Math.max(m, e.get("fuse").getAsDouble());
+			}
+			return m;
+		}
+
+		double countLitCreepers(double r) {
+			double n = 0;
+			for (JsonObject e : hostiles) {
+				if (e.get("dist").getAsDouble() >= r || !e.has("fuse")) continue;
+				if (e.get("fuse").getAsDouble() > 0.4) n++;
+			}
+			return n;
+		}
+
+		double countAiming(double r) {
+			double n = 0;
+			for (JsonObject e : hostiles) {
+				if (e.get("dist").getAsDouble() >= r) continue;
+				if (e.has("aiming") && e.get("aiming").getAsBoolean()) n++;
 			}
 			return n;
 		}
