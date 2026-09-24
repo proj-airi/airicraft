@@ -9,7 +9,8 @@ running client through the existing localhost bridge. No Java changes are needed
 recordings ──extract──▶ docs.jsonl ──label-hindsight──▶ hindsight.jsonl
                               │      └─label-teacher───▶ teacher.jsonl
                               └─fill (rules | openai | diffusiongemma)─▶ preds.jsonl ─▶ score / signals
-live client ──probe (E0: time System 2's reaction to an injected chat)
+live client ──probe (E0b: time System 2's reaction to an injected chat)
+            ├─freeze-planning (E0c: freeze the world while System 2 thinks)
             └─shadow (E4a: run a filler every 250 ms, log only)
 ```
 
@@ -44,6 +45,7 @@ Write outputs under `run/system15/` (ignored by git with the rest of `run/`).
 | `score --preds ... --labels teacher.jsonl` | E2 | Per-slot accuracy (token F1 for text), parse/format rate, revision recall/retention, latency, bootstrap CI |
 | `signals --preds ... --hindsight ... [--target ...]` | E3 | AUROC and precision@0.9 recall of settledness signals vs the rule trigger |
 | `probe --message "stop" --sender Alex --out ...` | E0 | Injects a chat through `/v1/agent/debug/chat`, times dispatch, response, work change, dialogue reply |
+| `freeze-planning --out ...` | E0c | Pauses ticks while a gameplay planner request is in flight (near zero-latency System 2), resumes after |
 | `shadow --backend B --out ...` | E4a | Builds a doc from `/v1/agent/context` + `/v1/agent/events/recent` each period and logs the READING |
 
 Backends: `rules` (hand-written baseline B1), `openai` (any OpenAI-compatible server; `--mode update` puts the
@@ -78,8 +80,8 @@ python3 -m unittest discover -s tests            # adds the denoising-loop and t
 
 What the tests establish, and what they do not:
 
-- Recording readers, state documents, labels, rules, metrics, CLI, probe and shadow mode run end to end on the
-  fixture and against fake bridge / OpenAI-compatible servers.
+- Recording readers, state documents, labels, rules, metrics, CLI, probe, freeze-planning and shadow mode run end
+  to end on the fixture and against fake bridge / OpenAI-compatible servers.
 - The denoising loop (entropy-bound acceptance, temperature schedule, warm start, renoising, clamped fixed-width
   layouts, trajectories) behaves as designed against a stub model.
 - The transformers adapter runs against a **tiny random** DiffusionGemma built from the real transformers 5.11 code:

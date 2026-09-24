@@ -307,6 +307,13 @@ def cmd_probe(args) -> None:
         print(json.dumps(result["first"], indent=2))
 
 
+def cmd_freeze_planning(args) -> None:
+    from .bridge import Bridge
+    from .freeze import run_freeze
+
+    print(json.dumps(run_freeze(Bridge(args.bridge_state), Path(args.out), args.duration, args.poll)))
+
+
 def cmd_shadow(args) -> None:
     from .bridge import Bridge
     from .shadow import run_shadow
@@ -404,6 +411,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--gap", type=float, default=30.0)
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_probe)
+
+    p = sub.add_parser("freeze-planning", help="E0c: pause ticks while a System 2 request is in flight")
+    p.add_argument("--bridge-state")
+    p.add_argument("--duration", type=float, default=3600.0)
+    p.add_argument("--poll", type=float, default=0.05)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_freeze_planning)
 
     p = sub.add_parser("shadow", help="E4a: run a filler against a live client, log only")
     _add_backend_args(p)
