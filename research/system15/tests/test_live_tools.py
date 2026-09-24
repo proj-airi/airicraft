@@ -17,7 +17,7 @@ from s15.bridge import Bridge  # noqa: E402
 from s15.probe import run_probe  # noqa: E402
 from s15.recordings import iter_jsonl  # noqa: E402
 from s15.freeze import run_freeze  # noqa: E402
-from s15.shadow import run_shadow  # noqa: E402
+from s15.shadow import live_runtime_line, run_shadow  # noqa: E402
 
 FIXTURE = ROOT / "tests" / "fixtures" / "run-a"
 TOKEN = "test-token"
@@ -33,6 +33,7 @@ class FakeRuntime:
         self.tick = 1060
         self.lock = threading.Lock()
         self.pause_epoch = 0
+        self.context_calls = 0
         self.paused = False
         self.pause_log: list[str] = []
 
@@ -91,10 +92,13 @@ def make_handler(runtime: FakeRuntime):
                     return self._send(200, {"available": True, "latestSeqNo": runtime.events[-1]["seqNo"],
                                             "events": events})
                 if url.path == "/v1/agent/context":
+                    runtime.context_calls += 1
                     return self._send(200, {"available": True, "canonicalConversation": runtime.conversation,
                                             "reflex": {"state": "IDLE", "safetyEpoch": 0}, "task": {}})
                 if url.path == "/v1/agent/goals":
-                    return self._send(200, {"available": True, "lastDialogueResponse": runtime.dialogue})
+                    return self._send(200, {"available": True, "lastDialogueResponse": runtime.dialogue,
+                                            "reflex": {"state": "IDLE", "safetyEpoch": 0},
+                                            "task": {"state": "RUNNING", "taskType": "COLLECT_RESOURCE"}})
                 if url.path == "/v1/agent/debug/llm-calls":
                     records = [c for c in runtime.calls if c["sequenceId"] > since]
                     latest = runtime.calls[-1]["sequenceId"] if runtime.calls else 0
@@ -165,6 +169,12 @@ class LiveToolsTest(unittest.TestCase):
         self.assertEqual(intents[0], "none")
         self.assertIn("come_here", intents)
         self.assertEqual(len(self.runtime.calls), 1)  # only the injected chat caused a (fake) planner call
+        self.assertLessEqual(self.runtime.context_calls, 2)  # start + the one new System 2 call, not every refresh
+
+    def test_live_line_uses_goals_snapshot(self):
+        line = live_runtime_line(self.bridge.goals())
+        self.assertIn('Live reflex: {"state":"IDLE","safetyEpoch":0}', line)
+        self.assertIn('"taskType":"COLLECT_RESOURCE"', line)
 
     def test_freeze_pauses_only_while_a_planner_call_is_in_flight(self):
         out = Path(self.tmp.name) / "freeze.jsonl"

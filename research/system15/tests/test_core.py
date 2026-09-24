@@ -71,6 +71,20 @@ class RecordingTest(unittest.TestCase):
         self.assertEqual([c.tick for c in run.contexts], [143, 1057, 3502, 4216])
         self.assertEqual(run.contexts[0].source, "llm-calls:canonical")
 
+    def test_run_ids_are_unique_across_layouts(self):
+        from s15.recordings import default_run_id
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            play = root / "automatic_playtest/v1/e/players/p/plays/20260920T0951--ce2d/extensions/airicraft.playtest"
+            scenario = root / "eval-output/20260914-171914/01-iron-pickaxe"
+            play.mkdir(parents=True)
+            scenario.mkdir(parents=True)
+            self.assertEqual(default_run_id(play), "20260920T0951--ce2d")
+            self.assertEqual(default_run_id(scenario), "20260914-171914__01-iron-pickaxe")
+        self.assertEqual(default_run_id(FIXTURE), "run-a")
+        with self.assertRaises(SystemExit):
+            main(["inspect", "--run", str(FIXTURE), "--run", str(FIXTURE)])
+
     def test_renamed_export_is_recognised(self):
         with tempfile.TemporaryDirectory() as tmp:
             export = Path(tmp) / "incident-window.jsonl"  # `airicraft agent debug recording export --output ...`

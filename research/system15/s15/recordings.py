@@ -315,6 +315,28 @@ def contexts_from_llm_calls(calls: list[LlmCall]) -> list[DecisionContext]:
     return sorted(contexts.values(), key=lambda c: (c.tick, c.through_seq or -1))
 
 
+GENERIC_DIR_NAMES = {"airicraft.playtest", "extensions", "recorder", "capture", "flight", "staging"}
+
+
+def default_run_id(root: Path) -> str:
+    """A readable id that stays unique across typical layouts.
+
+    Play extension directories share the name `airicraft.playtest`, so walk up to the Play directory; evaluator
+    scenario directories (`01-iron-pickaxe`) repeat across evaluation runs, so prefix the run directory. No ':'
+    (document ids use it as a separator).
+    """
+    root = Path(root).resolve()
+    node = root.parent if root.is_file() else root
+    while node.name in GENERIC_DIR_NAMES and node.parent != node:
+        node = node.parent
+    name = node.name
+    if len(name) > 3 and name[:2].isdigit() and name[2] == "-":
+        name = f"{node.parent.name}__{name}"
+    if root.is_file() and root.stem.split(".")[0] not in RUN_FILE_STEMS:
+        name = f"{name}__{root.stem.split('.')[0]}"
+    return name.replace(":", "_")
+
+
 @dataclass
 class Run:
     run_id: str
@@ -345,4 +367,4 @@ def load_run(root: Path, run_id: str | None = None) -> Run:
             for event in context.events:
                 merged[event.seq] = event
         events = [merged[k] for k in sorted(merged)]
-    return Run(run_id or Path(root).name, contexts, events, calls, files)
+    return Run(run_id or default_run_id(root), contexts, events, calls, files)

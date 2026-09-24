@@ -108,6 +108,12 @@ What the tests establish, and what they do not:
   `canonicalConversation` from `/v1/agent/context`). Provider request bodies are rendered prose with state deltas,
   so `llm-calls.jsonl` alone yields only prose documents (`meta.structured == false`).
 - Canonical contexts carry native IDs; they are copied as-is.
+- Every bridge route is served on the Minecraft client thread. The live tools therefore read only new events and new
+  LLM records each poll (a far cursor gets the latest IDs without transferring records), use `/v1/agent/goals` for
+  the reflex/task snapshot, and read the heavy `/v1/agent/context` (whole conversations) only at start and when a new
+  System 2 call appears.
+- Run IDs come from the directory layout (Play directory name; `evaluation-run__NN-scenario`; file stem for renamed
+  exports); commands refuse two inputs with the same run ID.
 - KV-prefix reuse in the transformers path only applies while the prompt is shorter than the model's sliding window
   (transformers refuses to crop a sliding-window cache layer that has seen more tokens); longer documents are
   re-encoded each refresh and `bench` reports that prefill cost separately.

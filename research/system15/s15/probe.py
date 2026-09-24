@@ -22,11 +22,8 @@ def _dialogue_marker(goals: dict):
     return json.dumps(response, sort_keys=True) if response is not None else None
 
 
-def run_probe(bridge: Bridge, message: str, sender: str | None, watch_s: float, poll_s: float = 0.1) -> dict:
-    events = bridge.events_since(None)
-    seq = events.get("latestSeqNo")
-    calls = bridge.llm_calls_since(None)
-    call_seq = calls.get("latestSequenceId")
+def run_probe(bridge: Bridge, message: str, sender: str | None, watch_s: float, poll_s: float = 0.2) -> dict:
+    seq, call_seq = bridge.latest_ids()
     baseline_dialogue = _dialogue_marker(bridge.goals())
 
     injected_at = time.perf_counter()

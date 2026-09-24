@@ -71,8 +71,11 @@ python3 -m s15 freeze-planning --bridge-state eval-output/<run>/01-iron-pickaxe/
   --duration 7200 --out $OUT/e0/freeze-iron-pickaxe-<i>.jsonl
 ```
 
-Tick budgets count ticks, so freezing does not eat the scenario budget. The driver always resumes on exit; if another
-tool pauses the client (a bug report, a manual pause), the driver logs the stale epoch and stops pausing.
+Tick budgets count ticks, so freezing does not eat the scenario budget. The driver always resumes on exit and retries
+a failed resume once; if another tool pauses the client (a bug report, a manual pause) the driver logs the stale epoch
+and stops. If the log ends with `resume_failed`, continue manually with
+`airicraft agent debug ticks continue --debug-session-id <id> --pause-epoch <epoch>` (values in the last `pause` entry's
+response; `airicraft agent debug ticks state` shows them).
 
 **Metrics.** Scenario outcome (evaluator report), elapsed ticks, damage (`combat.damage_taken`), deaths, System 2
 requests (`s15 inspect`), total frozen time (freeze log summary). **Analysis:** sync − async per scenario with bootstrap
@@ -106,8 +109,8 @@ Otherwise find scenarios where latency binds (night combat, chat corrections dur
    ```
 
    `label-teacher` is resumable. Use the strongest model available (the existing planner endpoint is acceptable);
-   `--hindsight-window 400` gives the teacher privileged knowledge of what happened next, which improves ambiguous
-   labels but must not be used for escalation targets.
+   `--hindsight-window 400` (with the same `--run` directories) gives the teacher privileged knowledge of what
+   happened next, which improves ambiguous labels but must not be used for escalation targets.
 
 3. **Audit** 100 random test documents: copy their teacher rows to `human-test.jsonl`, correct each `reading` by hand
    against the rubric (`s15/prompts.py`), then:

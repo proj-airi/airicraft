@@ -68,6 +68,15 @@ class Bridge:
     def llm_calls_since(self, seq: int | None) -> dict:
         return self._call("GET", "/v1/agent/debug/llm-calls", {"since": seq} if seq is not None else None)
 
+    def latest_ids(self) -> tuple[int | None, int | None]:
+        """(latest event seqNo, latest LLM record sequenceId) without transferring any records.
+
+        Every route runs on the Minecraft client thread; asking for records after a huge cursor returns none, while
+        the unbounded first query would serialize every retained record (LLM records carry full request bodies).
+        """
+        far = 2 ** 62
+        return self.events_since(far).get("latestSeqNo"), self.llm_calls_since(far).get("latestSequenceId")
+
     def inject_chat(self, message: str, sender: str | None = None) -> dict:
         body = {"message": message}
         if sender:

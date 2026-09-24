@@ -15,7 +15,14 @@ from .statedoc import DEFAULT_SELF, build_docs, dirty_sections, read_docs, write
 
 
 def _runs(paths: list[str]):
-    return [load_run(Path(p)) for p in paths]
+    runs = [load_run(Path(p)) for p in paths]
+    seen: dict[str, str] = {}
+    for path, run in zip(paths, runs):
+        if run.run_id in seen:
+            raise SystemExit(f"runs {seen[run.run_id]} and {path} both get run id {run.run_id!r}; "
+                             "pass distinct directories or rename one")
+        seen[run.run_id] = path
+    return runs
 
 
 def _read_jsonl(path: str) -> list[dict]:
