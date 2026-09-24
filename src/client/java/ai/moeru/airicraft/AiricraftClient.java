@@ -59,8 +59,16 @@ public class AiricraftClient implements ClientModInitializer {
 						}))
 					.then(ClientCommandManager.literal("conversation")
 						.executes(context -> {
+							RUNTIME_CONTROLLER.setPlannerDebugConversationView(PlannerConversationView.CHRONICLE);
 							RUNTIME_CONTROLLER.setPlannerDebugOverlayMode(PlannerDebugOverlayMode.CONVERSATION);
-							context.getSource().sendFeedback(debugOverlayText(RUNTIME_CONTROLLER.plannerDebugOverlayMode()));
+							context.getSource().sendFeedback(debugOverlayText(RUNTIME_CONTROLLER.plannerDebugOverlayMode(), RUNTIME_CONTROLLER.plannerDebugConversationView()));
+							return 1;
+						}))
+					.then(ClientCommandManager.literal("context")
+						.executes(context -> {
+							RUNTIME_CONTROLLER.setPlannerDebugConversationView(PlannerConversationView.CONTEXT);
+							RUNTIME_CONTROLLER.setPlannerDebugOverlayMode(PlannerDebugOverlayMode.CONVERSATION);
+							context.getSource().sendFeedback(debugOverlayText(RUNTIME_CONTROLLER.plannerDebugOverlayMode(), RUNTIME_CONTROLLER.plannerDebugConversationView()));
 							return 1;
 						}))
 					.then(ClientCommandManager.literal("off")
@@ -95,5 +103,12 @@ public class AiricraftClient implements ClientModInitializer {
 
 	private static Text debugOverlayText(PlannerDebugOverlayMode mode) {
 		return Text.literal("Airicraft debug overlay: " + mode.name().toLowerCase(Locale.ROOT));
+	}
+
+	private static Text debugOverlayText(PlannerDebugOverlayMode mode, PlannerConversationView view) {
+		if (mode != PlannerDebugOverlayMode.CONVERSATION) {
+			return debugOverlayText(mode);
+		}
+		return Text.literal("Airicraft debug overlay: conversation (" + view.name().toLowerCase(Locale.ROOT) + ")");
 	}
 }

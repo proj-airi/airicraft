@@ -59,7 +59,8 @@ public record PlannerConversationDebugSnapshot(
 		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages.stream().map(message ->
 			new PlannerConversationDebugMessage(message.role(), message.kind(),
 				references.present(PlannerInputText.message(message.role(), message.text())),
-				message.generation(), message.phase(), message.attempt(), message.hasImageAttachment())).toList());
+				message.generation(), message.phase(), message.attempt(), message.hasImageAttachment(),
+				message.timestampMs(), message.superseded())).toList());
 	}
 
 	private static String debugText(LlmChatMessage message) {

@@ -279,6 +279,24 @@ public final class PlannerOrchestrator {
 		return conversationDebugSnapshot();
 	}
 
+	/** Append-only journal log for the debug overlay's chronicle view. */
+	public PlannerConversationDebugSnapshot chronicleConversationDebugSnapshot() {
+		var snapshot = conversationProjector.chronicleSnapshot(turnJournal);
+		return plannerExecutor.streamPreview(sessionCoordinator.activeGeneration()).map(snapshot::withAppended).orElse(snapshot)
+			.presented(toolRegistry.references());
+	}
+
+	/** The context the model sees now: the live session conversation (tool exchanges and repair retries included), or the last submitted one when idle. */
+	public PlannerConversationDebugSnapshot contextConversationDebugSnapshot() {
+		PlannerSessionSnapshot active = sessionCoordinator.activeSnapshot();
+		LlmConversation live = active == null ? null : sessionCoordinator.conversationFor(active.generation());
+		PlannerConversationDebugSnapshot snapshot = live == null
+			? conversationProjector.submittedSnapshot(turnJournal)
+			: PlannerConversationDebugSnapshot.fromConversation(active.generation(), active.phase(), active.attemptCount(), live);
+		return plannerExecutor.streamPreview(active == null ? 0L : active.generation()).map(snapshot::withAppended).orElse(snapshot)
+			.presented(toolRegistry.references());
+	}
+
 	public List<String> contextExcerpt() {
 		return conversationProjector.contextExcerpt(turnJournal);
 	}

@@ -354,6 +354,14 @@ public final class DialogueRuntime {
 		return activePlanner().canonicalConversationDebugSnapshot();
 	}
 
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
+		return activePlanner().chronicleConversationDebugSnapshot();
+	}
+
+	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {
+		return activePlanner().contextConversationDebugSnapshot();
+	}
+
 	public List<String> plannerContextExcerpt() {
 		return activePlanner().contextExcerpt();
 	}
