@@ -179,6 +179,24 @@ class PlannerConversationProjectorTest {
 	}
 
 	@Test
+	void chronicleCollapsesToolExchangeToNameUnlessVerbose() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, requestAt(10L, 1_000L, "first"),
+			LlmConversation.of(List.of(LlmChatMessage.user("first", LlmMessageKind.USER_TURN))));
+		journal.recordToolExchange(1L, snapshot(requestAt(10L, 1_000L, "first"), LlmConversation.of(List.of())), null,
+			toolCall("call_craft", "check_craftables", "prompt", "torch"), "Tool result: 2x2 crafts", false);
+
+		var collapsed = projector.chronicleSnapshot(journal, false).messages();
+		var expanded = projector.chronicleSnapshot(journal, true).messages();
+
+		assertEquals("→ check_craftables", collapsed.get(1).text());
+		assertEquals(PlannerConversationDebugKind.TOOL_RESULT, collapsed.get(1).kind());
+		assertTrue(expanded.get(1).text().contains("prompt"));
+		assertTrue(expanded.get(1).text().contains("← Tool result: 2x2 crafts"));
+	}
+
+	@Test
 	void chronicleKeepsSupersededGenerationsMarked() {
 		var journal = new PlannerTurnJournal(fixedClock(), 64);
 		var projector = new PlannerConversationProjector(48);

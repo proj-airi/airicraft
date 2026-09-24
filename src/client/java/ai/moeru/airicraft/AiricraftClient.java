@@ -71,6 +71,13 @@ public class AiricraftClient implements ClientModInitializer {
 							context.getSource().sendFeedback(debugOverlayText(RUNTIME_CONTROLLER.plannerDebugOverlayMode(), RUNTIME_CONTROLLER.plannerDebugConversationView()));
 							return 1;
 						}))
+					.then(ClientCommandManager.literal("verbose")
+						.executes(context -> {
+							RUNTIME_CONTROLLER.setPlannerDebugConversationVerbose(!RUNTIME_CONTROLLER.plannerDebugConversationVerbose());
+							context.getSource().sendFeedback(Text.literal(
+								"Airicraft debug verbose: " + (RUNTIME_CONTROLLER.plannerDebugConversationVerbose() ? "on" : "off")));
+							return 1;
+						}))
 					.then(ClientCommandManager.literal("off")
 						.executes(context -> {
 							RUNTIME_CONTROLLER.setPlannerDebugOverlayMode(PlannerDebugOverlayMode.OFF);

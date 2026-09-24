@@ -355,7 +355,11 @@ public final class DialogueRuntime {
 	}
 
 	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
-		return activePlanner().chronicleConversationDebugSnapshot();
+		return plannerChronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot(boolean verbose) {
+		return activePlanner().chronicleConversationDebugSnapshot(verbose);
 	}
 
 	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {

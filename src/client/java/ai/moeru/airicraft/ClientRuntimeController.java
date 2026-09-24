@@ -143,6 +143,14 @@ public final class ClientRuntimeController {
 		plannerDebugOverlay.setConversationView(view);
 	}
 
+	public boolean plannerDebugConversationVerbose() {
+		return plannerDebugOverlay.conversationVerbose();
+	}
+
+	public void setPlannerDebugConversationVerbose(boolean verbose) {
+		plannerDebugOverlay.setConversationVerbose(verbose);
+	}
+
 	public DashboardObservationStore liveRecording() {
 		return dashboardObservationStore;
 	}

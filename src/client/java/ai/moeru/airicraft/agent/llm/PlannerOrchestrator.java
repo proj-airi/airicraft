@@ -281,7 +281,11 @@ public final class PlannerOrchestrator {
 
 	/** Append-only journal log for the debug overlay's chronicle view. */
 	public PlannerConversationDebugSnapshot chronicleConversationDebugSnapshot() {
-		var snapshot = conversationProjector.chronicleSnapshot(turnJournal);
+		return chronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot chronicleConversationDebugSnapshot(boolean verbose) {
+		var snapshot = conversationProjector.chronicleSnapshot(turnJournal, verbose);
 		return plannerExecutor.streamPreview(sessionCoordinator.activeGeneration()).map(snapshot::withAppended).orElse(snapshot)
 			.presented(toolRegistry.references());
 	}

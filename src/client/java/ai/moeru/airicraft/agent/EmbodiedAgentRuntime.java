@@ -1370,7 +1370,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
-		return dialogueRuntime.plannerChronicleConversationDebugSnapshot();
+		return plannerChronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot(boolean verbose) {
+		return dialogueRuntime.plannerChronicleConversationDebugSnapshot(verbose);
 	}
 
 	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {

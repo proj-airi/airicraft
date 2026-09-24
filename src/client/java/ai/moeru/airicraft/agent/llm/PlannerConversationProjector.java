@@ -30,8 +30,14 @@ public final class PlannerConversationProjector {
 	 * Append-only log of every journal event: triggers, replies, tool exchanges,
 	 * compaction, supersede and reset markers. Nothing is rewritten — superseded
 	 * generations stay visible with a flag so the log never lies about what happened.
+	 * When verbose is false, tool exchanges collapse to the tool name alone so the
+	 * log reads as a sequence of actions rather than a raw protocol dump.
 	 */
 	public PlannerConversationDebugSnapshot chronicleSnapshot(PlannerTurnJournal journal) {
+		return chronicleSnapshot(journal, true);
+	}
+
+	public PlannerConversationDebugSnapshot chronicleSnapshot(PlannerTurnJournal journal, boolean verbose) {
 		Objects.requireNonNull(journal, "journal");
 		ArrayList<PlannerConversationDebugMessage> messages = new ArrayList<>();
 		PlannerTurnEvent latest = null;
@@ -46,7 +52,7 @@ public final class PlannerConversationProjector {
 						messages.add(event.debugMessage().stamped(event.timestampMs(), journal.isSuperseded(event.generation())));
 					}
 				}
-				case TOOL_EXCHANGE -> messages.add(toolExchangeCard(event, journal.isSuperseded(event.generation())));
+				case TOOL_EXCHANGE -> messages.add(toolExchangeCard(event, journal.isSuperseded(event.generation()), verbose));
 				case COMPACTION -> {
 					if (event.debugMessage() != null) {
 						messages.add(event.debugMessage().stamped(event.timestampMs(), false));
@@ -87,13 +93,15 @@ public final class PlannerConversationProjector {
 		);
 	}
 
-	private static PlannerConversationDebugMessage toolExchangeCard(PlannerTurnEvent event, boolean superseded) {
+	private static PlannerConversationDebugMessage toolExchangeCard(PlannerTurnEvent event, boolean superseded, boolean verbose) {
 		PlannerToolCall toolCall = event.toolCall();
 		StringBuilder text = new StringBuilder("→ ").append(toolCall == null ? "tool" : toolCall.name());
-		if (toolCall != null && toolCall.arguments() != null && !toolCall.arguments().entrySet().isEmpty()) {
-			text.append(' ').append(toolCall.arguments());
+		if (verbose) {
+			if (toolCall != null && toolCall.arguments() != null && !toolCall.arguments().entrySet().isEmpty()) {
+				text.append(' ').append(toolCall.arguments());
+			}
+			text.append('\n').append("← ").append(toolResultContent(event.toolResultText()));
 		}
-		text.append('\n').append("← ").append(toolResultContent(event.toolResultText()));
 		return new PlannerConversationDebugMessage(
 			"tool",
 			PlannerConversationDebugKind.TOOL_RESULT,

@@ -67,12 +67,21 @@ final class PlannerDebugOverlay {
 
 	private PlannerDebugOverlayMode mode = PlannerDebugOverlayMode.OFF;
 	private PlannerConversationView conversationView = PlannerConversationView.CHRONICLE;
+	private boolean conversationVerbose;
 	private ConversationPaneLayout lastConversationLayout;
 	private int conversationScrollTop;
 	private boolean conversationPinnedToBottom = true;
 
 	PlannerConversationView conversationView() {
 		return conversationView;
+	}
+
+	boolean conversationVerbose() {
+		return conversationVerbose;
+	}
+
+	void setConversationVerbose(boolean verbose) {
+		conversationVerbose = verbose;
 	}
 
 	void setConversationView(PlannerConversationView view) {
@@ -198,7 +207,7 @@ final class PlannerDebugOverlay {
 		PlannerOrchestratorDebugSnapshot plannerSnapshot = agentRuntime.plannerDebugSnapshot();
 		PlannerConversationDebugSnapshot snapshot = conversationView == PlannerConversationView.CONTEXT
 			? agentRuntime.plannerContextConversationDebugSnapshot()
-			: agentRuntime.plannerChronicleConversationDebugSnapshot();
+			: agentRuntime.plannerChronicleConversationDebugSnapshot(conversationVerbose);
 		if (snapshot == null || snapshot.isEmpty()) {
 			snapshot = placeholderConversationSnapshot(plannerSnapshot);
 		}
