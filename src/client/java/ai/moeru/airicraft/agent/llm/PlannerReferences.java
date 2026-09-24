@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Presentation references shared by controller, thinker and compactor. Native identities never change. */
 public final class PlannerReferences {
 	private static final AtomicLong NEXT = new AtomicLong();
-	private static final Pattern NATIVE_ID = Pattern.compile("[A-Za-z0-9_.:-]*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:[A-Za-z0-9_.:-]*[A-Za-z0-9_-])?");
+	private static final Pattern NATIVE_ID = Pattern.compile("(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:[A-Za-z0-9_.:-]*[A-Za-z0-9_-])?");
 	private static final Pattern REFERENCE = Pattern.compile("@r[0-9]+");
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 	private final int capacity;
@@ -47,12 +47,14 @@ public final class PlannerReferences {
 		var snapshots = new PlannerSnapshotPresentation();
 		for (JsonElement entry : result) {
 			JsonObject message = entry.getAsJsonObject();
+			String role = message.get("role").getAsString();
+			snapshots.observeCalls(message);
 			JsonElement content = message.get("content");
-			if (content != null && content.isJsonPrimitive()) message.addProperty("content", present(PlannerInputText.message(message.get("role").getAsString(), snapshots.message(message.get("role").getAsString(), content.getAsString()))));
+			if (content != null && content.isJsonPrimitive()) message.addProperty("content", present(PlannerInputText.message(role, snapshots.message(message, content.getAsString()))));
 			else if (content != null && content.isJsonArray()) {
 				for (JsonElement block : content.getAsJsonArray()) {
 					JsonObject value = block.getAsJsonObject();
-					if (value.has("text")) value.addProperty("text", present(PlannerInputText.message(message.get("role").getAsString(), snapshots.message(message.get("role").getAsString(), value.get("text").getAsString()))));
+					if (value.has("text")) value.addProperty("text", present(PlannerInputText.message(role, snapshots.message(message, value.get("text").getAsString()))));
 				}
 			}
 			if (message.has("tool_calls")) for (JsonElement call : message.getAsJsonArray("tool_calls")) {

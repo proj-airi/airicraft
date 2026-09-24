@@ -8,6 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntityInteractionTaskExecutorTest {
+	@Test void rejectsServerForbiddenAttackTargets() {
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.ItemEntity.class, false, true));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.ExperienceOrbEntity.class, false, true));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.projectile.ArrowEntity.class, false, false));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.player.PlayerEntity.class, true, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.mob.ZombieEntity.class, false, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.decoration.EndCrystalEntity.class, false, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.projectile.FireballEntity.class, false, true));
+	}
+
 	@Test void collectionReportCountsGainsInsteadOfExistingInventoryOrExpectedLoot() {
 		var before = java.util.Map.of("minecraft:beef", 5, "minecraft:leather", 1, "minecraft:dirt", 10);
 		var after = java.util.Map.of("minecraft:beef", 7, "minecraft:leather", 1, "minecraft:dirt", 9);

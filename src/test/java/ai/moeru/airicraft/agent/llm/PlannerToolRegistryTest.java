@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -18,46 +17,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlannerToolRegistryTest {
 	@Test
-	void fixedRoleCatalogDoesNotChangeOnDiscoveryOrReflexAndOmitsOldLifecycle() {
+	void fixedRoleCatalogOmitsOldLifecycle() {
 		var registry = PlannerToolRegistry.of(new ai.moeru.airicraft.agent.work.WorkToolProvider(PlannerActionToolExecutor.DISABLED));
 		registry.freezeToolPrefix();
 		String before = new Gson().toJson(registry.openAiTools());
-		String discovery = registry.discoverTools("resume work",8).renderToolResult();
-		registry.setSafetyHoldActive(true);
-		assertEquals(before,new Gson().toJson(registry.openAiTools()));
 		assertFalse(registry.isActiveTool("resume_work"));
 		assertFalse(registry.isActiveTool("cancel_work"));
 		assertFalse(registry.isActiveTool("resume_task"));
 		assertFalse(registry.isActiveTool("cancel_task"));
-		assertTrue(discovery.contains("does not change"));
-		registry.setSafetyHoldActive(false);
-		assertEquals(before,new Gson().toJson(registry.openAiTools()));
+		assertEquals(before, new Gson().toJson(registry.openAiTools()));
 	}
 
 	@Test
-	void initialSurfaceContainsOnlyCoreToolsAndDiscoverTools() {
+	void surfaceContainsTheFullBuiltInCatalog() {
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
 
-		assertEquals(List.of(
-			PlannerToolCatalog.DISCOVER_TOOLS,
-			PlannerToolCatalog.START_ACTION_GOAL,
-			PlannerToolCatalog.INSPECT_ACTION_GOAL,
-			PlannerToolCatalog.CANCEL_ACTION_GOAL,
-			PlannerToolCatalog.CLEAR_GOAL
-		), toolNames(registry.openAiTools()));
-		assertFalse(registry.isActiveTool(PlannerToolCatalog.NAVIGATE_TO));
-	}
-
-	@Test
-	void initialSchemaPayloadIsMateriallySmallerThanTheFullCatalog() {
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		Gson gson = new Gson();
-		int initialBytes = gson.toJson(registry.openAiTools()).getBytes(StandardCharsets.UTF_8).length;
-		int fullCatalogBytes = gson.toJson(PlannerToolCatalog.openAiTools()).getBytes(StandardCharsets.UTF_8).length;
-
-		assertTrue(initialBytes * 2 < fullCatalogBytes, () ->
-			"Expected staged schemas to be less than half the full catalog: initial=" + initialBytes + " full=" + fullCatalogBytes
-		);
+		assertEquals(toolNames(PlannerToolCatalog.openAiTools()), toolNames(registry.openAiTools()));
+		assertTrue(registry.isActiveTool(PlannerToolCatalog.NAVIGATE_TO));
 	}
 
 	@Test
@@ -69,48 +45,14 @@ class PlannerToolRegistryTest {
 		assertTrue(externalNames.contains(PlannerToolCatalog.NAVIGATE_TO));
 		assertTrue(externalNames.contains(PlannerToolCatalog.CRAFT_RECIPE));
 		assertTrue(externalNames.contains("search_recipes"));
-		assertTrue(externalNames.size() > registry.openAiTools().size());
+		assertEquals(externalNames, toolNames(registry.openAiTools()));
 	}
 
 	@Test
-	void discoveryActivatesBoundedSpecialistSchemasAndReturnsConciseCards() {
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-
-		PlannerToolSurface.DiscoveryResult result = registry.discoverTools("navigation", 3);
-
-		assertFalse(result.matches().isEmpty());
-		assertTrue(result.matches().size() <= 3);
-		assertTrue(result.matches().stream().allMatch(match -> "navigation".equals(match.category())));
-		assertTrue(result.renderToolResult().contains("cards=["));
-		assertTrue(result.renderToolResult().contains("activatedTools="));
-		assertTrue(result.renderToolResult().length() < 1_500);
-		assertTrue(registry.isActiveTool(PlannerToolCatalog.NAVIGATE_TO));
-		assertTrue(toolNames(registry.openAiTools()).contains(PlannerToolCatalog.NAVIGATE_TO));
-		assertFalse(toolNames(registry.openAiTools()).contains(PlannerToolCatalog.CRAFT_RECIPE));
-	}
-
-	@Test
-	void safetyHoldTemporarilyActivatesResumeControlAndResetDropsSpecialists() {
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		registry.discoverTools("navigation", 3);
-
-		registry.setSafetyHoldActive(true);
-		assertTrue(registry.isActiveTool(PlannerToolCatalog.RESUME_TASK));
-
-		registry.setSafetyHoldActive(false);
-		registry.resetToolSurface();
-		assertFalse(registry.isActiveTool(PlannerToolCatalog.RESUME_TASK));
-		assertFalse(registry.isActiveTool(PlannerToolCatalog.NAVIGATE_TO));
-		assertEquals(5, registry.openAiTools().size());
-	}
-
-	@Test
-	void routesDiscoveredProviderToolAfterAvailabilityFlipsUnavailable() {
+	void routesProviderToolAfterAvailabilityFlipsUnavailable() {
 		FlippingProvider provider = new FlippingProvider();
 		PlannerToolRegistry registry = PlannerToolRegistry.of(provider);
 
-		assertFalse(toolNames(registry.openAiTools()).contains("search_recipes"));
-		registry.discoverTools("recipe", 4);
 		assertTrue(toolNames(registry.openAiTools()).contains("search_recipes"));
 
 		provider.available.set(false);
@@ -143,33 +85,33 @@ class PlannerToolRegistryTest {
 	}
 
 	@Test
-	void discoveryRemainsAReadToolButIsNotSafeForParallelBatching() {
+	void observeIsAReadToolButIsNotSafeForParallelBatching() {
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
 
-		assertTrue(registry.isReadTool(PlannerToolCatalog.DISCOVER_TOOLS));
-		assertFalse(registry.isBatchSafeReadTool(PlannerToolCatalog.DISCOVER_TOOLS));
+		assertTrue(registry.isReadTool(PlannerToolCatalog.OBSERVE));
+		assertFalse(registry.isBatchSafeReadTool(PlannerToolCatalog.OBSERVE));
 
 		PlannerToolRegistry.ReadOnlyBatchAuthorization authorization = registry.authorizeReadOnlyBatch(List.of(
-			call(PlannerToolCatalog.DISCOVER_TOOLS)
+			call(PlannerToolCatalog.OBSERVE)
 		));
 
 		assertFalse(authorization.authorized());
 		assertEquals(PlannerToolRegistry.BatchRejectionReason.NOT_BATCH_SAFE, authorization.rejectionReason());
-		assertEquals(PlannerToolCatalog.DISCOVER_TOOLS, authorization.toolName());
+		assertEquals(PlannerToolCatalog.OBSERVE, authorization.toolName());
 	}
 
 	@Test
-	void rejectsDiscoveryMixedWithAReadTool() {
+	void rejectsObserveMixedWithAReadTool() {
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
 
 		PlannerToolRegistry.ReadOnlyBatchAuthorization authorization = registry.authorizeReadOnlyBatch(List.of(
-			call(PlannerToolCatalog.DISCOVER_TOOLS),
+			call(PlannerToolCatalog.OBSERVE),
 			call(PlannerToolCatalog.INSPECT_INVENTORY)
 		));
 
 		assertFalse(authorization.authorized());
 		assertEquals(PlannerToolRegistry.BatchRejectionReason.NOT_BATCH_SAFE, authorization.rejectionReason());
-		assertEquals(PlannerToolCatalog.DISCOVER_TOOLS, authorization.toolName());
+		assertEquals(PlannerToolCatalog.OBSERVE, authorization.toolName());
 	}
 
 	@Test

@@ -23,7 +23,6 @@ class MapPlannerToolProviderTest {
 	void exposesMapToolsWhenProviderIsAvailable() {
 		MapPlannerToolProvider provider = new MapPlannerToolProvider(registrySupplier(new StubMapProvider()));
 		PlannerToolRegistry registry = PlannerToolRegistry.of(provider);
-		registry.discoverTools("map", 5);
 
 		List<String> toolNames = registry.openAiTools().stream().map(MapPlannerToolProviderTest::toolName).toList();
 

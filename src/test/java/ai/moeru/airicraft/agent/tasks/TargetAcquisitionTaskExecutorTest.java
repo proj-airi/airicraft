@@ -9,6 +9,28 @@ import static org.junit.jupiter.api.Assertions.*;
 import static ai.moeru.airicraft.agent.tasks.TargetAcquisitionTaskExecutor.*;
 
 class TargetAcquisitionTaskExecutorTest {
+	@Test void blockedDropReportsInventoryFullAndReleasesNavigation() {
+		Fixture f = new Fixture();
+		f.env.sources = List.of(new Candidate(Kind.DROP, "drop", pos(5,64,0), pos(5,64,0)));
+		f.tick(2);
+		assertTrue(f.nav.active);
+		f.env.canCollectDrop = false;
+		f.tick(1);
+		assertEquals(TaskExecutionState.FAILED, f.executor.snapshot().state());
+		assertTrue(f.events.getFirst().message().contains("inventory_full"));
+		assertFalse(f.nav.active);
+	}
+	@Test void dropWithStackCapacityCanStillBeCollected() {
+		Fixture f = new Fixture();
+		f.env.sources = List.of(new Candidate(Kind.DROP, "drop", f.env.position, f.env.position));
+		f.env.interactable = true;
+		f.tick(2);
+		assertTrue(f.events.isEmpty());
+		f.env.count = 1;
+		f.tick(1);
+		assertEquals(TaskExecutionState.COMPLETED, f.executor.snapshot().state());
+	}
+
 	@Test void confirmedInventoryProgressStartsTheNextBlockWithoutASettlingDelay() {
 		Fixture f = visibleVein(2);
 		f.tick(6);
@@ -325,6 +347,8 @@ class TargetAcquisitionTaskExecutorTest {
 		List<Candidate> sources = List.of(new Candidate(Kind.BLOCK,"log",pos(5,64,0),pos(4,64,0)));
 		boolean interactable, inScope = true;
 		boolean requiredToolAvailable = true;
+		boolean canCollectDrop = true;
+		public boolean canCollectDrop(Candidate target) { return canCollectDrop; }
 		Set<GoalPosition> visible;
 		boolean countOnBreak;
 		BreakResult breakFailure;

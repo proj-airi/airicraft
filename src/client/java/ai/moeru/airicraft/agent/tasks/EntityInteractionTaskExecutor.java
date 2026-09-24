@@ -146,6 +146,12 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			}
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_not_alive"));
 		}
+		if (request.type() == WorldTaskType.ATTACK_ENTITY
+			&& !attackTargetAllowed(target.getClass(), target == player, target.isAttackable())) {
+			return fail(request, TaskFailure.of(TaskFailureCode.INVALID_ACTION,
+				"target_not_attackable type=" + net.minecraft.registry.Registries.ENTITY_TYPE.getId(target.getType())
+					+ "; dropped items and experience are collected by moving within pickup range, not attacking"));
+		}
 		double distance = player.distanceTo(target);
 		boolean hasLineOfSight = hasBlockLineOfSight(client, player, target);
 		boolean withinInteractionRange = EntitySelectorResolver.isWithinInteractionRange(
@@ -200,6 +206,13 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 	static boolean shouldUseDirectChase(double distance, boolean hasLineOfSight, boolean directMovementStuck) {
 		return distance <= DIRECT_CHASE_DISTANCE_BLOCKS && hasLineOfSight && !directMovementStuck;
+	}
+
+	/** Mirrors the server's invalid-entity attack rejection before any packet is sent. */
+	static boolean attackTargetAllowed(Class<?> targetClass, boolean self, boolean attackable) {
+		return !self && !net.minecraft.entity.ItemEntity.class.isAssignableFrom(targetClass)
+			&& !net.minecraft.entity.ExperienceOrbEntity.class.isAssignableFrom(targetClass)
+			&& !(net.minecraft.entity.projectile.PersistentProjectileEntity.class.isAssignableFrom(targetClass) && !attackable);
 	}
 
 	private Optional<TaskTerminalEvent> attackEntity(

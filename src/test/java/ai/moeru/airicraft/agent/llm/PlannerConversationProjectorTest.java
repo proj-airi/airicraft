@@ -140,6 +140,99 @@ class PlannerConversationProjectorTest {
 		assertTrue(messages.getLast().text().contains("Timed out"));
 	}
 
+	@Test
+	void chronicleListsEveryEventInOrderWithoutDuplicates() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		PlannerRequest request = requestAt(10L, 1_000L, "make torches");
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, request,
+			LlmConversation.of(List.of(
+				LlmChatMessage.system("huge frozen prefix that must not appear"),
+				LlmChatMessage.user("[chat][Alice] make torches", LlmMessageKind.USER_TURN)
+			)));
+		journal.recordToolExchange(1L, snapshot(request, LlmConversation.of(List.of())), null,
+			toolCall("call_craft", "check_craftables", "prompt", "torch"), "Tool result: 2x2 crafts", false);
+		journal.recordDebugCard(new PlannerConversationDebugMessage(
+			"assistant",
+			PlannerConversationDebugKind.ASSISTANT_TURN,
+			"I'll check your inventory first",
+			1L,
+			PlannerSessionPhase.PLANNER_REQUEST.name(),
+			1,
+			false
+		));
+
+		var messages = projector.chronicleSnapshot(journal).messages();
+
+		assertEquals(3, messages.size());
+		assertEquals(PlannerConversationDebugKind.USER_TURN, messages.get(0).kind());
+		assertEquals("make torches", messages.get(0).text());
+		assertEquals("Alice", messages.get(0).role());
+		assertEquals(PlannerConversationDebugKind.TOOL_RESULT, messages.get(1).kind());
+		assertTrue(messages.get(1).text().contains("→ check_craftables"));
+		assertTrue(messages.get(1).text().contains("← Tool result: 2x2 crafts"));
+		assertEquals(PlannerConversationDebugKind.ASSISTANT_TURN, messages.get(2).kind());
+		assertTrue(messages.stream().allMatch(message -> message.timestampMs() == 1_000L),
+			"Every chronicle card is stamped with its journal event time");
+		assertTrue(messages.stream().noneMatch(message -> message.text().contains("frozen prefix")),
+			"The submitted system prefix never appears in the chronicle log");
+	}
+
+	@Test
+	void chronicleCollapsesToolExchangeToNameUnlessVerbose() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, requestAt(10L, 1_000L, "first"),
+			LlmConversation.of(List.of(LlmChatMessage.user("first", LlmMessageKind.USER_TURN))));
+		journal.recordToolExchange(1L, snapshot(requestAt(10L, 1_000L, "first"), LlmConversation.of(List.of())), null,
+			toolCall("call_craft", "check_craftables", "prompt", "torch"), "Tool result: 2x2 crafts", false);
+
+		var collapsed = projector.chronicleSnapshot(journal, false).messages();
+		var expanded = projector.chronicleSnapshot(journal, true).messages();
+
+		assertEquals("→ check_craftables", collapsed.get(1).text());
+		assertEquals(PlannerConversationDebugKind.TOOL_RESULT, collapsed.get(1).kind());
+		assertTrue(expanded.get(1).text().contains("prompt"));
+		assertTrue(expanded.get(1).text().contains("← Tool result: 2x2 crafts"));
+	}
+
+	@Test
+	void chronicleKeepsSupersededGenerationsMarked() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, requestAt(10L, 1_000L, "first"),
+			LlmConversation.of(List.of(LlmChatMessage.user("first", LlmMessageKind.USER_TURN))));
+		journal.markSuperseded(1L);
+		journal.recordSubmission(2L, 1, PlannerSessionPhase.PLANNER_REQUEST, requestAt(11L, 1_100L, "second"),
+			LlmConversation.of(List.of(LlmChatMessage.user("second", LlmMessageKind.USER_TURN))));
+
+		var messages = projector.chronicleSnapshot(journal).messages();
+
+		assertEquals(3, messages.size());
+		assertEquals("first", messages.get(0).text());
+		assertTrue(messages.get(0).superseded(), "Superseded turn stays visible and marked");
+		assertEquals(PlannerConversationDebugKind.NOTICE, messages.get(1).kind());
+		assertTrue(messages.get(1).text().contains("g1"));
+		assertEquals("second", messages.get(2).text());
+		assertFalse(messages.get(2).superseded());
+	}
+
+	@Test
+	void chronicleKeepsResetMarkerAndSkipsAcceptedReplyDuplicates() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, requestAt(1L, 1_000L, "turn"),
+			LlmConversation.of(List.of(LlmChatMessage.user("turn", LlmMessageKind.USER_TURN))));
+		journal.clear("world changed");
+
+		var messages = projector.chronicleSnapshot(journal).messages();
+
+		assertEquals(1, messages.size());
+		assertEquals(PlannerConversationDebugKind.NOTICE, messages.getFirst().kind());
+		assertTrue(messages.getFirst().text().contains("reset"));
+		assertTrue(messages.getFirst().text().contains("world changed"));
+	}
+
 	private static PlannerContextSnapshot snapshot(PlannerRequest request, LlmConversation conversation) {
 		return new PlannerContextSnapshot(
 			request,

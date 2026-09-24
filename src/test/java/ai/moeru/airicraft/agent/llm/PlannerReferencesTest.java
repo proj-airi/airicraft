@@ -8,6 +8,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerReferencesTest {
+	@Test void longNonIdentityTokensDoNotStallPresentation() {
+		String text = "a".repeat(30_000);
+		assertTimeoutPreemptively(java.time.Duration.ofMillis(500),
+			() -> assertEquals(text, new PlannerReferences().present(text)));
+	}
+
 	private static final String WORK = "JOB:job-11111111-2222-3333-4444-555555555555";
 	private static final String HOLD = "hold-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 	@Test void resolvesExactNativeWorkAndHoldBeforeToolValidationAcrossRoles() {

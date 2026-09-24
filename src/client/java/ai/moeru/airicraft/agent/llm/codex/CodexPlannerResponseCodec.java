@@ -5,7 +5,9 @@ import ai.moeru.airicraft.agent.llm.LlmChatMessage;
 import ai.moeru.airicraft.agent.llm.LlmConversation;
 import ai.moeru.airicraft.agent.llm.LlmFailureType;
 import ai.moeru.airicraft.agent.llm.PlannerChatMessage;
+import ai.moeru.airicraft.agent.llm.PlannerInputText;
 import ai.moeru.airicraft.agent.llm.PlannerIntent;
+import ai.moeru.airicraft.agent.llm.PlannerObservation;
 import ai.moeru.airicraft.agent.llm.PlannerResponse;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import ai.moeru.airicraft.agent.llm.PlannerToolCatalog;
@@ -68,11 +70,14 @@ final class CodexPlannerResponseCodec {
 
 	JsonArray turnInput(LlmConversation conversation) {
 		JsonArray input = new JsonArray();
+		var observeCallIds = PlannerObservation.callIds(conversation.messages());
 		for (LlmChatMessage message : conversation.messages()) {
-			if ("system".equals(message.role())) {
+			if ("system".equals(message.role()) || PlannerObservation.isCallOnly(message)) {
 				continue;
 			}
-			String rendered = renderMessage(message);
+			String rendered = "tool".equals(message.role()) && observeCallIds.contains(message.toolCallId())
+				? renderObservation(message.content())
+				: renderMessage(message);
 			if (!rendered.isBlank()) {
 				JsonObject text = new JsonObject();
 				text.addProperty("type", "text");
@@ -253,6 +258,17 @@ final class CodexPlannerResponseCodec {
 		return value;
 	}
 
+	private static String renderObservation(String content) {
+		String rendered;
+		try {
+			rendered = PlannerInputText.observation(JsonParser.parseString(content).getAsJsonObject());
+		}
+		catch (JsonParseException | IllegalStateException exception) {
+			rendered = content;
+		}
+		return PlannerInputText.message("presentation", ("AIRICRAFT OBSERVATION: " + rendered).strip());
+	}
+
 	private static String renderMessage(LlmChatMessage message) {
 		String prefix = switch (message.role()) {
 			case "assistant" -> "PRIOR PLANNER OUTPUT";
@@ -263,7 +279,7 @@ final class CodexPlannerResponseCodec {
 		if (message.hasToolCalls()) {
 			rendered.append("\nPROPOSED AIRICRAFT TOOL CALLS: ").append(PlannerToolCatalog.toOpenAiToolCalls(message.toolCalls()));
 		}
-		return ai.moeru.airicraft.agent.llm.PlannerInputText.message("presentation", rendered.toString().strip());
+		return PlannerInputText.message("presentation", rendered.toString().strip());
 	}
 
 	private static String stripCodeFence(String value) {

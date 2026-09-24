@@ -2,7 +2,6 @@ package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.events.SemanticEventQueryResult;
-import com.google.gson.GsonBuilder;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -24,11 +23,12 @@ public record PlannerDecisionContext(
 		return new PlannerDecisionContext(worldSessionId, tick, serverTick, owner, actuatorOwner, current, observations);
 	}
 
-	public LlmChatMessage message(long sinceSequence) {
-		return message(sinceSequence, false);
+	public Map<String, Object> observation(long sinceSequence) {
+		return observation(sinceSequence, false);
 	}
 
-	public LlmChatMessage message(long sinceSequence, boolean refresh) {
+	/** Payload of an {@code observe} result: the full {@code current} state plus relevant events after the cursor. */
+	public Map<String, Object> observation(long sinceSequence, boolean refresh) {
 		var events = observations.events().stream()
 			.filter(event -> event.seqNo() > sinceSequence && relevant(event.type()))
 			.map(event -> Map.of("seqNo", event.seqNo(), "tick", event.tick(), "type", event.type(), "payload",
@@ -52,7 +52,7 @@ public record PlannerDecisionContext(
 		payload.put("throughEventSequence", observations.latestSeqNo());
 		if (gap) payload.put("missingEventRange", Map.of("from", sinceSequence + 1, "to", observations.oldestSeqNo() - 1));
 		payload.put("events", events);
-		return LlmChatMessage.user("DECISION CONTEXT: " + new GsonBuilder().disableHtmlEscaping().create().toJson(payload), LlmMessageKind.NOTICE);
+		return payload;
 	}
 
 	private static boolean relevant(String type) {

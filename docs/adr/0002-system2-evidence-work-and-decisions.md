@@ -16,7 +16,8 @@ failure; recorder collection time must not be mistaken for request dispatch time
 
 Game-owned observations and work outcomes exist independently of requests to wake a
 model. Each model role incorporates identified evidence into its own bounded
-conversation before a gameplay decision. Raw exchanges remain immutable in the
+conversation before a gameplay decision, as a runtime-issued `observe` tool call and
+its tool result rather than a user message: observations are evidence, not requests. Raw exchanges remain immutable in the
 recorder and work history, while the retained request projection may replace one
 identified tool result in place: a queued acknowledgement with its execution result,
 or raw inspection evidence with its validated micro-compaction finding. Replacements

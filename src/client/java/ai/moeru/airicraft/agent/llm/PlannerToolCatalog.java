@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 
 public final class PlannerToolCatalog {
 	private static final Gson GSON = new Gson();
-	public static final String DISCOVER_TOOLS = "discover_tools";
+	public static final String OBSERVE = "observe";
 	public static final String TAKE_A_LOOK = "take_a_look";
 	public static final String INSPECT_WORLD = "inspect_world";
 	public static final String CLOSE_CONTAINER = "close_container";
@@ -75,10 +75,10 @@ public final class PlannerToolCatalog {
 
 	private static List<BuiltInTool> createBuiltInTools() {
 		return List.of(
-		builtInTool(DISCOVER_TOOLS, true, false, tool(DISCOVER_TOOLS, "Find tools by capability in the advertised catalog. Discovery does not change the fixed role schemas.", properties(
-				prop("query", string("Short capability or tool search, for example smelting, navigation, exact world blocks, or map waypoints.")),
-				prop("maxResults", integer("Maximum concise tool cards to return, from 1 to 5. Defaults to 4."))
-			), List.of("query")), PlannerToolCatalog::validateDiscoverToolsArguments),
+		builtInTool(OBSERVE, true, false, tool(OBSERVE, "Observe current state, tool queue, runtime notices and relevant events since the previous observation. "
+				+ "The runtime calls this before every decision; call it yourself only to refresh state mid-turn. "
+				+ "State after the first observation is shown as an RFC 6902 JSON Patch against the previous observation.",
+				properties(), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(TAKE_A_LOOK, true, tool(TAKE_A_LOOK, "Inspect current first-person view.", properties(
 				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Short prompt describing what to inspect.")),
@@ -183,25 +183,15 @@ public final class PlannerToolCatalog {
 			), List.of()), PlannerToolCatalog::validateNearbyEntitiesArguments),
 		builtInTool(START_ACTION_GOAL, false, tool(START_ACTION_GOAL, "Start one runtime-owned action graph goal from a high-level typed intent. Prefer this over low-level action tools for execution.", properties(
 				prop("narration", optionalString("Optional pre-action narration.")),
-					prop("kind", enumString("Typed action goal kind. inventory_item, crafting_output, smelting_output, and catalog resource_collection are executable in v1; other kinds are reserved graph goal surfaces during migration.", List.of(
+				prop("kind", enumString("Typed action goal kind. crafting_output and smelting_output are aliases of inventory_item.", List.of(
 					"inventory_item",
 					"resource_collection",
-					"movement",
-					"block_modification",
-					"entity_interaction",
-					"item_transfer",
 					"smelting_output",
 					"crafting_output"
 				))),
 				prop("itemId", optionalString("Inventory/crafting/smelting output item id, for example minecraft:bread.")),
 				prop("quantity", integer("Desired minimum quantity.")),
-					prop("resourceKind", optionalString("Resource kind for resource_collection goals. Supported values: " + String.join(", ", ResourceGatheringCatalog.supportedKindNames()) + ".")),
-				prop("x", integer("Target block x coordinate for movement or block goals.")),
-				prop("y", integer("Target block y coordinate for movement or block goals.")),
-				prop("z", integer("Target block z coordinate for movement or block goals.")),
-				prop("targetPlayer", optionalString("Target player for item transfer goals.")),
-				prop("entityTypeId", optionalString("Entity type id for entity interaction goals.")),
-				prop("operation", optionalString("Goal operation, for example move_to, place, use, break, attack, give, collect."))
+				prop("resourceKind", optionalString("Resource kind for resource_collection goals. Supported values: " + String.join(", ", ResourceGatheringCatalog.supportedKindNames()) + "."))
 			), List.of("kind")), PlannerToolCatalog::validateStartActionGoalArguments),
 		builtInTool(LIST_ACTION_GOALS, true, tool(LIST_ACTION_GOALS, "List foreground, suspended, runnable, and recent terminal action graph executions.", properties(
 				prop("narration", optionalString("Optional pre-action narration."))
@@ -300,7 +290,7 @@ public final class PlannerToolCatalog {
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("quantity", integer("Number of items to drop."))
 			), List.of("targetPlayer", "itemId", "quantity")), PlannerToolCatalog::validateGivePlayerArguments),
-		builtInTool(ATTACK_ENTITY, false, tool(ATTACK_ENTITY, "Attack one nearby entity. Default mode kill attacks until death, then collects nearby item drops within 4 blocks of the death position for up to 200 active ticks. Completion waits for local drops to clear and reports collectedItems as observed inventory gains in TASK UPDATE, including partial gains on failure; full inventory or unreachable drops report a failure after the kill. hit_once stops after one landed hit without collection. Always copy the uuid token shown by inspect_nearby_entities or focus, and optionally include name or entityTypeId.", properties(
+		builtInTool(ATTACK_ENTITY, false, tool(ATTACK_ENTITY, "Attack one nearby entity. Default mode kill attacks until death, then collects nearby item drops within 4 blocks of the death position for up to 200 active ticks. Completion waits for local drops to clear and reports collectedItems as observed inventory gains in its terminal result, including partial gains on failure; full inventory or unreachable drops report a failure after the kill. hit_once stops after one landed hit without collection. Always copy the uuid token shown by inspect_nearby_entities or focus, and optionally include name or entityTypeId.", properties(
 				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("uuid", optionalString("Entity uuid token copied from inspect_nearby_entities or focus. Full uuid also works.")),
 				prop("name", optionalString("Visible custom name or display name when available.")),
@@ -342,7 +332,7 @@ public final class PlannerToolCatalog {
 			prop("x1", integer("Minimum destination x.")), prop("y1", integer("Minimum destination y.")), prop("z1", integer("Minimum destination z.")),
 			prop("x2", integer("Maximum destination x.")), prop("y2", integer("Maximum destination y.")), prop("z2", integer("Maximum destination z."))
 		), List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2")), ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs::parse),
-		builtInTool(TEND_CROPS, false, tool(TEND_CROPS, "Tend one existing flat crop plot, at most 16 by 16 blocks within 64 blocks of you. System 1 inspects the plot, harvests mature crops, collects drops and replants, and plants empty farmland when seeds are available. Leaves immature crops and other blocks intact. Deliberately edits crops within preserved places. One pass; does not wait for growth or till soil. Read TASK UPDATE for counts and missing seeds.", properties(
+		builtInTool(TEND_CROPS, false, tool(TEND_CROPS, "Tend one existing flat crop plot, at most 16 by 16 blocks within 64 blocks of you. System 1 inspects the plot, harvests mature crops, collects drops and replants, and plants empty farmland when seeds are available. Leaves immature crops and other blocks intact. Deliberately edits crops within preserved places. One pass; does not wait for growth or till soil. Its terminal result reports counts and missing seeds.", properties(
 			prop("narration", optionalString("Optional visible narration.")),
 			prop("seedItemId", string("Crop planting item, e.g. minecraft:wheat_seeds, minecraft:carrot, minecraft:potato, minecraft:beetroot_seeds.")),
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),
@@ -384,9 +374,8 @@ public final class PlannerToolCatalog {
 				prop("enabled", bool("Whether automatic torch placement is enabled.")),
 				prop("mode", enumString("Lighting rule. darkness averages combined light; spawn_proof averages block light.", List.of("darkness", "spawn_proof"))),
 				prop("maxLightLevel", integer("Place when the selected 5x5 foot-level average is strictly below this threshold, from 0 to 15; default 4.")),
-				prop("requireUnderground", bool("Compatibility field; always applied as true. Any sky-visible cell in the 5x5 foot-level sample prevents automatic placement.")),
 				prop("minSpacingBlocks", integer("Minimum search radius around the player without an existing torch, from 1 to 16."))
-			), List.of("enabled", "mode", "maxLightLevel", "requireUnderground", "minSpacingBlocks")), PlannerToolCatalog::validateConfigureLightingArguments)
+			), List.of("enabled", "mode", "maxLightLevel", "minSpacingBlocks")), PlannerToolCatalog::validateConfigureLightingArguments)
 	);
 	}
 	private static final Map<String, BuiltInTool> BUILT_IN_TOOLS_BY_NAME = builtInToolsByName();
@@ -599,16 +588,6 @@ public final class PlannerToolCatalog {
 		requireString(arguments, "targetPlayer");
 	}
 
-	private static void validateDiscoverToolsArguments(JsonObject arguments) {
-		requireString(arguments, "query");
-		if (arguments.has("maxResults") && !arguments.get("maxResults").isJsonNull()) {
-			int maxResults = requireInt(arguments, "maxResults");
-			if (maxResults < 1 || maxResults > 5) {
-				throw new JsonParseException("maxResults must be between 1 and 5");
-			}
-		}
-	}
-
 	private static void validateNearbyEntitiesArguments(JsonObject arguments) {
 		for (String key : List.of("radius", "maxResults")) {
 			if (!arguments.has(key)) continue;
@@ -684,41 +663,19 @@ public final class PlannerToolCatalog {
 
 	private static void validateStartActionGoalArguments(JsonObject arguments) {
 		String kind = requireString(arguments, "kind");
-		if (!List.of(
-			"inventory_item",
-			"resource_collection",
-			"movement",
-			"block_modification",
-			"entity_interaction",
-			"item_transfer",
-			"smelting_output",
-			"crafting_output"
-		).contains(kind)) {
-			throw new JsonParseException("Unsupported action goal kind: " + kind);
-		}
 		if ("inventory_item".equals(kind) || "smelting_output".equals(kind) || "crafting_output".equals(kind)) {
 			requireString(arguments, "itemId");
 			requirePositiveInt(arguments, "quantity");
 		}
-		if ("resource_collection".equals(kind)) {
+		else if ("resource_collection".equals(kind)) {
 			String resourceKind = requireString(arguments, "resourceKind");
 			if (ResourceGatheringCatalog.entry(resourceKind).isEmpty()) {
 				throw new JsonParseException("Unsupported resourceKind: " + resourceKind);
 			}
 			requirePositiveInt(arguments, "quantity");
 		}
-		if ("movement".equals(kind) || "block_modification".equals(kind)) {
-			requireInt(arguments, "x");
-			requireInt(arguments, "y");
-			requireInt(arguments, "z");
-		}
-		if ("entity_interaction".equals(kind)) {
-			requireString(arguments, "entityTypeId");
-		}
-		if ("item_transfer".equals(kind)) {
-			requireString(arguments, "targetPlayer");
-			requireString(arguments, "itemId");
-			requirePositiveInt(arguments, "quantity");
+		else {
+			throw new JsonParseException("Unsupported action goal kind: " + kind);
 		}
 	}
 
@@ -1098,7 +1055,6 @@ public final class PlannerToolCatalog {
 		if (maxLightLevel < 0 || maxLightLevel > 15) {
 			throw new JsonParseException("maxLightLevel must be between 0 and 15");
 		}
-		requireBoolean(arguments, "requireUnderground");
 		int minSpacingBlocks = requireInt(arguments, "minSpacingBlocks");
 		if (minSpacingBlocks < 1 || minSpacingBlocks > 16) {
 			throw new JsonParseException("minSpacingBlocks must be between 1 and 16");

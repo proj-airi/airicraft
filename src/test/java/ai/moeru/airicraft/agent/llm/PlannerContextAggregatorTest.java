@@ -57,7 +57,7 @@ class PlannerContextAggregatorTest {
 	}
 
 	@Test
-	void fixedRolePrefixSurvivesDiscoveryAndGoalUpdates() {
+	void fixedRolePrefixSurvivesGoalUpdates() {
 		var data = new java.util.concurrent.atomic.AtomicReference<>("goal=prepare shelter");
 		var provider = new PlannerToolProvider() {
 			public String id() { return "test_context"; }
@@ -75,8 +75,6 @@ class PlannerContextAggregatorTest {
 		var first = freezeSnapshot(aggregator, requestAt(1_000L, "Alice", "start"));
 		aggregator.commitAcceptedTriggerBatch(first);
 		data.set("goal=build shelter");
-		registry.discoverTools("mining", 3);
-		registry.setSafetyHoldActive(true);
 		var second = freezeSnapshot(aggregator, requestAt(2_000L, "Alice", "continue"));
 		assertEquals(tools, registry.openAiTools());
 		var a = first.plannerConversation().messages();
@@ -421,6 +419,32 @@ class PlannerContextAggregatorTest {
 			"assistant".equals(message.role()) && "On it.".equals(message.content())
 		));
 		assertFalse(laterConversation.messages().stream().anyMatch(message -> message.content().contains("Agent replied just now")));
+	}
+
+	@Test
+	void currentRetainedConversationIncludesAcceptedReplyAndCheckpoint() {
+		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("Asia/Taipei"));
+		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
+
+		PlannerContextSnapshot snapshot = freezeSnapshot(aggregator, requestAt(1_000L, "Alice", "Gather iron"));
+		aggregator.commitAcceptedTriggerBatch(snapshot);
+		aggregator.recordAgentTurn(new ai.moeru.airicraft.agent.dialogue.DialogueTurn("agent", "I found ore", 20L, 1_000L));
+
+		LlmConversation retained = aggregator.currentRetainedConversation(clock.millis());
+		assertTrue(retained.messages().stream().anyMatch(message -> message.content().contains("Gather iron")));
+		assertTrue(retained.messages().stream().anyMatch(message ->
+			"assistant".equals(message.role()) && "I found ore".equals(message.content())),
+			"Idle context must include the accepted reply, not just the last submitted request");
+
+		var checkpoint = new CompactionCheckpoint("today", "cave", "smelt iron", List.of(), List.of("Three raw iron gathered"), List.of(), List.of(), List.of(), List.of());
+		aggregator.applyCheckpoint(checkpoint);
+
+		retained = aggregator.currentRetainedConversation(clock.millis());
+		assertTrue(retained.messages().stream().anyMatch(message -> message.content().contains("Three raw iron gathered")),
+			"Idle context must show the post-compaction checkpoint");
+		assertTrue(retained.messages().stream().anyMatch(message ->
+			message.kind() == LlmMessageKind.CHECKPOINT),
+			"Idle context must carry the checkpoint message kind");
 	}
 
 	@Test

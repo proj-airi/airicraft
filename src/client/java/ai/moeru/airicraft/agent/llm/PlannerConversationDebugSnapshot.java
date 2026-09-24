@@ -26,6 +26,15 @@ public record PlannerConversationDebugSnapshot(
 		int attempt,
 		LlmConversation conversation
 	) {
+		return fromConversation(generation, phase == null ? null : phase.name(), attempt, conversation);
+	}
+
+	public static PlannerConversationDebugSnapshot fromConversation(
+		long generation,
+		String phase,
+		int attempt,
+		LlmConversation conversation
+	) {
 		if (conversation == null) {
 			return empty();
 		}
@@ -36,12 +45,12 @@ public record PlannerConversationDebugSnapshot(
 				PlannerConversationDebugKind.fromMessageKind(message.kind()),
 				debugText(message),
 				generation,
-				phase == null ? "UNKNOWN" : phase.name(),
+				phase,
 				attempt,
 				message.hasImageAttachment()
 			));
 		}
-		return new PlannerConversationDebugSnapshot(generation, phase == null ? "UNKNOWN" : phase.name(), attempt, messages);
+		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages);
 	}
 
 	public boolean isEmpty() {
@@ -59,7 +68,8 @@ public record PlannerConversationDebugSnapshot(
 		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages.stream().map(message ->
 			new PlannerConversationDebugMessage(message.role(), message.kind(),
 				references.present(PlannerInputText.message(message.role(), message.text())),
-				message.generation(), message.phase(), message.attempt(), message.hasImageAttachment())).toList());
+				message.generation(), message.phase(), message.attempt(), message.hasImageAttachment(),
+				message.timestampMs(), message.superseded())).toList());
 	}
 
 	private static String debugText(LlmChatMessage message) {

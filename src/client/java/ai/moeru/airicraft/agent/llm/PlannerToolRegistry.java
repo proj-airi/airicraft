@@ -15,7 +15,6 @@ import java.util.stream.Collectors;
 public final class PlannerToolRegistry {
 	private final List<PlannerToolProvider> providers;
 	private final boolean includeNativeTools;
-	private final PlannerToolSurface toolSurface = new PlannerToolSurface();
 	private List<Map<String, Object>> fixedTools;
 	private String fixedInstructions;
 	private PlannerReferences references = new PlannerReferences();
@@ -77,7 +76,7 @@ public final class PlannerToolRegistry {
 	}
 
 	public List<Map<String, Object>> openAiTools() {
-		var tools = new ArrayList<>(fixedTools == null ? filterToActiveSurface(availableOpenAiTools()) : fixedTools);
+		var tools = new ArrayList<>(fixedTools == null ? availableOpenAiTools() : fixedTools);
 		tools.removeIf(tool -> isDynamic(toolName(tool)));
 		providers.stream().filter(p -> p.available() && p.dynamicTools()).forEach(p -> tools.addAll(p.openAiTools()));
 		return List.copyOf(tools);
@@ -103,26 +102,6 @@ public final class PlannerToolRegistry {
 		return availableToolNames(openAiTools()).contains(normalized);
 	}
 
-	public PlannerToolSurface.DiscoveryResult discoverTools(String query, int maxResults) {
-		var result = toolSurface.discover(availableToolDescriptors(), query, maxResults);
-		return fixedTools == null ? result : new PlannerToolSurface.DiscoveryResult(result.query(), result.matches(), activeToolNames(), true);
-	}
-
-	public void resetToolSurface() {
-		toolSurface.reset();
-	}
-
-	public void setSafetyHoldActive(boolean active) {
-		toolSurface.setSafetyHoldActive(active);
-	}
-
-	/**
-	 * Keeps legacy mock-response tests independent of the staged production surface.
-	 */
-	void activateAllForTesting() {
-		toolSurface.activateAllForTesting(availableToolDescriptors());
-	}
-
 	private List<Map<String, Object>> availableOpenAiTools() {
 		ArrayList<Map<String, Object>> tools = new ArrayList<>(includeNativeTools ? PlannerToolCatalog.openAiTools() : List.of());
 		for (PlannerToolProvider provider : providers) {
@@ -137,24 +116,13 @@ public final class PlannerToolRegistry {
 		return List.copyOf(tools);
 	}
 
-	private List<Map<String, Object>> filterToActiveSurface(List<Map<String, Object>> tools) {
-		return tools.stream()
-			.filter(tool -> toolSurface.isActive(toolName(tool)))
-			.toList();
-	}
-
 	public String promptInstructions() {
 		if (fixedInstructions != null) return fixedInstructions;
 		return providers.stream()
-			.filter(provider -> provider.available() && providerHasActiveTool(provider))
+			.filter(PlannerToolProvider::available)
 			.map(PlannerToolProvider::promptInstructions)
 			.filter(instruction -> instruction != null && !instruction.isBlank())
 			.collect(Collectors.joining("\n"));
-	}
-
-	public String availableToolNames() {
-		return availableToolNames(openAiTools()).stream()
-			.collect(Collectors.joining(", "));
 	}
 
 	private static List<String> availableToolNames(Collection<Map<String, Object>> tools) {
@@ -162,21 +130,6 @@ public final class PlannerToolRegistry {
 			.map(PlannerToolRegistry::toolName)
 			.filter(name -> !name.isBlank())
 			.map(PlannerToolCatalog::normalizeName)
-			.toList();
-	}
-
-	private boolean providerHasActiveTool(PlannerToolProvider provider) {
-		return provider.dynamicTools() || provider.openAiTools().stream().anyMatch(tool -> toolSurface.isActive(toolName(tool)));
-	}
-
-	private List<PlannerToolSurface.ToolDescriptor> availableToolDescriptors() {
-		return availableOpenAiTools().stream()
-			.map(tool -> new PlannerToolSurface.ToolDescriptor(
-				toolName(tool),
-				toolDescription(tool),
-				PlannerToolSurface.categoryFor(toolName(tool))
-			))
-			.filter(descriptor -> !descriptor.name().isBlank())
 			.toList();
 	}
 
@@ -258,15 +211,6 @@ public final class PlannerToolRegistry {
 		}
 		Object name = functionMap.get("name");
 		return name instanceof String string ? string : "";
-	}
-
-	private static String toolDescription(Map<String, Object> tool) {
-		Object function = tool == null ? null : tool.get("function");
-		if (!(function instanceof Map<?, ?> functionMap)) {
-			return "";
-		}
-		Object description = functionMap.get("description");
-		return description instanceof String string ? string : "";
 	}
 
 	public enum BatchRejectionReason {

@@ -24,6 +24,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +49,10 @@ final class PlannerDebugOverlay {
 	private static final int CONVERSATION_CARD_GAP = 6;
 	private static final int CONVERSATION_SCROLL_STEP_PX = 24;
 	private static final int CONVERSATION_FOOTER_HEIGHT = 16;
+	static final int CONVERSATION_KEY_SCROLL_STEP_PX = 48;
+	private static final DateTimeFormatter CHRONICLE_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
+	private static final int STATIC_BODY_CHAR_CAP = 480;
+	private static final int BODY_CHAR_CAP = 1600;
 	private static final int CONVERSATION_BACKGROUND_COLOR = 0x9A0E1117;
 	private static final int CONVERSATION_INNER_COLOR = 0xCC121821;
 	private static final int CONVERSATION_TITLE_COLOR = 0xFFF5E7B8;
@@ -59,9 +66,33 @@ final class PlannerDebugOverlay {
 	private static final String[] SPINNER_FRAMES = {"|", "/", "-", "\\"};
 
 	private PlannerDebugOverlayMode mode = PlannerDebugOverlayMode.OFF;
+	private PlannerConversationView conversationView = PlannerConversationView.CHRONICLE;
+	private boolean conversationVerbose;
 	private ConversationPaneLayout lastConversationLayout;
 	private int conversationScrollTop;
 	private boolean conversationPinnedToBottom = true;
+
+	PlannerConversationView conversationView() {
+		return conversationView;
+	}
+
+	boolean conversationVerbose() {
+		return conversationVerbose;
+	}
+
+	void setConversationVerbose(boolean verbose) {
+		conversationVerbose = verbose;
+	}
+
+	void setConversationView(PlannerConversationView view) {
+		PlannerConversationView next = view == null ? PlannerConversationView.CHRONICLE : view;
+		if (conversationView == next) {
+			return;
+		}
+		conversationView = next;
+		conversationScrollTop = 0;
+		conversationPinnedToBottom = true;
+	}
 
 	PlannerDebugOverlayMode mode() {
 		return mode;
@@ -80,6 +111,30 @@ final class PlannerDebugOverlay {
 		conversationScrollTop = 0;
 		conversationPinnedToBottom = true;
 		lastConversationLayout = null;
+	}
+
+	void scrollConversationBy(int deltaPx) {
+		if (mode != PlannerDebugOverlayMode.CONVERSATION || lastConversationLayout == null) {
+			return;
+		}
+		conversationScrollTop = clamp(conversationScrollTop + deltaPx, 0, lastConversationLayout.maxScroll());
+		conversationPinnedToBottom = conversationScrollTop >= lastConversationLayout.maxScroll();
+	}
+
+	void scrollConversationToStart() {
+		if (mode != PlannerDebugOverlayMode.CONVERSATION || lastConversationLayout == null) {
+			return;
+		}
+		conversationScrollTop = 0;
+		conversationPinnedToBottom = lastConversationLayout.maxScroll() <= 0;
+	}
+
+	void scrollConversationToEnd() {
+		if (mode != PlannerDebugOverlayMode.CONVERSATION || lastConversationLayout == null) {
+			return;
+		}
+		conversationScrollTop = lastConversationLayout.maxScroll();
+		conversationPinnedToBottom = true;
 	}
 
 	boolean onMouseScroll(double mouseX, double mouseY, double verticalAmount) {
@@ -150,13 +205,16 @@ final class PlannerDebugOverlay {
 
 	private void renderConversation(DrawContext drawContext, TextRenderer textRenderer, EmbodiedAgentRuntime agentRuntime, long nowMs) {
 		PlannerOrchestratorDebugSnapshot plannerSnapshot = agentRuntime.plannerDebugSnapshot();
-		PlannerConversationDebugSnapshot snapshot = agentRuntime.plannerProjectedConversationDebugSnapshot();
+		PlannerConversationDebugSnapshot snapshot = conversationView == PlannerConversationView.CONTEXT
+			? agentRuntime.plannerContextConversationDebugSnapshot()
+			: agentRuntime.plannerChronicleConversationDebugSnapshot(conversationVerbose);
 		if (snapshot == null || snapshot.isEmpty()) {
 			snapshot = placeholderConversationSnapshot(plannerSnapshot);
 		}
 		String footerLine = formatConversationFooter(plannerSnapshot, agentRuntime.snapshot(), agentRuntime.activeJob(), nowMs);
 
 		ConversationPaneLayout layout = layoutConversationPane(
+			conversationView,
 			snapshot,
 			drawContext.getScaledWindowWidth(),
 			drawContext.getScaledWindowHeight(),
@@ -308,6 +366,7 @@ final class PlannerDebugOverlay {
 	}
 
 	static ConversationPaneLayout layoutConversationPane(
+		PlannerConversationView view,
 		PlannerConversationDebugSnapshot snapshot,
 		int windowWidth,
 		int windowHeight,
@@ -336,8 +395,8 @@ final class PlannerDebugOverlay {
 		ArrayList<ConversationCardLayout> cards = new ArrayList<>();
 		int contentTop = 0;
 		for (PlannerConversationDebugMessage message : snapshot.messages()) {
-			List<String> headerLines = wrapText(formatConversationHeader(message), contentWidth, textWidthMeasurer);
-			List<String> bodyLines = wrapText(normalizeConversationText(message.text()), contentWidth, textWidthMeasurer);
+			List<String> headerLines = wrapText(formatConversationHeader(view, message), contentWidth, textWidthMeasurer);
+			List<String> bodyLines = wrapText(conversationBodyText(message), contentWidth, textWidthMeasurer);
 			String imageMarkerLine = message.hasImageAttachment() ? "image attached" : null;
 			int lineCount = headerLines.size() + bodyLines.size() + (imageMarkerLine == null ? 0 : 1);
 			int cardHeight = (CONVERSATION_CARD_PADDING * 2)
@@ -366,7 +425,7 @@ final class PlannerDebugOverlay {
 			scrollTop,
 			maxScroll,
 			lineHeight,
-			formatConversationTitle(snapshot),
+			formatConversationTitle(view, snapshot),
 			List.copyOf(cards),
 			footerLine
 		);
@@ -659,12 +718,14 @@ final class PlannerDebugOverlay {
 		);
 	}
 
-	private static String formatConversationTitle(PlannerConversationDebugSnapshot snapshot) {
+	private static String formatConversationTitle(PlannerConversationView view, PlannerConversationDebugSnapshot snapshot) {
+		String viewLabel = view == PlannerConversationView.CONTEXT ? "Context" : "Chronicle";
 		if (snapshot == null || snapshot.isEmpty()) {
-			return "Conversation | no messages";
+			return viewLabel + " | empty";
 		}
 		return trim(
-			"Conversation | g" + snapshot.generation()
+			viewLabel
+				+ " | g" + snapshot.generation()
 				+ " | " + normalizePhase(snapshot.phase())
 				+ " | a" + snapshot.attempt()
 				+ " | " + snapshot.messages().size() + " msg",
@@ -672,20 +733,52 @@ final class PlannerDebugOverlay {
 		);
 	}
 
-	private static String formatConversationHeader(PlannerConversationDebugMessage message) {
-		return trim(
-			message.role()
-				+ " | " + normalizePhase(message.phase())
-				+ " | " + message.kind().name().toLowerCase(Locale.ROOT)
-				+ " | g" + message.generation()
-				+ " a" + message.attempt(),
-			72
-		);
+	private static String formatConversationHeader(PlannerConversationView view, PlannerConversationDebugMessage message) {
+		StringBuilder header = new StringBuilder();
+		if (view == PlannerConversationView.CHRONICLE && message.timestampMs() > 0L) {
+			header.append(CHRONICLE_TIME_FORMAT.format(Instant.ofEpochMilli(message.timestampMs()))).append(" · ");
+		}
+		header.append(trim(conversationLabel(message), 30));
+		if (view == PlannerConversationView.CHRONICLE) {
+			if (message.generation() > 0L) {
+				header.append(" · g").append(message.generation());
+			}
+			if (message.attempt() > 1) {
+				header.append(" a").append(message.attempt());
+			}
+			if (message.superseded()) {
+				header.append(" · superseded");
+			}
+		}
+		return trim(header.toString(), 72);
 	}
 
-	private static String normalizeConversationText(String text) {
-		String normalized = text == null ? "" : text.replace('\t', ' ');
-		return normalized.isBlank() ? "-" : normalized;
+	private static String conversationLabel(PlannerConversationDebugMessage message) {
+		return switch (message.kind()) {
+			case USER_TURN -> message.role();
+			case ASSISTANT_TURN -> "assistant";
+			case TOOL_RESULT -> "tool";
+			case TASK -> "assistant · action";
+			case FAILURE -> "failure";
+			case CHECKPOINT -> "checkpoint";
+			case NOTICE -> "notice";
+			case SYSTEM -> "system";
+		};
+	}
+
+	private static String conversationBodyText(PlannerConversationDebugMessage message) {
+		String text = message == null ? "" : message.text().replace('\t', ' ');
+		if (text.isBlank()) {
+			return "-";
+		}
+		int cap = switch (message.kind()) {
+			case SYSTEM, CHECKPOINT, NOTICE -> STATIC_BODY_CHAR_CAP;
+			default -> BODY_CHAR_CAP;
+		};
+		if (text.length() > cap) {
+			return text.substring(0, cap) + " … [+" + (text.length() - cap) + "]";
+		}
+		return text;
 	}
 
 	private static int borderColorFor(PlannerConversationDebugKind kind) {

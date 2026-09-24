@@ -224,6 +224,27 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 		return event == null ? Optional.empty() : Optional.of(event.name());
 	}
 
+	@Override public Optional<NavigationProgress> navigationProgress() {
+		if (!processActive()) return Optional.empty();
+		var context = baritone.getPlayerContext();
+		var player = context.player();
+		if (player == null) return Optional.empty();
+		var goal = baritone.getPathingBehavior().getGoal();
+		boolean supported = player.isOnGround() || player.isTouchingWater() || player.isClimbing();
+		if (goal != null && supported && goal.isInGoal(context.playerFeet())) return Optional.empty();
+		var manager = context.minecraft().interactionManager;
+		String breakingTarget = null;
+		float progress = 0;
+		if (manager != null) {
+			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) manager;
+			if (breaking.airicraft$breakingBlock()) {
+				breakingTarget = breaking.airicraft$currentBreakingPos().toShortString();
+				progress = breaking.airicraft$currentBreakingProgress();
+			}
+		}
+		return Optional.of(new NavigationProgress(player.getX(), player.getY(), player.getZ(), supported, breakingTarget, progress));
+	}
+
 	@Override
 	public boolean navigationGoalReached(GoalPosition position) {
 		if (position == null) {

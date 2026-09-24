@@ -544,6 +544,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			drainEventPipeline();
 		}
 		debugRecorder.recordDialogueState(dialogueRuntime.snapshot());
+		behaviorTreeRuntime.tickChat(client, sessionSnapshot, dialogueRuntime, chatService, debugRecorder, tickCount);
 		if (survivalReflexRuntime.snapshot().holdsNormalTasks()) {
 			tickActionGraph(worldEvidence, false);
 			pauseNormalWorkForReflex(client);
@@ -707,6 +708,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				if (!stack.isEmpty()) inventory.merge(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 			facts.put("inventory", inventory);
+			int freeStorageSlots = 0;
+			for (int slot = 0; slot < net.minecraft.entity.player.PlayerInventory.MAIN_SIZE; slot++)
+				if (client.player.getInventory().getStack(slot).isEmpty()) freeStorageSlots++;
+			facts.put("inventoryCapacity", Map.of("freeStorageSlots", freeStorageSlots,
+				"pickupConstraint", freeStorageSlots == 0
+					? "No empty storage slots. Only drops compatible with an existing non-full stack can be picked up. Free space before collecting other items."
+					: "Empty storage slots available"));
 			facts.put("vitals", Map.of("health", client.player.getHealth(), "maxHealth", client.player.getMaxHealth(),
 				"food", client.player.getHungerManager().getFoodLevel(), "air", client.player.getAir(), "maxAir", client.player.getMaxAir()));
 		}
@@ -1367,6 +1375,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	public PlannerConversationDebugSnapshot plannerProjectedConversationDebugSnapshot() {
 		return dialogueRuntime.plannerProjectedConversationDebugSnapshot();
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
+		return plannerChronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot(boolean verbose) {
+		return dialogueRuntime.plannerChronicleConversationDebugSnapshot(verbose);
+	}
+
+	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {
+		return dialogueRuntime.plannerContextConversationDebugSnapshot();
 	}
 
 	public PlannerConversationDebugSnapshot plannerCanonicalConversationDebugSnapshot() {
@@ -3128,13 +3148,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					args.get("enabled").getAsBoolean(),
 					LightingPolicy.Mode.parse(args.get("mode").getAsString()),
 					args.get("maxLightLevel").getAsInt(),
-					args.get("requireUnderground").getAsBoolean(),
+					true,
 					args.get("minSpacingBlocks").getAsInt()
 				);
 				yield "Tool result for configure_lighting: applied enabled=" + lightingPolicy.enabled()
 					+ " mode=" + lightingPolicy.mode().wireName()
 					+ " maxLightLevel=" + lightingPolicy.maxLightLevel()
-					+ " requireUnderground=" + lightingPolicy.requireUnderground()
 					+ " minSpacingBlocks=" + lightingPolicy.minSpacingBlocks()
 					+ " policyRevision=" + lightingPolicy.revision();
 			}
@@ -3179,7 +3198,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private static String queuedActionToolResult(String toolName, String details) {
 		return "Tool result for " + toolName + ": accepted queued " + details
-			+ ". Accepted does not mean completed. Wait for TASK UPDATE before saying the action completed.";
+			+ ". Accepted does not mean completed. Wait for its terminal result in a later observation before saying it completed.";
 	}
 
 	private static String actionGraphToolResult(String toolName, ActionGraphExecutionSnapshot snapshot, boolean verbose) {
@@ -3239,10 +3258,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		Map<String, Object> goalKinds = Map.of(
 			"inventory_item", Map.of("status", "supported", "fields", List.of("itemId", "quantity")),
 			"resource_collection", Map.of("status", "supported", "fields", List.of("resourceKind", "quantity"), "supportedResourceKinds", ResourceGatheringCatalog.supportedKindNames()),
-			"movement", Map.of("status", "planned", "fields", List.of("x", "y", "z", "operation")),
-			"block_modification", Map.of("status", "planned", "fields", List.of("x", "y", "z", "operation", "itemId")),
-			"entity_interaction", Map.of("status", "planned", "fields", List.of("entityTypeId", "operation")),
-			"item_transfer", Map.of("status", "planned", "fields", List.of("targetPlayer", "itemId", "quantity")),
 			"smelting_output", Map.of("status", "supported", "fields", List.of("itemId", "quantity"), "aliasOf", "inventory_item"),
 			"crafting_output", Map.of("status", "supported", "fields", List.of("itemId", "quantity"), "aliasOf", "inventory_item")
 		);
@@ -5296,7 +5311,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				+ " recipeId=" + pending.craftRecipe().recipeId()
 				+ " times=" + pending.craftRecipe().times()
 				+ " waitedTicks=" + waitedTicks
-				+ ". Crafting is still running; this can happen on high-latency multiplayer. Wait for TASK UPDATE before saying the action completed."
+				+ ". Crafting is still running; this can happen on high-latency multiplayer. Wait for its terminal result in a later observation before saying it completed."
 		);
 	}
 
@@ -5317,7 +5332,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			"Tool result for " + pending.toolName() + ": pending_timeout "
 				+ pending.details()
 				+ " waitedTicks=" + waitedTicks
-				+ ". The action is still running; wait for TASK UPDATE before saying the action completed."
+				+ ". The action is still running; wait for its terminal result in a later observation before saying it completed."
 		);
 	}
 

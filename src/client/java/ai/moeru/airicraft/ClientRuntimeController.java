@@ -32,10 +32,12 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import org.lwjgl.glfw.GLFW;
 
 import java.net.URI;
 import java.util.LinkedHashMap;
@@ -133,6 +135,22 @@ public final class ClientRuntimeController {
 		plannerDebugOverlay.setMode(mode);
 	}
 
+	public PlannerConversationView plannerDebugConversationView() {
+		return plannerDebugOverlay.conversationView();
+	}
+
+	public void setPlannerDebugConversationView(PlannerConversationView view) {
+		plannerDebugOverlay.setConversationView(view);
+	}
+
+	public boolean plannerDebugConversationVerbose() {
+		return plannerDebugOverlay.conversationVerbose();
+	}
+
+	public void setPlannerDebugConversationVerbose(boolean verbose) {
+		plannerDebugOverlay.setConversationVerbose(verbose);
+	}
+
 	public DashboardObservationStore liveRecording() {
 		return dashboardObservationStore;
 	}
@@ -188,7 +206,30 @@ public final class ClientRuntimeController {
 			}
 		}
 		automaticPlaytest.onClientTick(client);
+		pollConversationScrollKeys(client);
 		announceDashboardUrl(client);
+	}
+
+	// The HUD has no cursor to hover the pane, and the wheel drives the hotbar;
+	// PgUp/PgDn/Home/End scroll the conversation overlay when no screen is open.
+	private void pollConversationScrollKeys(MinecraftClient client) {
+		if (client == null || client.currentScreen != null || client.getWindow() == null
+			|| plannerDebugOverlay.mode() != PlannerDebugOverlayMode.CONVERSATION) {
+			return;
+		}
+		long handle = client.getWindow().getHandle();
+		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_PAGE_UP)) {
+			plannerDebugOverlay.scrollConversationBy(-PlannerDebugOverlay.CONVERSATION_KEY_SCROLL_STEP_PX);
+		}
+		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_PAGE_DOWN)) {
+			plannerDebugOverlay.scrollConversationBy(PlannerDebugOverlay.CONVERSATION_KEY_SCROLL_STEP_PX);
+		}
+		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_HOME)) {
+			plannerDebugOverlay.scrollConversationToStart();
+		}
+		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_END)) {
+			plannerDebugOverlay.scrollConversationToEnd();
+		}
 	}
 
 	private void announceDashboardUrl(MinecraftClient client) {

@@ -33,6 +33,7 @@ public final class OpenAiCompatibleChatClient {
 	private final AgentObservability observability;
 	private final PlannerToolRegistry toolRegistry;
 	private final String cacheKey;
+	private final String providerSessionId = java.util.UUID.randomUUID().toString();
 	private final HttpClient httpClient = HttpClient.newBuilder()
 		.version(HttpClient.Version.HTTP_1_1)
 		.build();
@@ -135,6 +136,23 @@ public final class OpenAiCompatibleChatClient {
 		}
 	}
 
+	HttpRequest buildHttpRequest(URI uri, String requestBody) {
+		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+			.uri(uri)
+			.timeout(Duration.ofMillis(config.requestTimeoutMillis()))
+			.header("Content-Type", "application/json")
+			.header("User-Agent", "Airicraft/1.0");
+		if ("opencode.ai".equalsIgnoreCase(uri.getHost())) {
+			requestBuilder.header("x-opencode-session", cacheKey == null || cacheKey.isBlank() ? providerSessionId : cacheKey);
+		}
+		if (config.apiKey() != null && !config.apiKey().isBlank()) {
+			requestBuilder.header("Authorization", "Bearer " + config.apiKey());
+		}
+		return requestBuilder
+			.POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+			.build();
+	}
+
 	private HttpResponse<String> sendHttpRequest(URI uri, LlmConversation conversation, String requestBody, boolean streaming, java.util.function.Consumer<String> preview) throws LlmBackendException {
 		observability.recordLlmRequest(
 			Context.current(),
@@ -152,16 +170,7 @@ public final class OpenAiCompatibleChatClient {
 			TraceSanitizer.summarizeForLog(TraceSanitizer.sanitizeRequestPayloadForTrace(requestBody))
 		);
 
-		HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-			.uri(uri)
-			.timeout(Duration.ofMillis(config.requestTimeoutMillis()))
-			.header("Content-Type", "application/json");
-		if (config.apiKey() != null && !config.apiKey().isBlank()) {
-			requestBuilder.header("Authorization", "Bearer " + config.apiKey());
-		}
-		HttpRequest httpRequest = requestBuilder
-			.POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
-			.build();
+		HttpRequest httpRequest = buildHttpRequest(uri, requestBody);
 
 		try {
 			HttpResponse<String> response;

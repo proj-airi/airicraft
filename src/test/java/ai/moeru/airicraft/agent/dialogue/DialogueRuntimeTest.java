@@ -494,7 +494,7 @@ class DialogueRuntimeTest {
 	}
 
 	@Test
-	void replacedReplyCannotCommitAfterQueueReplacement() {
+	void newerResponsePreservesUnsentRepliesInOrder() {
 		OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
 		DialogueRuntime runtime = newDialogueRuntime(backend);
 		SemanticEventBuffer eventBuffer = new SemanticEventBuffer(32);
@@ -509,8 +509,11 @@ class DialogueRuntimeTest {
 		awaitResponse(runtime, eventBuffer, Duration.ofSeconds(1));
 		PendingDialogueReply currentReply = runtime.pendingReplyReady(Long.MAX_VALUE).orElseThrow();
 
-		assertFalse(runtime.recordSentReply(replacedReply, true));
-		assertFalse(hasAgentTurn(runtime, "Replaced reply."));
+		assertEquals(replacedReply.id(), currentReply.id());
+		assertTrue(runtime.recordSentReply(replacedReply, true));
+		assertTrue(hasAgentTurn(runtime, "Replaced reply."));
+		currentReply = runtime.pendingReplyReady(Long.MAX_VALUE).orElseThrow();
+		assertEquals("Current reply.", currentReply.response().text());
 		assertTrue(runtime.recordSentReply(currentReply, true));
 		assertTrue(hasAgentTurn(runtime, "Current reply."));
 		runtime.shutdown();
@@ -769,7 +772,7 @@ class DialogueRuntimeTest {
 		}
 
 		long sinceSeqNo = eventBuffer.latestSeqNo();
-		recordPendingReply(runtime);
+		while (runtime.hasPendingReply()) recordPendingReply(runtime);
 		runtime.onPlayerChat("Alice", "@agent are you alive?", 50L, SessionSnapshot.initial(), "Alice", Optional.empty(), eventBuffer);
 
 		assertTrue(eventBuffer.containsTypeSince(sinceSeqNo, "planner.degraded_blocked"));

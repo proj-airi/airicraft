@@ -362,6 +362,18 @@ public final class DialogueRuntime {
 		return activePlanner().canonicalConversationDebugSnapshot();
 	}
 
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
+		return plannerChronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot(boolean verbose) {
+		return activePlanner().chronicleConversationDebugSnapshot(verbose);
+	}
+
+	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {
+		return activePlanner().contextConversationDebugSnapshot();
+	}
+
 	public List<String> plannerContextExcerpt() {
 		return activePlanner().contextExcerpt();
 	}
@@ -433,6 +445,7 @@ public final class DialogueRuntime {
 		supersedePendingInternalTaskUpdates("planner_reset", tick, eventBuffer);
 		resetPlanners("runtime reset");
 		queuedTimeoutInjections = 0;
+		pendingVisibleReplies.clear();
 		if (Boolean.getBoolean("airicraft.hostedPlaytestAutoReset") && state.degraded()) hostedAutoResetAttempted = true;
 		applyTransition(DialogueCore.onReset(state, senderName, tick), tick, eventBuffer);
 		return true;
@@ -814,7 +827,7 @@ public final class DialogueRuntime {
 			String message = eventBuffer.query(wake.eventSequence() - 1).events().stream()
 				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
 				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
-				.orElse("WORK CHANGED: review current work and observed outcomes in DECISION CONTEXT.");
+				.orElse("Work changed.");
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
@@ -901,8 +914,9 @@ public final class DialogueRuntime {
 		visibleReplyOwner = activePlanner();
 		state = transition.state();
 		applyEffects(transition.effects(), tick, eventBuffer);
-		pendingVisibleReplies.clear();
-		long nextReadyTick = tick;
+		// A new planner result must not erase accepted speech that has not been sent.
+		long nextReadyTick = pendingVisibleReplies.isEmpty() ? tick
+			: Math.max(tick, pendingVisibleReplies.peekLast().readyTick());
 		for (DialogueResponse response : transition.visibleResponses()) {
 			if (response != null && response.text() != null && !response.text().isBlank()) {
 				nextReadyTick += response.delayTicks();

@@ -58,30 +58,6 @@ public final class BehaviorTreeRuntime {
 			return;
 		}
 
-		if (dialogueRuntime.hasPendingReply()) {
-			movementController.stop(client);
-			String source = dialogueRuntime.pendingReplyReason();
-			boolean reusedPriorResponse = "failure_reused_last_response".equals(source);
-			dialogueRuntime.pendingReplyReady(tick)
-				.ifPresent(pendingReply -> {
-					String text = pendingReply.response().text();
-					String sanitizedText = ChatService.sanitizeForChat(text);
-					debugRecorder.recordChatAttempt(tick, sanitizedText, source, reusedPriorResponse);
-					boolean sent = chatService.send(client, text, tick);
-					debugRecorder.recordChatResult(
-						tick,
-						sent ? chatService.lastChatText() : sanitizedText,
-						source,
-						reusedPriorResponse,
-						sent
-					);
-					if (dialogueRuntime.recordSentReply(pendingReply, sent)) {
-						debugRecorder.recordDialogueState(dialogueRuntime.snapshot());
-					}
-				});
-			snapshot = new BehaviorTreeSnapshot(NodeStatus.RUNNING, List.of("Root", "ReplyToPlayer"), movementController.snapshot());
-			return;
-		}
 
 		if (taskOwnsMovement(taskExecutionSnapshot)) {
 			snapshot = new BehaviorTreeSnapshot(NodeStatus.RUNNING, List.of("Root", "EntityInteractionSubtree", "TaskOwnedMovement"), movementController.snapshot());
@@ -104,6 +80,34 @@ public final class BehaviorTreeRuntime {
 			nodePathFor(activeGoal.get(), followState, taskExecutionSnapshot.state()),
 			movementController.snapshot()
 		);
+	}
+
+	/** Chat does not acquire movement or wait for gameplay/reflex ownership. */
+	public void tickChat(MinecraftClient client, SessionSnapshot sessionSnapshot,
+		DialogueRuntime dialogueRuntime, ChatService chatService, AgentDebugRecorder debugRecorder, long tick) {
+		if (client == null || !sessionSnapshot.worldLoaded() || client.player == null) return;
+
+		if (dialogueRuntime.hasPendingReply()) {
+			String source = dialogueRuntime.pendingReplyReason();
+			boolean reusedPriorResponse = "failure_reused_last_response".equals(source);
+			dialogueRuntime.pendingReplyReady(tick)
+				.ifPresent(pendingReply -> {
+					String text = pendingReply.response().text();
+					String sanitizedText = ChatService.sanitizeForChat(text);
+					debugRecorder.recordChatAttempt(tick, sanitizedText, source, reusedPriorResponse);
+					boolean sent = chatService.send(client, text, tick);
+					debugRecorder.recordChatResult(
+						tick,
+						sent ? chatService.lastChatText() : sanitizedText,
+						source,
+						reusedPriorResponse,
+						sent
+					);
+					if (dialogueRuntime.recordSentReply(pendingReply, sent)) {
+						debugRecorder.recordDialogueState(dialogueRuntime.snapshot());
+					}
+				});
+		}
 	}
 
 	public void reflectSurvivalReflex(MinecraftClient client, SurvivalReflexSnapshot reflexSnapshot) {

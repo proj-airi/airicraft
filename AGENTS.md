@@ -4,7 +4,8 @@
 
 - This repo is a Fabric mod for Minecraft `1.21.8`.
 - It currently uses Yarn mappings, not Mojang official mappings.
-- Java target is `21`.
+- Java target is `21`, but the Gradle build JVM must be JDK 25+ (Fabric Loom `1.18` requires JVM 25). `.java-version` pins `25`; compile/test/runClient use a JBR 21 toolchain (`JvmVendorSpec.JETBRAINS`), auto-detected or downloaded via the Foojay resolver.
+- Gradle wrapper is `9.7.1` (Loom `1.18` requires Gradle 9.7+).
 - The build is a multi-project Gradle build with:
   - root project: Fabric mod
   - `wrapper/`: standalone Java CLI for agent-driven control
