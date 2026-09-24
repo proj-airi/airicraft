@@ -119,6 +119,10 @@ jdb -attach 127.0.0.1:5005
 
 Run `scripts/automatic-playtest --world <saved-world-directory> --recorder-jar <profile> --objective <instruction>`. The planner can call `something_wrong` with a natural-language bug report to pause the game and archive the shared evaluation flight records, live RGB, required Recorder Play, and paused world checkpoint under `automatic_playtest/`. See [automatic playtest reports](docs/automatic-playtest.md) for the shutdown/finalization flow and offline review.
 
+### Hosted playtests
+
+Run `scripts/hosted-playtest --world <template-world-directory> --recorder-jar <profile>` to let human testers play with the companion. The companion hosts a fresh copy of the world on one fixed LAN port (`--lan-port`, default 25565), which testers join directly or through a forwarded port. The session ends after its testers leave, and it is recorded with the same pipeline plus tester join/leave records and every tester's Recorder Play under `hosted_playtest/`. See [hosted playtests](docs/hosted-playtest.md).
+
 ### Realtime debug dashboard
 
 Every Airicraft client starts its own read-only debug dashboard. The client binds the first available LAN port starting at `8765` and prints a clickable viewer-token URL in the log, in `airicraft status`, and once in Minecraft chat after a world loads.

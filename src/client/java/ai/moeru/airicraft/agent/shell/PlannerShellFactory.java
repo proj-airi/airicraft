@@ -200,7 +200,8 @@ public final class PlannerShellFactory {
 			new ReiRecipeSearchToolProvider(),
 			new MapPlannerToolProvider(MapIntegrationBridge::registry)
 		));
-		if (ai.moeru.airicraft.playtest.AutomaticPlaytestRuntime.enabled()) {
+		// Hosted testers are mid-game; a planner bug report must never freeze their world.
+		if (ai.moeru.airicraft.playtest.AutomaticPlaytestRuntime.enabled() && !ai.moeru.airicraft.playtest.AutomaticPlaytestRuntime.hosted()) {
 			sharedProviders.add(new ai.moeru.airicraft.playtest.SomethingWrongToolProvider(
 				description -> ai.moeru.airicraft.AiricraftClient.runtimeController().automaticPlaytest().report(description),
 				() -> ai.moeru.airicraft.AiricraftClient.runtimeController().automaticPlaytest().resultCommitted(),

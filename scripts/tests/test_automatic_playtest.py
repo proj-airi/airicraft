@@ -414,13 +414,15 @@ class PlaytestPublicationTest(unittest.TestCase):
         (self.pending / "world-save/level.dat").write_bytes(b"paused world")
         (self.pending / "world-save.json").write_text(json.dumps({"capturedWhilePaused": True, "serverTickId": 20}))
 
-    def write_play(self, complete=True):
-        play = self.pending / "recorder/v1/server/players/player/plays/connection"
+    def write_play(self, complete=True, player="player", connection="connection",
+                   player_uuid="00000000-0000-4000-8000-000000000002", connection_uuid="00000000-0000-4000-8000-000000000003",
+                   name=None):
+        play = self.pending / f"recorder/v1/server/players/{player}/plays/{connection}"
         (play / "capture").mkdir(parents=True)
         (play / "metadata.json").write_text(json.dumps({
             "server": {"instanceId": "00000000-0000-4000-8000-000000000001"},
-            "player": {"uuid": "00000000-0000-4000-8000-000000000002"},
-            "connection": {"id": "00000000-0000-4000-8000-000000000003", "startServerTick": 1, "endedAt": "2026-09-17T00:00:00Z" if complete else None, "endServerTick": 20 if complete else None},
+            "player": {"uuid": player_uuid, **({"name": name} if name else {})},
+            "connection": {"id": connection_uuid, "startServerTick": 1, "endedAt": "2026-09-17T00:00:00Z" if complete else None, "endServerTick": 20 if complete else None},
             "capture": {"events": "capture/events.jsonl", "replay": "capture/replay.zip", "replayFormat": "flashback"},
         }))
         (play / "capture/events.jsonl").write_text('{"serverTick":1}\n')
@@ -582,6 +584,59 @@ class PlaytestPublicationTest(unittest.TestCase):
                 self.assertEqual(reason, summary["terminationReason"])
                 self.assert_world(path, b"stopped world")
                 self.assertFalse(json.loads((self.evidence(path) / "playtest.json").read_text())["checkpoint"]["capturedWhilePaused"])
+
+    def test_hosted_run_publishes_the_companion_play_and_locates_tester_plays(self):
+        (self.pending / "bug-report.json").unlink()
+        (self.pending / "pause-verification.json").unlink()
+        (self.pending / "summary.json").write_text(json.dumps({"status": "FINISHED"}))
+        (self.pending / "players.jsonl").write_text(json.dumps({"event": "join", "playerName": "Alex"}) + "\n")
+        # Sorted before the companion's Play, so selection cannot rely on discovery order.
+        self.write_play(player="alex", connection="first", name="Alex",
+                        player_uuid="00000000-0000-4000-8000-000000000004", connection_uuid="00000000-0000-4000-8000-000000000005")
+        self.write_play(player="alex", connection="rejoin", complete=False, name="Alex",
+                        player_uuid="00000000-0000-4000-8000-000000000004", connection_uuid="00000000-0000-4000-8000-000000000006")
+        self.write_play(name="Airi")
+        (self.pending / "recording-start.json").write_text(json.dumps({"context": {
+            "mode": "hosted", "playerUuid": "00000000-0000-4000-8000-000000000002", "playerName": "Airi"}}))
+        path, code = playtest.finalize_recording(self.pending, self.destination, self.world,
+            {"minecraftExited": True}, None, "testers_left")
+        self.assertEqual(0, code)
+        summary = json.loads((path / "summary.json").read_text())
+        self.assertEqual("COMPLETED", summary["status"])
+        self.assertEqual("v1/server/players/player/plays/connection", summary["artifactPlayPath"])
+        extension = self.evidence(path)
+        manifest = json.loads((extension / "manifest.json").read_text())
+        self.assertEqual("00000000-0000-4000-8000-000000000002", manifest["play"]["playerUuid"])
+        self.assertIn({"path": "players.jsonl.gz", "role": "participants", "mediaType": "application/gzip",
+                       "schema": "airicraft.evidence.v1"}, manifest["assets"])
+        metadata = json.loads((extension / "playtest.json").read_text())
+        self.assertEqual("hosted", metadata["environment"]["mode"])
+        self.assertEqual({"playerUuid": "00000000-0000-4000-8000-000000000002", "playerName": "Airi"},
+                         metadata["environment"]["companion"])
+        self.assertEqual([
+            {"path": "v1/server/players/alex/plays/first", "playerUuid": "00000000-0000-4000-8000-000000000004",
+             "playerName": "Alex", "connectionId": "00000000-0000-4000-8000-000000000005", "finalized": True,
+             "startServerTick": "1", "endServerTick": "20"},
+            {"path": "v1/server/players/alex/plays/rejoin", "playerUuid": "00000000-0000-4000-8000-000000000004",
+             "playerName": "Alex", "connectionId": "00000000-0000-4000-8000-000000000006", "finalized": False,
+             "startServerTick": "1"},
+        ], metadata["participants"])
+        for participant in metadata["participants"]:
+            self.assertTrue((path.parent / participant["path"] / "metadata.json").is_file())
+            self.assertFalse((path.parent / participant["path"] / "extensions").exists())
+
+    def test_hosted_run_without_the_companion_play_is_incomplete(self):
+        (self.pending / "bug-report.json").unlink()
+        (self.pending / "summary.json").write_text(json.dumps({"status": "FINISHED"}))
+        self.write_play(player_uuid="00000000-0000-4000-8000-000000000004")
+        (self.pending / "recording-start.json").write_text(json.dumps({"context": {
+            "mode": "hosted", "playerUuid": "00000000-0000-4000-8000-000000000002"}}))
+        path, code = playtest.finalize_recording(self.pending, self.destination, self.world,
+            {"minecraftExited": True}, None, "testers_left")
+        self.assertEqual(1, code)
+        summary = json.loads((path / "summary.json").read_text())
+        self.assertEqual("INCOMPLETE", summary["status"])
+        self.assertIn("companion 00000000-0000-4000-8000-000000000002", summary["message"])
 
     def test_crash_archives_partial_evidence_without_claiming_it_is_complete(self):
         (self.pending / "bug-report.json").unlink()

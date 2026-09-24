@@ -346,16 +346,28 @@ def is_finalized_recorder_play(play_dir: Path) -> bool:
         return False
 
 
-def discover_finalized_recorder_play(recorder_root: Path) -> Path | None:
+def recorder_play_player_uuid(play_dir: Path) -> str | None:
+    try:
+        metadata = json.loads((play_dir / "metadata.json").read_text(encoding="utf-8"))
+        return str(uuid.UUID(str(metadata["player"]["uuid"])))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def discover_finalized_recorder_play(recorder_root: Path, player_uuid: str | None = None) -> Path | None:
+    """Find the one finalized Play; with several connected players, only `player_uuid`'s Play counts."""
     if not recorder_root.is_dir():
         return None
+    wanted = str(uuid.UUID(player_uuid)) if player_uuid else None
     plays = [
         metadata_path.parent
         for metadata_path in recorder_root.rglob("metadata.json")
         if is_finalized_recorder_play(metadata_path.parent)
+        and (wanted is None or recorder_play_player_uuid(metadata_path.parent) == wanted)
     ]
+    owner = "" if wanted is None else f" for player {wanted}"
     if len(plays) > 1:
-        raise RunnerError(f"expected one finalized Recorder Play, found {len(plays)}")
+        raise RunnerError(f"expected one finalized Recorder Play{owner}, found {len(plays)}")
     return plays[0] if plays else None
 
 
@@ -493,10 +505,15 @@ def metadata_tick(connection: dict[str, Any], key: str) -> int:
     return tick
 
 
-def finalize_recorder_capture(summary: dict[str, Any], scenario_dir: Path, recorder_root: Path) -> None:
+def finalize_recorder_capture(
+    summary: dict[str, Any],
+    scenario_dir: Path,
+    recorder_root: Path,
+    player_uuid: str | None = None,
+) -> None:
     summary["recorderPlayPath"] = None
     try:
-        recorder_play = discover_finalized_recorder_play(recorder_root)
+        recorder_play = discover_finalized_recorder_play(recorder_root, player_uuid)
     except RunnerError as error:
         recorder_play = None
         if summary.get("harnessStatus") != "INTERRUPTED":
@@ -505,7 +522,8 @@ def finalize_recorder_capture(summary: dict[str, Any], scenario_dir: Path, recor
         if summary.get("harnessStatus") != "INTERRUPTED":
             summary["harnessStatus"] = "CAPTURE_ERROR"
             if summary.get("message") is None:
-                summary["message"] = "Recorder capture failed: no finalized Recorder Play found"
+                owner = f" for player {player_uuid}" if player_uuid else ""
+                summary["message"] = f"Recorder capture failed: no finalized Recorder Play found{owner}"
     else:
         summary["recorderPlayPath"] = recorder_play.resolve().relative_to(scenario_dir.resolve()).as_posix()
         try:

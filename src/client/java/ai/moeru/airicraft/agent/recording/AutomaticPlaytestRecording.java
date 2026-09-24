@@ -76,6 +76,14 @@ public final class AutomaticPlaytestRecording {
 		}
 	}
 
+	/** Hosted playtests append tester join/leave observations; ordinary runs never create this file. */
+	public void recordParticipants(java.util.List<Map<String, Object>> records) throws IOException {
+		if (records.isEmpty()) return;
+		StringBuilder lines = new StringBuilder();
+		for (Map<String, Object> record : records) lines.append(GSON.toJson(record)).append('\n');
+		Files.writeString(pendingDirectory.resolve("players.jsonl"), lines, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+	}
+
 	public void report(String description, long tick) throws IOException {
 		if (report == null) {
 			report = Map.of("id", id, "kind", "suspected_interface_bug", "description", description,
