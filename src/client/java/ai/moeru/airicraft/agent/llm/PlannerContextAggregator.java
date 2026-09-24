@@ -242,6 +242,28 @@ public final class PlannerContextAggregator {
 
 	LlmConversation retainedToolContext() { return retainedConversation == null ? LlmConversation.of(List.of()) : retainedConversation; }
 
+	/**
+	 * What the model would see if a request went out right now: the retained wire
+	 * conversation (accepted replies, tool envelopes and checkpoints applied), or the
+	 * rebuilt accepted-history base for client-managed history without a fixed prefix.
+	 * Null when history is provider-managed and nothing is retained locally.
+	 */
+	public LlmConversation currentRetainedConversation(long anchorTimeMs) {
+		if (retainedConversation != null) {
+			return retainedConversation;
+		}
+		if (backendManagedHistory) {
+			return null;
+		}
+		ArrayList<LlmChatMessage> messages = new ArrayList<>();
+		messages.add(LlmChatMessage.system(systemPrompt()));
+		if (state.activeCheckpoint() != null) {
+			messages.add(LlmChatMessage.user(state.activeCheckpoint().renderMessage(), LlmMessageKind.CHECKPOINT));
+		}
+		messages.addAll(renderAcceptedHistory(anchorTimeMs));
+		return LlmConversation.of(messages);
+	}
+
 	public LlmConversation buildPlannerConversation(PlannerRequest request) {
 		Objects.requireNonNull(request, "request");
 		recordPlannerRequestSeed(PlannerRequestSeed.fromRequest(request));

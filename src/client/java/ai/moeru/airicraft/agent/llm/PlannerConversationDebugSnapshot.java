@@ -26,6 +26,15 @@ public record PlannerConversationDebugSnapshot(
 		int attempt,
 		LlmConversation conversation
 	) {
+		return fromConversation(generation, phase == null ? null : phase.name(), attempt, conversation);
+	}
+
+	public static PlannerConversationDebugSnapshot fromConversation(
+		long generation,
+		String phase,
+		int attempt,
+		LlmConversation conversation
+	) {
 		if (conversation == null) {
 			return empty();
 		}
@@ -36,12 +45,12 @@ public record PlannerConversationDebugSnapshot(
 				PlannerConversationDebugKind.fromMessageKind(message.kind()),
 				debugText(message),
 				generation,
-				phase == null ? "UNKNOWN" : phase.name(),
+				phase,
 				attempt,
 				message.hasImageAttachment()
 			));
 		}
-		return new PlannerConversationDebugSnapshot(generation, phase == null ? "UNKNOWN" : phase.name(), attempt, messages);
+		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages);
 	}
 
 	public boolean isEmpty() {
