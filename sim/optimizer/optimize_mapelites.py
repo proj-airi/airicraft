@@ -27,13 +27,16 @@ import optimize_gp as gp  # noqa: E402
 
 KILL_BINS = np.arange(9)            # kills mean 0..7 (clipped)
 TAKEN_EDGES = [2, 4, 6, 9, 13, 18, 25]  # damage-taken bin edges -> 8 bins
+TICKS_EDGES = [140, 180, 220, 280, 350, 450, 540]  # -ticks bins -> 8
 GRID = (8, 8)
 
 
-def cell_of(objs):
+def cell_of(objs, cell2="taken"):
     kills_b = int(np.clip(int(round(objs[0])), 0, 7))
-    taken = -objs[1]
-    taken_b = int(np.digitize(taken, TAKEN_EDGES))
+    if cell2 == "ticks":
+        # speed niches once survival is solved: fast fighters keep their cells
+        return kills_b, int(np.digitize(-objs[4], TICKS_EDGES))
+    taken_b = int(np.digitize(-objs[1], TAKEN_EDGES))
     return kills_b, taken_b
 
 
@@ -63,6 +66,12 @@ def main():
                     help="early stop after N generations without hypervolume improvement")
     ap.add_argument("--resume", default=None,
                     help="warm-start the archive from a saved grid_final.json")
+    ap.add_argument("--cell2", default="taken", choices=["taken", "ticks"],
+                    help="second archive dimension: damage taken or speed")
+    ap.add_argument("--hard", action="store_true",
+                    help="harder eval scenarios: 4-9 mobs in a tighter ring")
+    ap.add_argument("--seed_file", nargs="*", default=[],
+                    help="extra program JSON files injected into the seed pool")
     ap.add_argument("--out", default=str(Path(__file__).parent / "results_me"))
     args = ap.parse_args()
 
@@ -78,7 +87,11 @@ def main():
     def sample_eval_set(r, n):
         out = []
         for _ in range(n):
-            scen = random_scenario(r)
+            if args.hard:
+                scen = random_scenario(r, min_r=5.5, max_r=8.0,
+                                       min_n=4, max_n=9)
+            else:
+                scen = random_scenario(r)
             terr = random_terrain(r, avoid_pts=[(dx, dz) for _t, dx, dz in scen])
             out.append((scen, terr))
         return out
@@ -110,7 +123,7 @@ def main():
     grid = {}  # (ki,ti) -> list[(program, obj)]
 
     def insert(prog, obj):
-        c = cell_of(obj)
+        c = cell_of(obj, args.cell2)
         members = grid.get(c, [])
         members.append((prog, obj))
         grid[c] = prune_cell(members)
@@ -128,6 +141,7 @@ def main():
         seeds = [gp.baseline_program(), gp.template_ranged_first(),
                  gp.template_lowhp_first()] + [gp.rand_program(rng)
                                                for _ in range(args.pop - 3)]
+    seeds += [json.loads(Path(f).read_text()) for f in args.seed_file]
     seeds = [gp.prune(p) for p in seeds]
     objs = eval_pop(seeds, sample_eval_set(np.random.default_rng(args.seed + 1),
                                            args.nscen))
@@ -219,7 +233,7 @@ def main():
     # re-bin on final evals for an honest coverage figure
     final_cells = {}
     for (p, _o), o in zip(union, final_objs):
-        c = cell_of(o)
+        c = cell_of(o, args.cell2)
         final_cells.setdefault(c, []).append({"program": p,
                                               "metrics": np.round(o, 3).tolist()})
     report = {

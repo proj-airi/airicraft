@@ -345,6 +345,39 @@ final front member still dominates the baseline, and most dominate the
   first point where the evolved rules are strictly better rather than a
   tradeoff.
 
+#### Round 4: harder mobs + champion reseed (me9, `--hard`)
+
+Stress test first: the polished champions still dominate the baseline on
+harder scenario draws (4-9 mobs at radius 5.5-8 vs the training 3-7 at
+5.5-9), but their damage taken (~5.5-6.9 avg HP) was not yet near-zero —
+so the champions were fed back as MAP-Elites seeds on top of the me8
+archive and the eval set itself was switched to `--hard`.
+
+- 693 gens until the patience-100 stop: HV 142.6k -> 171.0k, plateaued at
+  gen ~593; coverage 75% of the kills x damage grid.
+- Final eval (fresh 24-scenario hard set; baseline
+  `[3.46, -11.35, .79, .83, -194]`): 6 front members dominate the
+  baseline. Champion `[4.0, -2.70, 1.0, 1.0, -176]` — +16% kills, 4.2x
+  less damage, perfect clear/survival, 18 ticks faster. Lowest-damage
+  combat points sit at ~2.3-2.4 avg HP taken: near-unscathed.
+- Winning structure stays the 2-rule hybrid: `usingItem<0.5 -> hold +
+  target ranged + shield (use:"off") + zigzag + sprint`, else
+  `approach + attack ready on nearest`. Threat-state features
+  (`litCreeperCount`, `aimingCount`, `offhandPct`) appear in some elites'
+  conditions but not in the champion.
+- Degenerate audit: 6/30 front members are stall elites
+  (`survived=1.0`, kills ~0-1.3, ~500-600 ticks) — they live in the
+  survived-extreme cells and do not displace combat elites.
+
+#### Round 5: speed niches (`--cell2 ticks`, me10)
+
+With damage near-zero, the archive was re-binned as kills x speed
+(`TICKS_EDGES`) instead of kills x damage: cells now compete on clear
+time, which tilts selection toward fast-and-unscathed policies. As a side
+benefit, stall programs all collapse into the slowest bin and stop
+occupying distinct niches. me10 resumes the me9 grid + the 5 hard
+champions as seeds under `--hard`, patience 100.
+
 ## Verified end-to-end
 
 - Fake player joins, moves under its own physics, looks, and kills mobs.
