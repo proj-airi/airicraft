@@ -42,7 +42,7 @@ Every stop goes through the automatic playtest save-and-stop, Recorder Play fina
 
 ## Planner recovery during a session
 
-Three consecutive planner failures put the companion in degraded mode, and it stays there until `@agent reset`. Testers will not know that command. Automatic playtests stop on degradation; hosted sessions keep going. After the planner stays degraded for `--reset-degraded-after` seconds (default 20), the launcher sends the reset once as the same-client operator. It logs `planner_degraded`, `planner_reset_sent` and `planner_recovered` to `launcher-events.jsonl`. Testers see the companion's normal `Planner state reset.` reply in chat. Use `0` to record degradation without resetting.
+Three consecutive planner failures put the companion in degraded mode. Automatic playtests stop on degradation; hosted sessions keep going. After the planner stays degraded for `--reset-degraded-after` seconds (default 20), the launcher sends `@agent reset` as the same-client operator. It makes at most one automatic reset attempt per hosted session. If the planner degrades again, the launcher logs `planner_reset_exhausted` and sends no further reset. The companion tells testers when an automatic reset is pending or has already been used, without asking them to send an operator command. `planner_recovered` means the degraded state cleared after reset; it does not establish that the provider is healthy. Use `--reset-degraded-after 0` to record degradation without automatic reset; in that mode the companion gives the usual manual-reset guidance.
 
 Hosted mode does not offer the planner `something_wrong`: a report would pause the integrated server and freeze everyone's game.
 
@@ -53,7 +53,7 @@ Everything an automatic playtest records is recorded for the companion (see [evi
 | File | Contents |
 | --- | --- |
 | `players.jsonl` | Tester `join`/`leave` records with UUID, name, observed server tick, wall time and connected-tester count. Connections are sampled once per second from the integrated server; `session_ended` closes intervals still open at the end. The companion is never listed. |
-| `launcher-events.jsonl` | `lan_opened`, planner degradation/reset/recovery and `session_ended` with its termination reason. |
+| `launcher-events.jsonl` | `lan_opened`, planner degradation/reset/recovery/exhaustion and `session_ended` with its termination reason. |
 | Tester Recorder Plays | The recording profile records every connection. Each tester connection, including reconnects, is its own Play beside the companion's. |
 
 The `airicraft.playtest` extension belongs to the companion's Play, identified by the `playerUuid` in `recording-start.json`. Its `playtest.json` has these hosted-session fields:
@@ -72,7 +72,7 @@ A session records testers' usernames, UUIDs, chat, movement, and the companion's
 
 ## Verification status
 
-The launcher, the tester presence and planner-recovery rules, multi-Play publication and the Java participant bookkeeping have unit tests (`scripts/tests/test_hosted_playtest.py`, `scripts/tests/test_automatic_playtest.py`, `HostedPlaytestParticipantsTest`, `LanPortScanTest`). A live session with a remote tester has not been run yet. Before inviting testers, check that:
+The launcher, the tester presence and planner-recovery rules, multi-Play publication and the Java participant bookkeeping have unit tests (`scripts/tests/test_hosted_playtest.py`, `scripts/tests/test_automatic_playtest.py`, `HostedPlaytestParticipantsTest`, `LanPortScanTest`). A local protocol tester joined a live hosted session with controlled provider failures: the launcher sent one reset, reported `planner_reset_exhausted` after renewed degradation, and sent no second reset before the session ended. The tester received the matching chat guidance. A session through a forwarded port has not been run yet. Before inviting remote testers, check that:
 
 - a tester joins through the forwarded port;
 - `players.jsonl` records the join and leave;

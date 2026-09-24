@@ -13,12 +13,26 @@ public final class DialogueCore {
 	static final int DEGRADED_FAILURE_THRESHOLD = 3;
 	static final String RESET_COMMAND = "@agent reset";
 	static final String DEGRADED_MESSAGE = "I'm having trouble understanding right now. Send '@agent reset' to recover my planner.";
+	static final String HOSTED_AUTO_RESET_MESSAGE = "I'm having trouble with my planner. This playtest will try one automatic reset.";
+	static final String HOSTED_RESET_EXHAUSTED_MESSAGE = "My planner is having trouble again. This playtest has already used its automatic reset and won't reset again.";
 	static final String RESET_MESSAGE = "Planner state reset.";
 	static final String PARSE_ERROR_MESSAGE = "I got confused for a moment.";
 	static final String TIMEOUT_MESSAGE = "I hit a timeout just now. Please try again.";
 	static final String PROVIDER_UNAVAILABLE_MESSAGE = "I can't reach the LLM provider right now. Please try again.";
 
 	private DialogueCore() {
+	}
+
+	enum ResetGuidance {
+		MANUAL, HOSTED_AUTO_PENDING, HOSTED_AUTO_EXHAUSTED;
+
+		String message() {
+			return switch (this) {
+				case MANUAL -> DEGRADED_MESSAGE;
+				case HOSTED_AUTO_PENDING -> HOSTED_AUTO_RESET_MESSAGE;
+				case HOSTED_AUTO_EXHAUSTED -> HOSTED_RESET_EXHAUSTED_MESSAGE;
+			};
+		}
 	}
 
 	public static DialogueState initialState() {
@@ -72,7 +86,8 @@ public final class DialogueCore {
 		LlmFailureType failureType,
 		String failureMessage,
 		boolean directChatTrigger,
-		long tick
+		long tick,
+		ResetGuidance resetGuidance
 	) {
 		ArrayList<DialogueEffect> effects = new ArrayList<>();
 		effects.add(DialogueEffect.appendSemanticEvent(failureEventType(failureType), Map.of(
@@ -112,7 +127,7 @@ public final class DialogueCore {
 				"consecutiveFailureCount", consecutiveFailureCount
 			)));
 			visibleResponses.add(new DialogueResponse(
-				DEGRADED_MESSAGE,
+				resetGuidance.message(),
 				new DialogueIntent(DialogueIntentType.ACKNOWLEDGE_FAILURE, null, null),
 				tick
 			));
@@ -138,7 +153,8 @@ public final class DialogueCore {
 		return new DialogueTransition(nextState, List.copyOf(visibleResponses), List.copyOf(effects));
 	}
 
-	public static DialogueTransition onPlannerDegradedBlocked(DialogueState state, String senderName, boolean directChatTrigger, long tick) {
+	public static DialogueTransition onPlannerDegradedBlocked(DialogueState state, String senderName, boolean directChatTrigger,
+		long tick, ResetGuidance resetGuidance) {
 		ArrayList<DialogueEffect> effects = new ArrayList<>();
 		LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
 		payload.put("directChat", directChatTrigger);
@@ -156,7 +172,7 @@ public final class DialogueCore {
 		}
 
 		DialogueResponse response = new DialogueResponse(
-			DEGRADED_MESSAGE,
+			resetGuidance.message(),
 			new DialogueIntent(DialogueIntentType.ACKNOWLEDGE_FAILURE, null, null),
 			tick
 		);

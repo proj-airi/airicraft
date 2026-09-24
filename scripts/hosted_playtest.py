@@ -54,31 +54,33 @@ class TesterPresence:
 
 
 class DegradedRecovery:
-    """Testers do not know the operator reset command; send it once per degraded episode."""
+    """Attempt one operator reset during a hosted session."""
 
     def __init__(self, reset_after: float):
         self.reset_after = reset_after
         self.since: float | None = None
-        self.reset_sent = False
+        self.reset_attempted = False
 
     def observe(self, degraded: bool, now: float) -> str | None:
         if not degraded:
             recovered = self.since is not None
-            self.since, self.reset_sent = None, False
+            self.since = None
             return "recovered" if recovered else None
         if self.since is None:
             self.since = now
-            return "degraded"
-        if self.reset_after and not self.reset_sent and now - self.since >= self.reset_after:
-            self.reset_sent = True
+            return "reset_exhausted" if self.reset_attempted else "degraded"
+        if self.reset_after and not self.reset_attempted and now - self.since >= self.reset_after:
+            self.reset_attempted = True
             return "reset"
         return None
 
 
-def client_command(run_id: str, output: Path, game: Path, profile: Path, companion_name: str, lan_port: int) -> str:
+def client_command(run_id: str, output: Path, game: Path, profile: Path, companion_name: str,
+                   lan_port: int, reset_degraded_after: float) -> str:
     return shlex.join([
         "./gradlew", "--no-daemon", "-Pairicraft.includeEvaluator=true", "-Pairicraft.includeCompat=true",
         "-Pairicraft.automaticPlaytest=true", "-Pairicraft.automaticPlaytestMode=hosted",
+        f"-Pairicraft.hostedPlaytestAutoReset={str(reset_degraded_after > 0).lower()}",
         f"-Pairicraft.automaticPlaytestId={run_id}", f"-Pairicraft.automaticPlaytestDir={output}",
         f"-Pairicraft.devPlayerName={companion_name}", f"-Pairicraft.lanPort={lan_port}",
         f"-Pairicraft.evaluator.runDir={game}", "-Pairicraft.evaluator.jdwp.enabled=false",
@@ -139,7 +141,8 @@ def run(args: argparse.Namespace) -> int:
         "lanPort": args.lan_port, "workerDirectory": str(worker), "recordingProfile": str(profile),
         "maxSeconds": args.max_seconds, "joinTimeout": args.join_timeout, "leaveGrace": args.leave_grace,
         "resetDegradedAfter": args.reset_degraded_after, "launcherPid": os.getpid()})
-    command = client_command(run_id, output, game, profile, args.companion_name, args.lan_port)
+    command = client_command(run_id, output, game, profile, args.companion_name, args.lan_port,
+                             args.reset_degraded_after)
     client = None
     bridge = None
     failure = None
@@ -248,6 +251,9 @@ def run(args: argparse.Namespace) -> int:
                     print("Planner reset sent", flush=True)
                 elif change == "recovered":
                     log_event(events, "planner_recovered")
+                elif change == "reset_exhausted":
+                    log_event(events, "planner_reset_exhausted")
+                    print("Planner degraded again after its automatic reset; no further reset will be sent", flush=True)
             time.sleep(POLL_SECONDS)
         else:
             termination_reason = "time_limit"

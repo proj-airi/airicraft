@@ -779,6 +779,45 @@ class DialogueRuntimeTest {
 	}
 
 	@Test
+	void hostedAutomaticResetExplainsTheAttemptWithoutAskingTestersToReset() {
+		String property = "airicraft.hostedPlaytestAutoReset";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "true");
+		try {
+			OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
+			DialogueRuntime runtime = newDialogueRuntime(backend);
+			SemanticEventBuffer eventBuffer = new SemanticEventBuffer(32);
+			try {
+				for (long tick = 1L; tick <= 3L; tick++) {
+					backend.injectTimeout();
+					runtime.onPlayerChat("Alice", "Hello?", tick, SessionSnapshot.initial(), "Alice", Optional.empty(), eventBuffer);
+					awaitFailureProcessed(runtime, eventBuffer, tick, Duration.ofSeconds(1));
+				}
+				assertTrue(runtime.isDegraded());
+				assertTrue(runtime.lastResponse().orElseThrow().text().contains("automatic reset"));
+				assertFalse(runtime.lastResponse().orElseThrow().text().contains("@agent reset"));
+
+				runtime.handleResetCommand("operator", "@agent reset", 50L, eventBuffer);
+				for (long tick = 51L; tick <= 53L; tick++) {
+					backend.injectTimeout();
+					runtime.onPlayerChat("Alice", "Hello again?", tick, SessionSnapshot.initial(), "Alice", Optional.empty(), eventBuffer);
+					awaitFailureProcessed(runtime, eventBuffer, tick - 50L, Duration.ofSeconds(1));
+				}
+				assertTrue(runtime.isDegraded());
+				assertTrue(runtime.lastResponse().orElseThrow().text().contains("won't reset again"));
+				assertFalse(runtime.lastResponse().orElseThrow().text().contains("@agent reset"));
+			}
+			finally {
+				runtime.shutdown();
+			}
+		}
+		finally {
+			if (previous == null) System.clearProperty(property);
+			else System.setProperty(property, previous);
+		}
+	}
+
+	@Test
 	void plannerOffSilentlyDiscardsDirectChatEvenWhileDegraded() {
 		OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
 		DialogueRuntime runtime = newDialogueRuntime(backend);

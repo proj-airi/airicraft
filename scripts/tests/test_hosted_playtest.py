@@ -36,7 +36,7 @@ class TesterPresenceTest(unittest.TestCase):
 
 
 class DegradedRecoveryTest(unittest.TestCase):
-    def test_resets_once_per_degraded_episode(self):
+    def test_one_automatic_reset_per_session_even_if_degradation_returns(self):
         recovery = hosted.DegradedRecovery(reset_after=20)
         self.assertIsNone(recovery.observe(False, 0))
         self.assertEqual("degraded", recovery.observe(True, 5))
@@ -44,8 +44,8 @@ class DegradedRecoveryTest(unittest.TestCase):
         self.assertEqual("reset", recovery.observe(True, 25))
         self.assertIsNone(recovery.observe(True, 60), "A reset that has not landed yet is not repeated")
         self.assertEqual("recovered", recovery.observe(False, 61))
-        self.assertEqual("degraded", recovery.observe(True, 70))
-        self.assertEqual("reset", recovery.observe(True, 90))
+        self.assertEqual("reset_exhausted", recovery.observe(True, 70))
+        self.assertIsNone(recovery.observe(True, 90))
 
     def test_zero_delay_only_records_degradation(self):
         recovery = hosted.DegradedRecovery(reset_after=0)
@@ -150,10 +150,21 @@ class HostedSessionTest(unittest.TestCase):
         self.assertEqual(1, sum(request[2] == "/v1/agent/session" for request in result.requests),
                          "LAN state is read until the port opens, not on every poll")
 
+    def test_redegradation_after_reset_does_not_send_another_reset(self):
+        result = self.session(testers=lambda now: [ALEX] if now < 50 else [],
+                              degraded=lambda now: 10 <= now < 22 or now >= 24,
+                              reset_degraded_after=5, leave_grace=5)
+        resets = [request for request in result.requests if request[2] == "/v1/agent/debug/chat"]
+        self.assertEqual(1, len(resets))
+        self.assertEqual(["lan_opened", "planner_degraded", "planner_reset_sent", "planner_recovered",
+                          "planner_reset_exhausted", "session_ended"],
+                         [event["event"] for event in result.events])
+
     def test_launch_uses_hosted_mode_companion_name_and_fixed_port(self):
         result = self.session(testers=lambda now: [], join_timeout=3, companion_name="Mochi", lan_port=25570,
                               lan=lambda now: (True, 25570))
         for argument in ("-Pairicraft.automaticPlaytest=true", "-Pairicraft.automaticPlaytestMode=hosted",
+                         "-Pairicraft.hostedPlaytestAutoReset=true",
                          "-Pairicraft.devPlayerName=Mochi", "-Pairicraft.lanPort=25570",
                          "-Pairicraft.evaluator.jdwp.enabled=false", ":runClientCompatEvaluator"):
             self.assertIn(argument, result.command.split())
@@ -189,6 +200,7 @@ class HostedSessionTest(unittest.TestCase):
     def test_disabled_recovery_never_sends_the_operator_reset(self):
         result = self.session(testers=lambda now: [ALEX] if now < 100 else [], degraded=lambda now: True,
                               reset_degraded_after=0, leave_grace=5)
+        self.assertIn("-Pairicraft.hostedPlaytestAutoReset=false", result.command.split())
         self.assertFalse(any(request[2] == "/v1/agent/debug/chat" for request in result.requests))
         self.assertIn("planner_degraded", [event["event"] for event in result.events])
 

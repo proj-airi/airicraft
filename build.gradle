@@ -26,6 +26,7 @@ def automaticPlaytestEnabled = providers.gradleProperty("airicraft.automaticPlay
 def automaticPlaytestId = providers.gradleProperty("airicraft.automaticPlaytestId")
 def automaticPlaytestDir = providers.gradleProperty("airicraft.automaticPlaytestDir").orElse(file("automatic_playtest").absolutePath)
 def automaticPlaytestMode = providers.gradleProperty("airicraft.automaticPlaytestMode")
+def hostedPlaytestAutoReset = providers.gradleProperty("airicraft.hostedPlaytestAutoReset").orElse("false")
 def lanPort = providers.gradleProperty("airicraft.lanPort")
 def codexDriverEnabled = providers.gradleProperty("airicraft.codexDriver").orElse("false")
 def arthasVersion = providers.gradleProperty("airicraft.arthas.version").orElse("4.1.8")
@@ -293,6 +294,7 @@ tasks.named("runClient").configure {
 	if (automaticPlaytestId.isPresent()) systemProperty("airicraft.automaticPlaytestId", automaticPlaytestId.get())
 	systemProperty("airicraft.automaticPlaytestDir", automaticPlaytestDir.get())
 	if (automaticPlaytestMode.isPresent()) systemProperty("airicraft.automaticPlaytestMode", automaticPlaytestMode.get())
+	systemProperty("airicraft.hostedPlaytestAutoReset", hostedPlaytestAutoReset.get())
 	if (lanPort.isPresent()) systemProperty("airicraft.lanPort", lanPort.get())
 }
 
@@ -323,6 +325,7 @@ allprojects {
 		if (automaticPlaytestId.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestId=${automaticPlaytestId.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytestDir=${automaticPlaytestDir.get()}")
 		if (automaticPlaytestMode.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestMode=${automaticPlaytestMode.get()}")
+		jvmArgs.add("-Dairicraft.hostedPlaytestAutoReset=${hostedPlaytestAutoReset.get()}")
 		if (lanPort.isPresent()) jvmArgs.add("-Dairicraft.lanPort=${lanPort.get()}")
 		programArgs.addAll("--username", devPlayerName.get())
 	}

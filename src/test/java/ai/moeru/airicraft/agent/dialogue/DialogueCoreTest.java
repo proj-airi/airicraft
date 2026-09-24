@@ -66,7 +66,8 @@ class DialogueCoreTest {
 			LlmFailureType.TIMEOUT,
 			"planner timed out",
 			false,
-			77L
+			77L,
+			DialogueCore.ResetGuidance.MANUAL
 		);
 
 		assertTrue(transition.state().degraded());
@@ -82,7 +83,8 @@ class DialogueCoreTest {
 			LlmFailureType.TIMEOUT,
 			"planner timed out",
 			true,
-			91L
+			91L,
+			DialogueCore.ResetGuidance.MANUAL
 		);
 
 		assertEquals("I hit a timeout just now. Please try again.", transition.lastVisibleResponse().text());
@@ -96,7 +98,8 @@ class DialogueCoreTest {
 			LlmFailureType.PROVIDER_UNAVAILABLE,
 			"LLM request failed: ConnectException",
 			true,
-			91L
+			91L,
+			DialogueCore.ResetGuidance.MANUAL
 		);
 
 		assertEquals("I can't reach the LLM provider right now. Please try again.", transition.lastVisibleResponse().text());
