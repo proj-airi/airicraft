@@ -11,9 +11,11 @@ class PlannerPromptPolicyTest {
 		String prompt = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY);
 
 		assertTrue(prompt.startsWith("You are the planner for a Minecraft companion."));
-		assertTrue(prompt.contains("Available tools: discover_tools, start_action_goal, inspect_action_goal, cancel_action_goal, clear_goal."));
-		assertTrue(prompt.contains("discover_tools is catalog assistance"));
-		assertTrue(prompt.contains("advertised typed schema is authoritative"));
+		assertFalse(prompt.contains("discover_tools"));
+		assertFalse(prompt.contains("DECISION CONTEXT"));
+		assertFalse(prompt.contains("TASK UPDATE"));
+		assertTrue(prompt.contains("schemas are authoritative"));
+		assertTrue(prompt.contains("the runtime calls observe for you"));
 		assertFalse(prompt.contains("navigate_to"));
 		assertTrue(prompt.contains("check_position"));
 		assertFalse(prompt.contains("craft_recipe"));
@@ -37,28 +39,21 @@ class PlannerPromptPolicyTest {
 	}
 
 	@Test
-	void providerInstructionsAppearOnlyAfterProviderToolDiscovery() {
+	void providerInstructionsAppearWithTheirProvider() {
 		PlannerToolRegistry registry = PlannerToolRegistry.of(
 			new PromptOnlyProvider("Use search_recipes for broad recipe-viewer searches before inventing recipe ids.")
 		);
 
-		String initialPrompt = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, registry);
-		assertFalse(initialPrompt.contains("search_recipes"));
-
-		registry.discoverTools("recipe", 4);
-		String discoveredPrompt = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, registry);
-		assertTrue(discoveredPrompt.contains("search_recipes"));
-		assertTrue(discoveredPrompt.contains("Use search_recipes for broad recipe-viewer searches"));
+		String prompt = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, registry);
+		assertTrue(prompt.contains("Use search_recipes for broad recipe-viewer searches"));
 	}
 
 	@Test
-	void providerGuidanceArrivesWithTheDiscoveredSchema() {
+	void providerGuidanceArrivesWithItsSchema() {
 		PlannerToolRegistry registry = PlannerToolRegistry.of(
 			new WorldFeatureSearchToolProvider(WorldFeatureSearchTool.textOnly(ignored -> "unused"))
 		);
 
-		assertFalse(PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, registry).contains("find_world_features"));
-		registry.discoverTools("feature", 4);
 		String prompt = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 
 		assertTrue(prompt.contains("find_world_features"));

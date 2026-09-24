@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.debug;
 
 import ai.moeru.airicraft.agent.llm.LlmConversation;
 import ai.moeru.airicraft.agent.llm.LlmUsageSnapshot;
+import ai.moeru.airicraft.agent.llm.PlannerObservation;
 
 import java.net.URI;
 import java.util.ArrayDeque;
@@ -66,20 +67,16 @@ public final class LlmFlightRecorder {
 		record.dispatchTick = tickSource.getAsLong();
 		record.dispatchServerTick = serverTickSource.getAsLong();
 		if (conversation != null) {
-			for (var message : conversation.messages().reversed()) {
-				String text = message.content();
-				if (message.kind() != ai.moeru.airicraft.agent.llm.LlmMessageKind.NOTICE || text == null || !text.startsWith("DECISION CONTEXT: ")) continue;
-				var context = com.google.gson.JsonParser.parseString(text.substring("DECISION CONTEXT: ".length())).getAsJsonObject();
+			PlannerObservation.latestPayload(conversation.messages()).ifPresent(context -> {
 				var metadata = new java.util.LinkedHashMap<String, Object>();
 				for (String key : List.of("worldSessionId", "tick", "serverTick", "decisionOwner", "actuatorOwner", "afterEventSequence", "throughEventSequence", "missingEventRange")) {
 					if (context.has(key)) metadata.put(key, context.get(key).deepCopy());
 				}
 				var current = context.getAsJsonObject("current");
-				if (current.has("job")) metadata.put("work", current.get("job").deepCopy());
-				if (current.has("work")) metadata.put("work", current.get("work").deepCopy());
+				if (current != null && current.has("job")) metadata.put("work", current.get("job").deepCopy());
+				if (current != null && current.has("work")) metadata.put("work", current.get("work").deepCopy());
 				record.decisionContext = Map.copyOf(metadata);
-				break;
-			}
+			});
 		}
 		records.addLast(record);
 		pendingByThread.put(javaThreadId, record);

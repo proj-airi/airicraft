@@ -59,15 +59,9 @@ class PlannerToolCallInterfaceTest {
 			assertEquals("auto", body.get("tool_choice").getAsString());
 			JsonArray tools = body.getAsJsonArray("tools");
 			assertNotNull(tools);
-			assertEquals(5, tools.size());
-			assertEquals(PlannerToolCatalog.DISCOVER_TOOLS, tools.get(0).getAsJsonObject()
+			assertEquals(PlannerToolCatalog.openAiTools().size(), tools.size());
+			assertEquals(PlannerToolCatalog.OBSERVE, tools.get(0).getAsJsonObject()
 				.getAsJsonObject("function").get("name").getAsString());
-			JsonObject discoverySchema = tools.get(0).getAsJsonObject()
-				.getAsJsonObject("function")
-				.getAsJsonObject("parameters")
-				.getAsJsonObject("properties")
-				.getAsJsonObject("query");
-			assertEquals("string", discoverySchema.get("type").getAsString());
 		}
 	}
 
@@ -201,14 +195,14 @@ class PlannerToolCallInterfaceTest {
 		JsonObject parameters = toolSchema(tools, "configure_lighting");
 
 		assertTrue(toolNames(tools).contains("configure_lighting"));
-		assertEquals(5, parameters.getAsJsonArray("required").size());
+		assertEquals(4, parameters.getAsJsonArray("required").size());
 		PlannerToolCall call = PlannerToolCatalog.parseToolCall(toolCall("configure_lighting", """
-			{"enabled":true,"mode":"darkness","maxLightLevel":2,"requireUnderground":true,"minSpacingBlocks":6}
+			{"enabled":true,"mode":"darkness","maxLightLevel":2,"minSpacingBlocks":6}
 			"""));
 		assertEquals("configure_lighting", call.name());
 		assertThrows(com.google.gson.JsonParseException.class, () ->
 			PlannerToolCatalog.parseToolCall(toolCall("configure_lighting", """
-				{"enabled":true,"mode":"darkness","maxLightLevel":16,"requireUnderground":true,"minSpacingBlocks":6}
+				{"enabled":true,"mode":"darkness","maxLightLevel":16,"minSpacingBlocks":6}
 				"""))
 		);
 	}
@@ -639,7 +633,6 @@ class PlannerToolCallInterfaceTest {
 			"Use search_recipes for recipe viewer searches.",
 			"Tool result for search_recipes: provider=stub"
 		));
-		registry.discoverTools("recipe", 4);
 		AtomicReference<String> bodyRef = new AtomicReference<>();
 		try (TestServer server = TestServer.start(bodyRef, """
 			{

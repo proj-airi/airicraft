@@ -26,6 +26,109 @@ public final class PlannerConversationProjector {
 		);
 	}
 
+	/**
+	 * Append-only log of every journal event: triggers, replies, tool exchanges,
+	 * compaction, supersede and reset markers. Nothing is rewritten — superseded
+	 * generations stay visible with a flag so the log never lies about what happened.
+	 * When verbose is false, tool exchanges collapse to the tool name alone so the
+	 * log reads as a sequence of actions rather than a raw protocol dump.
+	 */
+	public PlannerConversationDebugSnapshot chronicleSnapshot(PlannerTurnJournal journal) {
+		return chronicleSnapshot(journal, true);
+	}
+
+	public PlannerConversationDebugSnapshot chronicleSnapshot(PlannerTurnJournal journal, boolean verbose) {
+		Objects.requireNonNull(journal, "journal");
+		ArrayList<PlannerConversationDebugMessage> messages = new ArrayList<>();
+		PlannerTurnEvent latest = null;
+		for (PlannerTurnEvent event : journal.snapshot()) {
+			if (event.kind() == PlannerTurnEvent.Kind.SUBMISSION) {
+				latest = event;
+			}
+			switch (event.kind()) {
+				case SUBMISSION -> messages.add(triggerCard(event, journal.isSuperseded(event.generation())));
+				case DEBUG_CARD -> {
+					if (event.debugMessage() != null) {
+						messages.add(event.debugMessage().stamped(event.timestampMs(), journal.isSuperseded(event.generation())));
+					}
+				}
+				case TOOL_EXCHANGE -> messages.add(toolExchangeCard(event, journal.isSuperseded(event.generation()), verbose));
+				case COMPACTION -> {
+					if (event.debugMessage() != null) {
+						messages.add(event.debugMessage().stamped(event.timestampMs(), false));
+					}
+				}
+				case SUPERSEDED -> messages.add(markerCard(event, "generation g" + event.generation() + " superseded"));
+				case RESET -> messages.add(markerCard(event, "reset: " + (event.toolResultText().isBlank() ? "unknown" : event.toolResultText())));
+				case ACCEPTED_REPLY -> {
+					// Reply text is already shown by the assistant DEBUG_CARD.
+				}
+			}
+		}
+		return new PlannerConversationDebugSnapshot(
+			latest == null ? 0L : latest.generation(),
+			latest == null ? "IDLE" : latest.phase(),
+			latest == null ? 0 : latest.attempt(),
+			trim(messages)
+		);
+	}
+
+	private static PlannerConversationDebugMessage triggerCard(PlannerTurnEvent event, boolean superseded) {
+		PlannerRequest request = event.request();
+		String speaker = request == null ? null : request.senderName();
+		String text = request == null ? "" : request.message();
+		if (text.isBlank()) {
+			text = "(trigger without message)";
+		}
+		return new PlannerConversationDebugMessage(
+			speaker == null || speaker.isBlank() ? "user" : speaker,
+			PlannerConversationDebugKind.USER_TURN,
+			text,
+			event.generation(),
+			event.phase(),
+			event.attempt(),
+			false,
+			event.timestampMs(),
+			superseded
+		);
+	}
+
+	private static PlannerConversationDebugMessage toolExchangeCard(PlannerTurnEvent event, boolean superseded, boolean verbose) {
+		PlannerToolCall toolCall = event.toolCall();
+		StringBuilder text = new StringBuilder("→ ").append(toolCall == null ? "tool" : toolCall.name());
+		if (verbose) {
+			if (toolCall != null && toolCall.arguments() != null && !toolCall.arguments().entrySet().isEmpty()) {
+				text.append(' ').append(toolCall.arguments());
+			}
+			text.append('\n').append("← ").append(toolResultContent(event.toolResultText()));
+		}
+		return new PlannerConversationDebugMessage(
+			"tool",
+			PlannerConversationDebugKind.TOOL_RESULT,
+			text.toString(),
+			event.generation(),
+			event.phase(),
+			event.attempt(),
+			event.imageAttached(),
+			event.timestampMs(),
+			superseded
+		);
+	}
+
+	private static PlannerConversationDebugMessage markerCard(PlannerTurnEvent event, String text) {
+		return new PlannerConversationDebugMessage(
+			"system",
+			PlannerConversationDebugKind.NOTICE,
+			text,
+			event.generation(),
+			event.phase(),
+			event.attempt(),
+			false,
+			event.timestampMs(),
+			false
+		);
+	}
+
 	public PlannerConversationDebugSnapshot projectedSnapshot(PlannerTurnJournal journal) {
 		Objects.requireNonNull(journal, "journal");
 		List<PlannerTurnEvent> events = journal.snapshot();

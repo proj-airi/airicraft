@@ -39,21 +39,11 @@ class PlannerToolCatalogTest {
 	}
 
 	@Test
-	void parsesDiscoverToolsWithBoundedResultCount() {
-		PlannerToolCall call = PlannerToolCatalog.parseToolCall(toolCall("""
-			{"query":"smelting","maxResults":3}
-			"""));
+	void parsesArgumentFreeObserve() {
+		PlannerToolCall call = PlannerToolCatalog.parseToolCall(toolCall(PlannerToolCatalog.OBSERVE, "{}"));
 
-		assertEquals(PlannerToolCatalog.DISCOVER_TOOLS, call.name());
-		assertEquals("smelting", call.arguments().get("query").getAsString());
-		assertEquals(3, call.arguments().get("maxResults").getAsInt());
-	}
-
-	@Test
-	void rejectsDiscoverToolsResultCountOutsideTheCardLimit() {
-		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("""
-			{"query":"smelting","maxResults":6}
-			""")));
+		assertEquals(PlannerToolCatalog.OBSERVE, call.name());
+		assertEquals(0, call.arguments().size());
 	}
 
 	@Test
@@ -84,13 +74,9 @@ class PlannerToolCatalogTest {
 		}
 	}
 
-	private static JsonObject toolCall(String arguments) {
-		return toolCall(PlannerToolCatalog.DISCOVER_TOOLS, arguments);
-	}
-
 	private static JsonObject toolCall(String name, String arguments) {
 		JsonObject toolCall = new JsonObject();
-		toolCall.addProperty("id", "call_discover");
+		toolCall.addProperty("id", "call_test");
 		toolCall.addProperty("type", "function");
 		JsonObject function = new JsonObject();
 		function.addProperty("name", name);

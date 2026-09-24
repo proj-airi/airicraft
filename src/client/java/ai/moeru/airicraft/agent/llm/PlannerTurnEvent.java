@@ -41,7 +41,9 @@ public record PlannerTurnEvent(
 			debugMessage.generation(),
 			debugMessage.phase(),
 			debugMessage.attempt(),
-			debugMessage.hasImageAttachment()
+			debugMessage.hasImageAttachment(),
+			debugMessage.timestampMs(),
+			debugMessage.superseded()
 		);
 		assistantRawContent = assistantRawContent == null || assistantRawContent.isJsonNull()
 			? null

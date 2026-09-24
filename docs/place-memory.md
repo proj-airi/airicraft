@@ -2,7 +2,7 @@
 
 The planner chooses what a destination means. Built-in place memory stores named coordinates and optional purpose notes; navigation executes the chosen destination. No map mod is required.
 
-Discover these tools with `discover_tools {"query":"place memory","maxResults":4}`. The external Codex driver can call them directly through `agent tools call`.
+These tools are part of the planner tool catalog. The external Codex driver can call them directly through `agent tools call`.
 
 ```text
 remember_place {"name":"cave entrance","position":"current","note":"Return here after gathering iron"}

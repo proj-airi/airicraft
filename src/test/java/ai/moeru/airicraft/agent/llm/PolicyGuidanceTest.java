@@ -25,7 +25,6 @@ class PolicyGuidanceTest {
 			assertFalse(prompt.contains("run_policy"));
 			assertTrue(prompt.contains("Prefer query_world"));
 			assertTrue(registry.activeOpenAiTool("run_policy").isEmpty());
-			registry.resetToolSurface();
 		}
 		assertFalse(PlannerToolRegistry.of(new PolicyDocsToolProvider()).activeOpenAiTool("run_policy").isPresent());
 	}

@@ -354,6 +354,18 @@ public final class DialogueRuntime {
 		return activePlanner().canonicalConversationDebugSnapshot();
 	}
 
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot() {
+		return plannerChronicleConversationDebugSnapshot(true);
+	}
+
+	public PlannerConversationDebugSnapshot plannerChronicleConversationDebugSnapshot(boolean verbose) {
+		return activePlanner().chronicleConversationDebugSnapshot(verbose);
+	}
+
+	public PlannerConversationDebugSnapshot plannerContextConversationDebugSnapshot() {
+		return activePlanner().contextConversationDebugSnapshot();
+	}
+
 	public List<String> plannerContextExcerpt() {
 		return activePlanner().contextExcerpt();
 	}
@@ -802,7 +814,7 @@ public final class DialogueRuntime {
 			String message = eventBuffer.query(wake.eventSequence() - 1).events().stream()
 				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
 				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
-				.orElse("WORK CHANGED: review current work and observed outcomes in DECISION CONTEXT.");
+				.orElse("Work changed.");
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,

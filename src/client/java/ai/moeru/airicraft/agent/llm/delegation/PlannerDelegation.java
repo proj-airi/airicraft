@@ -132,7 +132,7 @@ public final class PlannerDelegation {
 		report.put("status", returned.status());
 		report.put("plannerReportedOutcome", returned.outcome());
 		report.put("planningDecisions", work.decisions);
-		report.put("evidenceContract", "Observed event entries reference shared DECISION CONTEXT sequence identities; tool results report executor responses. Neither the assignment outcome nor planning decisions are world facts.");
+		report.put("evidenceContract", "Observed event entries reference shared observation event sequence identities; tool results report executor responses. Neither the assignment outcome nor planning decisions are world facts.");
 		report.put("observedEvidence", work.evidence.stream().map(value -> GSON.fromJson(value, Object.class)).toList());
 		report.put("omittedEvidenceEntries", work.omittedEntries);
 		report.put("finalFacts", finalFacts);

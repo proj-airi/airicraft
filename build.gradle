@@ -120,6 +120,10 @@ loom {
 		client {
 			programArgs "--username", devPlayerName.get()
 		}
+
+		configureEach {
+			preferGradleTask = true
+		}
 	}
 
 	mods {

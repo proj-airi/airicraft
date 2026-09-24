@@ -22,17 +22,12 @@ public final class PlannerPromptPolicy {
 
 	public static String systemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry) {
 		PlannerToolRegistry effectiveToolRegistry = toolRegistry == null ? PlannerToolRegistry.empty() : toolRegistry;
-		String visionInstruction = "If visual information is needed, discover an observation capability before requesting it.";
+		String visionInstruction = "If visual information is needed, use take_a_look when it is in your tool schema.";
 		return renderTemplate(SYSTEM_PROMPT_TEMPLATE, readTemplate(SYSTEM_PROMPT_TEMPLATE), Map.of(
-			"available_tool_line", availableToolLine(effectiveToolRegistry),
 			"vision_instruction", visionInstruction,
 			"provider_tool_instructions", effectiveToolRegistry.promptInstructions(),
 			"same_client_admin", DialogueSpeakerLabels.SAME_CLIENT_ADMIN
 		));
-	}
-
-	private static String availableToolLine(PlannerToolRegistry toolRegistry) {
-		return "Available tools: " + toolRegistry.availableToolNames() + ".";
 	}
 
 	public static String compactionInstruction() {

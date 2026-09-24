@@ -78,7 +78,7 @@ class PlannerOrchestratorTest {
 			public void injectMockResponse(PlannerResponse r) {} public void injectTimeout() {} public boolean isConfigured() { return true; }
 		};
 		var registry = PlannerToolRegistry.of(provider);
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		var micro = new CompletableFuture<String>();
@@ -125,7 +125,6 @@ class PlannerOrchestratorTest {
 			var config = new AgentConfig.LlmConfig("http://127.0.0.1:" + server.port(), "test-key", "test-model",
 				"https://api.openai.com/v1", "", "", 15_000, 10_000, 8, 65_536, "low", true);
 			var tools = PlannerToolRegistry.of(new ImagePlannerToolProvider());
-			tools.activateAllForTesting();
 			Clock clock = Clock.systemDefaultZone();
 			var vision = new StubVisionTool(false, CompletableFuture.completedFuture(capturedScreenshot()),
 				CompletableFuture.failedFuture(new AssertionError("Must use planner model")));
@@ -142,7 +141,6 @@ class PlannerOrchestratorTest {
 				PlannerActionToolExecutor.DISABLED, PlannerToolNarrationSink.NO_OP, tools, PlannerToolExecutionObserver.NO_OP, maxImages, fallback);
 			try {
 				for (int run = 0; run < 3; run++) {
-					tools.activateAllForTesting();
 					tools.freezeToolPrefix();
 					orchestrator.submit(baseRequest(null));
 					assertTrue(awaitResult(orchestrator).succeeded());
@@ -184,7 +182,6 @@ class PlannerOrchestratorTest {
 				"Tool result for mine_blocks: {\"accepted\":true,\"workId\":\"JOB:iron\",\"state\":\"RUNNING\"}"); }
 		};
 		var registry = PlannerToolRegistry.of(provider);
-		registry.activateAllForTesting();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		var current = new java.util.concurrent.atomic.AtomicReference<Map<String, Object>>(Map.of());
@@ -222,7 +219,7 @@ class PlannerOrchestratorTest {
 			}
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("aborted")));
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
@@ -263,7 +260,7 @@ class PlannerOrchestratorTest {
 			public CompletableFuture<String> execute(PlannerToolCall call) { started.set(true); return future; }
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
@@ -275,7 +272,7 @@ class PlannerOrchestratorTest {
 			assertEquals(1, backend.callCount(), "Give quick calls time to finish");
 			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 			assertFalse(future.isDone(), "Plan ahead while execution continues");
-			assertTrue(conversationText(backend.conversation(1)).contains("Assuming the running task succeeds"));
+			assertTrue(conversationText(backend.conversation(1)).contains("assuming it succeeds"));
 			backend.succeed(1, PlannerResponse.toolCalls(List.of(new PlannerToolCall("skip", "continue", new JsonObject(), null, null)), null));
 			deadline = System.nanoTime() + Duration.ofMillis(1200).toNanos();
 			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
@@ -298,7 +295,7 @@ class PlannerOrchestratorTest {
 			public CompletableFuture<String> execute(PlannerToolCall call) { started.set(true); return future; }
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
@@ -333,7 +330,7 @@ class PlannerOrchestratorTest {
 			}
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> { aborted.incrementAndGet(); return abort; }));
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
@@ -372,7 +369,7 @@ class PlannerOrchestratorTest {
 			}
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> { executed.add(call.name()); return CompletableFuture.completedFuture("Plan retained"); }));
-		registry.activateAllForTesting(); registry.freezeToolPrefix();
+		registry.freezeToolPrefix();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		var events = new ai.moeru.airicraft.agent.events.SemanticEventBuffer(8);
@@ -442,7 +439,6 @@ class PlannerOrchestratorTest {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		Clock clock = Clock.systemUTC();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
-		toolRegistry.activateAllForTesting();
 		PlannerCallJournal plannerCallJournal = new PlannerCallJournal(
 			clock,
 			() -> 100L,
@@ -1336,8 +1332,7 @@ class PlannerOrchestratorTest {
 				awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 				backend.succeed(1, replyOnly("Reviewed again"));
 				awaitResult(orchestrator);
-				String content = backend.conversation(1).messages().getLast().content();
-				var context = JsonParser.parseString(content.substring(content.lastIndexOf("DECISION CONTEXT: ") + "DECISION CONTEXT: ".length())).getAsJsonObject();
+				var context = JsonParser.parseString(backend.conversation(1).messages().getLast().content()).getAsJsonObject();
 				assertEquals(1, context.get("afterEventSequence").getAsLong());
 				assertEquals(2, context.get("throughEventSequence").getAsLong());
 				assertEquals(1, context.getAsJsonArray("events").size());
@@ -2636,7 +2631,6 @@ class PlannerOrchestratorTest {
 	void parseRepairIncludesCurrentSchemaForRejectedToolArguments() {
 		RecordingBackend backend = new RecordingBackend();
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		registry.discoverTools("observation", 4);
 		PlannerOrchestrator orchestrator = newOrchestrator(
 			backend,
 			CurrentViewVisionTool.disabled(),
@@ -2719,8 +2713,9 @@ class PlannerOrchestratorTest {
 		awaitBackendCallCount(orchestrator, backend, 4, Duration.ofSeconds(1));
 		var messages = backend.conversation(3).messages();
 		assertEquals(1, messages.stream().filter(m -> m.content() != null && m.content().contains("wood-job")).count());
-		assertEquals("user", messages.getLast().role());
-		assertEquals("tool", messages.get(messages.size() - 2).role());
+		assertEquals("tool", messages.getLast().role());
+		assertEquals(PlannerObservation.TOOL_NAME, messages.get(messages.size() - 2).toolCalls().getFirst().name());
+		assertEquals("tool", messages.get(messages.size() - 3).role());
 		assertEquals(0, events.droppedCount());
 	}
 
@@ -2858,121 +2853,7 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
-	void undiscoveredSpecialistToolIsRejectedBeforeTheActionExecutor() {
-		RecordingBackend backend = new RecordingBackend();
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		ArrayList<String> invokedTools = new ArrayList<>();
-		PlannerOrchestrator orchestrator = newOrchestrator(
-			backend,
-			CurrentViewVisionTool.disabled(),
-			CurrentInventoryTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY,
-			registry,
-			toolCall -> {
-				invokedTools.add(toolCall.name());
-				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
-			}
-		);
-		JsonObject arguments = new JsonObject();
-		arguments.addProperty("x", 4);
-		arguments.addProperty("y", 64);
-		arguments.addProperty("z", 8);
-
-		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent go there"));
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-		backend.succeed(0, new PlannerResponse("", new PlannerToolCall(
-			"call_hidden",
-			PlannerToolCatalog.NAVIGATE_TO,
-			arguments,
-			null,
-			null
-		), null));
-		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
-		backend.succeed(1, new PlannerResponse("", new PlannerToolCall(
-			"call_hidden_retry",
-			PlannerToolCatalog.NAVIGATE_TO,
-			arguments,
-			null,
-			null
-		), null));
-		awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(1));
-		backend.succeed(2, new PlannerResponse("", new PlannerToolCall(
-			"call_hidden_final",
-			PlannerToolCatalog.NAVIGATE_TO,
-			arguments,
-			null,
-			null
-		), null));
-
-		PlannerExecutionResult result = awaitResult(orchestrator);
-
-		assertFalse(result.succeeded());
-		assertTrue(result.failureMessage().contains("tool_not_discovered: navigate_to"));
-		assertTrue(invokedTools.isEmpty());
-		assertTrue(backend.acceptedGenerations().isEmpty());
-	}
-
-	@Test
-	void discoveryActivatesSpecialistSchemaForTheNextPlannerRequestAndExecution() {
-		RecordingBackend backend = new RecordingBackend();
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		ArrayList<String> invokedTools = new ArrayList<>();
-		PlannerOrchestrator orchestrator = newOrchestrator(
-			backend,
-			CurrentViewVisionTool.disabled(),
-			CurrentInventoryTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY,
-			registry,
-			toolCall -> {
-				invokedTools.add(toolCall.name());
-				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
-			}
-		);
-		JsonObject discoverArguments = new JsonObject();
-		discoverArguments.addProperty("query", "navigation");
-
-		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent go there"));
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-		assertFalse(conversationText(backend.conversation(0)).contains("navigate_to"));
-		backend.succeed(0, new PlannerResponse("", new PlannerToolCall(
-			"call_discover",
-			PlannerToolCatalog.DISCOVER_TOOLS,
-			discoverArguments,
-			null,
-			null
-		), null));
-		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
-		assertEquals(List.of(1L), backend.acceptedGenerations());
-		assertEquals(0, orchestrator.debugSnapshot().context().queuedTriggerCount());
-
-		LlmConversation followUp = backend.conversation(1);
-		assertTrue(conversationText(followUp).contains("navigate_to"));
-		assertTrue(conversationText(followUp).contains("Tool result for discover_tools"));
-		assertTrue(registry.isActiveTool(PlannerToolCatalog.NAVIGATE_TO));
-
-		JsonObject navigateArguments = new JsonObject();
-		navigateArguments.addProperty("x", 4);
-		navigateArguments.addProperty("y", 64);
-		navigateArguments.addProperty("z", 8);
-		backend.succeed(1, new PlannerResponse("", new PlannerToolCall(
-			"call_navigate",
-			PlannerToolCatalog.NAVIGATE_TO,
-			navigateArguments,
-			null,
-			null
-		), null));
-		awaitInvokedToolCount(orchestrator, invokedTools, 1, Duration.ofSeconds(1));
-		awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(1));
-		backend.succeed(2, replyOnly("On my way."));
-
-		PlannerExecutionResult result = awaitResult(orchestrator);
-
-		assertTrue(result.succeeded());
-		assertEquals(List.of(PlannerToolCatalog.NAVIGATE_TO), invokedTools);
-	}
-
-	@Test
-	void discoveryCannotBatchWithAReadTool() {
+	void observeCannotBatchWithAReadTool() {
 		RecordingBackend backend = new RecordingBackend();
 		PlannerToolRegistry registry = PlannerToolRegistry.empty();
 		PlannerOrchestrator orchestrator = newOrchestrator(
@@ -2983,12 +2864,10 @@ class PlannerOrchestratorTest {
 			registry
 		);
 
-		JsonObject discoverArguments = new JsonObject();
-		discoverArguments.addProperty("query", "navigation");
-		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent inspect and discover"));
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent observe and inspect"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_discover", PlannerToolCatalog.DISCOVER_TOOLS, discoverArguments, null, null),
+			new PlannerToolCall("call_observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null, null),
 			new PlannerToolCall("call_inventory", PlannerToolCatalog.INSPECT_INVENTORY, new JsonObject(), null, null)
 		), null));
 
@@ -2997,25 +2876,6 @@ class PlannerOrchestratorTest {
 
 		backend.succeed(1, replyOnly("I will use one tool at a time."));
 		assertTrue(awaitResult(orchestrator).succeeded());
-	}
-
-	@Test
-	void activeSafetyHoldTemporarilyExposesTheResumeControlOnTheCoreSurface() {
-		PlannerToolRegistry registry = PlannerToolRegistry.empty();
-		PlannerOrchestrator orchestrator = newOrchestrator(
-			new RecordingBackend(),
-			CurrentViewVisionTool.disabled(),
-			CurrentInventoryTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY,
-			registry,
-			PlannerActionToolExecutor.DISABLED
-		);
-
-		orchestrator.updateSafetyContext(1L, "hold-1", true);
-		assertTrue(registry.isActiveTool(PlannerToolCatalog.RESUME_TASK));
-
-		orchestrator.updateSafetyContext(2L, null, false);
-		assertFalse(registry.isActiveTool(PlannerToolCatalog.RESUME_TASK));
 	}
 
 	@Test
@@ -3481,7 +3341,6 @@ class PlannerOrchestratorTest {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		Clock clock = Clock.systemDefaultZone();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
-		toolRegistry.activateAllForTesting();
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
@@ -3515,7 +3374,6 @@ class PlannerOrchestratorTest {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		Clock clock = Clock.systemDefaultZone();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
-		toolRegistry.activateAllForTesting();
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
@@ -3546,7 +3404,6 @@ class PlannerOrchestratorTest {
 		PlannerVisionMode visionMode,
 		PlannerToolRegistry toolRegistry
 	) {
-		toolRegistry.activateAllForTesting();
 		return newOrchestrator(
 			backend,
 			visionTool,
@@ -3612,7 +3469,6 @@ class PlannerOrchestratorTest {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		Clock clock = Clock.systemDefaultZone();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
-		toolRegistry.activateAllForTesting();
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend, observability),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, observability, toolRegistry), observability),
@@ -3745,7 +3601,6 @@ class PlannerOrchestratorTest {
 	) {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
-		toolRegistry.activateAllForTesting();
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),

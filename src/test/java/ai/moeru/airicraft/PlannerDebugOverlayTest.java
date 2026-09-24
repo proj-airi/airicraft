@@ -167,6 +167,7 @@ class PlannerDebugOverlayTest {
 		);
 
 		PlannerDebugOverlay.ConversationPaneLayout layout = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			snapshot,
 			800,
 			600,
@@ -197,6 +198,7 @@ class PlannerDebugOverlayTest {
 			)
 		);
 		PlannerDebugOverlay.ConversationPaneLayout layout = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			snapshot,
 			800,
 			320,
@@ -264,6 +266,7 @@ class PlannerDebugOverlayTest {
 	@Test
 	void conversationLayoutTitleTracksCurrentGenerationWhenPinnedToBottom() {
 		PlannerDebugOverlay.ConversationPaneLayout first = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			new PlannerConversationDebugSnapshot(
 				1L,
 				"PLANNER_REQUEST",
@@ -280,6 +283,7 @@ class PlannerDebugOverlayTest {
 		);
 
 		PlannerDebugOverlay.ConversationPaneLayout second = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			new PlannerConversationDebugSnapshot(
 				2L,
 				"TOOL_FOLLOW_UP",
@@ -310,6 +314,7 @@ class PlannerDebugOverlayTest {
 		);
 
 		PlannerDebugOverlay.ConversationPaneLayout withFooter = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			snapshot,
 			800,
 			600,
@@ -320,6 +325,7 @@ class PlannerDebugOverlayTest {
 			"| waiting for planner"
 		);
 		PlannerDebugOverlay.ConversationPaneLayout withoutFooter = PlannerDebugOverlay.layoutConversationPane(
+			PlannerConversationView.CHRONICLE,
 			snapshot,
 			800,
 			600,

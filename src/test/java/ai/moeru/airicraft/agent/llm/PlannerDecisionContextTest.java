@@ -16,13 +16,13 @@ class PlannerDecisionContextTest {
 			ai.moeru.airicraft.agent.work.WorkSnapshot.State.PAUSED, "mine", "PAUSED", true, 2, Map.of("holdId", "hold1"));
 		events.append(1, "work.changed", failed.payload());
 		var context = new PlannerDecisionContext("world", 2, 2, "controller", "reflex", Map.of("work", java.util.List.of(failed.payload(), paused.payload())), events.query(null));
-		String first = context.message(0).content();
+		String first = PlannerObservation.render(context.observation(0));
 		assertTrue(first.contains("no_path"));
 		assertFalse(first.contains("request details"));
-		String next = context.message(1).content();
+		String next = PlannerObservation.render(context.observation(1));
 		assertFalse(next.contains("JOB:old"));
 		assertTrue(next.contains("hold1"));
-		assertTrue(context.message(1, true).content().contains("JOB:old"));
+		assertTrue(PlannerObservation.render(context.observation(1, true)).contains("JOB:old"));
 		assertEquals(2, ((java.util.List<?>) context.current().get("work")).size());
 		assertTrue(events.query(null).events().getFirst().payload().containsKey("details"));
 	}
@@ -33,7 +33,7 @@ class PlannerDecisionContextTest {
 		events.append(3, "task.started", Map.of("workId", "new"));
 		var context = new PlannerDecisionContext("world", 3, 3, "controller", "work",
 			Map.of("workId", "new"), events.query(null));
-		var payload = JsonParser.parseString(context.message(0).content().substring("DECISION CONTEXT: ".length())).getAsJsonObject();
+		var payload = JsonParser.parseString(PlannerObservation.render(context.observation(0))).getAsJsonObject();
 		assertEquals(1, payload.getAsJsonObject("missingEventRange").get("to").getAsLong());
 		assertEquals("new", payload.getAsJsonObject("current").get("workId").getAsString());
 		assertEquals(2, payload.getAsJsonArray("events").size());
@@ -45,8 +45,8 @@ class PlannerDecisionContextTest {
 		var events = new SemanticEventBuffer(4);
 		events.append(1, "task.completed", Map.of("workId", "wood"));
 		var context = new PlannerDecisionContext("world", 2, 2, "controller", "idle", Map.of(), events.query(null));
-		assertFalse(context.message(1).content().contains("wood"));
-		assertTrue(context.forOwner("thinking").message(0).content().contains("wood"));
-		assertTrue(context.forOwner("thinking").message(0).content().contains("thinking"));
+		assertFalse(PlannerObservation.render(context.observation(1)).contains("wood"));
+		assertTrue(PlannerObservation.render(context.forOwner("thinking").observation(0)).contains("wood"));
+		assertTrue(PlannerObservation.render(context.forOwner("thinking").observation(0)).contains("thinking"));
 	}
 }

@@ -68,7 +68,7 @@ class PlannerStateTextTest {
 		var inventory = Map.of("minecraft:dirt", 4);
 		var vitals = Map.of("health", 20, "maxHealth", 20, "food", 20);
 		var context = new PlannerDecisionContext("world", 4, 4, "controller", "idle", Map.of("inventory", inventory, "vitals", vitals), events.query(null));
-		String message = PlannerInputText.message("user", context.message(0).content());
+		String message = PlannerInputText.observation(context.observation(0));
 		assertTrue(message.contains("Carrying 4 dirt."));
 		assertTrue(message.contains("Health 20/20; food full."));
 		assertTrue(message.contains("\"itemId\":\"minecraft:dirt\""));

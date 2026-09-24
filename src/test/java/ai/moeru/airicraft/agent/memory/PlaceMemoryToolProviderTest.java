@@ -80,7 +80,6 @@ class PlaceMemoryToolProviderTest {
 	@Test
 	void memoryIsDiscoverableWithoutMapIntegrationAndWritesCannotEnterReadBatches() {
 		var registry = PlannerToolRegistry.of(provider());
-		registry.discoverTools("place memory", 4);
 		for (String name : List.of("remember_place", "recall_place", "list_places", "forget_place")) {
 			assertTrue(registry.isActiveTool(name), name);
 		}
