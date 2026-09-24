@@ -2622,7 +2622,7 @@ public final class AiricraftCliMain {
 			view.put("recentTurnCount", recentTurns.size());
 			if (verbose) {
 				copy(view, dialogue, "lastResponse");
-				copy(view, payload, "conversation", "canonicalConversation", "projectedConversation", "conversationSources", "plannerJournal");
+				copy(view, payload, "conversation", "canonicalConversation", "projectedConversation", "chronicleConversation", "contextConversation", "conversationSources", "plannerJournal");
 				view.put("recentTurns", recentTurns);
 			}
 			return view;
@@ -2652,7 +2652,7 @@ public final class AiricraftCliMain {
 				copy(view, dialogueState, "lastResponse");
 				copy(view, chatProbe, "lastAttemptText", "lastEmissionText");
 				copy(view, payload, "task", "missionExecution");
-				copy(view, conversationSources, "canonicalConversation", "projectedConversation");
+				copy(view, conversationSources, "canonicalConversation", "projectedConversation", "chronicleConversation", "contextConversation");
 				view.put("plannerAttempts", plannerAttempts);
 				view.put("timelineTail", timelineTail);
 			}
@@ -2743,7 +2743,7 @@ public final class AiricraftCliMain {
 			if (verbose) {
 				copy(view, planner, "baseRequest", "lastCompactionResult");
 				copy(view, context, "lastObservedUsage", "acceptedAmbientContext", "activeCheckpoint");
-				copy(view, payload, "conversation", "canonicalConversation", "projectedConversation", "conversationSources", "plannerJournal");
+				copy(view, payload, "conversation", "canonicalConversation", "projectedConversation", "chronicleConversation", "contextConversation", "conversationSources", "plannerJournal");
 				view.put("contextExcerpt", contextExcerpt);
 			}
 			return view;

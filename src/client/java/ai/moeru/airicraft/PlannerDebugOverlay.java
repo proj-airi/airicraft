@@ -738,7 +738,7 @@ final class PlannerDebugOverlay {
 		if (view == PlannerConversationView.CHRONICLE && message.timestampMs() > 0L) {
 			header.append(CHRONICLE_TIME_FORMAT.format(Instant.ofEpochMilli(message.timestampMs()))).append(" · ");
 		}
-		header.append(conversationLabel(message));
+		header.append(trim(conversationLabel(message), 30));
 		if (view == PlannerConversationView.CHRONICLE) {
 			if (message.generation() > 0L) {
 				header.append(" · g").append(message.generation());
