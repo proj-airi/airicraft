@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "when": {
+        "op": "lt",
+        "f": "usingItem",
+        "v": 0.5
+      },
+      "act": {
+        "mode": "hold",
+        "target": "ranged",
+        "attack": "ready",
+        "attackRange": 2.21,
+        "range": 2.8,
+        "slack": 0.73,
+        "sprint": true,
+        "zigzag": true,
+        "use": "off"
+      }
+    },
+    {
+      "act": {
+        "mode": "approach",
+        "target": "nearest",
+        "range": 2.25,
+        "slack": 0.4,
+        "sprintBeyond": 4.82,
+        "attack": "ready",
+        "attackRange": 4.0,
+        "readyTicks": 9,
+        "flipTicks": 33
+      }
+    }
+  ]
+}

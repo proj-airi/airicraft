@@ -1,0 +1,57 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+}
+
+repositories {
+	maven {
+		// Local-only mirror: Maven Central is rate-limited (429) on this egress.
+		url = uri("https://maven.aliyun.com/repository/public")
+	}
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = "airicraft-sim"
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"airicraft-sim" {
+			sourceSet sourceSets.main
+		}
+	}
+
+	runs {
+		server {
+			runDir "run/sim-server"
+			programArgs "--nogui"
+			vmArgs "-Xmx4G"
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	testImplementation platform("org.junit:junit-bom:5.11.4")
+	testImplementation "org.junit.jupiter:junit-jupiter"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+java {
+	withSourcesJar()
+}
+
+tasks.test {
+	useJUnitPlatform()
+	testLogging {
+		events "passed", "skipped", "failed"
+	}
+}

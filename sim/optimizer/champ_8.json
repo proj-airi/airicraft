@@ -1,0 +1,88 @@
+{
+  "rules": [
+    {
+      "when": {
+        "op": "lt",
+        "f": "usingItem",
+        "v": 0.44
+      },
+      "act": {
+        "mode": "hold",
+        "target": "ranged",
+        "attack": "ready",
+        "attackRange": 2.0,
+        "range": 2.27,
+        "slack": 0.74,
+        "sprint": true,
+        "zigzag": true,
+        "use": "off"
+      }
+    },
+    {
+      "when": {
+        "op": "le",
+        "f": "meleeCount",
+        "v": 3.3,
+        "r": 5.77
+      },
+      "act": {
+        "mode": "approach",
+        "target": "targeting",
+        "attack": "ready",
+        "attackRange": 3.1,
+        "range": 1.68,
+        "slack": 0.54,
+        "sprint": false,
+        "readyTicks": 9,
+        "flipTicks": 19
+      }
+    },
+    {
+      "when": {
+        "op": "le",
+        "f": "nearestHp",
+        "v": 4.39
+      },
+      "act": {
+        "mode": "kite",
+        "target": "nearest",
+        "attack": "ready",
+        "attackRange": 3.0,
+        "range": 1.96,
+        "slack": 0.33,
+        "sprintBeyond": 5.89
+      }
+    },
+    {
+      "when": {
+        "op": "is",
+        "f": "rangedType",
+        "v": "zombie"
+      },
+      "act": {
+        "mode": "approach",
+        "target": "centroid",
+        "attack": "ready",
+        "attackRange": 3.17,
+        "sprintBeyond": 3.77,
+        "sprint": true,
+        "readyTicks": 17,
+        "flipTicks": 45,
+        "jump": true
+      }
+    },
+    {
+      "act": {
+        "mode": "approach",
+        "target": "nearest",
+        "range": 2.21,
+        "slack": 0.47,
+        "sprintBeyond": 4.03,
+        "attack": "ready",
+        "attackRange": 3.18,
+        "readyTicks": 10,
+        "flipTicks": 27
+      }
+    }
+  ]
+}
