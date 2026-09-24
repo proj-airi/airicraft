@@ -184,8 +184,9 @@ class LiveToolsTest(unittest.TestCase):
         self.assertFalse(self.runtime.paused)
         self.assertEqual(summary["freeze_intervals"], 1)
         self.assertGreater(summary["frozen_ms"], 200)
-        events = [row["event"] for row in iter_jsonl(out)]
-        self.assertEqual(events, ["pause", "continue", "summary"])
+        rows = list(iter_jsonl(out))
+        self.assertEqual([row["event"] for row in rows], ["pause", "continue", "summary"])
+        self.assertEqual((rows[0]["debugSessionId"], rows[0]["pauseEpoch"]), ("s1", 1))
 
 
 if __name__ == "__main__":

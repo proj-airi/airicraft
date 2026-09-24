@@ -74,8 +74,8 @@ python3 -m s15 freeze-planning --bridge-state eval-output/<run>/01-iron-pickaxe/
 Tick budgets count ticks, so freezing does not eat the scenario budget. The driver always resumes on exit and retries
 a failed resume once; if another tool pauses the client (a bug report, a manual pause) the driver logs the stale epoch
 and stops. If the log ends with `resume_failed`, continue manually with
-`airicraft agent debug ticks continue --debug-session-id <id> --pause-epoch <epoch>` (values in the last `pause` entry's
-response; `airicraft agent debug ticks state` shows them).
+`airicraft agent debug ticks continue --debug-session-id <id> --pause-epoch <epoch>` (both are in the log's last
+`pause` entry; `airicraft agent debug ticks state` also shows them).
 
 **Metrics.** Scenario outcome (evaluator report), elapsed ticks, damage (`combat.damage_taken`), deaths, System 2
 requests (`s15 inspect`), total frozen time (freeze log summary). **Analysis:** sync − async per scenario with bootstrap

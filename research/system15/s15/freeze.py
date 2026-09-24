@@ -81,7 +81,8 @@ def run_freeze(bridge: Bridge, out_path: Path, duration_s: float, poll_s: float 
                 if in_flight and freezer.session is None:
                     freezer.pause()
                     log.write(json.dumps({"event": "pause", "wall_ms": round((now - started) * 1000.0, 1),
-                                          "calls": sorted(in_flight)}) + "\n")
+                                          "calls": sorted(in_flight), "debugSessionId": freezer.session[0],
+                                          "pauseEpoch": freezer.session[1]}) + "\n")
                 elif not in_flight and freezer.session is not None:
                     held = freezer.resume()
                     frozen_ms += held
