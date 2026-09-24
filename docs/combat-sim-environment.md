@@ -369,14 +369,33 @@ archive and the eval set itself was switched to `--hard`.
   (`survived=1.0`, kills ~0-1.3, ~500-600 ticks) — they live in the
   survived-extreme cells and do not displace combat elites.
 
-#### Round 5: speed niches (`--cell2 ticks`, me10)
+#### Round 5: speed niches (`--cell2 ticks`, me10) + hard polish
 
 With damage near-zero, the archive was re-binned as kills x speed
 (`TICKS_EDGES`) instead of kills x damage: cells now compete on clear
 time, which tilts selection toward fast-and-unscathed policies. As a side
 benefit, stall programs all collapse into the slowest bin and stop
-occupying distinct niches. me10 resumes the me9 grid + the 5 hard
+occupying distinct niches. me10 resumed the me9 grid + the 5 hard
 champions as seeds under `--hard`, patience 100.
+
+- 313 gens until the patience-100 stop: HV 139.9k -> 170.6k, plateaued at
+  gen ~213. Final eval on a fresh hard set (baseline
+  `[3.58, -11.91, .83, .83, -170]`): the frontier shifted mass toward
+  fast clears — fastest dominator `[4.5, -9.5, .92, .92, -168]` — but
+  speed vs damage is still a real tradeoff: ~150-180t entries take
+  ~3.7-4.5 HP while the ~1.7-2.4 HP entries need 300+ ticks.
+- Degenerate audit: only 1/31 front members is a stall elite (vs 6/30 in
+  me9) — ticks binning suppressed stall niches as designed.
+- Parameter polish (`optimize_polish.py --hard`) on the two best
+  compromise structures then pushed the corner: `champ_pol26_0`
+  `[3.88, -2.87, 1.0, 1.0, -169]` — perfect clear + survival at ~1.4
+  hearts lost, faster than baseline; `champ_pol26_8`
+  `[3.71, -2.71, .96, .96, -150]` trades 4% clear for 19 fewer ticks.
+  `champ_pol3_1` `[4.08, -3.33, 1.0, 1.0, -176]` maximizes kills.
+- Current frontier verdict: "fast and nearly unscathed" is achievable —
+  the champions clear 4-9 mixed-mob ambushes in ~150-175 ticks taking
+  ~1.5 hearts; the residual ~2.7 HP is the odd unavoidable hit, not a
+  policy failure mode.
 
 ## Verified end-to-end
 

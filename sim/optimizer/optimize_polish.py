@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--pop", type=int, default=16)
     ap.add_argument("--arenas", type=int, default=12)
     ap.add_argument("--nscen", type=int, default=12)
+    ap.add_argument("--hard", action="store_true",
+                    help="harder eval scenarios: 4-9 mobs at radius 5.5-8")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
@@ -115,7 +117,11 @@ def main():
     def sample_eval_set(r, n):
         out = []
         for _ in range(n):
-            scen = random_scenario(r)
+            if args.hard:
+                scen = random_scenario(r, min_r=5.5, max_r=8.0,
+                                       min_n=4, max_n=9)
+            else:
+                scen = random_scenario(r)
             terr = random_terrain(r, avoid_pts=[(dx, dz)
                                               for _t, dx, dz in scen])
             out.append((scen, terr))
