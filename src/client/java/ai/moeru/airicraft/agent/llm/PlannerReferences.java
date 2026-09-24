@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 /** Presentation references shared by controller, thinker and compactor. Native identities never change. */
 public final class PlannerReferences {
 	private static final AtomicLong NEXT = new AtomicLong();
-	private static final Pattern NATIVE_ID = Pattern.compile("[A-Za-z0-9_.:-]*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:[A-Za-z0-9_.:-]*[A-Za-z0-9_-])?");
+	private static final Pattern NATIVE_ID = Pattern.compile("(?<![A-Za-z0-9_.:-])[A-Za-z0-9_.:-]*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?:[A-Za-z0-9_.:-]*[A-Za-z0-9_-])?");
 	private static final Pattern REFERENCE = Pattern.compile("@r[0-9]+");
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 	private final int capacity;

@@ -75,6 +75,7 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 		return CompletableFuture.completedFuture(
 			"At " + position + " in " + PlannerStateText.item(dimension) + ".\n"
 				+ PlannerStateText.inventory(itemCounter.count(client.player.getInventory())) + " " + freeStorageSlots + " free storage slots.\n"
+				+ (freeStorageSlots == 0 ? "No empty storage slots: only compatible non-full stacks can accept pickups. Free space before collecting other items.\n" : "")
 				+ PlannerStateText.hotbar(hotbarItems(client.player.getInventory()), selectedHotbarSlot) + "\n"
 				+ PlannerStateText.equipment(equippedItemId, equipment) + "\n"
 				+ (durability.isEmpty() ? "" : "Durability: " + String.join("; ", durability) + ".\n")

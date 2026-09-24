@@ -14,6 +14,9 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private final BaritoneFacade sharedBaritone;
 	private WorldTaskExecutor activeExecutor;
 	private WorldTaskType activeType;
+	private NavigationStallWatchdog navigationStall;
+	private String navigationTaskId;
+	private String stalledTaskId;
 	private TaskExecutionSnapshot transitionSnapshot = TaskExecutionSnapshot.idle();
 
 	public DispatchingWorldTaskExecutor(ExecutorSet executors, BaritoneFacade sharedBaritone) {
@@ -25,11 +28,19 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
 		if (activeTask.isEmpty()) {
 			deactivate(sessionSnapshot);
+			if (navigationStall != null) navigationStall.clear();
 			transitionSnapshot = TaskExecutionSnapshot.idle();
 			return Optional.empty();
 		}
 
 		WorldTaskRequest request = activeTask.get();
+		if (request.taskId().equals(stalledTaskId)) return Optional.empty();
+		if (navigationStall == null) navigationStall = new NavigationStallWatchdog();
+		if (!request.taskId().equals(navigationTaskId)) {
+			navigationStall.clear();
+			navigationTaskId = request.taskId();
+			stalledTaskId = null;
+		}
 		WorldTaskExecutor requestedExecutor = executors.executorFor(request);
 		if (sharedBaritone != null && activeType != request.type()) {
 			deactivate(sessionSnapshot);
@@ -53,7 +64,21 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		activeExecutor = requestedExecutor;
 		activeType = request.type();
 		transitionSnapshot = TaskExecutionSnapshot.idle();
-		return activeExecutor.tick(sessionSnapshot, activeTask);
+		var result = activeExecutor.tick(sessionSnapshot, activeTask);
+		var progress = sharedBaritone == null || !sessionSnapshot.companionActuationAllowed()
+			? Optional.<BaritoneFacade.NavigationProgress>empty() : sharedBaritone.navigationProgress();
+		if (result.isPresent() || progress.isEmpty()) navigationStall.clear();
+		else if (navigationStall.observe(sessionSnapshot.tickCount(), progress.orElseThrow())) {
+			deactivate(sessionSnapshot);
+			sharedBaritone.cancel();
+			stalledTaskId = request.taskId();
+			transitionSnapshot = new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(),
+				"WorldTaskDispatcher", "PATH_STUCK", null, null);
+			return Optional.of(new TaskTerminalEvent(request.taskId(), request.goal(), TaskExecutionState.FAILED,
+				"navigation_stuck: no supported displacement or block-breaking progress for 100 active ticks; repeated jumping is not progress",
+				null, TaskFailureCode.TRANSIENT));
+		}
+		return result;
 	}
 
 	private void deactivate(SessionSnapshot sessionSnapshot) {
@@ -92,6 +117,9 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 
 	@Override
 	public void onWorldLeave() {
+		navigationTaskId = null;
+		stalledTaskId = null;
+		if (navigationStall != null) navigationStall.clear();
 		activeExecutor = null;
 		activeType = null;
 		transitionSnapshot = TaskExecutionSnapshot.idle();

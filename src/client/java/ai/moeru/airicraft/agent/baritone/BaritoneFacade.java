@@ -58,5 +58,10 @@ public interface BaritoneFacade {
 
 	Optional<String> pollPathEvent();
 
+	/** Present only while navigation still needs movement; idle/arrived owners return empty. */
+	default Optional<NavigationProgress> navigationProgress() { return Optional.empty(); }
+
+	record NavigationProgress(double x, double y, double z, boolean supported, String breakingTarget, float breakingProgress) {}
+
 	boolean navigationGoalReached(GoalPosition position);
 }

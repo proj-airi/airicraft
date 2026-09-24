@@ -6,7 +6,8 @@ Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for aut
 
 Prerequisites:
 
-- JDK 21 on `PATH`. JetBrains Runtime is recommended: enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) only works on JBR, while other JDKs silently degrade HotSwap to method-body-only changes. The repo pins `21` in `.java-version`, so jenv, asdf, or jolta can supply the JDK automatically (for jenv: `jenv add <jdk-home>` once, then the pin applies). A plain install, such as `brew install openjdk@21` or a `.jdk` bundle under `~/Library/Java/JavaVirtualMachines`, works too.
+- JDK 25 on `PATH` for running Gradle; Fabric Loom `1.18` requires a Java 25+ build JVM. The repo pins `25` in `.java-version`, so jenv, asdf, or jolta can supply the JDK automatically (for jenv: `jenv add <jdk-home>` once, then the pin applies). A plain `.jdk` bundle under `~/Library/Java/JavaVirtualMachines` works too.
+- A JetBrains Runtime JDK 21 toolchain for compiling, testing, and running the mod; the language target stays on Java 21 and the toolchain vendor is pinned to JBR (`JvmVendorSpec.JETBRAINS`), which is what enables enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) for HotSwap. Gradle auto-detects installed JDKs and can auto-download a JBR 21 toolchain via the Foojay resolver, so a `.jdk` bundle under `~/Library/Java/JavaVirtualMachines` or a version-manager install is picked up without configuration.
 - Git submodules initialized; the build fails on a missing `action-plan-advisor`:
 
   ```shell
@@ -152,7 +153,7 @@ Visual context is intentionally off by default because screenshot capture and PN
 
 All existing client tasks use HotSwap by default. This includes `runClient`, `scripts/compat run`, and `scripts/eval run`.
 
-HotswapAgent `2.0.3` is a regular Maven dependency; Gradle resolves it on first use. Enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) is a JetBrains Runtime feature: run the client on a JBR-built JDK 21 for more than method-body-only reloads. Other JDKs ignore the flag and fall back to standard JDWP redefinition.
+HotswapAgent `2.0.3` is a regular Maven dependency; Gradle resolves it on first use. Enhanced class redefinition (`-XX:+AllowEnhancedClassRedefinition`) is a JetBrains Runtime feature: the client always runs on the JBR 21 toolchain (the Gradle JVM itself is JDK 25). Non-JBR JDK 21 installs are not selected by the toolchain vendor spec, so there is no silent fallback to method-body-only reloads.
 
 Fabric uses its Knot class loader. HotswapAgent cannot watch Knot class roots directly.
 
@@ -627,7 +628,7 @@ If all are false, only non-content structural tracing metadata is sent.
 
 ### `./gradlew runClient` says `Unable to locate a Java Runtime`
 
-No JDK 21 is visible to the shell that launched Gradle. Check:
+No JDK 25 is visible to the shell that launched Gradle. Check:
 
 ```shell
 java -version
@@ -637,9 +638,11 @@ which java
 
 Fix:
 
-1. Install a JDK 21 (any distro; JBR recommended for full HotSwap). Either drop a `.jdk` bundle into `~/Library/Java/JavaVirtualMachines`, or use a version manager that reads the repo's `.java-version`.
+1. Install a JDK 25 (any distro). Either drop a `.jdk` bundle into `~/Library/Java/JavaVirtualMachines`, or use a version manager that reads the repo's `.java-version`.
 2. Make sure `java` is on `PATH` (or `JAVA_HOME` is set) in the shell that runs Gradle.
-3. Re-run `./gradlew --version` to confirm Gradle sees Java.
+3. Re-run `./gradlew --version` to confirm Gradle sees Java 25 or newer.
+
+If Gradle runs but toolchain resolution fails instead, no JBR 21 JDK was detected. Install one under `~/Library/Java/JavaVirtualMachines` (or via your version manager), or let the Foojay resolver download it — toolchain downloads need network access on first setup.
 
 ## Notes
 

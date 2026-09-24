@@ -26,6 +26,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenAiCompatibleLlmBackendTest {
+	@Test void identifiesOpenCodeSessionsWithoutSendingTheirHeaderToOtherProviders() {
+		var client = new OpenAiCompatibleChatClient(config(1, false));
+		var first = client.buildHttpRequest(java.net.URI.create("https://opencode.ai/zen/go/v1/chat/completions"), "{}");
+		var next = client.buildHttpRequest(java.net.URI.create("https://opencode.ai/zen/go/v1/chat/completions"), "{}");
+		assertEquals("Airicraft/1.0", first.headers().firstValue("User-Agent").orElseThrow());
+		assertFalse(first.headers().firstValue("x-opencode-session").orElseThrow().isBlank());
+		assertEquals(first.headers().firstValue("x-opencode-session"), next.headers().firstValue("x-opencode-session"));
+		var other = client.buildHttpRequest(java.net.URI.create("https://example.com/v1/chat/completions"), "{}");
+		assertTrue(other.headers().firstValue("x-opencode-session").isEmpty());
+	}
+
 	@Test void compactionLimitsNewestImagesWithoutChangingTranscriptOrToolPairing() throws Exception {
 		var messages = new java.util.ArrayList<LlmChatMessage>();
 		messages.add(LlmChatMessage.system("summarize"));

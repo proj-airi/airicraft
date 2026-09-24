@@ -544,6 +544,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			drainEventPipeline();
 		}
 		debugRecorder.recordDialogueState(dialogueRuntime.snapshot());
+		behaviorTreeRuntime.tickChat(client, sessionSnapshot, dialogueRuntime, chatService, debugRecorder, tickCount);
 		if (survivalReflexRuntime.snapshot().holdsNormalTasks()) {
 			tickActionGraph(worldEvidence, false);
 			pauseNormalWorkForReflex(client);
@@ -707,6 +708,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				if (!stack.isEmpty()) inventory.merge(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 			facts.put("inventory", inventory);
+			int freeStorageSlots = 0;
+			for (int slot = 0; slot < net.minecraft.entity.player.PlayerInventory.MAIN_SIZE; slot++)
+				if (client.player.getInventory().getStack(slot).isEmpty()) freeStorageSlots++;
+			facts.put("inventoryCapacity", Map.of("freeStorageSlots", freeStorageSlots,
+				"pickupConstraint", freeStorageSlots == 0
+					? "No empty storage slots. Only drops compatible with an existing non-full stack can be picked up. Free space before collecting other items."
+					: "Empty storage slots available"));
 			facts.put("vitals", Map.of("health", client.player.getHealth(), "maxHealth", client.player.getMaxHealth(),
 				"food", client.player.getHungerManager().getFoodLevel(), "air", client.player.getAir(), "maxAir", client.player.getMaxAir()));
 		}

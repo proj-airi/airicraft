@@ -229,7 +229,8 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			&& !navigateGoalReached(appliedTask)) {
 			var sample = waterProgressObserver.observe().orElse(null);
 			if (sample == null) navigationStall.clear();
-			else if (navigationStall.observe(sessionSnapshot.tickCount(), sample.x(), sample.y(), sample.z())) {
+			else if (facade.navigationProgress().map(progress -> navigationStall.observe(sessionSnapshot.tickCount(), progress))
+				.orElseGet(() -> navigationStall.observe(sessionSnapshot.tickCount(), sample.x(), sample.y(), sample.z()))) {
 				requestInternalCancellation(appliedTask.taskId());
 				pendingNavigationEnd = null;
 				pathEvent = Optional.of("PATH_STUCK");

@@ -437,6 +437,7 @@ public final class DialogueRuntime {
 		supersedePendingInternalTaskUpdates("planner_reset", tick, eventBuffer);
 		resetPlanners("runtime reset");
 		queuedTimeoutInjections = 0;
+		pendingVisibleReplies.clear();
 		applyTransition(DialogueCore.onReset(state, senderName, tick), tick, eventBuffer);
 		return true;
 	}
@@ -901,8 +902,9 @@ public final class DialogueRuntime {
 		visibleReplyOwner = activePlanner();
 		state = transition.state();
 		applyEffects(transition.effects(), tick, eventBuffer);
-		pendingVisibleReplies.clear();
-		long nextReadyTick = tick;
+		// A new planner result must not erase accepted speech that has not been sent.
+		long nextReadyTick = pendingVisibleReplies.isEmpty() ? tick
+			: Math.max(tick, pendingVisibleReplies.peekLast().readyTick());
 		for (DialogueResponse response : transition.visibleResponses()) {
 			if (response != null && response.text() != null && !response.text().isBlank()) {
 				nextReadyTick += response.delayTicks();

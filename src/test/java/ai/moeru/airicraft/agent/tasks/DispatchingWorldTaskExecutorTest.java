@@ -20,6 +20,24 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DispatchingWorldTaskExecutorTest {
+	@Test void navigationStallAppliesToFollowAndCraftingApproach() {
+		for (var request : List.of(
+			WorldTaskRequest.direct("follow", new GoalSnapshot(GoalType.FOLLOW_PLAYER,"Alex",null,null,1L,"test")),
+			WorldTaskRequest.craftRecipe("craft", "job", new CraftRecipeStepArgs("minecraft:stick",1)))) {
+			var facade = new RecordingBaritone();
+			var dispatcher = new Fixture().dispatcher(facade);
+			dispatcher.tick(snapshot(), Optional.of(request));
+			facade.progress = new BaritoneFacade.NavigationProgress(0,64,0,true,null,0);
+			assertTrue(dispatcher.tick(snapshot().withTickCount(10), Optional.of(request)).isEmpty());
+			for (int tick=11; tick<110; tick++) {
+				facade.progress = new BaritoneFacade.NavigationProgress(0, tick%2==0?64:65.2,0,tick%2==0,null,0);
+				assertTrue(dispatcher.tick(snapshot().withTickCount(tick), Optional.of(request)).isEmpty());
+			}
+			assertEquals(TaskExecutionState.FAILED, dispatcher.tick(snapshot().withTickCount(110), Optional.of(request)).orElseThrow().terminalState());
+			assertTrue(dispatcher.tick(snapshot().withTickCount(111), Optional.of(request)).isEmpty());
+		}
+	}
+
 	@Test void miningHasItsOwnExecutorAndDoesNotReachTheBaritoneMiningProcess() {
 		var navigation = new RecordingExecutor();
 		var acquisition = new RecordingExecutor();
@@ -258,6 +276,8 @@ class DispatchingWorldTaskExecutorTest {
 	}
 
 	private static final class RecordingBaritone implements BaritoneFacade {
+		private BaritoneFacade.NavigationProgress progress;
+		@Override public Optional<BaritoneFacade.NavigationProgress> navigationProgress() { return Optional.ofNullable(progress); }
 		private boolean active;
 		private boolean cancellationPending;
 		private int cancelCalls;

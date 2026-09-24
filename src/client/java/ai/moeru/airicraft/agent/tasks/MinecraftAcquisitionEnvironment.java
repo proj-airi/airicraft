@@ -220,6 +220,14 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 		return client().world.getEntitiesByClass(ItemEntity.class, new Box(block(target.position())).expand(3),
 			item -> item.isAlive() && item.getUuidAsString().equals(target.id())).size() > 0;
 	}
+	@Override public boolean canCollectDrop(Candidate target) {
+		var inventory = client().player.getInventory();
+		if (inventory.getEmptySlot() >= 0) return true;
+		var drops = client().world.getEntitiesByClass(ItemEntity.class, new Box(block(target.position())).expand(3),
+			item -> item.isAlive() && item.getUuidAsString().equals(target.id()));
+		// Disappearance is handled by targetPresent, not evidence of a full inventory.
+		return drops.isEmpty() || inventory.getOccupiedSlotWithRoomForStack(drops.getFirst().getStack()) >= 0;
+	}
 	@Override public boolean canInteract(Candidate target) {
 		if (!client().player.isOnGround()) return false;
 		if (target.kind() == Kind.DROP) return client().world.getEntitiesByClass(ItemEntity.class,

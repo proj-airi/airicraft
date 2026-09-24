@@ -7,6 +7,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerInputTextTest {
+	@Test void inventoryCapacitySurvivesPlannerPresentation() {
+		String text = PlannerInputText.observation(Map.of("current", Map.of("inventoryCapacity",
+			Map.of("freeStorageSlots", 0, "pickupConstraint", "Only compatible non-full stacks can accept pickups"))));
+		assertTrue(text.contains("freeStorageSlots"));
+		assertTrue(text.contains("Only compatible non-full stacks can accept pickups"));
+	}
+
 	@Test void longQuotedInspectionEvidenceDoesNotOverflowOrRoundQuotedNumbers() {
 		String quoted = new Gson().toJson("block x=12.345; quote=\"; slash=\\; ".repeat(10000));
 		String input = "before=1.234 evidence=" + quoted + " after=-2.345";
