@@ -23,6 +23,8 @@ jobs:
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: build
         run: ./gradlew build
       - name: run tests
