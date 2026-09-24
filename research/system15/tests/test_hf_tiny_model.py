@@ -110,6 +110,30 @@ class TinyDiffusionGemmaTest(unittest.TestCase):
         self.assertEqual(result.steps, 2)
         self.assertEqual(set(result.slot_confidence), set(reading.SLOT_NAMES))
 
+    def test_dg_smoke_runs_the_released_pipeline_and_this_loop(self):
+        try:
+            import diffusers  # noqa: F401
+        except ImportError:
+            self.skipTest("diffusers not installed")
+        import json
+        import tempfile
+        from unittest import mock
+
+        from s15.__main__ import main
+        from s15.backends.diffusiongemma import HFDiffusionGemmaAdapter
+        from s15.statedoc import write_docs
+
+        with tempfile.TemporaryDirectory() as tmp:
+            docs, out = Path(tmp) / "docs.jsonl", Path(tmp) / "smoke.json"
+            write_docs(self.docs[:2], docs)
+            tiny = self.adapter(64)
+            with mock.patch.object(HFDiffusionGemmaAdapter, "load", return_value=tiny):
+                main(["dg-smoke", "--docs", str(docs), "--n", "2", "--warm-steps", "2", "--out", str(out)])
+            rows = json.loads(out.read_text())
+        self.assertEqual(len(rows), 2)
+        self.assertIsNone(rows[0]["warm_ms"])  # first doc has no previous READING
+        self.assertIsNotNone(rows[1]["warm_steps"])
+
 
 if __name__ == "__main__":
     unittest.main()

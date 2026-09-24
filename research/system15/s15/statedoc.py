@@ -26,7 +26,7 @@ DEFAULT_SELF = (
 )
 
 # Event types that open an extra state document between System 2 decisions (--granularity event).
-SALIENT_EVENT_PREFIXES = ("social.player_", "combat.", "reflex.started", "reflex.threat_detected",
+SALIENT_EVENT_PREFIXES = ("social.player_", "social.local_controller", "combat.", "reflex.started", "reflex.threat_detected",
                           "reflex.resolved", "task.notice", "task.failed", "task.completed", "task.cancelled",
                           "task.blocked", "player.physical", "player.died", "work.travel_restriction")
 MAX_EVENT_CHARS = 220
@@ -161,8 +161,9 @@ def _item(value) -> str:
 def describe_event(event: SemanticEvent) -> str:
     """Semantic one-liners for the event types the fast layer cares about; compact JSON for the rest."""
     p = event.payload
-    if event.type in ("social.player_spoke", "social.player_addressed_agent"):
-        to_agent = " (to agent)" if event.type.endswith("addressed_agent") else ""
+    if event.type in ("social.player_spoke", "social.player_addressed_agent", "social.local_controller_spoke"):
+        to_agent = {"social.player_addressed_agent": " (to agent)",
+                    "social.local_controller_spoke": " (operator, to agent)"}.get(event.type, "")
         return f"{p.get('player', '?')} said{to_agent}: {compact(str(p.get('message', '')), 200)}"
     if event.type == "task.notice" and p.get("reason") == "slow_mining":
         best = p.get("bestCarriedToolByBaseSpeed") or {}
@@ -185,7 +186,7 @@ def render_event(event: SemanticEvent) -> str:
 def chat_lines(events: list[SemanticEvent]) -> list[str]:
     lines = []
     for event in events:
-        if event.type == "social.player_spoke":
+        if event.type in ("social.player_spoke", "social.local_controller_spoke"):
             lines.append(f"[t{event.tick}] {event.payload.get('player', '?')}: "
                          f"{compact(str(event.payload.get('message', '')), 200)}")
     return lines
@@ -210,8 +211,10 @@ def event_rows(events: list[SemanticEvent]) -> list[dict]:
     return [{"seq": e.seq, "tick": e.tick, "type": e.type, "payload": e.payload} for e in events]
 
 
-def render_plan(calls: list[LlmCall], before_tick: int, limit: int = 2) -> str:
-    previous = [c for c in calls if c.request_kind in ("planner", "follow_up", "") and 0 <= c.dispatch_tick < before_tick]
+def render_plan(calls: list[LlmCall], tick: int, limit: int = 2) -> str:
+    """System 2's latest decisions whose responses had arrived by `tick` (no leakage of later decisions)."""
+    previous = [c for c in calls if c.request_kind in ("planner", "follow_up", "")
+                and (known := c.known_at_tick()) is not None and known <= tick]
     if not previous:
         return "No System 2 decision yet."
     lines = []
@@ -251,7 +254,7 @@ def make_doc(run_id: str, context: DecisionContext, events: list[SemanticEvent],
         now += "\n" + extra_now
     return StateDoc(
         doc_id=doc_id or f"{run_id}:{tick}:{kind}", run_id=run_id, tick=tick, kind=kind,
-        sections={"SELF": self_text, "OBJECTIVE": objective, "PLAN": render_plan(calls, context.tick), "NOW": now,
+        sections={"SELF": self_text, "OBJECTIVE": objective, "PLAN": render_plan(calls, tick), "NOW": now,
                   "RECENT": render_recent(events)},
         meta={"world": context.world, "decision_owner": context.decision_owner,
               "actuator_owner": context.actuator_owner, "now_tick": context.tick, "source": context.source,

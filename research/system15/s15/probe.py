@@ -1,8 +1,9 @@
-"""E0 reaction probe: inject a player chat into a running client and time the existing system's response.
+"""E0b reaction probe: inject a chat into a running client and time the existing system's response.
 
 No Java changes. Uses the debug chat route (the same path as `airicraft agent debug chat`) and polls events,
 dialogue state and LLM flight records. Latencies are wall-clock milliseconds from injection and agent ticks
-from the injected chat event.
+from the injected chat event. Without a sender the message comes from the local player, i.e. the operator
+(`social.local_controller_spoke`); another sender name is a player, who must start with "@agent" to address the agent.
 """
 from __future__ import annotations
 
@@ -38,7 +39,8 @@ def run_probe(bridge: Bridge, message: str, sender: str | None, watch_s: float, 
         batch = bridge.events_since(seq)
         seq = batch.get("latestSeqNo", seq)
         for event in batch.get("events") or []:
-            if event.get("type") == "social.player_spoke" and chat_tick is None and event.get("payload", {}).get("message") == message:
+            chat_types = ("social.player_spoke", "social.local_controller_spoke")
+            if event.get("type") in chat_types and chat_tick is None and event.get("payload", {}).get("message") == message:
                 chat_tick = event.get("tick")
             if event.get("type") in RESPONSE_EVENTS and event["type"] not in first:
                 first[event["type"]] = {"ms": round(now_ms, 1), "tick": event.get("tick"), "payload": event.get("payload")}

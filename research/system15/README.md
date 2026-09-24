@@ -39,19 +39,30 @@ Write outputs under `run/system15/` (ignored by git with the rest of `run/`).
 | `extract --run DIR... --out docs.jsonl [--granularity event]` | E2/E3 data | One doc per System 2 decision, plus one per salient event between decisions |
 | `label-hindsight --run DIR... --docs ... --out ...` | E3 labels | What System 2 did next, whether it changed course, slow-mining notices, implied slot values |
 | `label-teacher --docs ... --out ... --base-url URL --model M` | E2 labels | A strong model fills READING per doc (resumable; `--hindsight-window` gives it privileged future context) |
+| `split --docs ... --out-dir ...` | all | Whole runs to train/dev/test by a seeded hash (never split a run) |
+| `export-sft --docs ... --labels ... --out ...` | E5 | Teacher READINGs as chat SFT rows (OpenAI messages format) |
 | `fill --backend B --docs ... --out ... [--previous self\|teacher\|none]` | E2 | Runs a filler in run/tick order; `self` = online (errors carry over), `teacher` = oracle previous READING |
 | `bench --backend B --docs ...` | E1 | Cold vs warm refresh latency, steps, prefill vs denoise time |
 | `dg-smoke --docs ...` | E1 | First GPU session: released diffusers pipeline vs this loop on a few docs |
 | `score --preds ... --labels teacher.jsonl` | E2 | Per-slot accuracy (token F1 for text), parse/format rate, revision recall/retention, latency, bootstrap CI |
-| `signals --preds ... --hindsight ... [--target ...]` | E3 | AUROC and precision@0.9 recall of settledness signals vs the rule trigger |
-| `probe --message "stop" --sender Alex --out ...` | E0 | Injects a chat through `/v1/agent/debug/chat`, times dispatch, response, work change, dialogue reply |
+| `compare --a A.jsonl --b B.jsonl --labels ...` | E2 | Paired per-doc difference (B − A) with a run-clustered bootstrap CI |
+| `teacher-as-preds --labels ... --out ...` | E0d | Teacher rows as predictions, to score the teacher against a human audit |
+| `signals --preds ... --hindsight ... [--target ...] [--trigger social. --docs ...]` | E3 | AUROC and precision@0.9 recall of settledness signals vs the rule trigger, overall or per event regime |
+| `probe --message "stop" --out ...` or `--messages-file data/chat-bank.tsv` | E0b | Injects a chat through `/v1/agent/debug/chat` (operator by default; `--sender` for a player, who must write "@agent ..."), times dispatch, response, work change, dialogue reply |
+| `probe-report --probe ...` | E0b | Per intent: time to dispatch, to System 2's applied response, and to the first observable reaction |
 | `freeze-planning --out ...` | E0c | Pauses ticks while a gameplay planner request is in flight (near zero-latency System 2), resumes after |
 | `shadow --backend B --out ...` | E4a | Builds a doc from `/v1/agent/context` + `/v1/agent/events/recent` each period and logs the READING |
+| `shadow-report --shadow ... --run DIR` | E4a | Flicker, escalation rate, chat reaction ticks (fast vs System 2), escalation vs System 2's next decision |
+| `serve --backend B --port 9015` | E4 | Serves any filler over HTTP (`POST /fill`); pair with `--backend remote --remote-url ...` elsewhere |
 
 Backends: `rules` (hand-written baseline B1), `openai` (any OpenAI-compatible server; `--mode update` puts the
 previous READING in the prompt, the autoregressive analogue of warm start; `--logprobs` gives per-slot confidence),
 `diffusiongemma` (`--cold`, `--warm-steps`, `--clamp-template`, `--carry-self-conditioning`, `--no-renoise`,
-`--lora`).
+`--lora`), and `remote` (a filler served by `s15 serve`, e.g. on a GPU host).
+
+The bridge listens on 127.0.0.1 only, so live tools run on the game machine. When the model is on a GPU host, run
+`s15 serve --backend diffusiongemma` there and forward it (`ssh -L 9015:127.0.0.1:9015 gpu-host`), then use
+`--backend remote` on the game machine.
 
 ## Worked example on the bundled fixture
 
@@ -74,8 +85,8 @@ calls and the hand labels in `teacher-gold.jsonl` are synthetic. Regenerate with
 ```sh
 cd research/system15
 python3 -m unittest discover -s tests            # stdlib-only; torch-dependent tests are skipped
-pip install torch 'transformers>=5.11' tokenizers
-python3 -m unittest discover -s tests            # adds the denoising-loop and tiny-model tests
+pip install torch 'transformers>=5.11' 'diffusers>=0.39' tokenizers
+python3 -m unittest discover -s tests            # adds the denoising-loop, tiny-model and dg-smoke tests
 ```
 
 What the tests establish, and what they do not:
@@ -86,7 +97,8 @@ What the tests establish, and what they do not:
   layouts, trajectories) behaves as designed against a stub model.
 - The transformers adapter runs against a **tiny random** DiffusionGemma built from the real transformers 5.11 code:
   its cached prefill plus decoder call reproduces the model's one-shot forward, KV-prefix reuse is exact, and the
-  sliding-window guard triggers.
+  sliding-window guard triggers. `dg-smoke` runs the real diffusers 0.39 `DiffusionGemmaPipeline` next to this loop on
+  the same tiny model.
 - Nothing here has run against the released 26B weights or real recordings yet; `dg-smoke` and E1 are the first
   steps that do. Output quality is entirely untested.
 

@@ -47,12 +47,28 @@ def iter_jsonl(path: Path) -> Iterator[dict]:
                 yield value
 
 
+def _sniff(path: Path) -> str | None:
+    """Stream kind of an arbitrarily named JSONL file (e.g. a dashboard or CLI recording export)."""
+    for record in iter_jsonl(path):
+        if record.get("recordType") in ("observation", "manifest", "export_complete"):
+            return "live-recording"
+        if "record" in record:
+            return "llm-calls"
+        if "event" in record:
+            return "events"
+        return None
+    return None
+
+
 def find_run_files(root: Path) -> dict[str, Path]:
-    """Locate recording streams under a run directory, a Play directory, or a single file."""
+    """Locate recording streams under a run directory, a Play directory, or a single (possibly renamed) file."""
     root = Path(root)
     found: dict[str, Path] = {}
-    candidates = [root] if root.is_file() else sorted(root.rglob("*.jsonl*"))
-    for path in candidates:
+    if root.is_file():
+        kind = next((stem for stem in RUN_FILE_STEMS if root.name in (f"{stem}.jsonl", f"{stem}.jsonl.gz")), None)
+        kind = kind or _sniff(root)
+        return {kind: root} if kind else {}
+    for path in sorted(root.rglob("*.jsonl*")):
         name = path.name
         for stem in RUN_FILE_STEMS:
             if name in (f"{stem}.jsonl", f"{stem}.jsonl.gz") and stem not in found:
@@ -111,6 +127,15 @@ class LlmCall:
         if self.completed_at_ms and self.requested_at_ms:
             return self.completed_at_ms - self.requested_at_ms
         return None
+
+    def known_at_tick(self, ms_per_tick: float = 50.0) -> int | None:
+        """Agent tick by which the response had arrived (dispatch + wall latency at nominal 20 TPS).
+
+        Approximate: tick-debug pauses and server lag stretch wall time. Unfinished calls are never known.
+        """
+        if self.dispatch_tick < 0 or self.latency_ms is None or self.status != "COMPLETED":
+            return None
+        return self.dispatch_tick + -(-self.latency_ms // int(ms_per_tick))
 
 
 def _event_from(obj: dict) -> SemanticEvent | None:

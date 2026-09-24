@@ -19,7 +19,7 @@ PLAN_CHANGING_TOOLS = frozenset({
 })
 PASSIVE_TOOLS = frozenset({"wait_for_work", "continue", "inspect_work", "list_work", "inspect_inventory",
                            "inspect_planner_goal"})
-SALIENT_INPUT_PREFIXES = ("social.player_addressed_agent", "combat.damage_taken", "reflex.started", "task.failed",
+SALIENT_INPUT_PREFIXES = ("social.player_addressed_agent", "social.local_controller_spoke", "combat.damage_taken", "reflex.started", "task.failed",
                           "task.notice", "player.died", "task.blocked")
 GAMEPLAY_KINDS = ("planner", "follow_up", "")
 

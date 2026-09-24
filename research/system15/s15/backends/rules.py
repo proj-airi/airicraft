@@ -28,7 +28,7 @@ ACK = {"stop": "Stopping.", "wait": "Waiting here.", "come_here": "Coming.", "fo
 
 
 def classify_chat(message: str) -> str:
-    text = message.strip().lower()
+    text = re.sub(r"^\s*@agent\b[,:]?\s*", "", message.strip().lower())
     for intent, pattern in INTENT_PATTERNS:
         if re.search(pattern, text):
             return intent
@@ -45,7 +45,8 @@ class RulesFiller(Filler):
         events = doc.meta.get("events") or []
         out = reading.default_reading()
 
-        addressed = [e for e in events if e["type"] == "social.player_addressed_agent"]
+        # The operator at the keyboard (local controller) and "@agent ..." messages address the agent.
+        addressed = [e for e in events if e["type"] in ("social.player_addressed_agent", "social.local_controller_spoke")]
         if addressed:
             last = addressed[-1]["payload"]
             intent = classify_chat(str(last.get("message", "")))

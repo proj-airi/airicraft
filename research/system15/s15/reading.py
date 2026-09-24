@@ -11,6 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
+SCHEMA_VERSION = "reading-v0"  # bump when slots, values or serialization change; labels are per version
 SECTION_NAMES = ("SELF", "OBJECTIVE", "PLAN", "NOW", "RECENT")
 
 

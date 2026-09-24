@@ -104,6 +104,9 @@ def make_filler(args):
         from .oai import OpenAICompatClient
         client = OpenAICompatClient(args.base_url, args.model, api_key_env=args.api_key_env, timeout_s=args.timeout)
         return OpenAIFiller(client, mode=args.mode, json_mode=not args.no_json_mode, logprobs=args.logprobs)
+    if args.backend == "remote":
+        from .backends.remote import RemoteFiller
+        return RemoteFiller(args.remote_url, timeout_s=args.timeout)
     if args.backend == "diffusiongemma":
         from .backends.diffusiongemma import DenoiseConfig, DiffusionGemmaFiller, HFDiffusionGemmaAdapter
         adapter = HFDiffusionGemmaAdapter.load(args.model_id, reuse_prefix=not args.no_reuse_prefix,
@@ -117,7 +120,8 @@ def make_filler(args):
 
 
 def _add_backend_args(parser) -> None:
-    parser.add_argument("--backend", required=True, choices=("rules", "openai", "diffusiongemma"))
+    parser.add_argument("--backend", required=True, choices=("rules", "openai", "diffusiongemma", "remote"))
+    parser.add_argument("--remote-url", default="http://127.0.0.1:9015", help="`s15 serve` address (remote backend)")
     group = parser.add_argument_group("openai backend")
     group.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     group.add_argument("--model", default="google/gemma-4-26B-A4B-it")
@@ -171,7 +175,8 @@ def cmd_fill(args) -> None:
                 previous = teacher[previous_doc.doc_id]["reading"]
             result = filler.fill(FillRequest(doc, previous, reading.dirty_slots(dirty), dirty))
             handle.write(json.dumps({"doc_id": doc.doc_id, "run_id": doc.run_id, "tick": doc.tick,
-                                     "filler": filler.name, "previous": args.previous,
+                                     "schema": reading.SCHEMA_VERSION, "filler": filler.name,
+                                     "previous": args.previous,
                                      "dirty_sections": sorted(dirty), "result": result.to_json()},
                                     ensure_ascii=False) + "\n")
             previous_doc, previous_result = doc, result
@@ -215,6 +220,7 @@ def cmd_dg_smoke(args) -> None:
 
     adapter = HFDiffusionGemmaAdapter.load(args.model_id)
     pipe = DiffusionGemmaPipeline(model=adapter.model, scheduler=EntropyBoundScheduler(), processor=adapter.processor)
+    pipe.set_progress_bar_config(disable=True)
     cold = DiffusionGemmaFiller(adapter, DenoiseConfig(warm_start=False, seed=args.seed))
     warm = DiffusionGemmaFiller(adapter, DenoiseConfig(warm_steps=args.warm_steps, seed=args.seed))
     docs = _ordered(read_docs(Path(args.docs)))[: args.n]
@@ -239,10 +245,105 @@ def cmd_dg_smoke(args) -> None:
     _write_json(args.out, rows)
 
 
+def cmd_split(args) -> None:
+    """Assign whole runs to train/dev/test by a seeded hash, so no run leaks across splits."""
+    import hashlib
+
+    docs = read_docs(Path(args.docs))
+    out = Path(args.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    buckets: dict[str, list] = {"train": [], "dev": [], "test": []}
+    assignment = {}
+    for run_id in sorted({d.run_id for d in docs}):
+        value = int(hashlib.sha256(f"{args.seed}:{run_id}".encode()).hexdigest(), 16) % 1000 / 1000.0
+        assignment[run_id] = "test" if value < args.test else "dev" if value < args.test + args.dev else "train"
+    for doc in docs:
+        buckets[assignment[doc.run_id]].append(doc)
+    for name, subset in buckets.items():
+        write_docs(subset, out / f"docs-{name}.jsonl")
+    _write_json(str(out / "split.json"), {"seed": args.seed, "runs": assignment,
+                                          "docs": {k: len(v) for k, v in buckets.items()}})
+
+
+def cmd_export_sft(args) -> None:
+    """Teacher READINGs as chat SFT rows (OpenAI messages format, as the NeMo DiffusionGemma recipe consumes)."""
+    from . import prompts
+    from .teacher import read_teacher
+
+    docs = read_docs(Path(args.docs))
+    labels = read_teacher(Path(args.labels))
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    written = skipped = 0
+    with open(args.out, "w", encoding="utf-8") as handle:
+        for doc in docs:
+            label = labels.get(doc.doc_id)
+            if label is None or not label.get("parse_ok", True) or label.get("schema", reading.SCHEMA_VERSION) != reading.SCHEMA_VERSION:
+                skipped += 1
+                continue
+            messages = prompts.filler_messages(doc)
+            messages.append({"role": "assistant", "content": reading.serialize(label["reading"])[0]})
+            handle.write(json.dumps({"messages": messages, "doc_id": doc.doc_id}, ensure_ascii=False) + "\n")
+            written += 1
+    print(f"wrote {written} SFT rows to {args.out} ({skipped} docs without a usable label)")
+
+
+def cmd_serve(args) -> None:
+    from .server import serve
+
+    server = serve(make_filler(args), args.host, args.port)
+    print(f"serving {args.backend} on http://{args.host}:{args.port} (POST /fill, GET /health)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+def cmd_shadow_report(args) -> None:
+    from .shadow_report import report
+
+    run = load_run(Path(args.run)) if args.run else None
+    _write_json(args.out, report(_read_jsonl(args.shadow), run))
+
+
 # -- scoring ---------------------------------------------------------------------------------------------------
 def _references(args) -> dict[str, dict]:
     from .teacher import read_teacher
     return read_teacher(Path(args.labels))
+
+
+def cmd_teacher_as_preds(args) -> None:
+    """Teacher rows in prediction format, to score a teacher against human audit labels."""
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    rows = _read_jsonl(args.labels)
+    with open(args.out, "w", encoding="utf-8") as handle:
+        for row in rows:
+            run_id, _, rest = row["doc_id"].partition(":")
+            handle.write(json.dumps({"doc_id": row["doc_id"], "run_id": run_id, "tick": int(rest.split(":")[0]),
+                                     "filler": f"teacher:{row.get('model', '?')}", "result": {
+                                         "reading": row["reading"], "parse_ok": row.get("parse_ok", True),
+                                         "exact": row.get("exact") or {}, "latency_ms": row.get("latency_ms", 0.0)}})
+                         + "\n")
+    print(f"wrote {len(rows)} rows to {args.out}")
+
+
+def cmd_compare(args) -> None:
+    """Paired comparison of two fillers on the same docs; bootstrap resamples runs (docs if only one run)."""
+    references = _references(args)
+    a = {r.doc_id: r for r in metrics.score_rows(_read_jsonl(args.a), references)}
+    b = {r.doc_id: r for r in metrics.score_rows(_read_jsonl(args.b), references)}
+    shared = sorted(set(a) & set(b))
+    slots = [args.slot] if args.slot else list(reading.SLOT_NAMES)
+    diffs = [sum(b[d].slot_scores[s] for s in slots) / len(slots) - sum(a[d].slot_scores[s] for s in slots) / len(slots)
+             for d in shared]
+    groups = [a[d].run_id for d in shared]
+    mean = (lambda xs: sum(xs) / len(xs) if xs else None)
+    by_run = len(set(groups)) >= 2
+    low, high = metrics.bootstrap_ci(diffs, mean, samples=args.samples, groups=groups if by_run else None)
+    _write_json(args.out, {"a": args.a, "b": args.b, "slots": args.slot or "all", "shared_docs": len(shared),
+                           "mean_b_minus_a": mean(diffs), "ci95": [low, high], "ci_unit": "run" if by_run else "doc",
+                           "b_better_docs": sum(d > 0 for d in diffs), "a_better_docs": sum(d < 0 for d in diffs)})
 
 
 def cmd_score(args) -> None:
@@ -262,13 +363,18 @@ def cmd_signals(args) -> None:
     if args.teacher:
         from .teacher import read_teacher
         teacher = read_teacher(Path(args.teacher))
+    keep = None
+    if args.trigger:
+        docs = read_docs(Path(args.docs))
+        keep = {d.doc_id for d in docs if str(d.meta.get("trigger_event") or "").startswith(args.trigger)}
     scores: dict[str, list[float]] = {}
     targets: list[bool] = []
     baseline: list[float] = []
     previous = None
     for prediction in sorted(predictions, key=lambda p: (p["run_id"], p["tick"])):
         label = hindsight.get(prediction["doc_id"])
-        if label is None:
+        if label is None or (keep is not None and prediction["doc_id"] not in keep):
+            previous = prediction if label is not None else previous
             continue
         if args.target == "teacher_escalate":
             gold = teacher.get(prediction["doc_id"])
@@ -285,7 +391,7 @@ def cmd_signals(args) -> None:
         targets.append(target)
         baseline.append(1.0 if label["salient_input"] else 0.0)
         previous = prediction
-    report = {"target": args.target, "n": len(targets), "positives": sum(targets),
+    report = {"target": args.target, "trigger": args.trigger, "n": len(targets), "positives": sum(targets),
               "rule_baseline_salient_input": {"auroc": metrics.auroc(baseline, targets)}, "signals": {}}
     for name, values in scores.items():
         report["signals"][name] = {"auroc": metrics.auroc(values, targets),
@@ -294,17 +400,54 @@ def cmd_signals(args) -> None:
 
 
 # -- live ------------------------------------------------------------------------------------------------------
+def _message_bank(path: str) -> list[tuple[str, str]]:
+    rows = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        intent, _, message = line.partition("\t")
+        rows.append((intent.strip(), message.strip()) if message else ("", intent.strip()))
+    return rows
+
+
 def cmd_probe(args) -> None:
     from .bridge import Bridge
     from .probe import append_result, run_probe
 
+    if not args.message and not args.messages_file:
+        raise SystemExit("probe needs --message or --messages-file")
     bridge = Bridge(args.bridge_state)
-    for index in range(args.repeat):
+    plan = _message_bank(args.messages_file) if args.messages_file else [("", args.message)] * args.repeat
+    for index, (intent, message) in enumerate(plan):
         if index:
             time.sleep(args.gap)
-        result = run_probe(bridge, args.message, args.sender, args.watch)
+        if args.sender and not message.startswith("@agent"):
+            message = "@agent " + message  # players must address the agent explicitly
+        result = run_probe(bridge, message, args.sender, args.watch)
+        result["intent"] = intent or None
         append_result(result, Path(args.out))
-        print(json.dumps(result["first"], indent=2))
+        print(json.dumps({"message": message, "first": result["first"]}, indent=2))
+
+
+def cmd_probe_report(args) -> None:
+    """Per intent: latency to dispatch, to System 2's applied response, and to the first observable reaction."""
+    reactions = ("planner.response_applied", "work.changed", "task.cancelled", "dialogue_reply")
+    by_intent: dict[str, dict[str, list[float]]] = {}
+    for row in _read_jsonl(args.probe):
+        first = row.get("first") or {}
+        bucket = by_intent.setdefault(row.get("intent") or row.get("message", "?"), {})
+        for key in ("llm_dispatch",) + reactions:
+            if key in first:
+                bucket.setdefault(key, []).append(first[key]["ms"])
+        observed = [first[k]["ms"] for k in reactions if k in first]
+        bucket.setdefault("first_reaction", []).append(min(observed) if observed else float("inf"))
+    report = {}
+    for intent, series in sorted(by_intent.items()):
+        misses = sum(1 for v in series.get("first_reaction", []) if v == float("inf"))
+        series["first_reaction"] = [v for v in series.get("first_reaction", []) if v != float("inf")]
+        report[intent] = {key: metrics.latency_summary(values) for key, values in series.items()}
+        report[intent]["no_reaction_within_watch"] = misses
+    _write_json(args.out, report)
 
 
 def cmd_freeze_planning(args) -> None:
@@ -359,6 +502,32 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--limit", type=int)
     p.set_defaults(func=cmd_label_teacher)
 
+    p = sub.add_parser("split", help="split docs into train/dev/test by run")
+    p.add_argument("--docs", required=True)
+    p.add_argument("--out-dir", required=True)
+    p.add_argument("--dev", type=float, default=0.2)
+    p.add_argument("--test", type=float, default=0.2)
+    p.add_argument("--seed", type=int, default=0)
+    p.set_defaults(func=cmd_split)
+
+    p = sub.add_parser("export-sft", help="E5: teacher READINGs -> chat SFT JSONL")
+    p.add_argument("--docs", required=True)
+    p.add_argument("--labels", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_export_sft)
+
+    p = sub.add_parser("serve", help="serve a filler over HTTP for remote use (GPU host)")
+    _add_backend_args(p)
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=9015)
+    p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("shadow-report", help="E4a: shadow log vs the same session's recording")
+    p.add_argument("--shadow", required=True)
+    p.add_argument("--run", help="recording directory of the same client session (events + llm-calls)")
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_shadow_report)
+
     p = sub.add_parser("fill", help="run a filler over docs in run/tick order")
     _add_backend_args(p)
     p.add_argument("--docs", required=True)
@@ -387,6 +556,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--out")
     p.set_defaults(func=cmd_dg_smoke)
 
+    p = sub.add_parser("teacher-as-preds", help="teacher labels in prediction format (score teacher vs human)")
+    p.add_argument("--labels", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_teacher_as_preds)
+
+    p = sub.add_parser("compare", help="paired difference of two prediction files (b - a) with bootstrap CI")
+    p.add_argument("--a", required=True)
+    p.add_argument("--b", required=True)
+    p.add_argument("--labels", required=True)
+    p.add_argument("--slot", help="restrict to one slot")
+    p.add_argument("--samples", type=int, default=2000)
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_compare)
+
     p = sub.add_parser("score", help="slot accuracy, validity, revision, latency vs teacher labels (E2)")
     p.add_argument("--preds", required=True)
     p.add_argument("--labels", required=True, help="teacher.jsonl")
@@ -399,18 +582,26 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--teacher")
     p.add_argument("--target", choices=("s2_changed_plan", "salient_input", "teacher_escalate"),
                    default="s2_changed_plan")
+    p.add_argument("--trigger", help="only event docs whose trigger type starts with this, e.g. social. or combat.")
+    p.add_argument("--docs", help="docs.jsonl, required with --trigger")
     p.add_argument("--out")
     p.set_defaults(func=cmd_signals)
 
     p = sub.add_parser("probe", help="E0: inject a chat into a live client and time the response")
     p.add_argument("--bridge-state")
-    p.add_argument("--message", required=True)
-    p.add_argument("--sender")
+    p.add_argument("--message")
+    p.add_argument("--messages-file", help="TSV intent<TAB>message bank, e.g. data/chat-bank.tsv")
+    p.add_argument("--sender", help="player name; omitted = the local operator")
     p.add_argument("--watch", type=float, default=60.0)
     p.add_argument("--repeat", type=int, default=1)
     p.add_argument("--gap", type=float, default=30.0)
     p.add_argument("--out", required=True)
     p.set_defaults(func=cmd_probe)
+
+    p = sub.add_parser("probe-report", help="E0b: reaction latency per intent from probe logs")
+    p.add_argument("--probe", required=True)
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_probe_report)
 
     p = sub.add_parser("freeze-planning", help="E0c: pause ticks while a System 2 request is in flight")
     p.add_argument("--bridge-state")
@@ -431,6 +622,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if getattr(args, "previous", None) == "teacher" and not getattr(args, "teacher", None):
         parser.error("--previous teacher needs --teacher")
+    if getattr(args, "trigger", None) and not getattr(args, "docs", None):
+        parser.error("--trigger needs --docs")
     args.func(args)
 
 

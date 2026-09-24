@@ -37,7 +37,8 @@ def label_docs(docs: list[StateDoc], client: OpenAICompatClient, out_path: Path,
             result = client.chat(prompts.teacher_messages(doc, hint), temperature=0.0, max_tokens=max_tokens)
             parsed = reading.parse(result.text)
             handle.write(json.dumps({
-                "doc_id": doc.doc_id, "reading": parsed.reading, "parse_ok": parsed.parse_ok,
+                "doc_id": doc.doc_id, "schema": reading.SCHEMA_VERSION, "reading": parsed.reading,
+                "parse_ok": parsed.parse_ok,
                 "exact": parsed.exact, "raw": result.text, "latency_ms": round(result.latency_ms, 1),
                 "model": client.model, "hindsight_window": hindsight_window,
             }, ensure_ascii=False) + "\n")

@@ -71,13 +71,29 @@ class RecordingTest(unittest.TestCase):
         self.assertEqual([c.tick for c in run.contexts], [143, 1057, 3502, 4216])
         self.assertEqual(run.contexts[0].source, "llm-calls:canonical")
 
+    def test_renamed_export_is_recognised(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            export = Path(tmp) / "incident-window.jsonl"  # `airicraft agent debug recording export --output ...`
+            export.write_text((FIXTURE / "live-recording.jsonl").read_text())
+            run = load_run(export)
+        self.assertEqual(len(run.contexts), 4)
+        self.assertEqual(len(run.events), 19)
+
     def test_docs_are_ordered_by_volatility_and_include_chat(self):
         self.assertEqual(len(self.docs), 9)
         chat_doc = next(d for d in self.docs if d.doc_id == "run-a:1100:event:41")
         rendered = chat_doc.render()
         self.assertLess(rendered.index("## OBJECTIVE"), rendered.index("## NOW"))
-        self.assertIn("Alex said (to agent): airi stop and come here", chat_doc.sections["RECENT"])
+        self.assertIn("Alex said (to agent): @agent stop and come here", chat_doc.sections["RECENT"])
         self.assertIn("NOW is 43 ticks old", chat_doc.sections["NOW"])
+
+    def test_plan_only_shows_decisions_whose_response_had_arrived(self):
+        docs = {d.doc_id: d for d in self.docs}
+        at_chat = docs["run-a:1100:event:41"].sections["PLAN"]  # the 1057 call is still in flight (+84 ticks)
+        self.assertNotIn("collect_resource", at_chat)
+        self.assertNotIn("cancel_work", at_chat)
+        self.assertIn("wait_for_work", docs["run-a:3600:event:167"].sections["PLAN"])  # 3502 + 84 <= 3600
+        self.assertNotIn("equip_item", docs["run-a:3600:event:167"].sections["PLAN"])
 
     def test_dirty_sections_ignore_tick_counters(self):
         first, second = self.docs[2], self.docs[3]
@@ -99,7 +115,7 @@ class LabelsAndRulesTest(unittest.TestCase):
         self.assertEqual(rows["run-a:3600:event:167"].imitation["fix.arg"], "stone_pickaxe")
 
     def test_chat_classifier_priorities(self):
-        self.assertEqual(classify_chat("airi stop and come here"), "stop")
+        self.assertEqual(classify_chat("@agent stop and come here"), "stop")
         self.assertEqual(classify_chat("please don't attack my dog"), "dont_attack")
         self.assertEqual(classify_chat("where are you?"), "question")
         self.assertEqual(classify_chat("build a castle by the river"), "complex")

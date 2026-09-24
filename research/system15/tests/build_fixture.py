@@ -18,9 +18,9 @@ PREFIX = "DECISION CONTEXT: "
 
 SYNTHETIC_EVENTS = [
     {"seqNo": 40, "tick": 1100, "timestampMs": 0, "type": "social.player_spoke",
-     "payload": {"player": "Alex", "message": "airi stop and come here", "normalizedMessage": "airi stop and come here"}},
+     "payload": {"player": "Alex", "message": "@agent stop and come here", "normalizedMessage": "@agent stop and come here"}},
     {"seqNo": 41, "tick": 1100, "timestampMs": 0, "type": "social.player_addressed_agent",
-     "payload": {"player": "Alex", "message": "airi stop and come here", "normalizedMessage": "airi stop and come here"}},
+     "payload": {"player": "Alex", "message": "@agent stop and come here", "normalizedMessage": "@agent stop and come here"}},
     {"seqNo": 167, "tick": 3600, "timestampMs": 0, "type": "task.notice",
      "payload": {"reason": "slow_mining", "block": "minecraft:stone", "heldItem": "minecraft:furnace",
                  "elapsedTicks": 120, "estimatedBreakTicks": 480,
