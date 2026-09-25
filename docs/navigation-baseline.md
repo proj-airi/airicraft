@@ -124,6 +124,49 @@ No run stalled or replanned. On `drop_5_stairs` Baritone took the staircase lane
 walked about 11 blocks to the edge of the bounds, then failed without leaving them.
 Runs were nearly deterministic: most courses repeated the same tick count exactly.
 
+## In-house backend (2026-09-25)
+
+Recorded at commit `329b764` by the `navigation baseline` workflow on the `airicraft`
+backend, run [36117463790](https://github.com/proj-airi/airicraft/actions/runs/36117463790),
+beside a Baritone run with shadow planning on the same commit,
+[36117528209](https://github.com/proj-airi/airicraft/actions/runs/36117528209). Five runs per
+course; ticks and path length are medians, with the Baritone figure from the same commit in
+parentheses.
+
+| Course | Passed | Ticks | Path (blocks) | Health lost | Slowest plan (ms) |
+| --- | --- | --- | --- | --- | --- |
+| `flat_walk` | 5/5 | 83 (85) | 21.97 (21.7) | 0 | 8.8 |
+| `staircase_up` | 5/5 | 85 (83) | 19.01 (18.67) | 0 | 19.1 |
+| `drop_3` | 5/5 | 56 (51) | 14.52 (13.44) | 0 | 0.6 |
+| `drop_5_stairs` | 5/5 | 97 (111) | 24.21 (23.9) | 0 | 0.7 |
+| `river_crossing` | 5/5 | 97 (116) | 18.85 (18.95) | 0 | 1.4 |
+| `dirt_wall` | 5/5 | 135 (121) | 18.0 (16.92) | 0 | 2.5 |
+| `gap_bridge` | 5/5 | 68 (99) | 14.91 (16.28) | 0 | 1.5 |
+| `pillar_pit` | 5/5 | 77 (113) | 13.06 (17.39) | 0 | 1.3 |
+| `door_house` | 5/5 | 40 (43) | 8.79 (8.79) | 0 | 1.1 |
+| `cave_route` | 5/5 | 181 (164) | 45.48 (39.14) | 0 | 1.2 |
+| `far_xz` | 5/5 | 1723 (1796) | 402.32 (354.59) | 0 | 49.6 |
+| `travel_bounds_refusal` | 5/5 | 43 (92) | 11.01 (10.94) | 0 | 1.3 |
+
+No run stalled or replanned. Differences from Baritone:
+
+- `gap_bridge`: the in-house planner pillars twice onto the course's barrier shell and walks
+  along it instead of bridging five blocks. Both routes are legal in the game.
+- `dirt_wall`: it climbs over the wall, breaking three blocks, instead of tunnelling through
+  four.
+- `far_xz` walks further (402 against 355 blocks) in six segments planned toward waypoints
+  64 blocks apart.
+- `travel_bounds_refusal`: like Baritone, it walks to the edge of the bounds on the best
+  partial path, then fails. It finishes in 43 ticks against Baritone's 92.
+
+Shadow plans on the Baritone run found a path for all 50 loaded-terrain requests Baritone
+completed (`far_xz` is planned in segments and `travel_bounds_refusal` has no route). Shadow
+search took 3.6 ms at p95 (5.6 ms including the terrain copy). Across all 86 plans on the
+in-house run, p95 was 25.6 ms and the slowest 49.6 ms, a `far_xz` segment.
+
+The first in-house run, at `8a4c309` before the heuristic weight, waypoints and edge guard,
+passed 58 of 60: two `far_xz` runs walked off a ravine edge at the same place.
+
 ## Metrics
 
 Each follow or navigate task ends with a `task`/`terminal_diagnostics` timeline entry.

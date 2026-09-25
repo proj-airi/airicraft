@@ -355,10 +355,20 @@ Status (2026-09-25): in progress; running behind the flag.
   `-Pairicraft.navigationBackend` selects the backend. The default is `baritone`.
 - Deviation: Phase 1 has not started, so the motor writes key bindings, as
   `MovementController` does, rather than installing an `Input`.
-- First benchmark on the in-house backend (commit `8a4c309`, before the heuristic
-  weight, waypoints and edge guard): 58 of 60 runs passed. Every fixture course passed 5
-  of 5. `far_xz` passed 3 of 5; two runs went over a ravine edge at the same spot. That is
-  the case the edge guard covers.
+- Benchmark (commit `329b764`): 60 of 60 runs passed on the in-house backend, as on
+  Baritone, with no health lost, stalls or replans. The first run, before the heuristic
+  weight, waypoints and edge guard, passed 58 of 60; two `far_xz` runs went over a ravine
+  edge. Details are in [navigation-baseline.md](../../navigation-baseline.md#in-house-backend-2026-09-25).
+- Parity gates measured so far:
+  - shadow `Found` for 50 of 50 loaded-terrain requests Baritone completed;
+  - shadow planning p95 3.6 ms (5.6 ms with the terrain copy); in-house plans p95
+    25.6 ms, slowest 49.6 ms;
+  - Baritone's internal path cost is not exported, so cost is compared by proxy: the
+    median ratio of in-house to Baritone ticks is 0.95, and shadow plans are 0.95 of
+    Baritone's walked length;
+  - pass rate 60/60 against 60/60; no stalls on either backend; no fall damage;
+  - not yet measured: preserved-area refusal (no benchmark course), follow, the ten
+    model-driven scenarios, and the live Codex-driver session.
 
 - **Movement executors.** Add `MoveExecutor`s for walk, diagonal, ascend,
   descend, fall, swim, climb and door. Add the `PathFollower` with live
