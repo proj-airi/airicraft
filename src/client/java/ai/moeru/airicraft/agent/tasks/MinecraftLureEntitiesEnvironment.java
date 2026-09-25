@@ -107,6 +107,7 @@ final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor
 	}
 
 	@Override public void beginTravel() {
+		ai.moeru.airicraft.agent.navigation.NavigationPolicies.setWalkOnly(true);
 		if (!savedSettings.isEmpty()) return;
 		var settings = BaritoneAPI.getSettings();
 		for (var setting : List.of(settings.allowBreak, settings.allowPlace, settings.allowSprint, settings.allowParkour,
@@ -117,6 +118,7 @@ final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor
 	}
 
 	@Override public void release() {
+		ai.moeru.airicraft.agent.navigation.NavigationPolicies.setWalkOnly(false);
 		savedSettings.forEach((setting, value) -> setting.value = value);
 		savedSettings.clear();
 	}

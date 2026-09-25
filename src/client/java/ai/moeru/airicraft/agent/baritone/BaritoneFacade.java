@@ -1,6 +1,5 @@
 package ai.moeru.airicraft.agent.baritone;
 
-import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 
 import java.util.Optional;
@@ -20,18 +19,8 @@ public interface BaritoneFacade {
 
 	void startNavigateNear(GoalPosition position, int radiusBlocks);
 
-	void startMine(GoalMineSpec spec);
-
-	boolean mineProcessActive();
-
-	/**
-	 * Whether one of the agent-owned Baritone processes still controls pathing.
-	 * Implementations that cannot observe this may conservatively fall back to
-	 * the process name exposed by Baritone.
-	 */
-	default boolean processActive() {
-		return mineProcessActive();
-	}
+	/** Whether one of the agent-owned Baritone processes still controls pathing. */
+	boolean processActive();
 
 	/**
 	 * Requests cancellation of the current operation.
@@ -64,4 +53,9 @@ public interface BaritoneFacade {
 	record NavigationProgress(double x, double y, double z, boolean supported, String breakingTarget, float breakingProgress) {}
 
 	boolean navigationGoalReached(GoalPosition position);
+
+	/** Backend details for a finished task's diagnostics, such as plan outcomes and timings. */
+	default java.util.Map<String, Object> navigationDiagnostics() {
+		return java.util.Map.of();
+	}
 }

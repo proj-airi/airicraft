@@ -30,6 +30,7 @@ public final class AiricraftEvaluatorClient implements ClientModInitializer {
 		BridgeExtensionRegistry.register("/v1/evaluation/run", RUNTIME::handleRun);
 		BridgeExtensionRegistry.register("/v1/evaluation/client-stop", RUNTIME::handleClientStop);
 		BridgeExtensionRegistry.register("/v1/evaluation/survival-fixture", RUNTIME::handleSurvivalFixture);
+		BridgeExtensionRegistry.register("/v1/evaluation/navigation-course", RUNTIME::handleNavigationCourse);
 	}
 
 	private static void registerCommands() {

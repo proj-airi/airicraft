@@ -25,10 +25,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
+      # The root suite has wall-clock planning guards that time out when it runs in parallel
+      # with other projects' compile and test tasks, so it runs alone in the next step.
       - name: build
-        run: ./gradlew build
+        run: ./gradlew build -x :test
       - name: run tests
         run: ./gradlew :test :wrapper:test
+      # Separate step: running it alongside :test starves the root suite's wall-clock planning guards.
+      - name: build and test evaluator addon
+        run: ./gradlew :addons:evaluator:build -Pairicraft.includeEvaluator=true
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:

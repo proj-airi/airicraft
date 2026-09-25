@@ -1,7 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
-import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -222,10 +221,8 @@ class LureEntitiesTaskExecutorTest {
 		public double walkOnWaterPenalty() { return 1; }
 		public void setWalkOnWaterPenalty(double v) {}
 		public void startFollow(String s) { fail("Only bounded navigation is allowed"); }
-		public void startMine(GoalMineSpec s) { fail("Luring must not mine"); }
 		public void startNavigate(GoalPosition p) { goals.add(p); radius=0; active=true; }
 		public void startNavigateNear(GoalPosition p,int r) { goals.add(p); radius=r; active=true; }
-		public boolean mineProcessActive() { return false; }
 		public boolean processActive() { return active; }
 		public boolean cancel() { active=false; return true; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }

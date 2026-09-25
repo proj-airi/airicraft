@@ -1,6 +1,5 @@
 package ai.moeru.airicraft.agent.baritone;
 
-import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
@@ -128,27 +127,12 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 	}
 
 	@Override
-	public void startMine(GoalMineSpec spec) {
-		if (!isLoaded() || spec == null) {
-			return;
-		}
-		beginOperation();
-		baritone.getMineProcess().mineByName(spec.quantity(), spec.blockIds().toArray(String[]::new));
-	}
-
-	@Override
-	public boolean mineProcessActive() {
-		return isLoaded() && baritone.getMineProcess().isActive();
-	}
-
-	@Override
 	public boolean processActive() {
 		if (!isLoaded()) {
 			return false;
 		}
 		IPathingBehavior pathing = baritone.getPathingBehavior();
-		return baritone.getMineProcess().isActive()
-			|| baritone.getCustomGoalProcess().isActive()
+		return baritone.getCustomGoalProcess().isActive()
 			|| baritone.getFollowProcess().isActive()
 			|| (pathing != null && (pathing.isPathing() || pathing.getInProgress().isPresent()))
 			|| baritone.getPathingControlManager().mostRecentInControl()

@@ -50,7 +50,11 @@ public final class ClientRuntimeController {
 	private final HighlightManager highlightManager = new HighlightManager();
 	private final FirstPersonScreenshotService screenshotService = new FirstPersonScreenshotService();
 	private final ClientTickDebugRuntime clientTickDebugRuntime = new ClientTickDebugRuntime(screenshotService);
-	private final BaritoneFacade baritoneFacade = new LiveBaritoneFacade();
+	private final BaritoneFacade baritoneBackend = new ai.moeru.airicraft.agent.navigation.ShadowedBaritoneFacade(
+		new LiveBaritoneFacade(), ai.moeru.airicraft.agent.navigation.NavigationPlanner.shared());
+	private final ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade airicraftBackend;
+	/** The backend consumers of the current runtime use; chosen by navigation.backend at start and reload. */
+	private volatile BaritoneFacade baritoneFacade;
 	private final CameraController cameraController;
 	private volatile EmbodiedAgentRuntime agentRuntime;
 	private final ModBridgeServer bridgeServer;
@@ -70,6 +74,8 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
+		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(cameraController);
+		this.baritoneFacade = navigationBackend(config);
 		this.agentRuntime = createRuntime(config, AgentConfigLoader.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
@@ -191,7 +197,10 @@ public final class ClientRuntimeController {
 
 	public void onClientTick(MinecraftClient client) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(client);
-		if (!automaticPlaytest.freezing()) currentAgentRuntime().onClientTick(client);
+		if (!automaticPlaytest.freezing()) {
+			currentAgentRuntime().onClientTick(client);
+			airicraftBackend.tick(client);
+		}
 		cameraController.tick(client);
 		highlightManager.tick();
 		clientTickDebugRuntime.onClientTickCompleted(client, currentAgentRuntime());
@@ -377,6 +386,11 @@ public final class ClientRuntimeController {
 		cameraController.clear();
 		cameraController.updateDefaultLerpTicks(nextConfig.cameraLerpDefaultTicks());
 		EmbodiedAgentRuntime previousRuntime = currentAgentRuntime();
+		BaritoneFacade nextFacade = navigationBackend(nextConfig);
+		if (nextFacade != baritoneFacade) {
+			baritoneFacade.cancel();
+			baritoneFacade = nextFacade;
+		}
 		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig);
 		nextRuntime.updateIdleIdeasConfig(nextIdleIdeasConfig);
 		MinecraftClient client = MinecraftClient.getInstance();
@@ -414,6 +428,23 @@ public final class ClientRuntimeController {
 
 	private EmbodiedAgentRuntime currentAgentRuntime() {
 		return agentRuntime;
+	}
+
+	/** The active navigation backend and its latest plan diagnostics. Client thread. */
+	public Map<String, Object> navigationState() {
+		Map<String, Object> state = new LinkedHashMap<>();
+		state.put("backend", baritoneFacade == airicraftBackend ? "airicraft" : "baritone");
+		state.put("active", baritoneFacade.processActive());
+		baritoneFacade.activeProcessName().ifPresent(name -> state.put("process", name));
+		baritoneFacade.estimatedTicksToGoal().ifPresent(ticks -> state.put("estimatedTicksToGoal", Math.round(ticks)));
+		state.put("diagnostics", baritoneFacade.navigationDiagnostics());
+		return state;
+	}
+
+	private BaritoneFacade navigationBackend(AiricraftConfig airicraftConfig) {
+		boolean airicraft = AiricraftConfig.NAVIGATION_AIRICRAFT.equals(airicraftConfig.effectiveNavigationBackend());
+		Airicraft.LOGGER.info("Airicraft navigation backend: {}", airicraft ? "airicraft" : "baritone");
+		return airicraft ? airicraftBackend : baritoneBackend;
 	}
 
 	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig) {

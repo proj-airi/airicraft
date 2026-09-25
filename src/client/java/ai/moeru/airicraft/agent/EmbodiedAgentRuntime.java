@@ -622,6 +622,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean semanticTaskContext = hasSemanticTaskContext(previousTaskSnapshot, taskSnapshot);
 		recordTaskStateTransition(previousTaskExecutionSnapshot, taskExecutionSnapshot, semanticTaskContext);
 		terminalTaskEvent.ifPresent(event -> {
+			if (!event.diagnostics().isEmpty()) debugRecorder.recordTaskDiagnostics(tickCount, event.taskId(),
+				event.goal() == null ? "" : event.goal().type().name(), event.terminalState().name(), event.diagnostics());
 			ActiveJobRuntime.TerminalTaskReport report = activeJobRuntime.reportTerminalTaskEvent(event, activeTaskRequest);
 			report.warning().ifPresent(this::handleInternalTaskWarning);
 			report.event().ifPresent(this::completePendingCraftToolResult);

@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""Launch an evaluator client, load a scenario world and run scripts/navigation-baseline.
+
+This is the unattended form of the manual steps in docs/navigation-baseline.md and is
+what CI runs. It needs a display; on Linux CI wrap it in xvfb-run. The client runs in
+Codex-driver mode (no model) with no optional integrations, in its own game directory.
+
+Exit codes: 0 when the benchmark ran (course failures are data, unless --require-pass),
+1 when --require-pass is set and a course failed, 3 when the client could not be driven.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import zipfile
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Callable
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WORLD_NAME = "navigation-baseline"
+DEFAULT_WORLD_ARCHIVE = REPO_ROOT / "scenarios" / "farm_easy" / "world.zip"
+# Outside build/: Gradle deletes stale files in task output directories under build/,
+# which would wipe the prepared save when the client run task starts.
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "run" / "navigation-baseline"
+# Software rendering is slow; the benchmark needs neither view distance nor frame rate.
+CLIENT_OPTIONS = {
+    "onboardAccessibility": "false",
+    "pauseOnLostFocus": "false",
+    "renderDistance": "6",
+    "maxFps": "30",
+}
+
+
+def load_baseline() -> ModuleType:
+    module_name = "airicraft_navigation_baseline"
+    path = REPO_ROOT / "scripts" / "navigation-baseline"
+    loader = importlib.machinery.SourceFileLoader(module_name, str(path))
+    spec = importlib.util.spec_from_loader(module_name, loader)
+    if spec is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    loader.exec_module(module)
+    return module
+
+
+baseline = load_baseline()
+
+
+def merge_options(existing: str, overrides: dict[str, str]) -> str:
+    lines = []
+    seen = set()
+    for line in existing.splitlines():
+        key = line.split(":", 1)[0]
+        if key in overrides:
+            lines.append(f"{key}:{overrides[key]}")
+            seen.add(key)
+        elif line:
+            lines.append(line)
+    lines.extend(f"{key}:{value}" for key, value in overrides.items() if key not in seen)
+    return "\n".join(lines) + "\n"
+
+
+def prepare_game_dir(game_dir: Path, archive: Path) -> None:
+    save_dir = game_dir / "saves" / WORLD_NAME
+    if save_dir.exists():
+        shutil.rmtree(save_dir)
+    save_dir.mkdir(parents=True)
+    with zipfile.ZipFile(archive) as world:
+        for member in world.infolist():
+            if Path(member.filename).name != "session.lock":
+                world.extract(member, save_dir)
+    options = game_dir / "options.txt"
+    existing = options.read_text(encoding="utf-8") if options.exists() else ""
+    options.write_text(merge_options(existing, CLIENT_OPTIONS), encoding="utf-8")
+
+
+def find_world_id(worlds_payload: dict[str, Any], name: str) -> str:
+    worlds = worlds_payload.get("worlds") or []
+    for world in worlds:
+        if world.get("name") == name:
+            return str(world["worldId"])
+    listed = [world.get("name") for world in worlds]
+    raise baseline.BaselineError(f"world {name} is not in the client's world list {listed}")
+
+
+def client_command(game_dir: Path, backend: str) -> list[str]:
+    return [
+        "./gradlew", "--no-daemon",
+        f"-Pairicraft.evaluator.runDir={game_dir}",
+        "-Pairicraft.evaluator.jdwp.enabled=false",
+        "-Pairicraft.includeEvaluator=true",
+        "-Pairicraft.codexDriver=true",
+        f"-Pairicraft.navigationBackend={backend}",
+        ":addons:evaluator:runClientEvaluator",
+    ]
+
+
+def wait_for(
+    description: str,
+    check: Callable[[], Any],
+    timeout_seconds: float,
+    process: subprocess.Popen,
+    interval_seconds: float = 2.0,
+) -> Any:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = "not checked"
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise baseline.BaselineError(f"client exited with code {process.returncode} while waiting for {description}")
+        try:
+            result = check()
+            if result:
+                return result
+            last_error = "condition not met"
+        except (OSError, ValueError, baseline.BaselineError) as error:
+            last_error = f"{type(error).__name__}: {error}"
+        time.sleep(interval_seconds)
+    raise baseline.BaselineError(f"timed out waiting for {description}; last: {last_error}")
+
+
+def stop_client(process: subprocess.Popen, call: Callable[..., Any] | None) -> None:
+    if process.poll() is not None:
+        return
+    if call is not None:
+        try:
+            call("POST", "/v1/evaluation/client-stop", {})
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=120)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+            process.wait(timeout=30)
+            return
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            continue
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--course", action="append", dest="courses", help="Course id; repeat for several.")
+    parser.add_argument("--runs", type=int, default=3, help="Runs per course (default 3).")
+    parser.add_argument("--backend", choices=["baritone", "airicraft"], default="baritone",
+                        help="Navigation backend the client uses (default baritone).")
+    parser.add_argument("--label", default=None, help="Report label (default: the backend).")
+    parser.add_argument("--world-archive", type=Path, default=DEFAULT_WORLD_ARCHIVE,
+                        help="Scenario world.zip to load; the saved player must stand on open overworld ground.")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
+                        help="Report, client log and game directory location.")
+    parser.add_argument("--launch-timeout-seconds", type=float, default=1800.0,
+                        help="Time allowed for the build, asset download and title screen.")
+    parser.add_argument("--require-pass", action="store_true", help="Exit 1 when any course run fails.")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    label = args.label or args.backend
+    output_dir = args.output_dir.resolve()
+    game_dir = output_dir / "game"
+    bridge_state = game_dir / "bridge-state.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_game_dir(game_dir, args.world_archive.resolve())
+    bridge_state.unlink(missing_ok=True)
+
+    environment = dict(os.environ)
+    environment["AIRICRAFT_BRIDGE_STATE_FILE"] = str(bridge_state)
+    environment["AIRICRAFT_EVALUATOR_GAME_DIR"] = str(game_dir)
+    environment.pop("AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST", None)
+    log_path = output_dir / "client.log"
+    print(f"launching client with the {args.backend} navigation backend; log: {log_path}", flush=True)
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(client_command(game_dir, args.backend), cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT,
+                                   env=environment, start_new_session=True)
+        call = None
+        try:
+            call = wait_for("the bridge", lambda: baseline.http_bridge(baseline.read_bridge(bridge_state)),
+                            args.launch_timeout_seconds, process)
+            wait_for("the title screen", lambda: call("GET", "/v1/status", None).get("canJoinWorldOrServer"),
+                     600.0, process)
+            world_id = wait_for("the world list", lambda: find_world_id(call("GET", "/v1/worlds", None), WORLD_NAME),
+                                60.0, process)
+            print(f"joining {world_id}", flush=True)
+            call("POST", "/v1/worlds/join", {"worldId": world_id})
+            wait_for("the world to load", lambda: call("GET", "/v1/status", None).get("worldLoaded"), 600.0, process)
+            time.sleep(10)
+            command = [sys.executable, str(REPO_ROOT / "scripts" / "navigation-baseline"),
+                       "--label", label, "--runs", str(args.runs),
+                       "--bridge-state", str(bridge_state), "--output", str(output_dir / f"{label}.json")]
+            for course in args.courses or []:
+                command += ["--course", course]
+            result = subprocess.run(command, cwd=REPO_ROOT, env=environment)
+        finally:
+            stop_client(process, call)
+
+    if result.returncode not in (0, 1):
+        return result.returncode
+    return result.returncode if args.require_pass else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except baseline.BaselineError as error:
+        print(f"run-navigation-baseline: {error}", file=sys.stderr)
+        sys.exit(3)

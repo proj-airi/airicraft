@@ -289,8 +289,6 @@ class DispatchingWorldTaskExecutorTest {
 		@Override public void startFollow(String playerName) { }
 		@Override public void startNavigate(GoalPosition position) { }
 		@Override public void startNavigateNear(GoalPosition position, int radiusBlocks) { }
-		@Override public void startMine(GoalMineSpec spec) { }
-		@Override public boolean mineProcessActive() { return active; }
 		@Override public boolean processActive() { return active; }
 		@Override public boolean cancel() {
 			if (active && !cancellationPending) {

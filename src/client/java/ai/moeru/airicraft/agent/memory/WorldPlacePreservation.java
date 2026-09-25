@@ -60,6 +60,13 @@ public final class WorldPlacePreservation {
 		return java.util.Map.of("areas", snapshot.areas(), "unavailable", snapshot.unavailable());
 	}
 
+	/** Preserved areas in this world, or null when protection data is unavailable and no edit is safe. */
+	public static List<PlaceMemory.PreservedArea> areas(Object world) {
+		Snapshot snapshot = current;
+		if (snapshot.world() != world) return List.of();
+		return snapshot.unavailable() ? null : snapshot.areas();
+	}
+
 	public static boolean contains(Object world, int x, int y, int z) {
 		return current.contains(world, x, y, z);
 	}
@@ -72,7 +79,8 @@ public final class WorldPlacePreservation {
 	public static boolean blocksPathBreaking(BlockPos pos) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		return client.world != null && contains(client.world, pos)
-			&& BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT);
+			&& (ai.moeru.airicraft.agent.navigation.MinecraftMotor.breakingForNavigation()
+				|| BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT));
 	}
 
 	record Snapshot(Object world, List<PlaceMemory.PreservedArea> areas, boolean unavailable) {
