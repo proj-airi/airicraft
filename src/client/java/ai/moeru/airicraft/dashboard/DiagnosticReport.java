@@ -215,16 +215,27 @@ public final class DiagnosticReport {
 
 	public JsonObject preview() { return com.google.gson.JsonParser.parseString(new String(manifest, StandardCharsets.UTF_8)).getAsJsonObject(); }
 
+	/** Exact UTF-8 attachment contents, shared by inspection and ZIP writing. */
+	public Map<String, String> attachments() {
+		var jsonl = new java.io.ByteArrayOutputStream();
+		try { writeTo(jsonl); }
+		catch (IOException impossible) { throw new java.io.UncheckedIOException(impossible); }
+		JsonObject metadata = preview();
+		String summary = metadata.getAsJsonObject("summary").get("text").getAsString()
+			+ "\nBuild: " + metadata.getAsJsonObject("environment").get("build")
+			+ "\nModels: " + metadata.getAsJsonObject("environment").get("providers")
+			+ "\nSession: " + metadata.getAsJsonObject("correlation").get("recordingSessionId").getAsString() + "\n";
+		return Map.of("report.jsonl", jsonl.toString(StandardCharsets.UTF_8), "summary.txt", summary);
+	}
+
 	public void writeBundleTo(OutputStream output) throws IOException {
+		var files = attachments();
 		try (var zip = new java.util.zip.ZipOutputStream(output, StandardCharsets.UTF_8)) {
-			zip.putNextEntry(new java.util.zip.ZipEntry("report.jsonl")); writeTo(zip); zip.closeEntry();
-			zip.putNextEntry(new java.util.zip.ZipEntry("summary.txt"));
-			JsonObject metadata = preview();
-			String summary = metadata.getAsJsonObject("summary").get("text").getAsString()
-				+ "\nBuild: " + metadata.getAsJsonObject("environment").get("build")
-				+ "\nModels: " + metadata.getAsJsonObject("environment").get("providers")
-				+ "\nSession: " + metadata.getAsJsonObject("correlation").get("recordingSessionId").getAsString() + "\n";
-			zip.write(summary.getBytes(StandardCharsets.UTF_8)); zip.closeEntry();
+			for (String name : List.of("report.jsonl", "summary.txt")) {
+				zip.putNextEntry(new java.util.zip.ZipEntry(name));
+				zip.write(files.get(name).getBytes(StandardCharsets.UTF_8));
+				zip.closeEntry();
+			}
 		}
 	}
 

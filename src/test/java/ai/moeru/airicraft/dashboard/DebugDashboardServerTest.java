@@ -249,13 +249,23 @@ class DebugDashboardServerTest {
 		var preview = post(url + "/api/report/preview", token, new com.google.gson.Gson().toJson(Map.of("draftId", draftId,
 			"request", Map.of("mode", "SUMMARY", "description", "Test incident"))));
 		if (preview.statusCode() != 200) return new ReportResponse(preview.statusCode(), preview.headers(), preview.body());
-		String previewId = JsonParser.parseString(preview.body()).getAsJsonObject().get("previewId").getAsString();
+		var previewData = JsonParser.parseString(preview.body()).getAsJsonObject();
+		assertTrue(previewData.has("attachments"), "Preview must expose the actual attached files");
+		String expectedJsonl = previewData.getAsJsonObject("attachments").get("report.jsonl").getAsString();
+		String expectedSummary = previewData.getAsJsonObject("attachments").get("summary.txt").getAsString();
+		String previewId = previewData.get("previewId").getAsString();
 		var request = HttpRequest.newBuilder(URI.create(url + "/api/report/save")).header("Authorization", "Bearer " + token)
 			.POST(HttpRequest.BodyPublishers.ofString(new com.google.gson.Gson().toJson(Map.of("previewId", previewId, "consent", true)))).build();
 		var saved = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
 		try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(saved.body()))) {
 			for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
-				if (entry.getName().equals("report.jsonl")) return new ReportResponse(saved.statusCode(), saved.headers(), new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+				if (entry.getName().equals("report.jsonl")) {
+					String actual = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+					assertEquals(expectedJsonl, actual, "Save must contain the evidence shown before consent");
+					assertEquals("summary.txt", zip.getNextEntry().getName());
+					assertEquals(expectedSummary, new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+					return new ReportResponse(saved.statusCode(), saved.headers(), actual);
+				}
 			}
 		}
 		throw new AssertionError("Missing report.jsonl in bundle");

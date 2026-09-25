@@ -1,10 +1,10 @@
 # Diagnostic reports
 
-Use **Airicraft Settings → Report a problem** during normal play or from the title screen after an incident. Opening **Report this moment** fixes the incident marker. Add an optional description, choose attachments, then select **Preview attachments**. **Save these attachments** is the explicit consent step. Changing the description or attachment mode requires a new preview. Canceling or previewing alone writes no file.
+Use **Airicraft Settings → Report a problem** during normal play or from the title screen after an incident. Opening **Report this moment** fixes the incident marker. Add an optional description, choose attachments, then select **Preview attachments**. **Save these attachments** is the explicit consent step. Changing the description or attachment mode requires a new preview. Canceling or previewing alone writes no file. **Inspect evidence** opens the exact prepared report as readable pages: the complete summary, build/session metadata, every included observation, integrity footer, and decoded screenshot pages. Use Previous/Next to switch pages and scroll or Page Up/Page Down for long text. Returning to the report preserves the preview.
 
 The ZIP is saved under `airicraft-reports` in the game directory; **Open report folder** opens that directory. It contains `report.jsonl` and `summary.txt`. Review it before attaching it to your issue. Nothing is automatically uploaded. Reporting does not reload settings, reset the agent, or pause gameplay, and works with the dashboard server disabled. A client that has exited cannot recover its in-memory history.
 
-The Runtime Observatory offers the same flow through **Report this moment**. Its separate **Raw developer export** retains the full replayable recording format, asks for confirmation, and does **not** redact credentials. Use it only for trusted debugging. Diagnostic ZIPs are not replay recordings, world backups or crash dumps.
+The Runtime Observatory offers the same flow through **Report this moment**. Its preview includes expandable evidence records, decoded attached screenshots, the complete summary, and a read-only view of the exact `report.jsonl` attachment. Content is rendered as text; external image URLs are never fetched. Both viewers derive their contents from the frozen, redacted attachments, and editing clears the old evidence. Its separate **Raw developer export** retains the full replayable recording format, asks for confirmation, and does **not** redact credentials. Use it only for trusted debugging. Diagnostic ZIPs are not replay recordings, world backups or crash dumps.
 
 ## Attachment choices and privacy
 
@@ -65,7 +65,7 @@ Local saves write a temporary `.partial` ZIP and atomically rename after success
 All report routes require the viewer Bearer token and POST JSON (maximum 16 KiB). They affect report drafts only, never gameplay.
 
 1. `/api/report/mark` with `{}` returns `draftId`.
-2. `/api/report/preview` with `{"draftId":"…","request":{"mode":"MINIMAL","description":"…"}}` returns the manifest plus `previewId`. Request modes are `MINIMAL`, `SUMMARY`, `DEVELOPER`.
+2. `/api/report/preview` with `{"draftId":"…","request":{"mode":"MINIMAL","description":"…"}}` returns the manifest plus `previewId`, `attachments` (exact `summary.txt` and `report.jsonl` strings), and `evidence` (readable text/image pages). Request modes are `MINIMAL`, `SUMMARY`, `DEVELOPER`.
 3. `/api/report/save` with `{"previewId":"…","consent":true}` downloads the exact reviewed ZIP. It accepts no replacement evidence/options. Missing consent is rejected; stale IDs return 409.
 
-The old immediate GET `/api/report` returns 405. A later preview replaces the earlier preview ID; a new marker replaces both marker and preview. No response serialization or network IO holds the report-state lock or recording lock.
+The old immediate GET `/api/report` returns 405. A later preview replaces the earlier preview ID; a new marker replaces both marker and preview. No network IO holds the report-state lock or recording lock.

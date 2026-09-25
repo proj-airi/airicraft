@@ -32,6 +32,7 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 			context.waitForScreen(AiricraftSettingsScreen.class);
 			context.takeScreenshot("airicraft-settings-connection");
 			saveReport(context, false);
+			inspectScreenshot(context);
 			if (!Files.readString(path).equals(original)) throw new AssertionError("Report changed settings");
 			context.runOnClient(client -> ((AiricraftSettingsScreen) client.currentScreen).saveAll(true));
 			context.waitForScreen(TitleScreen.class);
@@ -158,6 +159,26 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 		} catch (Exception exception) { throw new AssertionError(exception); }
 	}
 
+	private static void inspectScreenshot(ClientGameTestContext context) throws Exception {
+		var store = new ai.moeru.airicraft.dashboard.DashboardObservationStore(1024 * 1024);
+		var pixels = new java.awt.image.BufferedImage(64, 32, java.awt.image.BufferedImage.TYPE_INT_RGB);
+		for (int y = 0; y < 32; y++) for (int x = 0; x < 64; x++) pixels.setRGB(x, y, x < 32 ? 0x28a8d8 : 0xe8ac32);
+		var png = new java.io.ByteArrayOutputStream();
+		javax.imageio.ImageIO.write(pixels, "png", png);
+		store.append("visual_frame", 0, 1, java.util.Map.of("format", "png", "imageBase64", java.util.Base64.getEncoder().encodeToString(png.toByteArray())));
+		var report = ai.moeru.airicraft.dashboard.DiagnosticReport.mark(store, java.util.Map.of(), java.util.List.of())
+			.prepare(new ai.moeru.airicraft.dashboard.DiagnosticReport.Request(ai.moeru.airicraft.dashboard.DiagnosticReport.Mode.DEVELOPER, "Screenshot inspection fixture"), java.util.List.of());
+		context.runOnClient(client -> client.setScreen(new DiagnosticEvidenceScreen(client.currentScreen, report)));
+		// summary, manifest, observation, then its decoded screenshot
+		for (int i = 0; i < 3; i++) context.clickScreenButton("Next");
+		context.waitTicks(3);
+		context.takeScreenshot("airicraft-evidence-pixels");
+		context.clickScreenButton("Previous");
+		context.clickScreenButton("Next");
+		context.clickScreenButton("Back to report");
+		context.waitForScreen(AiricraftSettingsScreen.class);
+	}
+
 	private static void saveReport(ClientGameTestContext context, boolean worldLoaded) throws Exception {
 		var reports = FabricLoader.getInstance().getGameDir().resolve("airicraft-reports");
 		java.util.Set<java.nio.file.Path> before;
@@ -188,6 +209,12 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 		if (Files.isDirectory(reports)) {
 			try (var files = Files.list(reports)) { if (!files.collect(java.util.stream.Collectors.toSet()).equals(before)) throw new AssertionError("Preview wrote a file before consent"); }
 		}
+		context.clickScreenButton("Inspect evidence");
+		context.waitFor(client -> client.currentScreen != null && client.currentScreen.getTitle().getString().equals("Attached evidence"), 40);
+		context.takeScreenshot(worldLoaded ? "airicraft-evidence-world" : "airicraft-evidence-minimal");
+		context.clickScreenButton("Next");
+		context.takeScreenshot("airicraft-evidence-metadata");
+		context.clickScreenButton("Back to report");
 		context.clickScreenButton("Save these attachments");
 		context.waitForScreen(net.minecraft.client.gui.screen.NoticeScreen.class);
 		context.takeScreenshot(worldLoaded ? "airicraft-report-in-world" : "airicraft-report-saved");

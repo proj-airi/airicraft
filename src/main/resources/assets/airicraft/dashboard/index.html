@@ -82,6 +82,11 @@
     <p id="report-categories"></p>
     <button id="report-preview">Preview attachments</button>
     <pre id="report-preview-text" aria-live="polite">Preparing incident marker…</pre>
+    <section id="report-evidence" aria-label="Attached evidence"></section>
+    <details id="report-files" hidden>
+      <summary>Exact report.jsonl attachment</summary>
+      <textarea id="report-raw" readonly rows="12" aria-label="Exact report.jsonl attachment"></textarea>
+    </details>
     <div class="report-actions">
       <button id="report-save" disabled>Save these attachments</button>
       <button id="report-cancel">Cancel</button>

@@ -350,6 +350,9 @@ public final class DebugDashboardServer {
 				reportPreview = previewReport(reportDraft, java.util.Objects.requireNonNull(options));
 				reportPreviewId = java.util.UUID.randomUUID().toString();
 				JsonObject preview = reportPreview.preview(); preview.addProperty("previewId", reportPreviewId);
+				var attachments = reportPreview.attachments();
+				preview.add("attachments", GSON.toJsonTree(attachments));
+				preview.add("evidence", GSON.toJsonTree(DiagnosticEvidence.pages(attachments)));
 				yield ReportReply.json(200, preview);
 			}
 			case "/api/report/save" -> {

@@ -468,6 +468,7 @@ function reportControls() {
 }
 function invalidateReport() {
   reportState.generation++; reportState.previewId = null;
+  clearReportEvidence();
   el('report-categories').textContent = reportCategories[el('report-mode').value];
   el('report-preview-text').textContent = 'Preview required before saving these attachments.';
   reportControls();
@@ -488,16 +489,40 @@ async function markReport() {
   } catch (error) { if (generation === reportState.generation) el('report-preview-text').textContent = error.message; }
   finally { if (generation === reportState.generation) { reportState.busy = false; reportControls(); } }
 }
+function clearReportEvidence() {
+  el('report-evidence').replaceChildren();
+  el('report-raw').value = '';
+  el('report-files').hidden = true;
+}
+function showReportEvidence(preview) {
+  clearReportEvidence();
+  el('report-raw').value = preview.attachments['report.jsonl'];
+  el('report-files').hidden = false;
+  for (const page of preview.evidence) {
+    const detail = document.createElement('details');
+    const heading = document.createElement('summary'); heading.textContent = page.title;
+    const text = document.createElement('pre'); text.textContent = page.text;
+    detail.append(heading, text);
+    if (page.imageDataUrl?.match(/^data:image\/(png|jpeg);base64,/)) {
+      const img = document.createElement('img'); img.alt = page.title; img.loading = 'lazy';
+      img.src = page.imageDataUrl;
+      img.addEventListener('error', () => { text.textContent += '\nImage could not be decoded; encoded data is in report.jsonl.'; });
+      detail.append(img);
+    }
+    el('report-evidence').append(detail);
+  }
+}
 async function previewReport() {
   if (reportState.busy || !reportState.draftId) return;
-  reportState.previewId = null; reportState.busy = true; reportControls();
+  reportState.previewId = null; reportState.busy = true; clearReportEvidence(); reportControls();
   const generation = reportState.generation;
   try {
     const preview = await (await api('/api/report/preview', {draftId:reportState.draftId,
       request:{mode:el('report-mode').value, description:el('report-description').value}})).json();
     if (generation !== reportState.generation) return;
-    reportState.previewId = preview.previewId;
     el('report-preview-text').textContent = preview.summary.text;
+    showReportEvidence(preview);
+    reportState.previewId = preview.previewId;
   } catch (error) { if (generation === reportState.generation) el('report-preview-text').textContent = error.message; }
   finally { if (generation === reportState.generation) { reportState.busy = false; reportControls(); } }
 }
@@ -667,7 +692,7 @@ el('report-description').addEventListener('input', invalidateReport);
 el('report-preview').addEventListener('click', previewReport);
 el('report-save').addEventListener('click', saveReport);
 el('report-cancel').addEventListener('click', () => el('report-dialog').close());
-el('report-dialog').addEventListener('close', () => { reportState.generation++; reportState.busy = false; reportState.previewId = null; });
+el('report-dialog').addEventListener('close', () => { reportState.generation++; reportState.busy = false; reportState.previewId = null; clearReportEvidence(); });
 el('session-file').addEventListener('change', event => event.target.files[0] && openSession(event.target.files[0]).catch(error => toast(error.message)));
 el('close-inspector').addEventListener('click', () => { el('inspector').classList.add('collapsed'); document.querySelector('.workspace').classList.add('inspector-collapsed'); });
 
