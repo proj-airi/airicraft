@@ -1,7 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
-import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import org.junit.jupiter.api.Test;
 
@@ -384,15 +383,6 @@ class UnderwaterEscapeNavigatorTest {
 
 		@Override
 		public void startNavigateNear(GoalPosition position, int radiusBlocks) {
-		}
-
-		@Override
-		public void startMine(GoalMineSpec spec) {
-		}
-
-		@Override
-		public boolean mineProcessActive() {
-			return false;
 		}
 
 		@Override

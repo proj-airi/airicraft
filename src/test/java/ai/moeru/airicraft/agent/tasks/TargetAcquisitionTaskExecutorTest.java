@@ -389,10 +389,8 @@ class TargetAcquisitionTaskExecutorTest {
 		public double walkOnWaterPenalty() { return 1; }
 		public void setWalkOnWaterPenalty(double v) {}
 		public void startFollow(String s) { fail("unexpected follow"); }
-		public void startMine(GoalMineSpec s) { fail("System 1 must not delegate acquisition to Baritone"); }
 		public void startNavigate(GoalPosition p) { goals.add(p); active = true; }
 		public void startNavigateNear(GoalPosition p, int r) { fail("requires an exact work position"); }
-		public boolean mineProcessActive() { return false; }
 		public boolean processActive() { return active; }
 		public boolean cancel() { active = false; return true; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }
