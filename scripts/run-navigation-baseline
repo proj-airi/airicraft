@@ -93,13 +93,14 @@ def find_world_id(worlds_payload: dict[str, Any], name: str) -> str:
     raise baseline.BaselineError(f"world {name} is not in the client's world list {listed}")
 
 
-def client_command(game_dir: Path) -> list[str]:
+def client_command(game_dir: Path, backend: str) -> list[str]:
     return [
         "./gradlew", "--no-daemon",
         f"-Pairicraft.evaluator.runDir={game_dir}",
         "-Pairicraft.evaluator.jdwp.enabled=false",
         "-Pairicraft.includeEvaluator=true",
         "-Pairicraft.codexDriver=true",
+        f"-Pairicraft.navigationBackend={backend}",
         ":addons:evaluator:runClientEvaluator",
     ]
 
@@ -153,7 +154,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--course", action="append", dest="courses", help="Course id; repeat for several.")
     parser.add_argument("--runs", type=int, default=3, help="Runs per course (default 3).")
-    parser.add_argument("--label", default="baritone", help="Backend label for the report.")
+    parser.add_argument("--backend", choices=["baritone", "airicraft"], default="baritone",
+                        help="Navigation backend the client uses (default baritone).")
+    parser.add_argument("--label", default=None, help="Report label (default: the backend).")
     parser.add_argument("--world-archive", type=Path, default=DEFAULT_WORLD_ARCHIVE,
                         help="Scenario world.zip to load; the saved player must stand on open overworld ground.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR,
@@ -166,6 +169,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    label = args.label or args.backend
     output_dir = args.output_dir.resolve()
     game_dir = output_dir / "game"
     bridge_state = game_dir / "bridge-state.json"
@@ -178,9 +182,9 @@ def main(argv: list[str]) -> int:
     environment["AIRICRAFT_EVALUATOR_GAME_DIR"] = str(game_dir)
     environment.pop("AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST", None)
     log_path = output_dir / "client.log"
-    print(f"launching client; log: {log_path}", flush=True)
+    print(f"launching client with the {args.backend} navigation backend; log: {log_path}", flush=True)
     with log_path.open("w", encoding="utf-8") as log:
-        process = subprocess.Popen(client_command(game_dir), cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT,
+        process = subprocess.Popen(client_command(game_dir, args.backend), cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT,
                                    env=environment, start_new_session=True)
         call = None
         try:
@@ -195,8 +199,8 @@ def main(argv: list[str]) -> int:
             wait_for("the world to load", lambda: call("GET", "/v1/status", None).get("worldLoaded"), 600.0, process)
             time.sleep(10)
             command = [sys.executable, str(REPO_ROOT / "scripts" / "navigation-baseline"),
-                       "--label", args.label, "--runs", str(args.runs),
-                       "--bridge-state", str(bridge_state), "--output", str(output_dir / f"{args.label}.json")]
+                       "--label", label, "--runs", str(args.runs),
+                       "--bridge-state", str(bridge_state), "--output", str(output_dir / f"{label}.json")]
             for course in args.courses or []:
                 command += ["--course", course]
             result = subprocess.run(command, cwd=REPO_ROOT, env=environment)

@@ -60,6 +60,13 @@ public final class WorldPlacePreservation {
 		return java.util.Map.of("areas", snapshot.areas(), "unavailable", snapshot.unavailable());
 	}
 
+	/** Preserved areas in this world, or null when protection data is unavailable and no edit is safe. */
+	public static List<PlaceMemory.PreservedArea> areas(Object world) {
+		Snapshot snapshot = current;
+		if (snapshot.world() != world) return List.of();
+		return snapshot.unavailable() ? null : snapshot.areas();
+	}
+
 	public static boolean contains(Object world, int x, int y, int z) {
 		return current.contains(world, x, y, z);
 	}

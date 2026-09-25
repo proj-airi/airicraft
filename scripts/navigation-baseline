@@ -166,7 +166,8 @@ def run_course(
             call("POST", TOOLS_ROUTE, {"name": "configure_travel", "arguments": {"scope": "strategy"}})
 
     status = call("POST", COURSE_ROUTE, {"action": "status"})
-    navigation = (diagnostics or {}).get("payload", {}).get("navigation", {})
+    payload = (diagnostics or {}).get("payload", {})
+    navigation = payload.get("navigation", {})
     return {
         "course": course,
         "expectation": expectation,
@@ -174,6 +175,7 @@ def run_course(
         "passed": classify(expectation, outcome, status),
         "healthLost": round(float(initial.get("health", 0)) - float(status.get("health", 0)), 2),
         "navigation": navigation,
+        "planner": payload.get("planner", {}),
         "toolResult": receipt["text"],
         "timelineTruncated": truncated,
         "finalFeet": status.get("feet"),
@@ -199,6 +201,15 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "maxHealthLost": max(run["healthLost"] for run in runs),
             "stalls": sum(1 for run in runs if run.get("navigation", {}).get("stalled")),
         }
+        # In-house planner evidence: shadow plans on the Baritone backend, real plans on the in-house one.
+        shadows = [run["planner"]["shadow"] for run in runs if isinstance(run.get("planner", {}).get("shadow"), dict)]
+        if shadows:
+            summary[course]["shadowFound"] = sum(1 for shadow in shadows if shadow.get("outcome") == "found")
+            summary[course]["shadowOutcomes"] = sorted({str(shadow.get("outcome")) for shadow in shadows})
+        search_millis = [run["planner"]["maxSearchMillis"] for run in runs if "maxSearchMillis" in run.get("planner", {})]
+        if search_millis:
+            summary[course]["maxSearchMillis"] = max(search_millis)
+            summary[course]["plans"] = max(run["planner"].get("plans", 0) for run in runs if run.get("planner"))
     return summary
 
 

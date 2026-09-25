@@ -81,8 +81,18 @@ public final class AiricraftConfigLoader {
 			readBoolean(root, "suppressAutoPauseOnFocusLost", defaults.suppressAutoPauseOnFocusLost(), strict),
 			readInt(root, "blockInteractionDelayTicks", defaults.blockInteractionDelayTicks()),
 			readInt(root, "cameraLerpDefaultTicks", defaults.cameraLerpDefaultTicks()),
-			readDebugDashboardConfig(root, defaults.debugDashboard())
+			readDebugDashboardConfig(root, defaults.debugDashboard()),
+			readNavigationBackend(root, defaults.navigationBackend(), strict)
 		);
+	}
+
+	private static String readNavigationBackend(Map<String, Object> root, String fallback, boolean strict) {
+		Object value = childMap(root, "navigation").get("backend");
+		if (value == null) return fallback;
+		String backend = String.valueOf(value).trim().toLowerCase(java.util.Locale.ROOT);
+		if (backend.equals(AiricraftConfig.NAVIGATION_BARITONE) || backend.equals(AiricraftConfig.NAVIGATION_AIRICRAFT)) return backend;
+		if (strict) throw new IllegalArgumentException("navigation.backend must be baritone or airicraft, got " + value);
+		return fallback;
 	}
 
 	private static DebugDashboardConfig readDebugDashboardConfig(

@@ -34,6 +34,22 @@ class AiricraftConfigLoaderTest {
 	}
 
 	@Test
+	void navigationBackendDefaultsToBaritoneAndReadsAiricraft() {
+		assertEquals("baritone", AiricraftConfigLoader.fromMap(Map.of(), AiricraftConfig.defaults()).navigationBackend());
+		AiricraftConfig parsed = AiricraftConfigLoader.fromMapStrict(Map.of("navigation", Map.of("backend", "Airicraft")),
+			AiricraftConfig.defaults());
+		assertEquals("airicraft", parsed.navigationBackend());
+	}
+
+	@Test
+	void strictLoadRejectsAnUnknownNavigationBackend() {
+		assertThrows(IllegalArgumentException.class, () -> AiricraftConfigLoader.fromMapStrict(
+			Map.of("navigation", Map.of("backend", "pathfinder")), AiricraftConfig.defaults()));
+		assertEquals("baritone", AiricraftConfigLoader.fromMap(
+			Map.of("navigation", Map.of("backend", "pathfinder")), AiricraftConfig.defaults()).navigationBackend());
+	}
+
+	@Test
 	void fromMapReadsDebugDashboardSettings() {
 		AiricraftConfig parsed = AiricraftConfigLoader.fromMap(Map.of(
 			"debugDashboard", Map.of(

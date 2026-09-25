@@ -202,9 +202,17 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 				? "navigation_arrival_unconfirmed" : messageFor(terminalOutcome.get().state()),
 			terminalOutcome.get().cause(),
 			terminalOutcome.get().failureCode(),
-			metrics == null ? Map.<String, Object>of()
-				: Map.<String, Object>of("navigation", metrics.summary(appliedTask.goal().position(), "PATH_STUCK".equals(snapshot.lastPathEvent())))
+			terminalDiagnostics("PATH_STUCK".equals(snapshot.lastPathEvent()))
 		));
+	}
+
+	private Map<String, Object> terminalDiagnostics(boolean stalled) {
+		if (metrics == null) return Map.of();
+		Map<String, Object> diagnostics = new java.util.LinkedHashMap<>();
+		diagnostics.put("navigation", metrics.summary(appliedTask.goal().position(), stalled));
+		Map<String, Object> planner = facade.navigationDiagnostics();
+		if (planner != null && !planner.isEmpty()) diagnostics.put("planner", planner);
+		return diagnostics;
 	}
 
 	/** Observe a just-ended path briefly; this never issues movement or retries. */

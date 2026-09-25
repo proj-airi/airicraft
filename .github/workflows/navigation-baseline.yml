@@ -11,15 +11,20 @@ on:
       courses:
         description: Space-separated course ids; empty runs every course
         default: ""
-      label:
-        description: Backend label for the report
-        default: baritone
+      backend:
+        description: Navigation backend
+        type: choice
+        options: [airicraft, baritone]
+        default: airicraft
+  # Pushes that change the benchmark or the in-house backend measure the in-house backend.
   push:
     paths:
       - .github/workflows/navigation-baseline.yml
       - scripts/navigation-baseline
       - scripts/run-navigation-baseline
       - addons/evaluator/src/client/java/ai/moeru/airicraft/evaluator/NavigationCourse*.java
+      - navigation-core/src/main/**
+      - src/client/java/ai/moeru/airicraft/agent/navigation/**
 
 jobs:
   baseline:
@@ -47,9 +52,9 @@ jobs:
         env:
           RUNS: ${{ inputs.runs || '5' }}
           COURSES: ${{ inputs.courses || '' }}
-          LABEL: ${{ inputs.label || 'baritone' }}
+          BACKEND: ${{ inputs.backend || 'airicraft' }}
         run: |
-          args=(--runs "$RUNS" --label "$LABEL")
+          args=(--runs "$RUNS" --backend "$BACKEND")
           for course in $COURSES; do args+=(--course "$course"); done
           xvfb-run -a -s "-screen 0 1280x720x24" python3 scripts/run-navigation-baseline "${args[@]}"
       - name: print report

@@ -53,4 +53,9 @@ public interface BaritoneFacade {
 	record NavigationProgress(double x, double y, double z, boolean supported, String breakingTarget, float breakingProgress) {}
 
 	boolean navigationGoalReached(GoalPosition position);
+
+	/** Backend details for a finished task's diagnostics, such as plan outcomes and timings. */
+	default java.util.Map<String, Object> navigationDiagnostics() {
+		return java.util.Map.of();
+	}
 }
