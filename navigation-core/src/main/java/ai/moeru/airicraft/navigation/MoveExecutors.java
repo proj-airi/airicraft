@@ -139,8 +139,40 @@ final class MoveExecutors {
 		boolean jump = body.inWater() ? !descending : body.onGround() && body.horizontalCollision();
 		boolean sprint = maySprint && context.policy.allowSprint() && body.onGround() && !body.inWater() && context.distanceToEnd() > 0.6;
 		MotorIntent intent = toward(context, centreOf(to), jump, false, sprint);
+		if (edgeAhead(context, intent)) {
+			// Sneaking stops the body at the edge instead of carrying it over a drop the plan avoids.
+			intent = new MotorIntent(intent.moveX(), intent.moveZ(), false, true, false, intent.look(), null);
+		}
 		boolean done = context.atEnd() && body.supported() && (!context.turnsAfter() || context.distanceToEnd() < TURN_TOLERANCE);
 		return finish(context, intent, done);
+	}
+
+	/**
+	 * Whether momentum and the steering direction are about to carry the body into a column the path
+	 * does not use and that drops further than a safe fall, with no water to land in.
+	 */
+	private static boolean edgeAhead(StepContext context, MotorIntent intent) {
+		BodyState body = context.body;
+		if (!body.onGround() || body.inWater()) return false;
+		double px = body.x() + context.velocityX * 3 + intent.moveX() * 0.35;
+		double pz = body.z() + context.velocityZ * 3 + intent.moveZ() * 0.35;
+		int cx = (int) Math.floor(px), cz = (int) Math.floor(pz);
+		GridPos feet = body.feet();
+		if (cx == feet.x() && cz == feet.z()) return false;
+		if (inColumn(context.step.from(), cx, cz) || inColumn(context.step.to(), cx, cz)
+			|| context.next != null && inColumn(context.next.to(), cx, cz)) return false;
+		TerrainView terrain = context.terrain();
+		if (terrain.cell(cx, feet.y(), cz).hasCollision() || terrain.cell(cx, feet.y() - 1, cz).hasCollision()) return false;
+		for (int drop = 1; drop <= context.policy.maxSafeFall() + 1; drop++) {
+			CellInfo cell = terrain.cell(cx, feet.y() - drop, cz);
+			if (!cell.loaded() || cell.fluid() == CellInfo.Fluid.WATER) return false;
+			if (cell.hasCollision() || cell.climbable()) return false;
+		}
+		return true;
+	}
+
+	private static boolean inColumn(GridPos cell, int x, int z) {
+		return cell.x() == x && cell.z() == z;
 	}
 
 	private static MoveExecutor.Outcome finish(StepContext context, MotorIntent intent, boolean done) {

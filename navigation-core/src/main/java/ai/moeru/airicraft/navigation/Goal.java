@@ -6,7 +6,7 @@ import java.util.List;
  * A set of feet cells to reach. Search stops on the first node in the goal, and path following
  * reports arrival with the same predicate.
  */
-public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.AnyOf {
+public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.NearXZ, Goal.AnyOf {
 	boolean isGoal(int x, int y, int z);
 
 	/** Estimated cost to the goal; used to order search, so it should not overestimate much. */
@@ -43,6 +43,25 @@ public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.AnyOf 
 		@Override
 		public double heuristic(int px, int py, int pz) {
 			return horizontal(x - px, z - pz) + vertical(y, py);
+		}
+	}
+
+	/** Within a horizontal radius of a column, at any height: a waypoint for one segment of a long route. */
+	record NearXZ(int x, int z, int radius) implements Goal {
+		public NearXZ {
+			if (radius < 0) throw new IllegalArgumentException("negative radius");
+		}
+
+		@Override
+		public boolean isGoal(int px, int py, int pz) {
+			long dx = px - x, dz = pz - z;
+			return dx * dx + dz * dz <= (long) radius * radius;
+		}
+
+		@Override
+		public double heuristic(int px, int py, int pz) {
+			double distance = Math.sqrt((double) (px - x) * (px - x) + (double) (pz - z) * (pz - z));
+			return Math.max(0, distance - radius) * Costs.HEURISTIC_PER_BLOCK;
 		}
 	}
 

@@ -8,6 +8,9 @@ final class StepContext {
 	final Step step;
 	final Step next;
 	BodyState body;
+	/** Horizontal displacement over the last tick. */
+	double velocityX;
+	double velocityZ;
 	Moves live;
 	MovementPolicy policy;
 	int ticks;
@@ -28,8 +31,11 @@ final class StepContext {
 		return body.feet().equals(step.from());
 	}
 
+	/** In the destination cell; a swimmer bobbing one cell above a water node counts too. */
 	boolean atEnd() {
-		return body.feet().equals(step.to());
+		GridPos feet = body.feet();
+		GridPos to = step.to();
+		return feet.equals(to) || body.inWater() && feet.x() == to.x() && feet.z() == to.z() && feet.y() == to.y() + 1;
 	}
 
 	double distanceToEnd() {

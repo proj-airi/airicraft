@@ -19,7 +19,9 @@ final class SimBody {
 	double x;
 	double y;
 	double z;
+	double velocityX;
 	double velocityY;
+	double velocityZ;
 	boolean onGround;
 	boolean horizontalCollision;
 	long tick;
@@ -54,14 +56,41 @@ final class SimBody {
 		act(intent.action());
 		boolean water = inWater();
 		boolean climbing = climbing();
-		double speed = water ? 0.1 : intent.sneak() ? 0.065 : intent.sprint() ? 0.28 : 0.215;
-		double dx = intent.moveX() * speed, dz = intent.moveZ() * speed;
+		// Vanilla-like horizontal physics: acceleration toward the input, then friction or drag.
+		double input = intent.sneak() ? 0.3 : 1.0;
+		double acceleration, retention;
+		if (water) {
+			acceleration = 0.02;
+			retention = 0.8;
+		}
+		else if (onGround) {
+			acceleration = intent.sprint() ? 0.13 : 0.1;
+			retention = 0.546;
+		}
+		else {
+			acceleration = intent.sprint() ? 0.026 : 0.02;
+			retention = 0.91;
+		}
+		velocityX += intent.moveX() * input * acceleration;
+		velocityZ += intent.moveZ() * input * acceleration;
+		double dx = velocityX, dz = velocityZ;
+		if (intent.sneak() && onGround) {
+			// Sneaking never walks off an edge.
+			if (!supported(x + dx, y, z)) dx = 0;
+			if (!supported(x + dx, y, z + dz)) dz = 0;
+		}
 		horizontalCollision = false;
-		moveHorizontal(dx, 0);
-		moveHorizontal(0, dz);
+		if (!moveHorizontal(dx, 0)) velocityX = 0;
+		if (!moveHorizontal(0, dz)) velocityZ = 0;
+		velocityX *= retention;
+		velocityZ *= retention;
 
 		if (water) {
-			velocityY = intent.jump() ? 0.06 : intent.sneak() ? -0.08 : -0.02;
+			// Players float with about 0.4 blocks of their body under the surface.
+			boolean deep = waterAt(y + 0.45);
+			velocityY = intent.jump() ? (deep ? 0.06 : -0.02) : intent.sneak() ? -0.08 : -0.02;
+			// Vanilla lifts a swimmer pushing against a bank that has room 0.6 blocks up.
+			if (horizontalCollision && !collides(x + intent.moveX() * 0.1, y + 0.6, z + intent.moveZ() * 0.1)) velocityY = 0.3;
 			fallStart = Double.NaN;
 		}
 		else if (climbing) {
@@ -132,12 +161,12 @@ final class SimBody {
 		}
 	}
 
-	private void moveHorizontal(double dx, double dz) {
-		if (dx == 0 && dz == 0) return;
+	private boolean moveHorizontal(double dx, double dz) {
+		if (dx == 0 && dz == 0) return true;
 		if (!collides(x + dx, y, z + dz)) {
 			x += dx;
 			z += dz;
-			return;
+			return true;
 		}
 		// Step up to 0.6 blocks when on the ground, like vanilla.
 		if (onGround) {
@@ -147,11 +176,20 @@ final class SimBody {
 					z += dz;
 					y += rise;
 					settle();
-					return;
+					return true;
 				}
 			}
 		}
 		horizontalCollision = true;
+		return false;
+	}
+
+	private boolean supported(double px, double py, double pz) {
+		return collides(px, py - 0.6, pz) || waterAt(py - 0.5);
+	}
+
+	private boolean waterAt(double py) {
+		return terrain.cell((int) Math.floor(x), (int) Math.floor(py), (int) Math.floor(z)).fluid() == CellInfo.Fluid.WATER;
 	}
 
 	private void moveVertical(double dy) {

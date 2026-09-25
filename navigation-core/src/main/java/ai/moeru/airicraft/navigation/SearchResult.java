@@ -12,7 +12,9 @@ public sealed interface SearchResult permits SearchResult.Found, SearchResult.Pa
 		/** Exploration reached unloaded terrain; more may load as the player moves. */
 		UNLOADED_FRONTIER,
 		NODE_BUDGET,
-		TIME_BUDGET
+		TIME_BUDGET,
+		/** A waypoint on the way to a goal farther than one segment; plan again from its end. */
+		SEGMENT
 	}
 
 	/**

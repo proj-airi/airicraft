@@ -106,6 +106,16 @@ class PathFollowerCourseTest {
 	}
 
 	@Test
+	void sprintingTurnAtACliffEdgeStaysOnTheLedge() {
+		// A one-wide ledge 10 blocks up runs east, then turns north at the cliff edge.
+		Course course = new Course().fill(0, 0, 0, 14, 0, 8, AsciiTerrain.STONE)
+			.fill(0, 1, 6, 10, 10, 6, AsciiTerrain.STONE).fill(10, 1, 0, 10, 10, 6, AsciiTerrain.STONE);
+		Run run = course.drive(new GridPos(0, 11, 6), new GridPos(10, 11, 0), POLICY.noEdits());
+		run.assertArrived();
+		assertEquals(0, run.body.healthLost);
+	}
+
+	@Test
 	void travelBoundsRefusalStaysInside() {
 		Course course = new Course().fill(0, 0, 0, 24, 0, 2, AsciiTerrain.STONE);
 		Run run = course.drive(new GridPos(1, 1, 1), new GridPos(23, 1, 1), POLICY.withTravelBounds(new Box(-1, -1, -1, 12, 4, 3)));

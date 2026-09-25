@@ -73,7 +73,7 @@ public final class ShadowedBaritoneFacade implements BaritoneFacade {
 			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, hasY,
 				MinecraftCellClassifier.forPlayer(player));
 			captureMillis = snapshot.captureMillis();
-			shadow = planner.submit(snapshot, policy, start, goal, BUDGET);
+			shadow = planner.submit(snapshot, policy, start, goal, target, BUDGET);
 		}
 		catch (RuntimeException exception) {
 			shadowSkipped = "shadow_error " + exception.getClass().getSimpleName();

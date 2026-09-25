@@ -56,6 +56,20 @@ remembered place), and counts of blocks broken or placed.
    `run/navigation-baseline/<label>-<utc>.json` and a summary table is printed. The exit
    code is 0 only when every run passed.
 
+### Choosing the backend
+
+The client's `navigation.backend` setting (`config/airicraft/airicraft.yml`) picks
+`baritone` (the default) or `airicraft`, the in-house planner and motor. It is reloadable
+with `airicraft reload`. The Gradle property `-Pairicraft.navigationBackend=<backend>`
+overrides it for a launched client, and `scripts/run-navigation-baseline --backend
+<backend>` passes that property. `airicraft agent debug navigation state` shows the active
+backend.
+
+On the Baritone backend, every navigation is also planned in-house without moving (shadow
+mode). The shadow outcome is in the terminal diagnostics under `planner.shadow`, and the
+summary counts `shadowFound`. `airicraft agent debug navigation plan --x --y --z` dry-runs
+one plan from the player and highlights it.
+
 ### Unattended and in CI
 
 `scripts/run-navigation-baseline` does all of the above without a person. It launches
@@ -66,8 +80,9 @@ scripts/run-navigation-baseline`. Course failures are recorded data; pass
 `--require-pass` to make them fail the command.
 
 The `navigation baseline` GitHub workflow runs it under Xvfb with Mesa software
-rendering. It runs on manual dispatch (with runs, courses and label inputs) and on
-pushes that change the benchmark. It prints the summary and one line per run in the
+rendering. It runs on manual dispatch (with runs, courses and backend inputs) and on
+pushes that change the benchmark or the in-house backend; pushes measure the in-house
+backend. It prints the summary and one line per run in the
 job log and uploads the report with the client logs.
 
 The fixture route can also be called directly:
@@ -123,6 +138,11 @@ Its correlation carries `taskId`, `goalType` and `terminalState`, and its payloa
 | `startDistance`, `endDistance` | Feet distance to the goal cell's floor center; horizontal only when `exactY` is false |
 | `replans` | Water-stall replans plus follow reacquisitions |
 | `stalled` | Whether the stall watchdog ended the task |
+
+The payload's `planner` object comes from the backend. On the Baritone backend it holds the
+shadow plan: `outcome`, `reason`, `steps`, `cost`, `length`, `expanded` and `searchMillis`.
+On the in-house backend it holds `plans`, `replans`, `lastReplanReason`, `failure`,
+`medianSearchMillis`, `maxSearchMillis` and one entry per plan.
 
 The script adds `outcome` (`completed`, `failed`, `cancelled`, `rejected` or `timeout`),
 `passed`, `healthLost` and the final feet position. Planner-visible events do not

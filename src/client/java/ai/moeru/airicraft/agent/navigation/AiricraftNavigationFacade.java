@@ -270,7 +270,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, goalHasY,
 				MinecraftCellClassifier.forPlayer(player));
 			plannedPolicy = policy;
-			pending = planner.submit(snapshot, policy, start, goal, BUDGET);
+			pending = planner.submit(snapshot, policy, start, goal, target, BUDGET);
 			pendingCaptureMillis = snapshot.captureMillis();
 		}
 		if (!pending.done()) {

@@ -29,6 +29,7 @@ public final class PathFollower {
 	private int offPathTicks;
 	private final List<GridPos> doorsToClose = new ArrayList<>();
 	private GridPos breaking;
+	private BodyState previous;
 
 	public PathFollower(Path path) {
 		this.path = path;
@@ -67,6 +68,10 @@ public final class PathFollower {
 		if (current == null) return new Tick(closeDoor(MotorIntent.IDLE, body, live), Status.ARRIVED, null);
 
 		StepContext context = current;
+		boolean consecutive = previous != null && body.tick() == previous.tick() + 1;
+		context.velocityX = consecutive ? body.x() - previous.x() : 0;
+		context.velocityZ = consecutive ? body.z() - previous.z() : 0;
+		previous = body;
 		context.body = body;
 		context.live = moves;
 		context.policy = policy;

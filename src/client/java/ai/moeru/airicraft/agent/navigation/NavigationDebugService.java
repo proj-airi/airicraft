@@ -41,7 +41,7 @@ public final class NavigationDebugService {
 		GridPos target = new GridPos(x, exactY ? y : start.y(), z);
 		WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, exactY,
 			MinecraftCellClassifier.forPlayer(player));
-		return new Planning(NavigationPlanner.shared().submit(snapshot, policy, start, goal, BUDGET), snapshot, policy, goal);
+		return new Planning(NavigationPlanner.shared().submit(snapshot, policy, start, goal, target, BUDGET), snapshot, policy, goal);
 	}
 
 	public record Planning(NavigationPlanner.Pending pending, WorldTerrainSnapshot snapshot, MovementPolicy policy, Goal goal) { }

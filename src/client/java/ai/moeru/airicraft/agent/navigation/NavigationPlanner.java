@@ -3,9 +3,9 @@ package ai.moeru.airicraft.agent.navigation;
 import ai.moeru.airicraft.navigation.Goal;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.MovementPolicy;
-import ai.moeru.airicraft.navigation.PathSearch;
 import ai.moeru.airicraft.navigation.SearchBudget;
 import ai.moeru.airicraft.navigation.SearchResult;
+import ai.moeru.airicraft.navigation.SegmentPlanning;
 import ai.moeru.airicraft.navigation.TerrainView;
 
 import java.util.concurrent.CancellationException;
@@ -29,10 +29,11 @@ public final class NavigationPlanner {
 		return SHARED;
 	}
 
-	public Pending submit(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal, SearchBudget budget) {
+	/** Plans in segments toward {@code target}, the goal's representative cell (see {@link SegmentPlanning}). */
+	public Pending submit(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal, GridPos target, SearchBudget budget) {
 		AtomicBoolean cancelled = new AtomicBoolean();
 		CompletableFuture<SearchResult> future = CompletableFuture.supplyAsync(
-			() -> PathSearch.search(terrain, policy, start, goal, budget, cancelled::get), worker);
+			() -> SegmentPlanning.plan(terrain, policy, start, goal, target, budget, cancelled::get), worker);
 		return new Pending(future, cancelled, start, goal);
 	}
 
