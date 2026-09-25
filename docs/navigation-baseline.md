@@ -56,6 +56,20 @@ remembered place), and counts of blocks broken or placed.
    `run/navigation-baseline/<label>-<utc>.json` and a summary table is printed. The exit
    code is 0 only when every run passed.
 
+### Unattended and in CI
+
+`scripts/run-navigation-baseline` does all of the above without a person. It launches
+the evaluator in Codex-driver mode in `run/navigation-baseline/game`, loads
+`scenarios/farm_easy/world.zip` as a plain save, joins it, runs the courses and stops
+the client. It needs a display, so on Linux use `xvfb-run -a python3
+scripts/run-navigation-baseline`. Course failures are recorded data; pass
+`--require-pass` to make them fail the command.
+
+The `navigation baseline` GitHub workflow runs it under Xvfb with Mesa software
+rendering. It runs on manual dispatch (with runs, courses and label inputs) and on
+pushes that change the benchmark. It prints the summary and one line per run in the
+job log and uploads the report with the client logs.
+
 The fixture route can also be called directly:
 
 ```json
@@ -67,6 +81,33 @@ POST /v1/evaluation/navigation-course
 ```
 
 `cleanup` clears the current course and returns the player to the recorded origin.
+
+## Baritone baseline (2026-09-25)
+
+Recorded by the `navigation baseline` workflow at commit `07c518c`, run
+[36107233049](https://github.com/proj-airi/airicraft/actions/runs/36107233049): five runs
+per course, Baritone 1.15.0, `farm_easy` world, headless client under Xvfb. Ticks and path
+length are medians.
+
+| Course | Passed | Ticks | Path (blocks) | End distance | Health lost |
+| --- | --- | --- | --- | --- | --- |
+| `flat_walk` | 5/5 | 85 | 21.7 | 0.30 | 0 |
+| `staircase_up` | 5/5 | 83 | 18.67 | 0.09 | 0 |
+| `drop_3` | 5/5 | 51 | 13.44 | 0.32 | 0 |
+| `drop_5_stairs` | 5/5 | 111 | 23.9 | 0.30 | 0 |
+| `river_crossing` | 5/5 | 115 | 18.95 | 0.20 | 0 |
+| `dirt_wall` | 5/5 | 125 | 16.92 | 0.23 | 0 |
+| `gap_bridge` | 5/5 | 99 | 16.28 | 0.36 | 0 |
+| `pillar_pit` | 5/5 | 113 | 17.39 | 0.53 | 0 |
+| `door_house` | 5/5 | 43 | 8.79 | 0.21 | 0 |
+| `cave_route` | 5/5 | 164 | 39.14 | 0.07 | 0 |
+| `far_xz` | 5/5 | 1796 | 354.61 | 0.35 | 0 |
+| `travel_bounds_refusal` | 5/5 | 92 | 10.94 | 11.07 | 0 |
+
+No run stalled or replanned. On `drop_5_stairs` Baritone took the staircase lane (path
+23.9 against a 17-block straight line, no health lost). On `travel_bounds_refusal` it
+walked about 11 blocks to the edge of the bounds, then failed without leaving them.
+Runs were nearly deterministic: most courses repeated the same tick count exactly.
 
 ## Metrics
 

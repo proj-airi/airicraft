@@ -244,8 +244,7 @@ Sizes are relative (S, M, L).
 
 ### Phase 0 — Baseline and dead code (S)
 
-Status (2026-09-25): implemented except the recorded baseline, which needs a live
-client.
+Status (2026-09-25): done.
 
 - **Delete production-dead mining code.** Done.
   - `HybridMiningTaskExecutor`, `HybridMiningPolicy`,
@@ -268,9 +267,9 @@ client.
   `task`/`terminal_diagnostics` debug-timeline entry. Block break/place counts
   are deferred: they need a new interaction-manager injection point that must be
   verified on a live client.
-- **Record the Baritone baseline.** Pending: run
-  `scripts/navigation-baseline --label baritone --runs 5` against
-  `scripts/codex-driver-evaluator` and commit the summary.
+- **Record the Baritone baseline.** Done in CI: the `navigation baseline` workflow
+  runs a headless client under Xvfb. All 60 runs (12 courses, 5 each) passed; the
+  summary is in [navigation-baseline.md](../../navigation-baseline.md#baritone-baseline-2026-09-25).
 - **CI.** The evaluator addon is now compiled and tested, in its own step after
   the root suite.
 
