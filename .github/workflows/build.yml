@@ -26,9 +26,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: build
-        run: ./gradlew build
+        run: ./gradlew build -Pairicraft.includeEvaluator=true
       - name: run tests
-        run: ./gradlew :test :wrapper:test
+        run: ./gradlew :test :wrapper:test :addons:evaluator:test -Pairicraft.includeEvaluator=true
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
