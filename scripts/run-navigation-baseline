@@ -28,7 +28,9 @@ from typing import Any, Callable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORLD_NAME = "navigation-baseline"
 DEFAULT_WORLD_ARCHIVE = REPO_ROOT / "scenarios" / "farm_easy" / "world.zip"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "build" / "navigation-baseline"
+# Outside build/: Gradle deletes stale files in task output directories under build/,
+# which would wipe the prepared save when the client run task starts.
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "run" / "navigation-baseline"
 # Software rendering is slow; the benchmark needs neither view distance nor frame rate.
 CLIENT_OPTIONS = {
     "onboardAccessibility": "false",

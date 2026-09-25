@@ -55,25 +55,25 @@ jobs:
       - name: print report
         if: always()
         run: |
-          for report in build/navigation-baseline/*.json; do
+          for report in run/navigation-baseline/*.json; do
             [ -f "$report" ] || continue
             python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(json.dumps(r["summary"], indent=1)); [print(json.dumps(x, separators=(",", ":"))) for x in r["results"]]' "$report"
           done
       - name: print client diagnostics
         if: failure()
         run: |
-          ls -la build/navigation-baseline/game build/navigation-baseline/game/saves || true
-          ls -la build/navigation-baseline/game/saves/navigation-baseline || true
-          grep -inE 'level|saves|world' build/navigation-baseline/game/logs/latest.log | tail -n 40 || true
-          tail -n 120 build/navigation-baseline/client.log || true
+          ls -la run/navigation-baseline/game run/navigation-baseline/game/saves || true
+          ls -la run/navigation-baseline/game/saves/navigation-baseline || true
+          grep -inE 'level|saves|world' run/navigation-baseline/game/logs/latest.log | tail -n 40 || true
+          tail -n 120 run/navigation-baseline/client.log || true
       - name: upload report and logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: navigation-baseline
           path: |
-            build/navigation-baseline/*.json
-            build/navigation-baseline/*.log
-            build/navigation-baseline/game/logs/
-            build/navigation-baseline/game/crash-reports/
+            run/navigation-baseline/*.json
+            run/navigation-baseline/*.log
+            run/navigation-baseline/game/logs/
+            run/navigation-baseline/game/crash-reports/
           if-no-files-found: warn
