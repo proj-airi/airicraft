@@ -271,6 +271,27 @@ class AiricraftCliMainTest {
 	}
 
 	@Test
+	void agentDebugNavigationPlanPostsTheGoal() {
+		TestTransport transport = new TestTransport();
+		transport.when("POST", "/v1/agent/debug/navigation/plan").payload = linkedMap(
+			"outcome", "found",
+			"steps", java.util.List.of("TRAVERSE -> 1,64,0")
+		);
+
+		CliResult result = execute(transport, "agent", "debug", "navigation", "plan",
+			"--x", "1", "--y", "64", "--z", "0", "--no-exact-y", "--highlight-seconds", "5");
+
+		assertEquals(0, result.exitCode());
+		Map<String, Object> body = transport.body("POST", "/v1/agent/debug/navigation/plan");
+		assertEquals(1, ((Number) body.get("x")).intValue());
+		assertEquals(64, ((Number) body.get("y")).intValue());
+		assertEquals(false, body.get("exactY"));
+		assertEquals(5, ((Number) body.get("highlightSeconds")).intValue());
+		assertTrue(result.output().contains("command: agent debug navigation plan\n"));
+		assertTrue(result.output().contains("outcome: found\n"));
+	}
+
+	@Test
 	void agentDebugIdleTriggerFiresManualTrigger() {
 		TestTransport transport = new TestTransport();
 		transport.when("POST", "/v1/agent/debug/idle-trigger").payload = linkedMap(

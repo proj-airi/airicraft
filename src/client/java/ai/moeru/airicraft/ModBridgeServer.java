@@ -208,6 +208,9 @@ public final class ModBridgeServer {
 			httpServer.createContext("/v1/agent/debug/idle-trigger", this::handleAgentDebugIdleTrigger);
 			httpServer.createContext("/v1/agent/debug/compact", this::handleAgentDebugCompact);
 				httpServer.createContext("/v1/agent/debug/state", exchange -> handleJson(exchange, this::createAgentDebugStateResponse));
+				httpServer.createContext("/v1/agent/debug/navigation/plan", this::handleNavigationPlan);
+				httpServer.createContext("/v1/agent/debug/navigation/state", exchange -> handleJson(exchange,
+					() -> onClientThread(() -> AiricraftClient.runtimeController().navigationState())));
 				httpServer.createContext("/v1/agent/debug/timeline", exchange -> handleJson(exchange, () -> createAgentDebugTimelineResponse(exchange)));
 				httpServer.createContext("/v1/agent/debug/llm-calls", exchange -> handleJson(exchange, () -> createAgentDebugLlmCallsResponse(exchange)));
 				httpServer.createContext("/v1/agent/debug/ticks/state", this::handleClientTickDebugState);
@@ -332,6 +335,32 @@ public final class ModBridgeServer {
 			catch (SavedServerService.SavedServerServiceException exception) {
 				throw new BridgeUnavailableException(exception.code(), exception.getMessage());
 			}
+		});
+	}
+
+	/** Dry-run navigation plan: snapshots on the client thread, searches on the planner thread, highlights the path. */
+	private void handleNavigationPlan(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", NavigationPlanRequest.class, request -> {
+			if (request == null || request.x() == null || request.y() == null || request.z() == null) {
+				throw new BridgeUnavailableException("invalid_request", "x, y, and z are required");
+			}
+			boolean exactY = request.exactY() == null || request.exactY();
+			int highlightSeconds = request.highlightSeconds() == null ? 30 : Math.max(0, Math.min(600, request.highlightSeconds()));
+			var planning = onClientThread(() -> ai.moeru.airicraft.agent.navigation.NavigationDebugService.start(
+				getClient(), request.x(), request.y(), request.z(), exactY));
+			ai.moeru.airicraft.navigation.SearchResult result;
+			try {
+				result = planning.pending().future().get(10, TimeUnit.SECONDS);
+			}
+			catch (java.util.concurrent.TimeoutException exception) {
+				planning.pending().cancel();
+				throw new BridgeUnavailableException("planning_timeout", "Navigation planning did not finish within 10 seconds");
+			}
+			catch (Exception exception) {
+				throw new IllegalStateException("Navigation planning failed", exception);
+			}
+			return onClientThread(() -> ai.moeru.airicraft.agent.navigation.NavigationDebugService.describe(
+				planning, result, highlightManager(), highlightSeconds));
 		});
 	}
 
@@ -2515,6 +2544,9 @@ public final class ModBridgeServer {
 	}
 
 	private record LookAtRequest(Double x, Double y, Double z, Integer durationTicks) {
+	}
+
+	private record NavigationPlanRequest(Integer x, Integer y, Integer z, Boolean exactY, Integer highlightSeconds) {
 	}
 
 	private record EntityInteractionRequest(String uuid, String name, String entityTypeId, String itemId, String mode) {

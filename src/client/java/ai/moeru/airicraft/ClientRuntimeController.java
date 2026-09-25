@@ -430,6 +430,17 @@ public final class ClientRuntimeController {
 		return agentRuntime;
 	}
 
+	/** The active navigation backend and its latest plan diagnostics. Client thread. */
+	public Map<String, Object> navigationState() {
+		Map<String, Object> state = new LinkedHashMap<>();
+		state.put("backend", baritoneFacade == airicraftBackend ? "airicraft" : "baritone");
+		state.put("active", baritoneFacade.processActive());
+		baritoneFacade.activeProcessName().ifPresent(name -> state.put("process", name));
+		baritoneFacade.estimatedTicksToGoal().ifPresent(ticks -> state.put("estimatedTicksToGoal", Math.round(ticks)));
+		state.put("diagnostics", baritoneFacade.navigationDiagnostics());
+		return state;
+	}
+
 	private BaritoneFacade navigationBackend(AiricraftConfig airicraftConfig) {
 		boolean airicraft = AiricraftConfig.NAVIGATION_AIRICRAFT.equals(airicraftConfig.effectiveNavigationBackend());
 		Airicraft.LOGGER.info("Airicraft navigation backend: {}", airicraft ? "airicraft" : "baritone");

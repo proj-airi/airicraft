@@ -102,6 +102,8 @@
 - `airicraft agent debug idle-trigger`
 - `airicraft agent debug state`
 - `airicraft agent debug timeline [--since <entry-id>]`
+- `airicraft agent debug navigation plan --x <x> --y <y> --z <z> [--no-exact-y] [--highlight-seconds <0-600>]`
+- `airicraft agent debug navigation state`
 - `airicraft agent debug ticks state`
 - `airicraft agent debug ticks pause [--player-actions] [--output-image <path>]`
 - `airicraft agent debug ticks step --debug-session-id <id> --pause-epoch <epoch> [--output-image <path>]`
