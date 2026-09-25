@@ -24,7 +24,8 @@ final class AsciiTerrain {
 	static final CellInfo MAGMA = CellInfo.builder("magma").full().hazards(CellInfo.HAZARD_FLOOR).breakTicks(10).build();
 	static final CellInfo COBWEB = CellInfo.builder("cobweb").hazards(CellInfo.HAZARD_BODY).breakTicks(20).build();
 	static final CellInfo LADDER = CellInfo.builder("ladder").pixels(0, 0, 13, 16, 16, 16).climbable().breakTicks(5).build();
-	static final CellInfo DOOR_OPEN = CellInfo.builder("oak_door_open").pixels(0, 0, 0, 3, 16, 16).breakTicks(20).build();
+	static final CellInfo DOOR_OPEN = CellInfo.builder("oak_door_open").pixels(0, 0, 0, 3, 16, 16)
+		.openable(CellInfo.Openable.DOOR, null).breakTicks(20).build();
 	/** A closed oak door with its panel on the north edge; using it swings the panel to the west edge. */
 	static final CellInfo DOOR = CellInfo.builder("oak_door").pixels(0, 0, 0, 16, 16, 3)
 		.openable(CellInfo.Openable.DOOR, DOOR_OPEN).breakTicks(20).build();

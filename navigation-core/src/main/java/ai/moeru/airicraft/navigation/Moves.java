@@ -186,8 +186,8 @@ public final class Moves {
 				&& sweepFree(x, z, sourceMask, y, y + HEIGHT) && sweepFree(tx, tz, destMask, y, y + HEIGHT)
 				&& !deadly(cell(tx, y + 1, tz)) && !deadly(feet)) {
 				out.place(tx, y - 1, tz, x, y - 1, z);
-				// The motor sneaks back to the edge, places against our floor, then walks on.
-				out.set(MoveType.BRIDGE, tx, y, tz, Costs.SNEAK + policy.placePenalty());
+				// The motor places against our floor's side face from where it stands, then walks on.
+				out.set(MoveType.BRIDGE, tx, y, tz, Costs.WALK + policy.placePenalty());
 				return true;
 			}
 		}
