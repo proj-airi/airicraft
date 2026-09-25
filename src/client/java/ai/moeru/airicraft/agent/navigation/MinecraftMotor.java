@@ -27,6 +27,8 @@ import java.util.List;
 public final class MinecraftMotor {
 	/** Key threshold for eight-way movement: a component beyond cos(67.5 degrees) presses its key. */
 	private static final double KEY_THRESHOLD = 0.38;
+	/** True while this motor calls the interaction manager to break, so edit vetoes can tell path breaking apart. */
+	private static boolean breakingForNavigation;
 	private final CameraController camera;
 	private boolean holding;
 	private BlockPos breaking;
@@ -103,13 +105,30 @@ public final class MinecraftMotor {
 			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(client, player, List.of(state));
 			if (!tool.ok()) return tool.message();
 			Direction side = facing(player.getEyePos(), pos);
-			if (!client.interactionManager.attackBlock(pos, side)) return "break_refused " + pos.toShortString();
+			breakingForNavigation = true;
+			try {
+				if (!client.interactionManager.attackBlock(pos, side)) return "break_refused " + pos.toShortString();
+			}
+			finally {
+				breakingForNavigation = false;
+			}
 			breaking = pos.toImmutable();
 			breakingSide = side;
 		}
-		client.interactionManager.updateBlockBreakingProgress(pos, breakingSide);
+		breakingForNavigation = true;
+		try {
+			client.interactionManager.updateBlockBreakingProgress(pos, breakingSide);
+		}
+		finally {
+			breakingForNavigation = false;
+		}
 		player.swingHand(Hand.MAIN_HAND);
 		return null;
+	}
+
+	/** Whether the current interaction-manager call is navigation clearing its path. Client thread. */
+	public static boolean breakingForNavigation() {
+		return breakingForNavigation;
 	}
 
 	private String place(MinecraftClient client, ClientPlayerEntity player, BlockPos target, BlockPos support) {

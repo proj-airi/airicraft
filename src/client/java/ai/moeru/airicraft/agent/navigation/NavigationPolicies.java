@@ -30,8 +30,17 @@ public final class NavigationPolicies {
 	private static final double MOB_AVOIDANCE_RADIUS = 16;
 	private static final double MOB_AVOIDANCE_COEFFICIENT = 4.0;
 	private static final double MOB_SCAN_RADIUS = 40;
+	/**
+	 * Set while an owner needs walking-only travel, such as leading animals. It mirrors the Baritone
+	 * settings those owners turn off, until policies are passed per request.
+	 */
+	private static volatile boolean walkOnly;
 
 	private NavigationPolicies() {
+	}
+
+	public static void setWalkOnly(boolean restricted) {
+		walkOnly = restricted;
 	}
 
 	/** The policy for the current player, or null when the travel policy forbids moving at all. */
@@ -53,6 +62,8 @@ public final class NavigationPolicies {
 			policy = policy.withProtectedAreas(areas.stream()
 				.map(area -> new Box(area.x1(), area.y1(), area.z1(), area.x2(), area.y2(), area.z2())).toList());
 		}
+		// Doors stay usable: the Baritone settings this mirrors never disabled them.
+		if (walkOnly) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
 		return policy.withAvoidances(mobAvoidances(client));
 	}
 

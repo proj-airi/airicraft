@@ -79,7 +79,8 @@ public final class WorldPlacePreservation {
 	public static boolean blocksPathBreaking(BlockPos pos) {
 		MinecraftClient client = MinecraftClient.getInstance();
 		return client.world != null && contains(client.world, pos)
-			&& BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT);
+			&& (ai.moeru.airicraft.agent.navigation.MinecraftMotor.breakingForNavigation()
+				|| BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT));
 	}
 
 	record Snapshot(Object world, List<PlaceMemory.PreservedArea> areas, boolean unavailable) {

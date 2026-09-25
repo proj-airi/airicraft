@@ -303,6 +303,24 @@ Status (2026-09-25): done.
 
 ### Phase 2 — `navigation-core` in shadow mode (L, Track B)
 
+Status (2026-09-25): done.
+
+- `navigation-core` is a nested `java-library` subproject. Cells are classified per
+  footprint region from collision boxes, so doors, fences, slabs, stairs, ladders and
+  trapdoors need no block lists. ASCII-grid tests cover the listed cases plus ladders,
+  cobwebs, magma, sand above a tunnel, protected areas, travel bounds, unloaded frontiers
+  and budgets. Search is weighted A* (weight 1.5: about 6% more path cost for roughly 50x
+  fewer expansions on rough terrain). Goals farther than 64 blocks are approached through
+  a waypoint first (`SegmentPlanning`).
+- The snapshotter copies block states from loaded chunks on the client thread; the
+  planner thread classifies them lazily. `airicraft agent debug navigation plan` and
+  `state` exist.
+- Shadow results go in the task's `task`/`terminal_diagnostics` timeline entry under
+  `planner.shadow`, which the benchmark summarizes as `shadowFound`. They are not yet a
+  separate dashboard observation field.
+- Combat positioning uses core moves under a no-edits policy, and `CombatTraversal` runs
+  the core executors (done together with Phase 3's executors).
+
 - **Build the core.** Add the subproject: `TerrainView`, `MovementPolicy`,
   non-edit moves, budgeted A* and goals. Test with JUnit on ASCII-grid terrains:
   stairs, slabs, fences, doors, water, lava, drops and tunnels.
@@ -318,6 +336,29 @@ Status (2026-09-25): done.
   core moves under a no-edits policy. Combat never used Baritone's executor.
 
 ### Phase 3 — Motor and `NavigationService` behind a flag (L, converge)
+
+Status (2026-09-25): in progress; running behind the flag.
+
+- Executors (walk/diagonal, bridge, ascend, descend/fall, swim, climb, pillar) and the
+  `PathFollower` (revalidation, stall and off-path detection, skip-ahead, closing doors
+  behind) are in the core. A kinematic test body walks re-creations of every fixture
+  course, and a replay harness drives `far_xz` over terrain exported from the scenario
+  save. While walking, the motor sneaks when momentum would carry it over an unsafe drop
+  the path does not take.
+- Tunnel breaks through `MiningToolPreparation` and the interaction manager. Bridge and
+  pillar place through `interactBlock` with a hit on the support face, so no aiming is
+  needed. Without Phase 1 there is no click channel yet.
+- Deviation: instead of a `NavigationService` with two implementations,
+  `AiricraftNavigationFacade` implements the existing `BaritoneFacade`, so every consumer
+  runs on either backend unchanged. Typed outcomes and `NavigationService` arrive with the
+  Phase 4 consumer migration. `navigation.backend` (config, reloadable) or
+  `-Pairicraft.navigationBackend` selects the backend. The default is `baritone`.
+- Deviation: Phase 1 has not started, so the motor writes key bindings, as
+  `MovementController` does, rather than installing an `Input`.
+- First benchmark on the in-house backend (commit `8a4c309`, before the heuristic
+  weight, waypoints and edge guard): 58 of 60 runs passed. Every fixture course passed 5
+  of 5. `far_xz` passed 3 of 5; two runs went over a ravine edge at the same spot. That is
+  the case the edge guard covers.
 
 - **Movement executors.** Add `MoveExecutor`s for walk, diagonal, ascend,
   descend, fall, swim, climb and door. Add the `PathFollower` with live
