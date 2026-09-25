@@ -441,6 +441,8 @@ dependencies {
 	modImplementation files("libs/nether-pathfinder-1.4.1.jar")
 	implementation "ai.moeru:action-plan-advisor:0.1.0"
 	include "ai.moeru:action-plan-advisor:0.1.0"
+	implementation project(":navigation-core")
+	include project(":navigation-core")
 	implementation "org.yaml:snakeyaml:2.4"
 	// Use concrete JARs: the js-community aggregate adds POM files that Fabric cannot load.
 	// Keep language/provider descriptors in separate nested jars (include is non-transitive).
