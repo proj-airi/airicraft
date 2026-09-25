@@ -194,6 +194,24 @@ class SummaryTest(unittest.TestCase):
         self.assertIsNone(summary["b"]["medianElapsedTicks"])
         self.assertIn("b", baseline.format_summary(summary))
 
+    def test_summary_reports_shadow_plans_and_search_time(self) -> None:
+        results = [
+            {"course": "a", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
+             "planner": {"backend": "baritone", "shadow": {"outcome": "found"}}},
+            {"course": "a", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
+             "planner": {"backend": "baritone", "shadow": {"outcome": "partial"}}},
+            {"course": "b", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
+             "planner": {"backend": "airicraft", "plans": 2, "maxSearchMillis": 12.5}},
+        ]
+
+        summary = baseline.summarize(results)
+
+        self.assertEqual(1, summary["a"]["shadowFound"])
+        self.assertEqual(["found", "partial"], summary["a"]["shadowOutcomes"])
+        self.assertEqual(12.5, summary["b"]["maxSearchMillis"])
+        self.assertEqual(2, summary["b"]["plans"])
+        self.assertNotIn("shadowFound", summary["b"])
+
 
 if __name__ == "__main__":
     unittest.main()

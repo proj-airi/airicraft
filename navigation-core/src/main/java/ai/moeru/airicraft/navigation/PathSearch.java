@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 
 /**
- * Weighted A* over the {@link Moves} catalog. Returns a complete path, the best partial path when
+ * Weighted A* over the {@link Moves} catalog (see {@link SearchBudget#heuristicWeight()}). Returns a complete path, the best partial path when
  * a budget runs out or exploration reaches unloaded terrain, or the reason no path exists.
  */
 public final class PathSearch {
@@ -56,12 +56,14 @@ public final class PathSearch {
 		private final NodeMap nodes = new NodeMap();
 		private final Heap open = new Heap();
 		private final Moves.Result result = new Moves.Result();
+		private final double weight;
 
 		Run(Moves moves, GridPos start, Goal goal, SearchBudget budget, BooleanSupplier cancelled) {
 			this.moves = moves;
 			this.start = start;
 			this.goal = goal;
 			this.budget = budget;
+			this.weight = budget.heuristicWeight();
 			this.cancelled = cancelled == null ? () -> false : cancelled;
 		}
 
@@ -69,7 +71,7 @@ public final class PathSearch {
 			long started = System.nanoTime();
 			Node origin = node(start.x(), start.y(), start.z());
 			origin.g = 0;
-			origin.f = origin.h;
+			origin.f = origin.h * weight;
 			open.add(origin);
 			Node best = origin;
 			int expanded = 0;
@@ -103,7 +105,7 @@ public final class PathSearch {
 					Node next = node(result.x, result.y, result.z);
 					if (next.closed || g >= next.g - MIN_IMPROVEMENT) continue;
 					next.g = g;
-					next.f = g + next.h;
+					next.f = g + next.h * weight;
 					next.parent = current;
 					next.move = move;
 					next.overlay = result.overlay();
