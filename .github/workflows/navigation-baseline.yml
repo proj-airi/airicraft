@@ -1,0 +1,77 @@
+# Runs the deterministic navigation benchmark (docs/navigation-baseline.md) in a real
+# client under a virtual display and uploads the report.
+name: navigation baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per course
+        default: "5"
+      courses:
+        description: Space-separated course ids; empty runs every course
+        default: ""
+      label:
+        description: Backend label for the report
+        default: baritone
+  push:
+    paths:
+      - .github/workflows/navigation-baseline.yml
+      - scripts/navigation-baseline
+      - scripts/run-navigation-baseline
+      - addons/evaluator/src/client/java/ai/moeru/airicraft/evaluator/NavigationCourse*.java
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: |
+            21
+            25
+          distribution: 'jetbrains'
+      - name: install virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri libglx-mesa0 libxcursor1 libxrandr2 libxi6 libxxf86vm1 ffmpeg
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: run navigation baseline
+        env:
+          RUNS: ${{ inputs.runs || '5' }}
+          COURSES: ${{ inputs.courses || '' }}
+          LABEL: ${{ inputs.label || 'baritone' }}
+        run: |
+          args=(--runs "$RUNS" --label "$LABEL")
+          for course in $COURSES; do args+=(--course "$course"); done
+          xvfb-run -a -s "-screen 0 1280x720x24" python3 scripts/run-navigation-baseline "${args[@]}"
+      - name: print report
+        if: always()
+        run: |
+          for report in build/navigation-baseline/*.json; do
+            [ -f "$report" ] || continue
+            python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(json.dumps(r["summary"], indent=1)); [print(json.dumps(x, separators=(",", ":"))) for x in r["results"]]' "$report"
+          done
+      - name: print client log tail
+        if: failure()
+        run: |
+          tail -n 150 build/navigation-baseline/client.log || true
+          tail -n 150 build/navigation-baseline/game/logs/latest.log || true
+      - name: upload report and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: navigation-baseline
+          path: |
+            build/navigation-baseline/*.json
+            build/navigation-baseline/*.log
+            build/navigation-baseline/game/logs/
+            build/navigation-baseline/game/crash-reports/
+          if-no-files-found: warn
