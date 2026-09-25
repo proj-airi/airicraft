@@ -83,10 +83,12 @@ def prepare_game_dir(game_dir: Path, archive: Path) -> None:
 
 
 def find_world_id(worlds_payload: dict[str, Any], name: str) -> str:
-    for world in worlds_payload.get("worlds") or []:
+    worlds = worlds_payload.get("worlds") or []
+    for world in worlds:
         if world.get("name") == name:
             return str(world["worldId"])
-    raise baseline.BaselineError(f"world {name} is not in the client's world list")
+    listed = [world.get("name") for world in worlds]
+    raise baseline.BaselineError(f"world {name} is not in the client's world list {listed}")
 
 
 def client_command(game_dir: Path) -> list[str]:
@@ -184,7 +186,8 @@ def main(argv: list[str]) -> int:
                             args.launch_timeout_seconds, process)
             wait_for("the title screen", lambda: call("GET", "/v1/status", None).get("canJoinWorldOrServer"),
                      600.0, process)
-            world_id = find_world_id(call("GET", "/v1/worlds", None), WORLD_NAME)
+            world_id = wait_for("the world list", lambda: find_world_id(call("GET", "/v1/worlds", None), WORLD_NAME),
+                                60.0, process)
             print(f"joining {world_id}", flush=True)
             call("POST", "/v1/worlds/join", {"worldId": world_id})
             wait_for("the world to load", lambda: call("GET", "/v1/status", None).get("worldLoaded"), 600.0, process)
