@@ -1,6 +1,8 @@
 # In-house Navigation and Unified Control Plane
 
-Status: proposed (2026-09-25). Planning document; no code has changed yet.
+Status: accepted (2026-09-25), recorded as
+[ADR-0003](../../adr/0003-in-house-navigation-and-control-plane.md). Not yet
+implemented.
 
 ## Goal
 
@@ -18,6 +20,22 @@ This removes:
 Non-goals: elytra, schematic building, Baritone's mine, explore and farm
 processes, and an on-disk chunk cache. System 2 tool contracts change only in
 Phase 5.
+
+## Decisions (2026-09-25)
+
+1. **v1 edit moves.** Tunnel, bridge and pillar are part of v1 and of the
+   parity gates. Parkour comes after v1.
+2. **Long-range travel.** Plan in segments through loaded terrain toward the
+   goal and replan as chunks load. Airicraft does not replicate Baritone's
+   cached-chunk pathing.
+3. **Planner tools.** Keep the `configure_pathfind` and `inspect_pathfind` names.
+   Their schema becomes a small Airicraft-owned movement policy.
+4. **No fallback period.** Baritone is deleted in the same change that makes the
+   in-house backend the default. The parity gates must pass before that change
+   merges; rollback means reverting it.
+
+Still open: whether `navigation-core` is a Gradle subproject or a package. The
+plan assumes a subproject, because the compiler then enforces purity.
 
 ## What Baritone does for Airicraft today
 
@@ -133,7 +151,8 @@ core and a Minecraft adapter (`CombatPositioning` and
   "immutable reads on Baritone's path thread".
 - **`MovementPolicy`.** An immutable record passed with each request, with
   defaults from `AgentConfig`. Fields:
-  - `allowBreak`, `allowPlace`, `allowParkour` and `maxSafeFall`;
+  - `allowBreak`, `allowPlace` and `maxSafeFall` (`allowParkour` arrives with
+    the parkour move, after v1);
   - water and hazard costs;
   - avoidance sources, as positions and radii;
   - travel bounds and a placeable-item budget.
@@ -142,7 +161,7 @@ core and a Minecraft adapter (`CombatPositioning` and
   mutating globals.
 - **`Move` catalog.**
   - Movement: Traverse, Diagonal, Ascend, Descend, Fall(n), Swim, Climb and Door.
-  - Edits: Tunnel (break), Bridge and Pillar (place), and Parkour.
+  - Edits: Tunnel (break), Bridge and Pillar (place). Parkour comes after v1.
 
   Each move declares its cost, its required edits, and its occupied envelope.
   Travel bounds check the whole envelope, which is what the current
@@ -297,13 +316,16 @@ Sizes are relative (S, M, L).
 - **Edit moves.**
   - Tunnel: `MiningToolPreparation` plus the click channel.
   - Bridge and Pillar: the click channel plus sneak.
-  - Parkour: last, behind a flag.
-- **Two backends.**
+  - Parkour: not in v1. Baritone enables parkour by default today, so a route
+    that needs a gap jump ends `Unreachable` or `Partial` until it lands.
+- **Two backends, during development only.**
   - `AiricraftNavigationService` is the new implementation.
   - `BaritoneNavigationService` wraps the facade and translates path events to
-    typed outcomes once. Its barrier logic stays private.
+    typed outcomes once. Its barrier logic stays private. It exists only so that
+    consumers can move to `NavigationService` before the switch.
   - A config key, `navigation.backend = baritone|airicraft`, selects the backend
-    and is live-reloadable through `airicraft reload`.
+    and is live-reloadable through `airicraft reload`. The default stays
+    `baritone` until the flip, which deletes the key.
 - **Exit:** navigation scenarios on the Airicraft backend meet the parity gates
   below.
 
@@ -333,9 +355,10 @@ release-barrier and pending-cancel code.
 ### Phase 5 — Planner contract (M, kept separate from navigation changes)
 
 - **Movement policy tool.** Replace Baritone setting names with the Airicraft
-  movement policy. `configure_pathfind` takes a small typed schema: `allowBreak`,
-  `allowPlace`, `allowParkour`, `maxFallHeight`, `waterCost`, `avoidMobs` and
-  `allowInventoryToolSwap`. `inspect_pathfind` reads it back.
+  movement policy, keeping both tool names. `configure_pathfind` takes a small
+  typed schema: `allowBreak`, `allowPlace`, `maxFallHeight`, `waterCost`,
+  `avoidMobs` and `allowInventoryToolSwap`. `allowParkour` joins it when parkour
+  lands. `inspect_pathfind` reads it back.
 - **Update every surface that names Baritone:** `PlannerToolCatalog`,
   `PathfindSettingsToolProvider`, `prompts/planner-system.md` (line 43),
   `policies/survey.json` and `docs/cave-exploration.md`.
@@ -347,31 +370,45 @@ release-barrier and pending-cancel code.
 - **Evaluate separately.** Run the planner scenarios on their own so that prompt
   regressions are not mistaken for navigation regressions.
 
-### Phase 6 — Flip and remove (S)
+### Phase 6 — Flip and remove in one change (S)
 
-- **Flip the default** backend to `airicraft` and soak for one playtest cycle.
-- **Delete:**
+- **Merge criterion.** The parity gates below pass on the flip branch. There is
+  no soak period and no fallback afterwards.
+- **Flip.** `AiricraftNavigationService` becomes the only backend. Delete the
+  `navigation.backend` key and `BaritoneNavigationService`.
+- **Delete, in the same change:**
   - the Baritone and nether-pathfinder jars and their `modImplementation` lines;
   - the `fabric.mod.json` dependency and the compat/evaluator runtime jar lists;
   - the ten Baritone mixins and the `agent/baritone` package;
   - `BaritoneReleaseBarrier` and `BaritoneTaskExecutor`.
-- **Update docs:** `AGENTS.md`, the reflex README ("Baritone owns combat
-  approach…"), `camera-control.md`, `combat-positioning.md` and the cave docs.
-- **Record ADR-0003.**
+- **Update docs:** the reflex README ("Baritone owns combat approach…"),
+  `camera-control.md`, `combat-positioning.md` and the cave docs. Historical
+  logs and experiment records stay as written. Mark ADR-0003 implemented.
+- **Release note.** Airicraft no longer configures Baritone, so users should
+  remove any Baritone jar from their mods folder.
 
 ## Parity gates (proposed defaults)
+
+With no fallback period, these gates are the only protection before the switch.
+They are the merge criterion for the Phase 6 change.
 
 - **Safety (hard gates):**
   - zero planned or executed cells outside travel bounds or inside preserved
     areas, across shadow runs and scenarios;
   - zero fall deaths in navigation scenarios.
 - **Shadow coverage:**
-  - `Found` for at least 95% of the loaded-terrain requests Baritone solved;
+  - `Found` for at least 95% of the loaded-terrain requests Baritone solved.
+    Requests whose Baritone path contains parkour movements are reported
+    separately and do not count against this gate;
   - median cost within +15% of Baritone's;
   - p95 planning time at most 50 ms off-thread.
 - **Scenarios:**
-  - navigation pass rate ≥ the Baritone baseline over 5 runs each;
+  - navigation pass rate ≥ the Baritone baseline over 5 runs each. The far
+    `GoalXZ` scenario passes on arrival; its path cost is not compared, because
+    segmented planning differs from Baritone's cached-chunk pathing by design;
   - no regression in the existing ten scenarios.
+- **Live session:** one Codex-driver session on the flip branch covering travel,
+  resource acquisition, combat and underwater recovery, in place of a soak.
 - **Stalls:** stall rate ≤ baseline.
 
 ## Risks
@@ -387,8 +424,13 @@ release-barrier and pending-cancel code.
   packet-level movement, matching current behavior.
 - **Thread safety.** Search reads only immutable snapshots, and the live world
   is touched only on the client thread.
-- **Two backends during Phases 3–6.** Keep `BaritoneNavigationService` a thin
-  adapter and add no features to it.
+- **Two backends during Phases 3–5.** Keep `BaritoneNavigationService` a thin
+  adapter and add no features to it; the flip deletes it.
+- **No fallback after the switch.** A regression found after Phase 6 is fixed
+  forward or by reverting the flip change. The gates and the live session carry
+  the weight a soak period would have.
+- **Parkour gap.** Routes that relied on Baritone's gap jumps fail until the
+  parkour move lands. The shadow data shows how often that happens.
 
 ## ADR interactions
 
@@ -397,17 +439,4 @@ release-barrier and pending-cancel code.
 - ADR-0002 also says "do not add a continuous position controller". That rule
   governs System 2 decisions. The motor replaces Baritone's existing System 1
   executor; it does not give System 2 a continuous controller.
-- Neither is a conflict. ADR-0003 should still say so explicitly.
-
-## Open questions
-
-1. Should v1 match Baritone's edit moves? Recommendation: tunnel, bridge and
-   pillar yes; parkour later.
-2. Does long-range travel have to match Baritone's cached-chunk behavior?
-   Recommendation: no. Plan in segments through loaded terrain.
-3. Keep the `configure_pathfind`/`inspect_pathfind` tool names with a new typed
-   schema, or rename them? Recommendation: keep the names.
-4. After the flip, keep Baritone as a fallback for one soak cycle, or remove it
-   immediately? Recommendation: one soak cycle.
-5. Should the core live in a subproject or a package? Recommendation: a
-   subproject, because the compiler then enforces purity.
+- Neither is a conflict. ADR-0003 records both points.
