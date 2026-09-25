@@ -244,24 +244,35 @@ Sizes are relative (S, M, L).
 
 ### Phase 0 — Baseline and dead code (S)
 
-- **Delete production-dead mining code.**
+Status (2026-09-25): implemented except the recorded baseline, which needs a live
+client.
+
+- **Delete production-dead mining code.** Done.
   - `HybridMiningTaskExecutor`, `HybridMiningPolicy`,
     `LiveHybridMiningEnvironment` and their tests.
   - `BaritoneFacade.startMine` and `mineProcessActive`, and
     `BaritoneMineProcessAccessor`.
-  - Reduce `BaritoneBlockBreakMixin` to clearance-only tool selection, and drop
-    the mine-owned event branches in `BaritoneTaskExecutor`.
-- **Add navigation scenarios** (`scenarios/nav-*`). Declare no `requiredMods` so
-  navigation runs without integrations. Cases:
-  - flat walk; staircase ascent; 3- and 4-block drops; river crossing;
-  - tunnel through a wall; bridge a gap; pillar out of a pit;
-  - through a door and back; cave route;
-  - far `GoalXZ` (~300 blocks, crossing unloaded chunks); follow a player;
-  - refusal at travel bounds and preserved areas.
-- **Record the Baritone baseline** with
-  `scripts/run-evaluation-scenarios --jobs <n>`.
-- **Add structured navigation metrics** to terminal events: ticks, distance,
-  replans, stalls, and blocks broken or placed.
+  - `BaritoneBlockBreakMixin` is reduced to clearance-only tool selection, and
+    the mine-only branches of `BaritoneTaskExecutor` are gone.
+- **Navigation benchmark courses.** Done, as a deterministic evaluator fixture
+  rather than `scenarios/nav-*` world archives, driven without a model by
+  `scripts/navigation-baseline`. See [navigation-baseline.md](../../navigation-baseline.md).
+  - Built: flat walk; staircase ascent; 3-block drop; 5-block drop beside
+    stairs; river crossing; dirt wall; gap bridge; pillar pit; door; cave
+    tunnel; far `GoalXZ` (320 blocks over natural terrain); travel-bounds
+    refusal.
+  - Not yet covered: follow (needs a second player) and preserved-area refusal
+    (needs a remembered place).
+- **Structured navigation metrics.** Done: elapsed and active ticks, path
+  length, start and end distance, replans and stalls, on a
+  `task`/`terminal_diagnostics` debug-timeline entry. Block break/place counts
+  are deferred: they need a new interaction-manager injection point that must be
+  verified on a live client.
+- **Record the Baritone baseline.** Pending: run
+  `scripts/navigation-baseline --label baritone --runs 5` against
+  `scripts/codex-driver-evaluator` and commit the summary.
+- **CI.** The evaluator addon is now compiled and tested, in its own step after
+  the root suite.
 
 ### Phase 1 — Control plane, with Baritone as a lease holder (M, Track A)
 
