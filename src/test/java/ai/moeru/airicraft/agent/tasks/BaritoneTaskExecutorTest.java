@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -145,9 +146,39 @@ class BaritoneTaskExecutorTest {
 		TaskTerminalEvent event = executor.tick(multiplayerAt(100), Optional.of(task)).orElseThrow();
 		assertEquals(TaskExecutionState.FAILED, event.terminalState());
 		assertTrue(event.message().contains("navigation_stuck"));
+		assertEquals(true, navigationDiagnostics(event).get("stalled"));
+		assertEquals(3L, navigationDiagnostics(event).get("activeTicks"));
 		assertEquals(1, facade.cancelCalls);
 		assertTrue(executor.tick(multiplayerAt(101), Optional.of(task)).isEmpty());
 		assertEquals(1, facade.cancelCalls);
+	}
+
+	@Test
+	void navigationArrivalReportsTravelDiagnostics() {
+		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		AtomicReference<WaterStallRecovery.Sample> sample =
+			new AtomicReference<>(new WaterStallRecovery.Sample(false, 0.5D, 64.0D, 0.5D));
+		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, () -> Optional.of(sample.get()));
+		WorldTaskRequest task = request("walk", new GoalSnapshot(GoalType.NAVIGATE_TO, null,
+			new GoalPosition(3, 64, 4, true), null, 0, "planner_tool"));
+
+		executor.tick(multiplayerAt(10), Optional.of(task));
+		sample.set(new WaterStallRecovery.Sample(false, 3.5D, 64.0D, 0.5D));
+		executor.tick(multiplayerAt(11), Optional.of(task));
+		sample.set(new WaterStallRecovery.Sample(false, 3.5D, 64.0D, 4.5D));
+		facade.navigationGoalReached = true;
+		facade.pathEvents.add("AT_GOAL");
+		TaskTerminalEvent event = executor.tick(multiplayerAt(14), Optional.of(task)).orElseThrow();
+
+		assertEquals(TaskExecutionState.COMPLETED, event.terminalState());
+		Map<String, Object> navigation = navigationDiagnostics(event);
+		assertEquals(4L, navigation.get("elapsedTicks"));
+		assertEquals(3L, navigation.get("activeTicks"));
+		assertEquals(0, navigation.get("replans"));
+		assertEquals(false, navigation.get("stalled"));
+		assertEquals(7.0D, navigation.get("pathLength"));
+		assertEquals(5.0D, navigation.get("startDistance"));
+		assertEquals(0.0D, navigation.get("endDistance"));
 	}
 
 	@Test
@@ -647,6 +678,11 @@ class BaritoneTaskExecutorTest {
 		assertEquals("baritone_unavailable", first.orElseThrow().message());
 		assertEquals(TaskExecutionState.FAILED, executor.snapshot().state());
 		assertEquals("baritone_unavailable", executor.snapshot().lastPathEvent());
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> navigationDiagnostics(TaskTerminalEvent event) {
+		return (Map<String, Object>) event.diagnostics().get("navigation");
 	}
 
 	private static WorldTaskRequest request(String taskId, GoalSnapshot goal) {

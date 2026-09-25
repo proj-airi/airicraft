@@ -225,6 +225,18 @@ public final class AgentDebugRecorder {
 		);
 	}
 
+	/** Executor measurements travel with terminal events but stay out of planner-visible events. */
+	public synchronized void recordTaskDiagnostics(
+		long tick,
+		String taskId,
+		String goalType,
+		String terminalState,
+		Map<String, Object> diagnostics
+	) {
+		appendTimeline(tick, System.currentTimeMillis(), "task", "terminal_diagnostics",
+			goalType + " " + terminalState, Map.of("taskId", taskId == null ? "" : taskId), diagnostics);
+	}
+
 	public synchronized void recordCollectResourceProbe(CollectResourceTaskDebugSnapshot snapshot) {
 		CollectResourceTaskDebugSnapshot safeSnapshot = snapshot == null ? CollectResourceTaskDebugSnapshot.empty() : snapshot;
 		if (Objects.equals(collectResource, safeSnapshot)) {

@@ -8,6 +8,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -34,6 +35,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private long pendingInternalCancelAcknowledgement = -1L;
 	private GoalSnapshot pendingWaterReplanGoal;
 	private Double temporaryWaterPenaltyBase;
+	private NavigationRunMetrics metrics;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public BaritoneTaskExecutor(BaritoneFacade facade) {
@@ -115,6 +117,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			clearTerminalEvent(activeTask.get());
 			facade.pollPathEvent();
 			clearInternalCancellation();
+			metrics = new NavigationRunMetrics(sessionSnapshot.tickCount());
 			try {
 				applyGoal(activeTask.get().goal());
 			}
@@ -127,6 +130,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 
 		if (Objects.equals(appliedTask.taskId(), terminalEventTaskId)
 			&& "PATH_STUCK".equals(snapshot.lastPathEvent())) return Optional.empty();
+		if (metrics != null) metrics.observe(sessionSnapshot.tickCount(), waterProgressObserver.observe().orElse(null));
 		clearAcknowledgedInternalCancellation();
 		Optional<String> pathEvent = facade.pollPathEvent();
 		if (isSuppressedInternalCancel(pathEvent)) {
@@ -197,7 +201,9 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 				: terminalOutcome.get().failureCode() == TaskFailureCode.ENVIRONMENT_CHANGED
 				? "navigation_arrival_unconfirmed" : messageFor(terminalOutcome.get().state()),
 			terminalOutcome.get().cause(),
-			terminalOutcome.get().failureCode()
+			terminalOutcome.get().failureCode(),
+			metrics == null ? Map.<String, Object>of()
+				: Map.<String, Object>of("navigation", metrics.summary(appliedTask.goal().position(), "PATH_STUCK".equals(snapshot.lastPathEvent())))
 		));
 	}
 
@@ -225,6 +231,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			facade.pollPathEvent();
 			clearInternalCancellation();
 			applyGoal(goal);
+			countReplan();
 			return Optional.of("WATER_STALL_REPLAN");
 		}
 		WaterStallRecovery.Decision decision = waterStallRecovery.observe(
@@ -259,7 +266,12 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		facade.pollPathEvent();
 		clearInternalCancellation();
 		applyGoal(goal);
+		countReplan();
 		return Optional.of("WATER_STALL_REPLAN");
+	}
+
+	private void countReplan() {
+		if (metrics != null) metrics.replanned();
 	}
 
 	private void clearWaterRecovery() {
@@ -397,6 +409,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		String pathState = normalized;
 		if (!"AT_GOAL".equals(normalized)) {
 			facade.startFollow(activeTask.goal().targetPlayer());
+			countReplan();
 			pathState = "FOLLOW_REACQUIRING";
 		}
 		snapshot = new TaskExecutionSnapshot(
@@ -532,6 +545,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		terminalEventCause = null;
 		pendingInternalCancelTaskId = null;
 		pendingInternalCancelAcknowledgement = -1L;
+		metrics = null;
 		snapshot = TaskExecutionSnapshot.idle();
 	}
 
