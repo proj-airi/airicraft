@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""Measure navigation on the evaluator's deterministic benchmark courses.
+
+Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner
+dormant) and join a disposable singleplayer world while standing on open ground. For
+every course and run, this script:
+
+1. builds the course through POST /v1/evaluation/navigation-course,
+2. issues navigate_to through the external-driver tool route (no model involved),
+3. waits for the task/terminal_diagnostics debug-timeline entry, and
+4. records the outcome, the navigation metrics and health lost.
+
+The report is written as JSON. Run it once per navigation backend with a distinct
+--label and compare the summaries.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import statistics
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+COURSE_ROUTE = "/v1/evaluation/navigation-course"
+TOOLS_ROUTE = "/v1/agent/tools"
+TIMELINE_ROUTE = "/v1/agent/debug/timeline"
+TOOL_RESULT_PREFIX = "Tool result for "
+DEFAULT_TIMEOUT_SECONDS = 120.0
+COURSE_TIMEOUT_SECONDS = {"far_xz": 600.0}
+
+
+class BaselineError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Bridge:
+    port: int
+    token: str
+
+
+BridgeCall = Callable[[str, str, Any], Any]
+
+
+def default_bridge_state_path() -> Path:
+    configured = os.environ.get("AIRICRAFT_BRIDGE_STATE_FILE")
+    return Path(configured) if configured else Path.home() / ".airicraft" / "bridge-state.json"
+
+
+def read_bridge(path: Path) -> Bridge:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return Bridge(port=int(raw["port"]), token=str(raw["token"]))
+    except (OSError, ValueError, KeyError) as error:
+        raise BaselineError(f"cannot read bridge state {path}: {error}") from error
+
+
+def http_bridge(bridge: Bridge, timeout_seconds: float = 30.0) -> BridgeCall:
+    def call(method: str, path: str, payload: Any = None) -> Any:
+        headers = {"Authorization": f"Bearer {bridge.token}", "Accept": "application/json"}
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{bridge.port}{path}", data=body, headers=headers, method=method
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise BaselineError(f"{method} {path} failed with HTTP {error.code}: {detail}") from error
+
+    return call
+
+
+def tool_receipt(response: Any) -> dict[str, Any]:
+    """Parse an external tool response into {accepted, workId, text}."""
+    text = str((response or {}).get("result", ""))
+    receipt: dict[str, Any] = {"accepted": False, "workId": None, "text": text}
+    if text.startswith("TOOL_ERROR:") or text.startswith("TOOL_UNAVAILABLE:"):
+        return receipt
+    body = text
+    if body.startswith(TOOL_RESULT_PREFIX) and ": " in body:
+        body = body.split(": ", 1)[1]
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        receipt["accepted"] = True
+        return receipt
+    if isinstance(parsed, dict):
+        receipt["accepted"] = bool(parsed.get("accepted", True))
+        receipt["workId"] = parsed.get("workId")
+    return receipt
+
+
+def terminal_diagnostics(entries: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for entry in entries:
+        if entry.get("domain") == "task" and entry.get("action") == "terminal_diagnostics":
+            return entry
+    return None
+
+
+def classify(expectation: str, outcome: str, status: dict[str, Any]) -> bool:
+    if expectation == "refuse":
+        # Refusal passes when the goal was not reached and the player stayed inside the bounds.
+        return outcome != "completed" and status.get("insideTravelBounds") is not False
+    return outcome == "completed"
+
+
+def run_course(
+    call: BridgeCall,
+    course: str,
+    timeout_seconds: float,
+    settle_seconds: float = 1.5,
+    poll_seconds: float = 0.5,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
+    built = call("POST", COURSE_ROUTE, {"action": "build", "course": course})
+    expectation = built.get("expectation", "arrive")
+    initial = call("POST", COURSE_ROUTE, {"action": "status"})
+    sleep(settle_seconds)
+
+    bounds = built.get("travelBounds")
+    if bounds:
+        call("POST", TOOLS_ROUTE, {"name": "configure_travel", "arguments": {"scope": "strategy", "bounds": bounds}})
+    try:
+        cursor = int(call("GET", TIMELINE_ROUTE, None).get("latestEntryId", 0))
+        goal = built["goal"]
+        receipt = tool_receipt(call("POST", TOOLS_ROUTE, {"name": "navigate_to", "arguments": {
+            "x": goal["x"], "y": goal["y"], "z": goal["z"], "exactY": goal["exactY"]
+        }}))
+        diagnostics = None
+        outcome = "rejected"
+        truncated = False
+        if receipt["accepted"]:
+            outcome = "timeout"
+            deadline = clock() + timeout_seconds
+            while clock() < deadline:
+                timeline = call("GET", f"{TIMELINE_ROUTE}?since={cursor}", None)
+                truncated = truncated or bool(timeline.get("truncated"))
+                entries = timeline.get("entries") or []
+                diagnostics = terminal_diagnostics(entries)
+                if diagnostics is not None:
+                    outcome = str(diagnostics.get("correlation", {}).get("terminalState", "")).lower() or "unknown"
+                    break
+                if entries:
+                    cursor = max(cursor, max(int(entry.get("entryId", cursor)) for entry in entries))
+                sleep(poll_seconds)
+            if diagnostics is None and receipt.get("workId"):
+                call("POST", TOOLS_ROUTE, {"name": "cancel_work", "arguments": {
+                    "workId": receipt["workId"], "reason": "navigation baseline timeout"
+                }})
+    finally:
+        if bounds:
+            call("POST", TOOLS_ROUTE, {"name": "configure_travel", "arguments": {"scope": "strategy"}})
+
+    status = call("POST", COURSE_ROUTE, {"action": "status"})
+    navigation = (diagnostics or {}).get("payload", {}).get("navigation", {})
+    return {
+        "course": course,
+        "expectation": expectation,
+        "outcome": outcome,
+        "passed": classify(expectation, outcome, status),
+        "healthLost": round(float(initial.get("health", 0)) - float(status.get("health", 0)), 2),
+        "navigation": navigation,
+        "toolResult": receipt["text"],
+        "timelineTruncated": truncated,
+        "finalFeet": status.get("feet"),
+    }
+
+
+def summarize(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    summary: dict[str, dict[str, Any]] = {}
+    for course in dict.fromkeys(result["course"] for result in results):
+        runs = [result for result in results if result["course"] == course]
+
+        def median(key: str) -> float | None:
+            values = [run["navigation"][key] for run in runs if key in run.get("navigation", {})]
+            return statistics.median(values) if values else None
+
+        summary[course] = {
+            "runs": len(runs),
+            "passed": sum(1 for run in runs if run["passed"]),
+            "outcomes": {outcome: sum(1 for run in runs if run["outcome"] == outcome)
+                         for outcome in dict.fromkeys(run["outcome"] for run in runs)},
+            "medianElapsedTicks": median("elapsedTicks"),
+            "medianPathLength": median("pathLength"),
+            "maxHealthLost": max(run["healthLost"] for run in runs),
+            "stalls": sum(1 for run in runs if run.get("navigation", {}).get("stalled")),
+        }
+    return summary
+
+
+def format_summary(summary: dict[str, dict[str, Any]]) -> str:
+    lines = [f"{'course':<24} {'pass':>6} {'ticks':>8} {'path':>8} {'hpLost':>7} {'stalls':>6}"]
+    for course, row in summary.items():
+        ticks = "-" if row["medianElapsedTicks"] is None else f"{row['medianElapsedTicks']:.0f}"
+        path = "-" if row["medianPathLength"] is None else f"{row['medianPathLength']:.1f}"
+        lines.append(f"{course:<24} {row['passed']:>2}/{row['runs']:<3} {ticks:>8} {path:>8} "
+                     f"{row['maxHealthLost']:>7.1f} {row['stalls']:>6}")
+    return "\n".join(lines)
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--course", action="append", dest="courses",
+                        help="Course id to run; repeat for several. Defaults to every course.")
+    parser.add_argument("--runs", type=int, default=3, help="Runs per course (default 3).")
+    parser.add_argument("--timeout-seconds", type=float, default=None,
+                        help=f"Per-run timeout (default {DEFAULT_TIMEOUT_SECONDS:.0f}s; far_xz 600s).")
+    parser.add_argument("--label", default="baritone", help="Backend label stored in the report.")
+    parser.add_argument("--bridge-state", type=Path, default=None, help="Bridge state file.")
+    parser.add_argument("--output", type=Path, default=None,
+                        help="Report path (default run/navigation-baseline/<label>-<utc>.json).")
+    args = parser.parse_args(argv)
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
+    return args
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    call = http_bridge(read_bridge(args.bridge_state or default_bridge_state_path()))
+    courses = args.courses or [row["course"] for row in call("POST", COURSE_ROUTE, {"action": "list"})["courses"]]
+    started = dt.datetime.now(dt.timezone.utc)
+    results: list[dict[str, Any]] = []
+    try:
+        for course in courses:
+            timeout = args.timeout_seconds or COURSE_TIMEOUT_SECONDS.get(course, DEFAULT_TIMEOUT_SECONDS)
+            for run in range(1, args.runs + 1):
+                result = run_course(call, course, timeout)
+                result["run"] = run
+                results.append(result)
+                print(f"{course} run {run}: {result['outcome']} passed={result['passed']}", flush=True)
+    finally:
+        call("POST", COURSE_ROUTE, {"action": "cleanup"})
+
+    summary = summarize(results)
+    output = args.output or Path("run/navigation-baseline") / f"{args.label}-{started:%Y%m%dT%H%M%SZ}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({
+        "label": args.label,
+        "startedAt": started.isoformat(),
+        "runsPerCourse": args.runs,
+        "summary": summary,
+        "results": results,
+    }, indent=2) + "\n", encoding="utf-8")
+    print(format_summary(summary))
+    print(f"report: {output}")
+    return 0 if all(result["passed"] for result in results) else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except BaselineError as error:
+        print(f"navigation-baseline: {error}", file=sys.stderr)
+        sys.exit(3)

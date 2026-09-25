@@ -233,8 +233,8 @@ public final class AgentDebugRecorder {
 		String terminalState,
 		Map<String, Object> diagnostics
 	) {
-		appendTimeline(tick, System.currentTimeMillis(), "task", "terminal_diagnostics",
-			goalType + " " + terminalState, Map.of("taskId", taskId == null ? "" : taskId), diagnostics);
+		appendTimeline(tick, System.currentTimeMillis(), "task", "terminal_diagnostics", goalType + " " + terminalState,
+			Map.of("taskId", taskId == null ? "" : taskId, "goalType", goalType, "terminalState", terminalState), diagnostics);
 	}
 
 	public synchronized void recordCollectResourceProbe(CollectResourceTaskDebugSnapshot snapshot) {

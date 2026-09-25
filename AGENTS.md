@@ -37,6 +37,7 @@
   - Parallel clients use separate game directories and bridge files.
   - Passed worker directories are deleted. Failed, review, and interrupted directories remain under `run/evaluator-workers/`.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
+- Navigation baseline: run `scripts/navigation-baseline` against `scripts/codex-driver-evaluator` in a disposable world. It builds deterministic courses and drives `navigate_to` without a model. See `docs/navigation-baseline.md`.
 - Arthas CLI live-debug:
   - Cold-start path: `scripts/arthas kickstart` starts `runClient`, waits for the bridge, joins the first saved world, opens LAN, and attaches Arthas for later probes. It is cold-only and fails fast if a client is already running.
   - Manual start: `./gradlew runClient`

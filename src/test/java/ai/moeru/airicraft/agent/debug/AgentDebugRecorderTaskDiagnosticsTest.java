@@ -20,6 +20,8 @@ class AgentDebugRecorderTaskDiagnosticsTest {
 		assertEquals("terminal_diagnostics", entry.action());
 		assertEquals("NAVIGATE_TO COMPLETED", entry.summary());
 		assertEquals("nav-1", entry.correlation().get("taskId"));
+		assertEquals("NAVIGATE_TO", entry.correlation().get("goalType"));
+		assertEquals("COMPLETED", entry.correlation().get("terminalState"));
 		assertEquals(Map.of("pathLength", 7.0D), entry.payload().get("navigation"));
 	}
 }
