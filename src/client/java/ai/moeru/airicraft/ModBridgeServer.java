@@ -114,6 +114,8 @@ public final class ModBridgeServer {
 	private volatile HttpServer server;
 	private volatile String token;
 
+	String diagnosticCredential() { return token == null ? "" : token; }
+
 	public ModBridgeServer(
 		Supplier<HighlightManager> highlightManagerSupplier,
 		Supplier<EmbodiedAgentRuntime> agentRuntimeSupplier,

@@ -22,7 +22,8 @@ class DiagnosticReportTest {
 		var report = DiagnosticReport.capture(store, Map.of("modVersion", "test-version"));
 		store.startSession("reload", 0, 456);
 		Path file = report.save(directory);
-		String text = Files.readString(file);
+		assertEquals(0x50, Files.readAllBytes(file)[0]);
+		String text = readReport(file);
 		assertTrue(text.contains("task.failed"));
 		assertTrue(text.contains("test-version"));
 		assertEquals("integrity", JsonParser.parseString(text.lines().toList().getLast()).getAsJsonObject().get("recordType").getAsString());
@@ -51,7 +52,7 @@ class DiagnosticReportTest {
 		for (int i = 0; i < 1900; i++) store.append("llm_call", 0, i, Map.of(
 			"model", "m".repeat(256), "responseModel", "r".repeat(256), "providerName", "p".repeat(256),
 			"status", "s".repeat(256), "requestKind", "k".repeat(256)));
-		String contents = Files.readString(DiagnosticReport.capture(store, Map.of()).save(directory));
+		String contents = readReport(DiagnosticReport.capture(store, Map.of()).save(directory));
 		var manifest = JsonParser.parseString(contents.lines().findFirst().orElseThrow()).getAsJsonObject();
 		assertTrue(manifest.getAsJsonObject("coverage").get("reportLimitOmitted").getAsInt() > 0);
 		assertTrue(contents.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 3 * 1024 * 1024);
@@ -62,7 +63,7 @@ class DiagnosticReportTest {
 		var store = new DashboardObservationStore(1024 * 1024);
 		store.append("decision_state", 0, 0, Map.of("reflex", Map.of("snapshot", Map.of("state", "ACTIVE", "cause", "DROWNING"))));
 		store.append("llm_call", 0, 0, Map.of("usage", Map.of("promptTokens", 123, "completionTokens", 45, "totalTokens", 168)));
-		String body = Files.readString(DiagnosticReport.capture(store, Map.of()).save(directory));
+		String body = readReport(DiagnosticReport.capture(store, Map.of()).save(directory));
 		assertTrue(body.contains("DROWNING"));
 		assertTrue(body.contains("promptTokens"));
 		assertTrue(body.contains("completionTokens"));
@@ -74,7 +75,7 @@ class DiagnosticReportTest {
 		store.append("llm_call", 1, 10, Map.of("model", "x".repeat(1000), "requestBody", "private"));
 		store.append("runtime_snapshot", 1, 11, Map.of("taskExecution", Map.of("state", "FAILED", "newSecret", "private")));
 		Path report = DiagnosticReport.capture(store, Map.of()).save(directory);
-		String body = Files.readString(report);
+		String body = readReport(report);
 		var manifest = JsonParser.parseString(body.lines().findFirst().orElseThrow()).getAsJsonObject();
 		assertTrue(manifest.getAsJsonObject("coverage").get("truncated").getAsBoolean());
 		assertEquals(1, manifest.getAsJsonObject("coverage").get("clippedFields").getAsInt());
@@ -82,4 +83,11 @@ class DiagnosticReportTest {
 		assertFalse(body.contains("x".repeat(257)));
 		assertTrue(body.contains("FAILED"));
 	}
+	private static String readReport(Path path) throws Exception {
+		try (var zip = new java.util.zip.ZipFile(path.toFile())) {
+			assertNotNull(zip.getEntry("summary.txt"));
+			return new String(zip.getInputStream(zip.getEntry("report.jsonl")).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+		}
+	}
+
 }

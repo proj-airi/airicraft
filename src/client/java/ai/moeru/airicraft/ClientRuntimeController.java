@@ -83,7 +83,7 @@ public final class ClientRuntimeController {
 					: dashboard;
 			}
 		);
-		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment);
+		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment, this::diagnosticSecrets);
 		this.bridgeServer = new ModBridgeServer(
 			this::highlightManager,
 			this::agentRuntime,
@@ -159,12 +159,24 @@ public final class ClientRuntimeController {
 		return ai.moeru.airicraft.dashboard.DiagnosticEnvironment.capture(currentAgentRuntime().config().llm());
 	}
 
-	public java.util.concurrent.CompletableFuture<java.nio.file.Path> saveDiagnosticReport() {
+	private java.util.List<String> diagnosticSecrets() {
+		var agent = currentAgentRuntime().config();
+		var secrets = new java.util.ArrayList<String>(agent.observability().otlpHeaders().values());
+		secrets.add(agent.llm().apiKey()); secrets.add(agent.llm().visionApiKey()); secrets.add(bridgeServer.diagnosticCredential());
+		return secrets.stream().filter(java.util.Objects::nonNull).toList();
+	}
+
+	public ai.moeru.airicraft.dashboard.DiagnosticReport.Draft markDiagnosticReport() { return debugDashboardServer.markReport(); }
+
+	public java.util.concurrent.CompletableFuture<ai.moeru.airicraft.dashboard.DiagnosticReport> previewDiagnosticReport(
+		ai.moeru.airicraft.dashboard.DiagnosticReport.Draft draft, ai.moeru.airicraft.dashboard.DiagnosticReport.Request request) {
+		return java.util.concurrent.CompletableFuture.supplyAsync(() -> debugDashboardServer.previewReport(draft, request));
+	}
+
+	public java.util.concurrent.CompletableFuture<java.nio.file.Path> saveDiagnosticReport(ai.moeru.airicraft.dashboard.DiagnosticReport report) {
 		return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-			var report = ai.moeru.airicraft.dashboard.DiagnosticReport.capture(dashboardObservationStore, diagnosticEnvironment());
-			try {
-				return report.save(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("airicraft-reports"));
-			} catch (java.io.IOException exception) { throw new java.io.UncheckedIOException(exception); }
+			try { return report.save(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("airicraft-reports")); }
+			catch (java.io.IOException exception) { throw new java.io.UncheckedIOException(exception); }
 		});
 	}
 

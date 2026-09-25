@@ -29,7 +29,7 @@ The test uses `build/run/clientGameTest` and writes screenshots there.
 
 ## Bug reports
 
-Open **Airicraft Settings → Save bug report**, then **Open report folder** to find the saved file in `airicraft-reports` inside your game directory. Attach it and a description of the problem to your report. This works during normal play and does not require a developer harness. The dashboard also has **Save bug report**.
+Open **Airicraft Settings → Report a problem** to mark the incident, describe what went wrong, choose attachments and preview before saving. **Minimal** metadata is the default; **Summary** adds diagnostic events/world state; **Developer** explicitly includes chat, model content and screenshots. **Save these attachments** creates a ZIP in `airicraft-reports` with JSONL evidence and a readable summary; nothing is uploaded. The dashboard offers the same flow through **Report this moment**.
 
 Reports contain version/model identifiers and a bounded diagnostic summary. Nothing is uploaded automatically. See [diagnostic reports](docs/diagnostic-reports.md) for contents, limits, and the versioned format. **Raw developer export** is a separate, full-history mode.
 

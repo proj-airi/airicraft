@@ -1,6 +1,6 @@
 # Rolling live-playtest recording
 
-For normal user bug reports, use [Save bug report](diagnostic-reports.md). The developer exports below preserve the raw recording format.
+For normal user bug reports, use [Report this moment](diagnostic-reports.md). The developer exports below preserve the raw recording format.
 
 The live client keeps a rolling observation history for diagnosing playtest failures. Its clock is **completed integrated-server ticks**: 12,000 ticks is ten minutes at 20 TPS. Tick-debug pause freezes capture and retention; a step advances the window by one server tick. Rendering and reading the history remain available while paused.
 

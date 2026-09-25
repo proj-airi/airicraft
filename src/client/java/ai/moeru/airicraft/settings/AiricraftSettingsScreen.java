@@ -26,8 +26,6 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	private final SettingsProfiles profiles;
 	private ButtonWidget saveButton;
 	private ButtonWidget profilesButton;
-	private ButtonWidget reportButton;
-	private boolean reportSaving;
 
 	private AiricraftSettingsScreen(Screen parent, Form form) {
 		this(parent, form, new SettingsProfiles(form.draft));
@@ -55,10 +53,10 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	@Override
 	protected void init() {
 		super.init();
-		reportButton = addDrawableChild(ButtonWidget.builder(text("report", "Save bug report"), ignored -> saveReport())
+		var reportButton = addDrawableChild(ButtonWidget.builder(text("report", "Report a problem"), ignored -> saveReport())
 			.dimensions(4, 4, 104, 20).build());
 		reportButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(text("report.detail",
-			"Save a recent diagnostic summary locally. Chat, prompts, images and logs are omitted.")));
+			"Mark this moment, choose attachments and preview before saving locally.")));
 		profilesButton = addDrawableChild(ButtonWidget.builder(text("profiles", "Profiles…"), ignored -> {
 			if (hasErrors()) return;
 			super.saveAll(false);
@@ -82,7 +80,6 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 		boolean valid = !hasErrors();
 		saveButton.active = isEdited() && valid;
 		profilesButton.active = valid;
-		reportButton.active = !reportSaving;
 		super.render(context, mouseX, mouseY, delta);
 	}
 
@@ -114,26 +111,7 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	}
 
 	private void saveReport() {
-		if (reportSaving) return;
-		reportSaving = true;
-		var minecraft = client;
-		AiricraftClient.runtimeController().saveDiagnosticReport().whenComplete((path, failure) -> minecraft.execute(() -> {
-			reportSaving = false;
-			Text title = failure == null ? text("report.saved", "Bug report saved") : text("report.failed", "Could not save bug report");
-			Text detail = failure == null
-				? Text.literal("Saved to " + path.toAbsolutePath() + "\nAttach this file and a description of what went wrong to your bug report. Nothing was uploaded.")
-				: text("report.failed.detail", "Check free disk space and permissions for the game directory, then try again.");
-			if (minecraft.currentScreen == this) {
-				minecraft.setScreen(new NoticeScreen(() -> minecraft.setScreen(AiricraftSettingsScreen.this), title, detail, Text.translatable("gui.back"), true) {
-					@Override protected void init() {
-						super.init();
-						if (failure == null) addDrawableChild(ButtonWidget.builder(text("report.folder", "Open report folder"),
-							ignored -> net.minecraft.util.Util.getOperatingSystem().open(path.getParent().toFile()))
-							.dimensions(width / 2 - 100, height - 30, 200, 20).build());
-					}
-				});
-			} else minecraft.inGameHud.setOverlayMessage(title, false);
-		}));
+		client.setScreen(new DiagnosticReportScreen(this, AiricraftClient.runtimeController().markDiagnosticReport()));
 	}
 
 	private static Text text(String key, String fallback) {

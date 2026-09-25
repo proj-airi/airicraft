@@ -165,12 +165,41 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 			try (var files = Files.list(reports)) { before = files.collect(java.util.stream.Collectors.toSet()); }
 		} else before = java.util.Set.of();
 		context.clickScreenButton("airicraft.settings.report");
+		context.waitFor(client -> client.currentScreen != null && client.currentScreen.getTitle().getString().equals("Report this moment"), 40);
+		context.runOnClient(client -> client.currentScreen.children().stream()
+			.filter(child -> child instanceof net.minecraft.client.gui.widget.TextFieldWidget)
+			.map(child -> (net.minecraft.client.gui.widget.TextFieldWidget) child).findFirst().orElseThrow().setText("Stopped moving; Authorization: Bearer pasted-secret"));
+		if (worldLoaded) context.clickScreenButton("Summary");
+		context.clickScreenButton("Preview attachments");
+		context.waitFor(client -> client.currentScreen.children().stream().anyMatch(child -> child instanceof net.minecraft.client.gui.widget.ButtonWidget button
+			&& button.getMessage().getString().equals("Save these attachments") && button.active), 200);
+		context.runOnClient(client -> {
+			var field = client.currentScreen.children().stream().filter(child -> child instanceof net.minecraft.client.gui.widget.TextFieldWidget)
+				.map(child -> (net.minecraft.client.gui.widget.TextFieldWidget) child).findFirst().orElseThrow();
+			field.setText(field.getText() + "; still stuck");
+			if (client.currentScreen.children().stream().anyMatch(child -> child instanceof net.minecraft.client.gui.widget.ButtonWidget button
+				&& button.getMessage().getString().equals("Save these attachments") && button.active)) throw new AssertionError("Edited report reused stale consent preview");
+		});
+		context.clickScreenButton("Preview attachments");
+		context.waitFor(client -> client.currentScreen.children().stream().anyMatch(child -> child instanceof net.minecraft.client.gui.widget.ButtonWidget button
+			&& button.getMessage().getString().equals("Save these attachments") && button.active), 200);
+		context.waitTicks(2);
+		context.takeScreenshot(worldLoaded ? "airicraft-report-preview-world" : "airicraft-report-preview-minimal");
+		if (Files.isDirectory(reports)) {
+			try (var files = Files.list(reports)) { if (!files.collect(java.util.stream.Collectors.toSet()).equals(before)) throw new AssertionError("Preview wrote a file before consent"); }
+		}
+		context.clickScreenButton("Save these attachments");
 		context.waitForScreen(net.minecraft.client.gui.screen.NoticeScreen.class);
 		context.takeScreenshot(worldLoaded ? "airicraft-report-in-world" : "airicraft-report-saved");
 		try (var files = Files.list(reports)) {
 			var created = files.filter(file -> !before.contains(file)).toList();
 			if (created.size() != 1) throw new AssertionError("Expected exactly one completed report");
-			String contents = Files.readString(created.getFirst());
+			String contents;
+			try (var zip = new java.util.zip.ZipFile(created.getFirst().toFile())) {
+				if (zip.getEntry("summary.txt") == null) throw new AssertionError("Missing human summary");
+				contents = new String(zip.getInputStream(zip.getEntry("report.jsonl")).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+			}
+			if (contents.contains("pasted-secret")) throw new AssertionError("Report leaked a pasted authorization credential");
 			var manifest = com.google.gson.JsonParser.parseString(contents.lines().findFirst().orElseThrow()).getAsJsonObject();
 			if (!contents.contains("airicraft.diagnostic-report") || !contents.contains("integrity")
 				|| !manifest.getAsJsonObject("environment").getAsJsonObject("build").get("minecraftVersion").getAsString().equals("1.21.8")) {
@@ -181,6 +210,8 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 			}
 		}
 		context.clickScreenButton("gui.back");
+		context.waitFor(client -> client.currentScreen != null && client.currentScreen.getTitle().getString().equals("Report this moment"), 40);
+		context.clickScreenButton("Cancel");
 		context.waitForScreen(AiricraftSettingsScreen.class);
 	}
 
