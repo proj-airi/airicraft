@@ -303,7 +303,8 @@ def main() -> int:
     parser.add_argument("--leave-grace", type=nonnegative_seconds, default=120,
                         help="End this many seconds after the last tester leaves, unless one rejoins (default 120).")
     parser.add_argument("--reset-degraded-after", type=nonnegative_seconds, default=20,
-                        help="Send the operator reset after the planner stays degraded this long; 0 disables (default 20).")
+                        help="Send the session's single automatic operator reset after the planner stays degraded this long; "
+                             "0 disables automatic reset (default 20).")
     parser.add_argument("--max-seconds", type=nonnegative_seconds, default=14400,
                         help="Wall-clock budget after joining; 0 means no limit (default 14400).")
     parser.add_argument("--startup-timeout", type=float, default=240)

@@ -14,7 +14,7 @@ scripts/hosted-playtest \
   --lan-port 25565
 ```
 
-Prerequisites are the same as for automatic playtests: JDK 21, initialized submodules, `ffmpeg`/`ffprobe` on `PATH`, and a prebuilt recording profile (`--recorder-jar` or `AIRICRAFT_RECORDER_JAR`). The launcher copies the template world, starts the compatibility client with JDWP disabled and joins the copy. When the world is open on the requested port, it prints:
+Prerequisites are the same as for automatic playtests: JDK 25+ to run Gradle (the build provisions its JBR 21 toolchain), initialized submodules, `ffmpeg`/`ffprobe` on `PATH`, and a prebuilt recording profile (`--recorder-jar` or `AIRICRAFT_RECORDER_JAR`). The launcher copies the template world, starts the compatibility client with JDWP disabled and joins the copy. When the world is open on the requested port, it prints:
 
 ```text
 Airi is hosting on port 25565.
@@ -36,6 +36,7 @@ Each session opens only the requested port, so the forwarding rule stays valid. 
 | `manual_interrupt` | Ctrl-C or SIGTERM. |
 | `lan_unavailable` | The fixed port did not open within 60 seconds, or opened on a different port. |
 | `startup_failed` | The world did not start recording within `--startup-timeout` seconds of joining. |
+| `capture_error` | Recording failed, the bridge returned an unexpected error, or the client is not in hosted mode because its Airicraft build predates the launcher. |
 | `crash`, `runtime_fatal_error`, `bridge_unresponsive`, `world_left`, `client_exit` | Same meaning as for automatic playtests. |
 
 Every stop goes through the automatic playtest save-and-stop, Recorder Play finalization and publication. A stopped launcher's `.in-progress` run is archived with `scripts/hosted-playtest --recover hosted_playtest/.in-progress/<run-id>`.
