@@ -34,7 +34,7 @@ class PolicyGuidanceTest {
 		var registry = PlannerToolRegistry.of(docs);
 		assertTrue(registry.isReadTool("read_policy_docs"));
 		assertFalse(registry.endsTurn("read_policy_docs"));
-		String text = registry.execute(new PlannerToolCall("docs", "read_policy_docs", new JsonObject(), null, null)).get();
+		String text = registry.execute(new PlannerToolCall("docs", "read_policy_docs", new JsonObject(), null)).get();
 		assertTrue(text.contains("## query_world"));
 		assertFalse(text.contains("run_policy"));
 		assertTrue(text.contains("## Self-created read-only tools"));

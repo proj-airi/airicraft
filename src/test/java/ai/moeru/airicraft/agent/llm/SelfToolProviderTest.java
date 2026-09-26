@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SelfToolProviderTest {
 	private static JsonObject json(String s) { return JsonParser.parseString(s).getAsJsonObject(); }
-	private static PlannerToolCall call(String name, JsonObject args) { return new PlannerToolCall("test",name,args,null,null); }
+	private static PlannerToolCall call(String name, JsonObject args) { return new PlannerToolCall("test",name,args,null); }
 	private static String run(SelfToolProvider p,String name,JsonObject args) throws Exception { return p.execute(call(name,args)).get(15,TimeUnit.SECONDS); }
 	private static String geometry(JsonObject world, JsonObject input) throws Exception {
 		String source=PolicyDocsToolProvider.readResource("/airicraft/policies/survey.js")

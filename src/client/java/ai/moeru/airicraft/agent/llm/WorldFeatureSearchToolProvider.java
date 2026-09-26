@@ -51,7 +51,6 @@ public final class WorldFeatureSearchToolProvider implements PlannerToolProvider
 			FIND_WORLD_FEATURES,
 			"Find coordinate-grounded world features in already-loaded chunks. V1 featureKind values are water_body and forest.",
 			PlannerToolCatalog.propertiesForProvider(
-				PlannerToolCatalog.propForProvider("narration", PlannerToolCatalog.optionalStringForProvider("Optional visible narration before using the tool.")),
 				PlannerToolCatalog.propForProvider("featureKind", PlannerToolCatalog.enumStringForProvider("Feature kind to find.", FEATURES)),
 				PlannerToolCatalog.propForProvider("surfaceOnly", Map.of("type", "boolean", "description", "Restrict target and standing positions to the surface, ignoring logs/leaves as roofs. Useful for surface water, farms and camps. Default false.")),
 				PlannerToolCatalog.propForProvider("direction", PlannerToolCatalog.enumStringForProvider("Optional compass direction octant to search.", DIRECTIONS)),

@@ -19,7 +19,7 @@ public record LureEntitiesStepArgs(List<String> uuids, String itemId, int x1, in
 	}
 
 	public static LureEntitiesStepArgs parse(JsonObject args) {
-		for (String key : args.keySet()) if (!List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2", "narration").contains(key))
+		for (String key : args.keySet()) if (!List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2").contains(key))
 			throw new IllegalArgumentException("unknown argument: " + key);
 		if (!args.has("uuids") || !args.get("uuids").isJsonArray()) throw new IllegalArgumentException("uuids must be an array");
 		List<String> ids = new ArrayList<>();

@@ -66,7 +66,6 @@ public final class PlaceMemoryToolProvider implements PlannerToolProvider {
 	public List<Map<String, Object>> openAiTools() {
 		Map.Entry<String, Object> name = propForProvider("name", stringForProvider("Exact place name (case sensitive), 1..128 characters. Duplicate names require id targeting."));
 		Map.Entry<String, Object> id = propForProvider("id", optionalStringForProvider("Stable location id returned by list/recall. Targets an existing place; remember can rename it. Recall/forget accept either id or name."));
-		Map.Entry<String, Object> narration = propForProvider("narration", optionalStringForProvider("Optional visible narration."));
 		Map<String, Object> coordinates = Map.of("type", "object", "additionalProperties", false,
 			"properties", propertiesForProvider(
 				propForProvider("x", Map.of("type", "integer")),
@@ -81,17 +80,17 @@ public final class PlaceMemoryToolProvider implements PlannerToolProvider {
 			"required", List.of("x1", "y1", "z1", "x2", "y2", "z2"));
 		return List.of(
 			toolForProvider("remember_place", "Remember or replace a location in the active world/server backend. A bookmark records intent, not safety or reachability.",
-				propertiesForProvider(narration, name, id,
+				propertiesForProvider(name, id,
 					propForProvider("position", Map.of("description", "Omit or use current to capture the player's current navigation feet position; otherwise supply exact coordinates.",
 						"oneOf", List.of(Map.of("type", "string", "enum", List.of("current")), coordinates))),
 					propForProvider("preserveArea", area),
 					propForProvider("note", optionalStringForProvider("Optional purpose or context, up to 2048 characters. Replaces the previous note; omitted means empty."))), List.of("name")),
 			toolForProvider("recall_place", "Recall a location by exact name or id, including its dimension and coordinates for navigation.",
-				propertiesForProvider(narration, name, id), List.of()),
+				propertiesForProvider(name, id), List.of()),
 			toolForProvider("list_places", "List locations across all dimensions of the current world/server. JourneyMap includes native and death waypoints; without it, use the local world-save store.",
-				propertiesForProvider(narration), List.of()),
+				propertiesForProvider(), List.of()),
 			toolForProvider("forget_place", "Delete a location from the active backend by exact name or id. Does not change terrain or navigate.",
-				propertiesForProvider(narration, name, id), List.of())
+				propertiesForProvider(name, id), List.of())
 		);
 	}
 
@@ -120,9 +119,9 @@ public final class PlaceMemoryToolProvider implements PlannerToolProvider {
 			String name = PlannerToolCatalog.normalizeName(toolName);
 			if (!handles(name)) throw new IllegalArgumentException("unknown place tool");
 			List<String> fields = switch (name) {
-				case "remember_place" -> List.of("name", "id", "position", "note", "preserveArea", "narration");
-				case "list_places" -> List.of("narration");
-				default -> List.of("name", "id", "narration");
+				case "remember_place" -> List.of("name", "id", "position", "note", "preserveArea");
+				case "list_places" -> List.of();
+				default -> List.of("name", "id");
 			};
 			for (String field : args.keySet()) {
 				if (!fields.contains(field)) throw new IllegalArgumentException("unknown argument: " + field);

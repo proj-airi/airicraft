@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DeferredWorkReceiptsTest {
-	private final PlannerToolCall call = new PlannerToolCall("call-1", "mine_blocks", new JsonObject(), null, null);
+	private final PlannerToolCall call = new PlannerToolCall("call-1", "mine_blocks", new JsonObject(), null);
 	private final String accepted = "Tool result for mine_blocks: {\"accepted\":true,\"workId\":\"JOB:one\",\"state\":\"RUNNING\"}";
 
 	@Test void failureReplacesUndeliveredAcceptanceButPreservesToolPair() {

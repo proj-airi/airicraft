@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PlannerMicroCompactorTest {
 	private static LlmConversation observation(String id, String tool, String raw) {
 		return LlmConversation.of(List.of(LlmChatMessage.user("Fix the hole in the wall", LlmMessageKind.TASK),
-			LlmChatMessage.assistantToolCall("", new PlannerToolCall(id, tool, new JsonObject(), null, null)), LlmChatMessage.tool(id, raw)));
+			LlmChatMessage.assistantToolCall("", new PlannerToolCall(id, tool, new JsonObject(), null)), LlmChatMessage.tool(id, raw)));
 	}
 	private static String summary(String id) {
 		return "{\"findings\":[{\"sourceToolCallId\":\"" + id + "\",\"result\":null,\"memory\":\"West wall intact; east wall not checked\"}]}";

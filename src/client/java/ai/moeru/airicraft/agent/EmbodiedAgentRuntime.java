@@ -410,7 +410,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				clock,
 				debugRecorder,
 				this::executePlannerAction,
-				this::emitPlannerToolNarration,
+				this::sayInChat,
 				this::beforePlannerToolExecution,
 				worldReadLedger::recordObserved,
 				effectiveCameraController,
@@ -2820,7 +2820,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var args = new com.google.gson.JsonObject();
 				args.addProperty("workId", work.handle().id());
 				args.addProperty("reason", "planner_clear_queue");
-				String result = executeWorkTool(new PlannerToolCall("abort-" + call.id(), "cancel_work", args, null, null));
+				String result = executeWorkTool(new PlannerToolCall("abort-" + call.id(), "cancel_work", args, null));
 				if (result.startsWith("TOOL_ERROR:")) return CompletableFuture.completedFuture(result);
 				results.add(result);
 			}
@@ -3618,14 +3618,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return future;
 	}
 
-	private void emitPlannerToolNarration(PlannerToolCall toolCall) {
-		if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+	private void sayInChat(String text) {
+		if (text == null || text.isBlank()) {
 			return;
 		}
-		chatService.send(MinecraftClient.getInstance(), toolCall.narration(), tickCount);
+		chatService.send(MinecraftClient.getInstance(), text, tickCount);
 	}
 
 	private void beforePlannerToolExecution(PlannerToolCall toolCall) {
+		// Talking between inspect_world and a placement must not expire the placement's fresh read.
+		if (toolCall != null && ai.moeru.airicraft.agent.llm.SayToolProvider.SAY.equals(toolCall.name())) return;
 		worldReadLedger.advanceToolCall();
 	}
 

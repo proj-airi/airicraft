@@ -70,7 +70,6 @@ final class OtelObservability implements AgentObservability {
 	private static final AttributeKey<Long> AIRICRAFT_REPLY_TEXT_LENGTH = AttributeKey.longKey("airicraft.reply_text_length");
 	private static final AttributeKey<String> AIRICRAFT_INTENT_TYPE = AttributeKey.stringKey("airicraft.intent_type");
 	private static final AttributeKey<String> AIRICRAFT_TOOL_REQUEST_TYPE = AttributeKey.stringKey("airicraft.tool_request_type");
-	private static final AttributeKey<String> AIRICRAFT_TOOL_NARRATION = AttributeKey.stringKey("airicraft.tool_narration");
 	private static final AttributeKey<String> AIRICRAFT_COMPACTION_ACTIVE_GOAL = AttributeKey.stringKey("airicraft.compaction_active_goal");
 	private static final AttributeKey<String> AIRICRAFT_IMAGE_MIME_TYPE = AttributeKey.stringKey("airicraft.image.mime_type");
 	private static final AttributeKey<Long> AIRICRAFT_IMAGE_WIDTH = AttributeKey.longKey("airicraft.image.width");
@@ -445,9 +444,6 @@ final class OtelObservability implements AgentObservability {
 						.collect(java.util.stream.Collectors.joining(","))));
 					if (plannerResponse.toolCall() != null && plannerResponse.toolCall().name() != null) {
 						span.setAttribute(AIRICRAFT_TOOL_NAME, normalizeValue(plannerResponse.toolCall().name()));
-					}
-					if (plannerResponse.toolCall() != null && plannerResponse.toolCall().narration() != null && !plannerResponse.toolCall().narration().isBlank()) {
-						span.setAttribute(AIRICRAFT_TOOL_NARRATION, normalizeValue(plannerResponse.toolCall().narration()));
 					}
 				}
 		if (config.captureOutputs()) {

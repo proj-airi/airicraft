@@ -28,7 +28,7 @@ from the normal JSON string transport of native `function.arguments` and Codex
 ## Boundaries and evidence
 
 - A permitted string alternative wins, including `"current"` and unrestricted text.
-  Notes, narration, and other string fields retain their original escapes and values.
+  Notes, say text, and other string fields retain their original escapes and values.
 - Decode candidates must be strict JSON objects or arrays. Malformed JSON, scalar
   strings, and repeated encoding at the same position are not repaired. There is no
   global backslash removal, numeric coercion, missing-field insertion, or value guessing.

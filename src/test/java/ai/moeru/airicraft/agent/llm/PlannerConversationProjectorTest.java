@@ -268,7 +268,7 @@ class PlannerConversationProjectorTest {
 	private static PlannerToolCall toolCall(String id, String name, String argumentName, String argumentValue) {
 		JsonObject arguments = new JsonObject();
 		arguments.addProperty(argumentName, argumentValue);
-		return new PlannerToolCall(id, name, arguments, null, null);
+		return new PlannerToolCall(id, name, arguments, null);
 	}
 
 	private static Clock fixedClock() {

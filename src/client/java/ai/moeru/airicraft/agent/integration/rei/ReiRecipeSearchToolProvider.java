@@ -55,7 +55,6 @@ public final class ReiRecipeSearchToolProvider implements PlannerToolProvider {
 			TOOL_NAME,
 			"Search REI recipe-viewer recipes and item uses by item.",
 			PlannerToolCatalog.propertiesForProvider(
-				PlannerToolCatalog.propForProvider("narration", PlannerToolCatalog.optionalStringForProvider("Optional visible narration before using the tool.")),
 				PlannerToolCatalog.propForProvider("query", PlannerToolCatalog.stringForProvider("Item id or item name to search for.")),
 				PlannerToolCatalog.propForProvider("mode", PlannerToolCatalog.enumStringForProvider("Search direction.", List.of("all", "output", "input"))),
 				PlannerToolCatalog.propForProvider("maxResults", Map.of(

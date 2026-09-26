@@ -66,7 +66,7 @@ class PlannerToolCallInterfaceTest {
 	}
 
 	@Test
-	void parsesSingleToolCallWithNarration() throws Exception {
+	void parsesSingleToolCall() throws Exception {
 		AtomicReference<String> bodyRef = new AtomicReference<>();
 		try (TestServer server = TestServer.start(bodyRef, """
 			{
@@ -81,7 +81,7 @@ class PlannerToolCallInterfaceTest {
 			            "type": "function",
 			            "function": {
 			              "name": "inspect_inventory",
-			              "arguments": "{\\"narration\\":\\"I'm checking my inventory.\\",\\"prompt\\":\\"List current counts.\\"}"
+			              "arguments": "{\\"prompt\\":\\"List current counts.\\"}"
 			            }
 			          }
 			        ]
@@ -105,7 +105,6 @@ class PlannerToolCallInterfaceTest {
 			assertEquals("", response.replyText());
 			assertEquals("inspect_inventory", response.toolCall().name());
 			assertEquals("call_inventory", response.toolCall().id());
-			assertEquals("I'm checking my inventory.", response.toolCall().narration());
 			assertEquals("List current counts.", response.toolCall().arguments().get("prompt").getAsString());
 		}
 	}

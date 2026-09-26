@@ -68,7 +68,7 @@ public final class PlannerOrchestrator {
 	private final PlannerLifecycleListener lifecycleListener;
 	private final AgentDebugRecorder debugRecorder;
 	private final PlannerActionToolExecutor actionToolExecutor;
-	private final PlannerToolNarrationSink narrationSink;
+	private final PlannerChatSink chatSink;
 	private final PlannerToolRegistry toolRegistry;
 	private final PlannerToolExecutionObserver toolExecutionObserver;
 	private final PlannerTurnJournal turnJournal;
@@ -115,7 +115,7 @@ public final class PlannerOrchestrator {
 		PlannerLifecycleListener lifecycleListener,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolRegistry toolRegistry,
 		PlannerToolExecutionObserver toolExecutionObserver
 	) {
@@ -136,7 +136,7 @@ public final class PlannerOrchestrator {
 			lifecycleListener,
 			debugRecorder,
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			toolRegistry,
 			toolExecutionObserver, 8,
 			new PlannerVisionService(conversation -> { throw new IllegalStateException("Planner vision fallback not configured"); }));
@@ -159,7 +159,7 @@ public final class PlannerOrchestrator {
 		PlannerLifecycleListener lifecycleListener,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolRegistry toolRegistry,
 		PlannerToolExecutionObserver toolExecutionObserver,
 		int plannerMaxImages,
@@ -190,7 +190,7 @@ public final class PlannerOrchestrator {
 		this.lifecycleListener = Objects.requireNonNull(lifecycleListener, "lifecycleListener");
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
 		this.actionToolExecutor = Objects.requireNonNull(actionToolExecutor, "actionToolExecutor");
-		this.narrationSink = Objects.requireNonNull(narrationSink, "narrationSink");
+		this.chatSink = Objects.requireNonNull(chatSink, "chatSink");
 		this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry");
 		this.toolExecutionObserver = Objects.requireNonNull(toolExecutionObserver, "toolExecutionObserver");
 		this.turnJournal = new PlannerTurnJournal(this.clock, CONVERSATION_HISTORY_CARD_LIMIT * 4);
@@ -717,11 +717,7 @@ public final class PlannerOrchestrator {
 		for (PlannerToolCall toolCall : toolCalls) {
 			if (!isValidToolCall(toolCall)) {
 				String toolName = normalizedToolName(toolCall);
-				Airicraft.LOGGER.warn(
-					"Planner returned invalid tool call name={} narration={}",
-					toolCall.name(),
-					summarizeForLog(toolCall.narration())
-				);
+				Airicraft.LOGGER.warn("Planner returned invalid tool call name={}", toolCall.name());
 				return rejectToolRequest(
 					plannerResult,
 					toolRegistry.isKnownTool(toolName)
@@ -788,12 +784,12 @@ public final class PlannerOrchestrator {
 			result.response().chatMessages(),
 			"chatMessages"
 		);
-		PlannerChatContract.ValidationResult narrationValidation = validateToolNarration(result.response().toolCalls());
-		if (chatValidation.valid() && narrationValidation.valid()) {
+		PlannerChatContract.ValidationResult sayValidation = validateSayText(result.response().toolCalls());
+		if (chatValidation.valid() && sayValidation.valid()) {
 			return result;
 		}
-		String failureMessage = chatValidation.valid() ? narrationValidation.message() : chatValidation.message();
-		// Cosmetic tool narration must not regenerate an otherwise valid gameplay decision.
+		String failureMessage = chatValidation.valid() ? sayValidation.message() : chatValidation.message();
+		// A long say line is shortened locally; it must not regenerate an otherwise valid gameplay decision.
 		if (!chatValidation.valid() && result.attempt() <= 1 && scheduleChatRepairRetry(result, failureMessage)) {
 			return null;
 		}
@@ -828,20 +824,20 @@ public final class PlannerOrchestrator {
 			+ PlannerChatContract.MAX_MESSAGE_LENGTH
 			+ " characters. Use delayTicks or delaySeconds for pauses between messages."
 			+ "\nDo not use markdown, code fences, bullets, headings, links, decorative formatting, multiline text, or a leading slash."
-			+ "\nIf you still need a tool, keep the same tool intent and make narration one short plaintext line under "
+			+ "\nIf you still need a tool, keep the same tool intent; say text must be one short plaintext line under "
 			+ PlannerChatContract.MAX_MESSAGE_LENGTH
 			+ " characters.";
 	}
 
-	private static PlannerChatContract.ValidationResult validateToolNarration(List<PlannerToolCall> toolCalls) {
+	private static PlannerChatContract.ValidationResult validateSayText(List<PlannerToolCall> toolCalls) {
 		for (int index = 0; index < (toolCalls == null ? 0 : toolCalls.size()); index++) {
 			PlannerToolCall toolCall = toolCalls.get(index);
-			if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+			if (!isSay(toolCall)) {
 				continue;
 			}
 			PlannerChatContract.ValidationResult validation = PlannerChatContract.validateText(
-				toolCall.narration(),
-				"toolCalls[" + index + "].narration"
+				SayToolProvider.text(toolCall),
+				"toolCalls[" + index + "].text"
 			);
 			if (!validation.valid()) {
 				return validation;
@@ -852,28 +848,33 @@ public final class PlannerOrchestrator {
 
 	private static PlannerResponse contractVisibleChat(PlannerResponse response) {
 		List<PlannerToolCall> contractedToolCalls = response.toolCalls().stream()
-			.map(PlannerOrchestrator::contractToolNarration)
+			.map(PlannerOrchestrator::contractSayText)
 			.toList();
 		return response
 			.withChatMessages(PlannerChatContract.contractMessages(response.chatMessages()))
 			.withToolCalls(contractedToolCalls);
 	}
 
-	private static PlannerToolCall contractToolNarration(PlannerToolCall toolCall) {
-		if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+	private static PlannerToolCall contractSayText(PlannerToolCall toolCall) {
+		if (!isSay(toolCall)) {
 			return toolCall;
 		}
-		String contractedNarration = PlannerChatContract.contractText(toolCall.narration());
 		JsonObject arguments = toolCall.arguments().deepCopy();
-		arguments.addProperty("narration", contractedNarration);
+		arguments.addProperty("text", PlannerChatContract.contractText(SayToolProvider.text(toolCall)));
 		return new PlannerToolCall(
 			toolCall.id(),
 			toolCall.name(),
 			arguments,
-			contractedNarration,
 			null,
 			toolCall.repairedArgumentPaths()
 		);
+	}
+
+	/** Only a say call with usable text carries visible chat; its validation belongs to the provider. */
+	private static boolean isSay(PlannerToolCall toolCall) {
+		return toolCall != null && SayToolProvider.SAY.equals(toolCall.name()) && toolCall.arguments().has("text")
+			&& toolCall.arguments().get("text").isJsonPrimitive() && toolCall.arguments().getAsJsonPrimitive("text").isString()
+			&& !toolCall.arguments().get("text").getAsString().isBlank();
 	}
 
 	private static PlannerExecutionResult withResponse(PlannerExecutionResult result, PlannerResponse response) {
@@ -898,7 +899,7 @@ public final class PlannerOrchestrator {
 			.mapToInt(message -> message == null || message.text() == null ? 0 : message.text().length())
 			.sum();
 		length += response.toolCalls().stream()
-			.mapToInt(toolCall -> toolCall == null || toolCall.narration() == null ? 0 : toolCall.narration().length())
+			.mapToInt(toolCall -> isSay(toolCall) ? SayToolProvider.text(toolCall).length() : 0)
 			.sum();
 		return length;
 	}
@@ -909,7 +910,7 @@ public final class PlannerOrchestrator {
 			+ (failureMessage == null || failureMessage.isBlank() ? "parse error" : failureMessage)
 			+ (usesToolQueue() ? "\nTool calls append to a sequential FIFO. Use continue to yield or clear_queue to abort and replace the plan."
 				: "\nCall exactly one tool unless every call is a read-only text tool. Do not batch action calls.")
-			+ "\nWhen calling a tool, leave assistant content empty and put visible pre-action text in the tool narration argument.";
+			+ "\nWhen calling a tool, leave assistant content empty; to talk in the same turn, call say.";
 		String failedToolSchema = failedToolSchema(failureMessage);
 		if (failedToolSchema == null) {
 			return reminder;
@@ -975,6 +976,11 @@ public final class PlannerOrchestrator {
 				}
 			}
 			else if (PlannerQueueToolProvider.CLEAR.equals(call.name())) receipt = "Queue cleared; aborting active work.";
+			else if (SayToolProvider.isSayNow(call)) {
+				// Talking never waits behind queued work, a safety hold or the active action.
+				chatSink.say(SayToolProvider.text(call));
+				receipt = "Said in chat.";
+			}
 			else {
 				toolQueue.tools.append(List.of(call));
 				receipt = "QUEUED: " + call.id() + "; execution result will arrive in a later review.";
@@ -1018,10 +1024,7 @@ public final class PlannerOrchestrator {
 			toolQueue.abort = null;
 			if (PlannerQueueToolProvider.CLEAR.equals(toolQueue.abortCall.name()) && outcome.toolResultText().startsWith("TOOL_ERROR:")) toolQueue.tools.clear((call, id) -> {});
 		}
-		var completion = toolQueue.tools.tick(call -> {
-			narrationSink.onToolNarration(call);
-			return requestPlannerTools(List.of(call), contextAggregator.retainedToolContext());
-		}, outcome -> ongoingWorkId(outcome.toolResultText()), id -> terminalQueuedWork(id, context),
+		var completion = toolQueue.tools.tick(call -> requestPlannerTools(List.of(call), contextAggregator.retainedToolContext()), outcome -> ongoingWorkId(outcome.toolResultText()), id -> terminalQueuedWork(id, context),
 			!queueReflexActive && (toolQueue.tools.active() == null || !toolRegistry.endsTurn(toolQueue.tools.active().name())));
 		if (completion != null) {
 			ToolExecutionOutcome outcome = completion.failure() != null
@@ -1090,7 +1093,7 @@ public final class PlannerOrchestrator {
 		});
 		var messages = new ArrayList<LlmChatMessage>();
 		for (var message : conversation.messages()) {
-			// Queue snapshots are current state, not growing historical narration.
+			// Queue snapshots are current state, not a growing history.
 			if (message.content().startsWith("TOOL QUEUE:")) continue;
 			var report = remaining.remove(message.toolCallId());
 			if (report == null) messages.add(message);
@@ -1134,9 +1137,6 @@ public final class PlannerOrchestrator {
 			return finishFailedPlannerResult(promotionFailure);
 		}
 		commitSnapshotIfNeeded(plannerResult.generation());
-		for (PlannerToolCall toolCall : toolCalls) {
-			narrationSink.onToolNarration(toolCall);
-		}
 		appendToolRequestCard(plannerResult, toolCalls);
 		debugRecorder.recordPlannerCompletion(plannerResult);
 		for (PlannerToolCall toolCall : toolCalls) {
@@ -1461,7 +1461,6 @@ public final class PlannerOrchestrator {
 			INVENTORY_BOOTSTRAP_TOOL_CALL_ID,
 			INVENTORY_TOOL_NAME,
 			arguments,
-			null,
 			null
 		);
 	}
@@ -2030,7 +2029,7 @@ public final class PlannerOrchestrator {
 		if (toolRequest.prompt() != null && !toolRequest.prompt().isBlank()) {
 			arguments.addProperty("prompt", toolRequest.prompt());
 		}
-		return new PlannerToolCall("legacy_" + name, name, arguments, null, null);
+		return new PlannerToolCall("legacy_" + name, name, arguments, null);
 	}
 
 	private static String toolPrompt(PlannerToolCall toolCall) {
@@ -2367,8 +2366,8 @@ public final class PlannerOrchestrator {
 			return null;
 		}
 		StringBuilder summary = new StringBuilder("Tool call: ").append(toolCall.name());
-		if (toolCall.narration() != null && !toolCall.narration().isBlank()) {
-			summary.append(" | narration: ").append(toolCall.narration());
+		if (isSay(toolCall)) {
+			summary.append(" | said: ").append(SayToolProvider.text(toolCall));
 		}
 		String prompt = toolPrompt(toolCall);
 		if (!prompt.isBlank()) {
