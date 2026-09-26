@@ -28,16 +28,22 @@ from that attempt were stopped. The valid batches prebuilt the evaluator and
 compatibility artifacts and excluded packaging and hot-swap preparation during
 launch. No launcher or gameplay fix is included in Phase 0.
 
-The ordinary batch command in the plan used these additional options:
+The repeated batches used this launch command (with a separate output root
+per batch):
 
 ```sh
---stop-client-after-scenario \
---client-command 'scripts/eval run --no-daemon \
+client_command="scripts/eval run --no-daemon \
 -Dorg.gradle.java.home=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
 -x :jar -x :remapJar -x :addons:evaluator:jar -x :addons:evaluator:remapJar \
 -x :compat:journeymap:jar -x :compat:journeymap:remapJar \
 -x :compat:rei:jar -x :compat:rei:remapJar \
--x :syncHotswapMainClasses -x :prepareHotswapProductionConfigs'
+-x :syncHotswapMainClasses -x :prepareHotswapProductionConfigs"
+scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
+  --stop-client-after-scenario --client-command "$client_command" \
+  --scenario bread-cooperative-watch --scenario farm_easy \
+  --scenario farm_from_scratch --scenario farm_harder --scenario get_water \
+  --scenario iron-pickaxe --scenario pickup --scenario sea_grass \
+  --scenario underground
 ```
 
 ## Metric interpretation
