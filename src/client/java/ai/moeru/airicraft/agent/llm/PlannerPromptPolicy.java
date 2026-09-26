@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.llm;
 
+import ai.moeru.airicraft.agent.character.CharacterCard;
+import ai.moeru.airicraft.agent.character.CharacterPrompt;
 import ai.moeru.airicraft.agent.dialogue.DialogueSpeakerLabels;
 
 import java.io.IOException;
@@ -21,9 +23,16 @@ public final class PlannerPromptPolicy {
 	}
 
 	public static String systemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry) {
+		return systemPrompt(visionMode, toolRegistry, null);
+	}
+
+	/** A null character prompt renders the built-in character without an in-game name. */
+	public static String systemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry, String characterPrompt) {
 		PlannerToolRegistry effectiveToolRegistry = toolRegistry == null ? PlannerToolRegistry.empty() : toolRegistry;
 		String visionInstruction = "If visual information is needed, use take_a_look when it is in your tool schema.";
+		String character = characterPrompt == null ? CharacterPrompt.render(CharacterCard.defaults(), null) : characterPrompt;
 		return renderTemplate(SYSTEM_PROMPT_TEMPLATE, readTemplate(SYSTEM_PROMPT_TEMPLATE), Map.of(
+			"character", character,
 			"vision_instruction", visionInstruction,
 			"provider_tool_instructions", effectiveToolRegistry.promptInstructions(),
 			"same_client_admin", DialogueSpeakerLabels.SAME_CLIENT_ADMIN

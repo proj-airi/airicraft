@@ -352,7 +352,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		CameraController effectiveCameraController = Objects.requireNonNull(cameraController, "cameraController");
 		this.behaviorTreeRuntime = new BehaviorTreeRuntime(effectiveCameraController);
 		this.nearbyPlayerTracker = new NearbyPlayerTracker(resolveNearbyPlayerTrackingRadius(airicraftConfig));
-		this.idleIdeaScheduler = new IdleIdeaScheduler(effectiveIdleIdeasConfig(IdleIdeasConfig.defaults()));
+		this.idleIdeaScheduler = new IdleIdeaScheduler(effectiveIdleIdeasConfig(IdleIdeasConfig.defaults()), config.character().interests());
 		this.plannerActionToolExecutor = new EmbodiedPlannerActionToolExecutor(
 			this::plannerActionToolExecutionState,
 			this::executeCraftRecipePlannerTool,

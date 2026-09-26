@@ -2,8 +2,10 @@ package ai.moeru.airicraft.agent.shell;
 
 import ai.moeru.airicraft.FirstPersonScreenshotService;
 import ai.moeru.airicraft.agent.AgentConfig;
+import ai.moeru.airicraft.agent.character.CharacterPrompt;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
+import ai.moeru.airicraft.agent.dialogue.DialogueMessages;
 import ai.moeru.airicraft.agent.dialogue.DialogueRuntime;
 import ai.moeru.airicraft.agent.integration.map.MapIntegrationBridge;
 import ai.moeru.airicraft.agent.integration.map.MapPlannerToolProvider;
@@ -225,12 +227,15 @@ public final class PlannerShellFactory {
 		String cacheSession = dual ? "airicraft:" + java.util.UUID.randomUUID() : null;
 		PlannerCallJournal plannerCallJournal = new PlannerCallJournal(effectiveClock, effectiveServerTickSupplier,
 			controllerConfig.plannerBackend().wireValue(), plannerModelName(controllerConfig), toolRegistry::openAiTools);
+		// Both roles speak to players, so they share one character; it is fixed until reload for prompt caching.
+		String characterPrompt = CharacterPrompt.render(config.character(), inGameName());
 		PlannerOrchestrator orchestrator = createOrchestrator(controllerConfig, toolRegistry, visionService, inventoryService,
 			effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveNarrationSink,
 			effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, plannerCallJournal),
-			dual ? cacheSession + ":controller" : null);
+			dual ? cacheSession + ":controller" : null, characterPrompt);
 		controllerRef.set(orchestrator);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
+		dialogue.configureMessages(DialogueMessages.DEFAULTS.withOverrides(config.character().messages()));
 		dialogueRef.set(dialogue);
 
 		if (dual) {
@@ -255,7 +260,8 @@ public final class PlannerShellFactory {
 			};
 			var thinker = createOrchestrator(thinkingConfig, thinkingRegistry, visionService, inventoryService,
 				effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveNarrationSink,
-				effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, thinkingCalls, handoffEvidence), cacheSession + ":thinking");
+				effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, thinkingCalls, handoffEvidence), cacheSession + ":thinking",
+				characterPrompt);
 			var generations = new java.util.concurrent.atomic.AtomicLong(1L);
 			orchestrator.shareGenerationSequence(generations);
 			thinker.shareGenerationSequence(generations);
@@ -267,7 +273,8 @@ public final class PlannerShellFactory {
 	private static PlannerOrchestrator createOrchestrator(AgentConfig.LlmConfig llm, PlannerToolRegistry tools,
 		CurrentViewVisionService vision, CurrentInventoryService inventory, Clock clock, AgentObservability observability,
 		AgentDebugRecorder debug, PlannerActionToolExecutor actions, PlannerToolNarrationSink narration,
-		PlannerToolExecutionObserver toolObserver, ai.moeru.airicraft.agent.llm.PlannerLifecycleListener listener, String cacheKey) {
+		PlannerToolExecutionObserver toolObserver, ai.moeru.airicraft.agent.llm.PlannerLifecycleListener listener, String cacheKey,
+		String characterPrompt) {
 		LlmBackend backend = switch (llm.plannerBackend()) {
 			case OPENAI_COMPATIBLE -> new OpenAiCompatibleLlmBackend(llm, observability, tools, cacheKey);
 			case CODEX_APP_SERVER -> new CodexAppServerLlmBackend(llm, observability, tools);
@@ -276,13 +283,19 @@ public final class PlannerShellFactory {
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(llm, observability, tools,
 				cacheKey == null ? null : cacheKey + ":compaction"), observability),
 			new PlannerContextAggregator(clock, llm.plannerCompactionTriggerTokens(), llm.plannerPendingSemanticEventCap(),
-				llm.plannerVisionMode(), tools, llm.backendManagedHistory()), vision, inventory, llm.plannerVisionMode(),
+				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt), vision, inventory, llm.plannerVisionMode(),
 			llm.visionImageDetail(), 1, llm.plannerSessionCoalesceStepMillis(),
 			llm.plannerSessionCoalesceMinMillis(), llm.plannerSessionCoalesceMaxMillis(), clock, observability,
 			listener, debug, actions, narration, tools, toolObserver, llm.plannerMaxImages(),
 			new ai.moeru.airicraft.agent.llm.PlannerVisionService(llm, observability));
 		if (llm.plannerSummarizeToolResults()) orchestrator.configureMicroCompaction(new ai.moeru.airicraft.agent.llm.PlannerMicroCompactor(llm, observability, tools));
 		return orchestrator;
+	}
+
+	/** Players address the companion by its account name; an empty card name adopts it. */
+	private static String inGameName() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		return client == null || client.getSession() == null ? null : client.getSession().getUsername();
 	}
 
 	private static String plannerModelName(AgentConfig.LlmConfig config) {

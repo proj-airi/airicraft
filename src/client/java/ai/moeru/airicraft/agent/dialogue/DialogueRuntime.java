@@ -51,6 +51,7 @@ public final class DialogueRuntime {
 	private int queuedTimeoutInjections;
 	private boolean pendingTimeoutVisibleReply;
 	private boolean hostedAutoResetAttempted;
+	private DialogueMessages messages = DialogueMessages.DEFAULTS;
 
 	private DialogueCore.ResetGuidance resetGuidance() {
 		if (!Boolean.getBoolean("airicraft.hostedPlaytestAutoReset")) return DialogueCore.ResetGuidance.MANUAL;
@@ -135,6 +136,11 @@ public final class DialogueRuntime {
 		}
 		for (var event : policyContinuation.drainEvents()) events.append(tick, "policy.continuation." + event.get("state"), event);
 		return handled;
+	}
+
+	/** Lines sent without a planner reply, voiced by the character card. */
+	public void configureMessages(DialogueMessages nextMessages) {
+		messages = Objects.requireNonNull(nextMessages, "messages");
 	}
 
 	public void configureDelegation(PlannerOrchestrator thinker, ai.moeru.airicraft.agent.llm.delegation.PlannerDelegation handoff) {
@@ -448,7 +454,7 @@ public final class DialogueRuntime {
 		queuedTimeoutInjections = 0;
 		pendingVisibleReplies.clear();
 		if (Boolean.getBoolean("airicraft.hostedPlaytestAutoReset") && state.degraded()) hostedAutoResetAttempted = true;
-		applyTransition(DialogueCore.onReset(state, senderName, tick), tick, eventBuffer);
+		applyTransition(DialogueCore.onReset(state, senderName, tick, messages), tick, eventBuffer);
 		return true;
 	}
 
@@ -624,7 +630,7 @@ public final class DialogueRuntime {
 		if (queuedTimeoutInjections > 0 && !activePlanner().hasInFlight()) {
 			queuedTimeoutInjections--;
 			applyTransition(DialogueCore.onPlannerFailure(state, LlmFailureType.TIMEOUT, "Injected LLM timeout",
-				pendingTimeoutVisibleReply, tick, resetGuidance()), tick, eventBuffer);
+				pendingTimeoutVisibleReply, tick, resetGuidance(), messages), tick, eventBuffer);
 			pendingTimeoutVisibleReply = false;
 			return null;
 		}
@@ -665,7 +671,8 @@ public final class DialogueRuntime {
 					result.failureMessage(),
 					timeoutVisibleReply,
 					tick,
-					resetGuidance()
+					resetGuidance(),
+					messages
 				),
 				tick,
 				eventBuffer
@@ -766,7 +773,7 @@ public final class DialogueRuntime {
 		if (state.degraded() && activePlanner().isEnabled()) {
 			applyTransition(
 				DialogueCore.onPlannerDegradedBlocked(state, request.senderName(), directUserGuidance,
-					request.tick(), resetGuidance()),
+					request.tick(), resetGuidance(), messages),
 				request.tick(),
 				eventBuffer
 			);

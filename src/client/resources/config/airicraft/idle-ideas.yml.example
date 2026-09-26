@@ -1,7 +1,8 @@
 # Idle "idea source" for the agent. When the agent has no active job and no
-# real events come in for a while, this file is used to nudge it into picking
-# a concrete next step on its own. Keep the idea list short and concrete; the
-# LLM uses it as inspiration and chains them itself.
+# real events come in for a while, it gets a free-time turn. The character
+# card's interests (config/airicraft/character.json) come first; the ideas here
+# are optional useful progress it can also choose. Keep the list short and
+# concrete; the LLM uses it as inspiration and chains them itself.
 
 # Master switch for the idle thinker. Timers live in agent.yml:
 # idleInitialDelaySeconds and idleCooldownSeconds. Set either timer to 0 to

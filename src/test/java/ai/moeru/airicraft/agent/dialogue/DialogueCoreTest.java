@@ -8,9 +8,11 @@ import ai.moeru.airicraft.agent.llm.PlannerResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogueCoreTest {
@@ -120,5 +122,35 @@ class DialogueCoreTest {
 		assertEquals(0, transition.state().consecutiveFailureCount());
 		assertEquals("Planner state reset.", transition.lastVisibleResponse().text());
 		assertEquals(2, transition.effects().size());
+	}
+
+	@Test
+	void characterMessagesVoiceEveryLineSentWithoutAPlannerReply() {
+		DialogueMessages voiced = DialogueMessages.DEFAULTS.withOverrides(Map.of(
+			"parseError", "wait, lost my train of thought",
+			"timeout", "zoned out, say again?",
+			"degraded", "brain lag, send @agent reset",
+			"hostedAutoReset", "hold on, resetting myself once",
+			"reset", "ok, fresh start"));
+
+		assertEquals("wait, lost my train of thought", DialogueCore.onPlannerFailure(DialogueState.initial(),
+			LlmFailureType.PARSE_ERROR, "bad json", false, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+		assertEquals("zoned out, say again?", DialogueCore.onPlannerFailure(DialogueState.initial(),
+			LlmFailureType.TIMEOUT, "slow", true, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+		assertEquals(DialogueMessages.DEFAULTS.providerUnavailable(), DialogueCore.onPlannerFailure(DialogueState.initial(),
+			LlmFailureType.PROVIDER_UNAVAILABLE, "down", true, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text(),
+			"Lines the card leaves out keep their default text");
+
+		DialogueState almostDegraded = DialogueState.initial().withConsecutiveFailureCount(DialogueCore.DEGRADED_FAILURE_THRESHOLD - 1);
+		assertEquals("brain lag, send @agent reset", DialogueCore.onPlannerFailure(almostDegraded,
+			LlmFailureType.PROVIDER_ERROR, "500", false, 2L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+		assertEquals("hold on, resetting myself once", DialogueCore.onPlannerDegradedBlocked(DialogueState.initial().withDegraded(true),
+			"Alex", true, 3L, DialogueCore.ResetGuidance.HOSTED_AUTO_PENDING, voiced).lastVisibleResponse().text());
+		assertEquals("ok, fresh start", DialogueCore.onReset(DialogueState.initial(), "Alex", 4L, voiced).lastVisibleResponse().text());
+	}
+
+	@Test
+	void unknownMessageOverridesAreRejected() {
+		assertThrows(IllegalArgumentException.class, () -> DialogueMessages.DEFAULTS.withOverrides(Map.of("greeting", "hi")));
 	}
 }

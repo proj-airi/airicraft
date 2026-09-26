@@ -7,6 +7,7 @@ import ai.moeru.airicraft.agent.AgentConfigLoader;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.baritone.LiveBaritoneFacade;
+import ai.moeru.airicraft.agent.character.CharacterCardLoader;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.idle.IdleIdeasConfig;
 import ai.moeru.airicraft.agent.idle.IdleIdeasLoader;
@@ -70,7 +71,7 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
-		this.agentRuntime = createRuntime(config, AgentConfigLoader.load());
+		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()));
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
 		this.dashboardObservationCollector = new DashboardObservationCollector(
@@ -377,7 +378,7 @@ public final class ClientRuntimeController {
 		IdleIdeasConfig nextIdleIdeasConfig;
 		try {
 			nextConfig = AiricraftConfigLoader.loadStrict();
-			nextAgentConfig = AgentConfigLoader.loadStrict();
+			nextAgentConfig = AgentConfigLoader.loadStrict().withCharacter(CharacterCardLoader.loadStrict());
 			nextIdleIdeasConfig = IdleIdeasLoader.loadStrict();
 		}
 		catch (ConfigLoadException exception) {
@@ -488,6 +489,9 @@ public final class ClientRuntimeController {
 			payload.put("llm", llmPayload());
 			payload.put("observability", observabilityPayload());
 			payload.put("idleIdeas", idleIdeasPayload());
+			payload.put("character", Map.of(
+				"name", agentConfig.character().name(),
+				"source", agentConfig.character().source()));
 			return payload;
 		}
 

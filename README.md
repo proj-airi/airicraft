@@ -187,6 +187,10 @@ jdb -attach 127.0.0.1:5005
 
 Run `scripts/automatic-playtest --world <saved-world-directory> --recorder-jar <profile> --objective <instruction>`. The planner can call `something_wrong` with a natural-language bug report to pause the game and archive the shared evaluation flight records, live RGB, required Recorder Play, and paused world checkpoint under `automatic_playtest/`. See [automatic playtest reports](docs/automatic-playtest.md) for the shutdown/finalization flow and offline review.
 
+### Companion character
+
+The companion plays a character defined by a Character Card V3 file, the format AIRI uses, with an Airicraft extension for interests, dislikes, chattiness, mischief and fixed chat lines. Without `config/airicraft/character.json` it plays the built-in generic Minecraft player; copy `character.json.example` to customize, then run `airicraft reload`. See [companion character](docs/character-card.md).
+
 ### Hosted playtests
 
 Run `scripts/hosted-playtest --world <template-world-directory> --recorder-jar <profile>` to let human testers play with the companion. The companion hosts a fresh copy of the world on one fixed LAN port (`--lan-port`, default 25565), which testers join directly or through a forwarded port. The session ends after its testers leave, and it is recorded with the same pipeline plus tester join/leave records and every tester's Recorder Play under `hosted_playtest/`. See [hosted playtests](docs/hosted-playtest.md).

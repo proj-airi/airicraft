@@ -148,4 +148,29 @@ class IdleIdeaSchedulerTest {
 		assertTrue(scheduler.tick(true, 3L, BASE_MS + 200_000L).isEmpty());
 		assertFalse(scheduler.tick(true, 4L, BASE_MS + 1_000_000L).isPresent());
 	}
+
+	@Test
+	void characterInterestsMakeIdleTurnsFreeTime() {
+		IdleIdeaScheduler scheduler = new IdleIdeaScheduler(new IdleIdeasConfig(true, 30, 90, IDEAS), List.of("exploring caves"));
+
+		String text = scheduler.fireNow(1L, BASE_MS).orElseThrow().text();
+
+		assertTrue(text.startsWith("IDLE THINK:"));
+		assertTrue(text.contains("This is your free time."));
+		assertTrue(text.contains("- exploring caves"));
+		assertTrue(text.indexOf("exploring caves") < text.indexOf("Idea A"), "The character's interests come before chores");
+		assertTrue(text.contains("Do not read these lists back to the player."));
+	}
+
+	@Test
+	void interestsAloneStillFireWhenNoProgressIdeasAreConfigured() {
+		IdleIdeaScheduler scheduler = new IdleIdeaScheduler(new IdleIdeasConfig(true, 30, 90, List.of()), List.of("collecting flowers"));
+
+		scheduler.tick(true, 1L, BASE_MS);
+		String text = scheduler.tick(true, 2L, BASE_MS + 30_000L).orElseThrow().text();
+
+		assertTrue(text.contains("- collecting flowers"));
+		assertFalse(text.contains("survival progress"));
+		assertFalse(text.contains("minecraft:charcoal"), "The torch hint belongs to the progress ideas");
+	}
 }

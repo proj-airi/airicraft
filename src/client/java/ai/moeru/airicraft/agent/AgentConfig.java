@@ -1,18 +1,38 @@
 package ai.moeru.airicraft.agent;
 
+import ai.moeru.airicraft.agent.character.CharacterCard;
+
 public record AgentConfig(
 	boolean verificationEnabled,
 	boolean verificationAutoRunAll,
 	LlmConfig llm,
 	IdleConfig idle,
 	ReflexConfig reflex,
-	ObservabilityConfig observability
+	ObservabilityConfig observability,
+	CharacterCard character
 ) {
 	public AgentConfig {
 		llm = llm == null ? LlmConfig.defaults() : llm;
 		idle = idle == null ? IdleConfig.defaults() : idle;
 		reflex = reflex == null ? ReflexConfig.defaults() : reflex;
 		observability = observability == null ? ObservabilityConfig.defaults() : observability;
+		character = character == null ? CharacterCard.defaults() : character;
+	}
+
+	public AgentConfig(
+		boolean verificationEnabled,
+		boolean verificationAutoRunAll,
+		LlmConfig llm,
+		IdleConfig idle,
+		ReflexConfig reflex,
+		ObservabilityConfig observability
+	) {
+		this(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, null);
+	}
+
+	/** The character comes from its own file, not agent.yml; loaders attach it here. */
+	public AgentConfig withCharacter(CharacterCard nextCharacter) {
+		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, nextCharacter);
 	}
 
 	public AgentConfig(
