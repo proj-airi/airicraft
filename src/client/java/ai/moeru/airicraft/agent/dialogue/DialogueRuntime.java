@@ -163,6 +163,8 @@ public final class DialogueRuntime {
 	}
 
 	private WakeAuditSink wakeAudit = WakeAuditSink.NO_OP;
+	private PendingTaskWakeup lastDeferredAudit;
+	private String lastDeferredAuditGate;
 
 	public void configureWakeAudit(WakeAuditSink sink) {
 		wakeAudit = Objects.requireNonNull(sink);
@@ -892,6 +894,11 @@ public final class DialogueRuntime {
 	}
 
 	private void auditTask(PendingTaskWakeup wake, String kind, String gate) {
+		// These gates retain the head wake. Audit its transition once, not every poll.
+		boolean deferred = "G5.run_policy".equals(gate) || "G5.queued_tool_work".equals(gate);
+		if (deferred && wake == lastDeferredAudit && Objects.equals(gate, lastDeferredAuditGate)) return;
+		lastDeferredAudit = deferred ? wake : null;
+		lastDeferredAuditGate = deferred ? gate : null;
 		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate);
 		fields.put("eventSequence", wake.eventSequence());
 		fields.put("triggerTypes", List.of("SYSTEM"));

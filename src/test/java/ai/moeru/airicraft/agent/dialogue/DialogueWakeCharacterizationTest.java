@@ -45,6 +45,19 @@ class DialogueWakeCharacterizationTest {
 		@Override public void close() { dialogue.shutdown(); }
 	}
 	private static WorkSnapshot work() { return new WorkSnapshot(new WorkHandle("OPERATION:policy"), "", WorkSnapshot.State.RUNNING, "run_policy", "POLICY", true, 1, Map.of()); }
+	@Test void retainedWakeAuditRecordsEachGateTransitionOnce() {
+		try (var h = new Harness()) {
+			h.dialogue.observeAcceptedWork(work());
+			h.dialogue.queueTaskWakeup(null, 1, h.events.append(1, "work.changed", work().payload()).seqNo());
+			h.advance(300);
+			assertTrue(h.backend.requests().isEmpty());
+			assertEquals(1, h.audit.size(), "retained wake must not flood the audit on every poll");
+			assertEquals("G5.run_policy", h.audit.getFirst().payload().get("gate"));
+			h.dialogue.queueTaskAttention(h.tick, h.events.append(h.tick, "task.notice", Map.of("message", "stalled")).seqNo());
+			h.advance(1);
+			assertEquals(1, h.backend.requests().size(), "attention still bypasses the retained ordinary wake");
+		}
+	}
 	@Test void work_stalled_attention_during_accepted_work() {
 		try (var h = new Harness()) {
 			h.dialogue.observeAcceptedWork(work());
