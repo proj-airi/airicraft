@@ -165,10 +165,15 @@ def build_ledger(run_dir):
     previous_initial_entry = None
     previous_messages = []
     consumed_wake_ids = set()
+    initial_by_generation = {}
     for call in calls:
-        phase = call.get("plannerAttempt", {}).get("phase")
+        planner_attempt = call.get("plannerAttempt") or {}
+        phase = planner_attempt.get("phase")
         if phase not in INITIAL_PHASES | {"TOOL_FOLLOW_UP"}:
             continue
+        attempt_number = number(planner_attempt.get("attempt")) or 1
+        generation = str(planner_attempt.get("generation"))
+        is_initial_turn = phase in INITIAL_PHASES and attempt_number == 1
         messages = call.get("request", {}).get("messages", [])
         obs, prefix = observation(messages)
         dispatch_server = number(call["timeline"]["submitted"]["serverTick"])
@@ -177,9 +182,18 @@ def build_ledger(run_dir):
         visible = obs.get("events", []) if obs else []
         attributed = []
         attribution_basis = "not_applicable"
-        if phase in INITIAL_PHASES:
-            attempt = call.get("plannerAttempt") or {}
-            key = submission_key(attempt.get("generation"), attempt.get("attempt"), phase)
+        inherited_from_seq = None
+        if phase in INITIAL_PHASES and attempt_number > 1:
+            prior = initial_by_generation.get(generation)
+            if prior is not None:
+                attributed = prior["wakes"]
+                inherited_from_seq = prior["seq"]
+                attribution_basis = "inherited_generation"
+            else:
+                attributed = [{"path": "unknown", "reason": "initial attempt for generation absent"}]
+                attribution_basis = "retry_generation_missing"
+        elif is_initial_turn:
+            key = submission_key(generation, attempt_number, phase)
             submission_entry = submissions[key].popleft() if submissions[key] else None
             attribution_basis = "submission_entry_id" if submission_entry is not None else "tick_fallback"
             for entry in wakes:
@@ -225,8 +239,10 @@ def build_ledger(run_dir):
             evidence_gaps = evidence_gaps or not recorded
             visible_events.append({"seqNo": raw_seq, "rawSeqNo": number(raw["seqNo"]) if recorded else None,
                                    "tick": number(event.get("tick")), "type": event.get("type"), "recorded": recorded})
-        requests.append({"seq": number(call["sequence"]), "turnId": call.get("turnId"),
-                         "phase": phase, "dispatchAgentTick": agent_tick,
+        request = {"seq": number(call["sequence"]), "turnId": call.get("turnId"),
+                         "generation": generation, "attempt": attempt_number,
+                         "phase": phase, "isInitialTurn": is_initial_turn,
+                         "retryOfSeq": inherited_from_seq, "dispatchAgentTick": agent_tick,
                          "dispatchServerTick": dispatch_server, "observeServerTick": server_tick,
                          "owner": obs.get("decisionOwner") if obs else None,
                          "afterEventSequence": number(obs.get("afterEventSequence")) if obs else None,
@@ -241,12 +257,17 @@ def build_ledger(run_dir):
                          "evidenceGap": evidence_gaps,
                          "uncertainty": [reason for condition, reason in
                                          ((obs is None, "observation_missing"),
-                                          (bool(attributed) and attributed[0]["path"] == "unknown" and phase in INITIAL_PHASES, "wake_audit_missing"),
+                                          (bool(attributed) and attributed[0]["path"] == "unknown" and is_initial_turn, "wake_audit_missing"),
+                                          (attribution_basis == "retry_generation_missing", "retry_generation_missing"),
                                           (attribution_basis == "tick_fallback", "submission_entry_missing_tick_fallback"),
                                           (user_turn_source == "request_user_delta", "user_turn_inferred_from_request"),
-                                          (evidence_gaps, "event_evidence_incomplete")) if condition]})
+                                          (evidence_gaps, "event_evidence_incomplete")) if condition]}
+        requests.append(request)
+        if is_initial_turn:
+            initial_by_generation[generation] = request
 
-    initial = [r for r in requests if r["phase"] in INITIAL_PHASES]
+    initial = [r for r in requests if r["isInitialTurn"]]
+    retries = [r for r in requests if r["phase"] in INITIAL_PHASES and r["attempt"] > 1]
     followups = [r for r in requests if r["phase"] == "TOOL_FOLLOW_UP"]
     ticks = [r["dispatchServerTick"] for r in requests]
     summary, capture_sources, play_window = recording_status(run_dir)
@@ -299,6 +320,13 @@ def build_ledger(run_dir):
         record = row["record"]
         if record.get("requestKind", "").lower() == "planner":
             llm_latest[record["sequenceId"]] = record
+    if play_window is None and calls and len(llm_latest) == len(calls):
+        dispatch_ticks = [number(record.get("dispatchServerTick")) for record in llm_latest.values()]
+        if all(tick is not None and tick >= 0 for tick in dispatch_ticks):
+            window_start = min(window_start, *dispatch_ticks)
+            window_end = max(window_end, *dispatch_ticks)
+            window_source = "planner_and_llm_dispatch_estimate"
+            span = window_end - window_start
     llm_gaps = not (run_dir / "llm-calls.jsonl").exists() or bool(summary.get("llmCallsTruncated"))
     in_window = [record for record in llm_latest.values()
                  if window_start is not None and number(record.get("dispatchServerTick")) is not None
@@ -312,6 +340,7 @@ def build_ledger(run_dir):
                                      "byOwner": {key: rate(count, span, 1200) for key, count in sorted(per_owner.items())},
                                      "byPath": {key: rate(count, span, 1200) for key, count in sorted(per_path.items())}},
                "followUpsPerTurn": len(followups) / len(initial) if initial else None,
+               "initialTurns": len(initial), "modelCalls": len(requests), "retries": len(retries),
                "emptyWakes": dict(sorted(empty.items())),
                "outcomeLatencyTicks": distribution(outcome_latency),
                "chatReplyLatencyTicks": {"toRequest": distribution(chat_request_latency),
@@ -368,7 +397,7 @@ def summary_table(ledgers):
             rates.append(rpm)
         if m["tokensPerHour"] is not None:
             token_rates.append(m["tokensPerHour"])
-        initial_count = "n/a" if m["plannerCallsMissing"] else sum(r["phase"] in INITIAL_PHASES for r in ledger["requests"])
+        initial_count = "n/a" if m["plannerCallsMissing"] else m["initialTurns"]
         rows.append(f"| {Path(ledger['runDir']).name} | {initial_count} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if not m['inputComplete'] else 'no'} |")
     rows.append(f"\nRequests/min spread: {min(rates)}–{max(rates)}" if rates else "\nRequests/min spread: n/a")
     rows.append(f"Tokens/hour spread: {min(token_rates)}–{max(token_rates)}" if token_rates else "Tokens/hour spread: n/a")

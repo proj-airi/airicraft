@@ -160,6 +160,54 @@ class WakeLedgerTest(unittest.TestCase):
             self.assertIn("| n/a |", output.getvalue())
             self.assertIn("| yes |", output.getvalue())
 
+    def test_planner_request_retry_inherits_generation_wake(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            base = [json.loads(line) for line in (FIXTURE / "planner-calls.jsonl").read_text().splitlines()]
+            calls = [copy.deepcopy(base[0]), copy.deepcopy(base[0]), copy.deepcopy(base[2])]
+            for seq, call in enumerate(calls, 1):
+                generation = 1 if seq < 3 else 2
+                attempt = 2 if seq == 2 else 1
+                call["sequence"] = str(seq)
+                call["turnId"] = f"planner-generation-{generation}"
+                call["plannerAttempt"] = {"generation": str(generation), "attempt": attempt,
+                                          "phase": "PLANNER_REQUEST"}
+                call["timeline"]["submitted"]["serverTick"] = str(100 * seq)
+            (target / "planner-calls.jsonl").write_text("".join(json.dumps(x) + "\n" for x in calls))
+            (target / "events.jsonl").write_text((FIXTURE / "events.jsonl").read_text())
+            (target / "llm-calls.jsonl").write_text((FIXTURE / "llm-calls.jsonl").read_text())
+            entries = [
+                (1, "planner_wake", "submitted", {}, {"path": "W1", "serverTick": 100}),
+                (2, "planner", "submission", {"generation": 1, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
+                (3, "planner", "submission", {"generation": 1, "attempt": 2, "phase": "PLANNER_REQUEST"}, {}),
+                (4, "planner_wake", "submitted", {}, {"path": "W2", "serverTick": 300}),
+                (5, "planner", "submission", {"generation": 2, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
+            ]
+            (target / "debug-timeline.jsonl").write_text("".join(json.dumps({"entry": {"entryId": entry_id,
+                "tick": 50, "domain": domain, "action": action, "correlation": correlation,
+                "payload": payload}}) + "\n" for entry_id, domain, action, correlation, payload in entries))
+            ledger = wake_ledger.build_ledger(target)
+            self.assertEqual([r["attempt"] for r in ledger["requests"]], [1, 2, 1])
+            self.assertEqual([r["isInitialTurn"] for r in ledger["requests"]], [True, False, True])
+            self.assertEqual([r["wakes"][0]["path"] for r in ledger["requests"]], ["W1", "W1", "W2"])
+            self.assertEqual(ledger["requests"][1]["attributionBasis"], "inherited_generation")
+            self.assertEqual(ledger["metrics"]["initialTurns"], 2)
+            self.assertEqual(ledger["metrics"]["modelCalls"], 3)
+            self.assertEqual(ledger["metrics"]["retries"], 1)
+
+    def test_estimated_window_includes_aligned_llm_dispatch_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in FIXTURE.iterdir():
+                (target / path.name).write_bytes(path.read_bytes())
+            records = [json.loads(line) for line in (target / "llm-calls.jsonl").read_text().splitlines()]
+            records[-1]["record"]["dispatchServerTick"] = 201
+            (target / "llm-calls.jsonl").write_text("".join(json.dumps(x) + "\n" for x in records))
+            metrics = wake_ledger.build_ledger(target)["metrics"]
+            self.assertEqual(metrics["tokenWindow"]["endServerTick"], 201)
+            self.assertEqual(metrics["tokenWindow"]["source"], "planner_and_llm_dispatch_estimate")
+            self.assertEqual(metrics["tokensExcludedOutsideWindow"], 0)
+
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "ledger.json"
