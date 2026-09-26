@@ -69,7 +69,8 @@ class WakeLedgerTest(unittest.TestCase):
         metrics = ledger["metrics"]
         self.assertEqual(metrics["tokensTotalRecorded"], 130)
         self.assertEqual(metrics["tokensInWindow"], 30)
-        self.assertEqual(metrics["tokenWindow"], {"startServerTick": 100, "endServerTick": 200, "durationTicks": 100})
+        self.assertEqual(metrics["tokenWindow"], {"startServerTick": 100, "endServerTick": 200,
+                                                  "durationTicks": 100, "source": "planner_submissions_estimate"})
         self.assertEqual(metrics["tokensPerHour"], 21600.0)
         with tempfile.TemporaryDirectory() as tmp:
             target = pathlib.Path(tmp)
@@ -79,8 +80,9 @@ class WakeLedgerTest(unittest.TestCase):
             (target / "planner-calls.jsonl").write_text(calls[0] + "\n")
             single = wake_ledger.build_ledger(target)["metrics"]
             self.assertEqual(single["tokensInWindow"], 10)
-            self.assertEqual(single["tokenWindow"]["durationTicks"], 1)
-            self.assertEqual(single["tokensPerHour"], 720000.0)
+            self.assertEqual(single["tokenWindow"]["durationTicks"], 0)
+            self.assertIsNone(single["tokensPerHour"])
+            self.assertIsNone(single["requestsPerMinute"]["overall"])
             (target / "planner-calls.jsonl").write_text("\n".join(calls) + "\n")
             (target / "summary.json").write_text(json.dumps({"eventsTruncated": True,
                 "debugTimelineTruncated": True, "llmCallsTruncated": True}))
@@ -89,6 +91,55 @@ class WakeLedgerTest(unittest.TestCase):
             self.assertTrue(partial["timelineGaps"])
             self.assertTrue(partial["llmGaps"])
             self.assertIsNone(partial["tokensPerHour"])
+
+    def test_portable_playtest_capture_flags(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in CANONICAL_FIXTURE.iterdir():
+                if path.name != "summary.json":
+                    (target / path.name).write_bytes(path.read_bytes())
+            extension = target / "extensions" / "airicraft.playtest"
+            extension.mkdir(parents=True)
+            (extension / "playtest.json").write_text(json.dumps({"schemaVersion": 1,
+                "timeline": {"startServerTick": "0", "endServerTick": "1200"},
+                "capture": {"eventsTruncated": True, "debugTimelineTruncated": True,
+                            "llmCallsTruncated": True}}))
+            metrics = wake_ledger.build_ledger(target)["metrics"]
+            self.assertTrue(metrics["eventGaps"])
+            self.assertTrue(metrics["timelineGaps"])
+            self.assertTrue(metrics["llmGaps"])
+            self.assertIsNone(metrics["tokensPerHour"])
+            self.assertEqual(metrics["requestsPerMinute"]["overall"], 2.0)
+            self.assertEqual(metrics["tokenWindow"], {"startServerTick": 0, "endServerTick": 1200,
+                                                      "durationTicks": 1200, "source": "playtest_timeline"})
+            self.assertEqual(len(metrics["captureMetadataSources"]), 1)
+
+    def test_same_server_tick_uses_submission_entry_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            base = [json.loads(line) for line in (FIXTURE / "planner-calls.jsonl").read_text().splitlines()]
+            calls = [base[0], base[2]]
+            for seq, call in enumerate(calls, 1):
+                call["sequence"] = str(seq)
+                call["plannerAttempt"] = {"generation": str(seq), "attempt": 1, "phase": "PLANNER_REQUEST"}
+                call["timeline"]["submitted"]["serverTick"] = "100"
+            (target / "planner-calls.jsonl").write_text("".join(json.dumps(x) + "\n" for x in calls))
+            (target / "events.jsonl").write_text("\n")
+            (target / "llm-calls.jsonl").write_text("\n")
+            entries = [
+                (1, "planner_wake", "submitted", {}, {"path": "W1", "serverTick": 100}),
+                (2, "planner", "submission", {"generation": 1, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
+                (3, "planner_wake", "submitted", {}, {"path": "W2", "serverTick": 100}),
+                (4, "planner", "submission", {"generation": 2, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
+            ]
+            (target / "debug-timeline.jsonl").write_text("".join(json.dumps({"entry": {"entryId": entry_id,
+                "tick": 50, "domain": domain, "action": action, "correlation": correlation,
+                "payload": payload}}) + "\n" for entry_id, domain, action, correlation, payload in entries))
+            ledger = wake_ledger.build_ledger(target)
+            self.assertEqual([[wake["path"] for wake in request["wakes"]]
+                              for request in ledger["requests"]], [["W1"], ["W2"]])
+            self.assertEqual([request["attributionBasis"] for request in ledger["requests"]],
+                             ["submission_entry_id", "submission_entry_id"])
 
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:

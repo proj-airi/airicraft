@@ -2,7 +2,7 @@
 """Build an auditable wake ledger from a RuntimeFlightRecorder directory."""
 
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict, deque
 import json
 import math
 from pathlib import Path
@@ -18,6 +18,32 @@ def read_jsonl(path):
         return []
     with path.open(encoding="utf-8") as stream:
         return [json.loads(line) for line in stream if line.strip()]
+
+
+def recording_status(run_dir):
+    """Read recorder summary flags from a raw run or a materialized Play extension."""
+    flags = {}
+    sources = []
+    server_window = None
+    candidates = ((run_dir / "summary.json", "summary"),
+                  (run_dir / "playtest.json", "playtest"),
+                  (run_dir / "extensions" / "airicraft.playtest" / "playtest.json", "playtest"))
+    for path, kind in candidates:
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        payload = data.get("capture", {}) if kind == "playtest" else data.get("recordingStatus", data)
+        sources.append(str(path))
+        if kind == "playtest" and server_window is None:
+            timeline = data.get("timeline") or {}
+            if timeline.get("startServerTick") is not None and timeline.get("endServerTick") is not None:
+                start, end = number(timeline["startServerTick"]), number(timeline["endServerTick"])
+                if end >= start:
+                    server_window = (start, end)
+        for key in ("eventsTruncated", "debugTimelineTruncated", "llmCallsTruncated"):
+            if key in payload:
+                flags[key] = bool(flags.get(key)) or bool(payload[key])
+    return flags, sources, server_window
 
 
 def number(value):
@@ -102,6 +128,10 @@ def rate(count, span, scale):
     return round(count * scale / span, 6) if span > 0 else None
 
 
+def submission_key(generation, attempt, phase):
+    return (str(generation), number(attempt), "PLANNER_REQUEST" if phase == "INITIAL" else phase)
+
+
 def build_ledger(run_dir):
     run_dir = Path(run_dir)
     calls = sorted(read_jsonl(run_dir / "planner-calls.jsonl"), key=lambda x: number(x["sequence"]))
@@ -109,6 +139,12 @@ def build_ledger(run_dir):
     event_by_seq = {number(event["seqNo"]): event for event in events}
     timeline = [row["entry"] for row in read_jsonl(run_dir / "debug-timeline.jsonl")]
     timeline.sort(key=lambda x: number(x["entryId"]))
+    submissions = defaultdict(deque)
+    for entry in timeline:
+        if entry.get("domain") == "planner" and entry.get("action") == "submission":
+            correlation = entry.get("correlation") or {}
+            key = submission_key(correlation.get("generation"), correlation.get("attempt"), correlation.get("phase"))
+            submissions[key].append(number(entry["entryId"]))
     wakes = [entry for entry in timeline if entry.get("domain") == "planner_wake"]
     drops = []
     for entry in wakes:
@@ -124,6 +160,7 @@ def build_ledger(run_dir):
     requests = []
     previous_initial_server = None
     previous_initial_agent = None
+    previous_initial_entry = None
     previous_messages = []
     consumed_wake_ids = set()
     for call in calls:
@@ -137,7 +174,12 @@ def build_ledger(run_dir):
         server_tick = number(obs.get("serverTick")) if obs else None
         visible = obs.get("events", []) if obs else []
         attributed = []
+        attribution_basis = "not_applicable"
         if phase in INITIAL_PHASES:
+            attempt = call.get("plannerAttempt") or {}
+            key = submission_key(attempt.get("generation"), attempt.get("attempt"), phase)
+            submission_entry = submissions[key].popleft() if submissions[key] else None
+            attribution_basis = "submission_entry_id" if submission_entry is not None else "tick_fallback"
             for entry in wakes:
                 if entry.get("action") != "submitted" or entry["entryId"] in consumed_wake_ids:
                     continue
@@ -146,7 +188,10 @@ def build_ledger(run_dir):
                 if wake_server is not None and wake_server < 0:
                     wake_server = None
                 wake_agent = number(entry.get("tick"))
-                if wake_server is not None:
+                if submission_entry is not None:
+                    in_window = (previous_initial_entry is None or entry["entryId"] > previous_initial_entry) \
+                        and entry["entryId"] < submission_entry
+                elif wake_server is not None:
                     in_window = (previous_initial_server is None or wake_server >= previous_initial_server) and wake_server <= dispatch_server
                 else:
                     in_window = (previous_initial_agent is None or wake_agent > previous_initial_agent) and (agent_tick is None or wake_agent <= agent_tick)
@@ -161,6 +206,8 @@ def build_ledger(run_dir):
             if not attributed:
                 attributed = [{"path": "unknown", "reason": "no submitted audit in attribution window"}]
             previous_initial_server, previous_initial_agent = dispatch_server, agent_tick
+            if submission_entry is not None:
+                previous_initial_entry = submission_entry
         direct_guidance = any("DIRECT_GUIDANCE" in wake.get("origins", []) for wake in attributed)
         user_delta = latest_user_delta(messages, previous_messages)
         visible_chat = any(event.get("type") == "social.player_addressed_agent" for event in visible)
@@ -185,20 +232,26 @@ def build_ledger(run_dir):
                          "newEvents": visible_events,
                          "userTurn": user_turn, "userTurnSource": user_turn_source,
                          "baselineRefresh": bool(obs and obs.get("stateBaseline")),
-                         "wakes": attributed, "triggerHint": trigger_hint(prefix) if attributed and attributed[0]["path"] == "unknown" else None,
+                         "wakes": attributed, "attributionBasis": attribution_basis,
+                         "triggerHint": trigger_hint(prefix) if attributed and attributed[0]["path"] == "unknown" else None,
                          "appliedServerTick": number((call["timeline"].get("applied") or {}).get("serverTick")),
                          "clockAlignment": {"agentTick": agent_tick, "serverTick": server_tick},
                          "evidenceGap": evidence_gaps,
                          "uncertainty": [reason for condition, reason in
                                          ((obs is None, "observation_missing"),
                                           (bool(attributed) and attributed[0]["path"] == "unknown" and phase in INITIAL_PHASES, "wake_audit_missing"),
+                                          (attribution_basis == "tick_fallback", "submission_entry_missing_tick_fallback"),
                                           (user_turn_source == "request_user_delta", "user_turn_inferred_from_request"),
                                           (evidence_gaps, "event_evidence_incomplete")) if condition]})
 
     initial = [r for r in requests if r["phase"] in INITIAL_PHASES]
     followups = [r for r in requests if r["phase"] == "TOOL_FOLLOW_UP"]
     ticks = [r["dispatchServerTick"] for r in requests]
-    span = max(ticks) - min(ticks) if len(ticks) > 1 else (1 if ticks else 0)
+    summary, capture_sources, play_window = recording_status(run_dir)
+    window_start, window_end = play_window if play_window is not None else \
+        ((min(ticks), max(ticks)) if ticks else (None, None))
+    window_source = "playtest_timeline" if play_window is not None else "planner_submissions_estimate"
+    span = window_end - window_start if window_start is not None else 0
     per_owner, per_path, empty = Counter(), Counter(), Counter()
     for request in initial:
         paths = {wake["path"] for wake in request["wakes"]}
@@ -244,10 +297,7 @@ def build_ledger(run_dir):
         record = row["record"]
         if record.get("requestKind", "").lower() == "planner":
             llm_latest[record["sequenceId"]] = record
-    summary_path = run_dir / "summary.json"
-    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
     llm_gaps = not (run_dir / "llm-calls.jsonl").exists() or bool(summary.get("llmCallsTruncated"))
-    window_start, window_end = (min(ticks), max(ticks)) if ticks else (None, None)
     in_window = [record for record in llm_latest.values()
                  if window_start is not None and number(record.get("dispatchServerTick")) is not None
                  and window_start <= number(record["dispatchServerTick"]) <= window_end]
@@ -268,10 +318,12 @@ def build_ledger(run_dir):
                "tokensPerHour": rate(tokens, span, 72000) if tokens_complete else None,
                "tokensComplete": tokens_complete,
                "tokensTotalRecorded": tokens_total, "tokensInWindow": tokens,
-               "tokenWindow": {"startServerTick": window_start, "endServerTick": window_end, "durationTicks": span},
+               "tokenWindow": {"startServerTick": window_start, "endServerTick": window_end,
+                               "durationTicks": span, "source": window_source},
                "tokensExcludedOutsideWindow": len(llm_latest) - len(in_window) - window_unplaced,
                "tokensUnknown": token_unknown,
                "llmGaps": llm_gaps, "tokensUnplaced": window_unplaced,
+               "captureMetadataSources": capture_sources,
                "timelineGaps": not (run_dir / "debug-timeline.jsonl").exists() or bool(summary.get("debugTimelineTruncated")) or has_gap([entry["entryId"] for entry in timeline]),
                "eventGaps": not (run_dir / "events.jsonl").exists() or bool(summary.get("eventsTruncated")) or has_gap([event["seqNo"] for event in events]) or any(r["evidenceGap"] for r in requests),
                "byPathAttribution": "multi_attributed_submitted_attempts",
