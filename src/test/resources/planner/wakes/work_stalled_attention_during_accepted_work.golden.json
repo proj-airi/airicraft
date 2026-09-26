@@ -1,0 +1,136 @@
+{
+  "events": [
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {},
+        "foreground": true,
+        "label": "run_policy",
+        "parentWorkId": "",
+        "phase": "POLICY",
+        "state": "RUNNING",
+        "updatedTick": 1,
+        "workId": "OPERATION:policy"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "work.changed"
+    },
+    {
+      "payload": {
+        "message": "stalled"
+      },
+      "seqNo": 2,
+      "tick": 2,
+      "type": "task.notice"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: inventory_tool_disabled"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "label": "run_policy",
+              "phase": "POLICY",
+              "state": "RUNNING",
+              "updatedTick": 1,
+              "workId": "OPERATION:policy"
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "work.changed"
+          },
+          {
+            "payload": {
+              "message": "stalled"
+            },
+            "seqNo": 2,
+            "tick": 2,
+            "type": "task.notice"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently singleplayer LAN host.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "stalled"
+        ],
+        "serverTick": 4,
+        "stateBaseline": true,
+        "throughEventSequence": 2,
+        "tick": 2,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
+        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+      },
+      "tick": 2
+    }
+  ],
+  "scenario": "work_stalled_attention_during_accepted_work",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 1,
+      "gate": "G5.run_policy",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 2,
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W3",
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 2,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

@@ -242,6 +242,11 @@ public final class AgentDebugRecorder {
 		);
 	}
 
+	public synchronized void recordPlannerWake(long tick, long timestampMs, String kind, Map<String, Object> fields) {
+		appendTimeline(tick, timestampMs, "planner_wake", kind,
+			"Planner wake " + kind + " " + fields.getOrDefault("path", "-"), Map.of(), fields);
+	}
+
 	public synchronized void recordEventRouting(
 		long tick,
 		long timestampMs,

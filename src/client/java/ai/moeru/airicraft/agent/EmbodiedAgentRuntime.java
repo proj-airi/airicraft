@@ -370,6 +370,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			smeltingProcessManager, cameraController, baritoneFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
 	}
 
+	private final Clock clock;
+
 	public EmbodiedAgentRuntime(
 		AiricraftConfig airicraftConfig,
 		AgentConfig config,
@@ -381,6 +383,24 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		BaritoneFacade baritoneFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal
+	) {
+		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability, smeltingProcessManager,
+			cameraController, baritoneFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
+	}
+
+	EmbodiedAgentRuntime(
+		AiricraftConfig airicraftConfig,
+		AgentConfig config,
+		FirstPersonScreenshotService screenshotService,
+		WorldTaskExecutor worldTaskExecutor,
+		AgentObservability observability,
+		SmeltingProcessManager smeltingProcessManager,
+		CameraController cameraController,
+		BaritoneFacade baritoneFacade,
+		MiningOpportunityPolicyState miningOpportunityPolicy,
+		MiningOpportunityJournal miningOpportunityJournal,
+		java.util.function.Function<AgentConfig.LlmConfig, ai.moeru.airicraft.agent.llm.LlmBackend> backendFactory,
+		Clock clock
 	) {
 		this.airicraftConfig = Objects.requireNonNull(airicraftConfig, "airicraftConfig");
 		this.config = Objects.requireNonNull(config, "config");
@@ -402,7 +422,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			this::executeBlockModificationPlannerTool,
 			this::executePlannerToolCallNow
 		);
-		Clock clock = Clock.systemDefaultZone();
+		this.clock = Objects.requireNonNull(clock, "clock");
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
 			config,
 				Objects.requireNonNull(screenshotService, "screenshotService"),
@@ -414,10 +434,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				this::beforePlannerToolExecution,
 				worldReadLedger::recordObserved,
 				effectiveCameraController,
-				EmbodiedAgentRuntime::integratedServerTick
+				EmbodiedAgentRuntime::integratedServerTick,
+				backendFactory
 			);
 		this.visionService = plannerShell.visionService();
 		this.dialogueRuntime = plannerShell.dialogueRuntime();
+		this.dialogueRuntime.configureWakeAudit((tick, kind, fields) -> {
+			var payload = new LinkedHashMap<String, Object>(fields);
+			payload.put("serverTick", integratedServerTick());
+			debugRecorder.recordPlannerWake(tick, clock.millis(), kind, payload);
+		});
 		this.policyToolDispatcher = plannerShell.controllerPlanner();
 		ai.moeru.airicraft.memory.InteractionLogbookRecorder.observe((server, entries) -> {
 			if (!pendingInteractions.offer(new ObservedInteractions(server, entries))) droppedInteractionBatches.incrementAndGet();
@@ -1788,7 +1814,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			);
 		}
 		Optional<GoalSnapshot> activeGoal = activeGoal();
-		Optional<PlannerTrigger> trigger = idleIdeaScheduler.fireNow(tickCount, System.currentTimeMillis());
+		Optional<PlannerTrigger> trigger = idleIdeaScheduler.fireNow(tickCount, clock.millis());
 		trigger.ifPresent(plannerTrigger -> {
 			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 			dialogueRuntime.onPlannerTrigger(
@@ -2569,6 +2595,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		Optional<GoalSnapshot> previousGoal = activeGoal();
 		applyTaskIntent(response, currentWorldEvidence(MinecraftClient.getInstance()));
 		recordPlannerOutcome(response, previousGoal, activeGoal());
+	}
+
+	void appendEventForTests(String type, Map<String, Object> payload) {
+		eventBuffer.append(tickCount, type, payload);
+	}
+
+	DialogueRuntime dialogueRuntimeForTests() {
+		return dialogueRuntime;
 	}
 
 	void overrideSessionSnapshotForTests(SessionSnapshot sessionSnapshot) {
@@ -4562,7 +4596,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			idleIdeaScheduler.reset();
 			return;
 		}
-		long nowMs = System.currentTimeMillis();
+		long nowMs = clock.millis();
 		idleIdeaScheduler.tick(jobIdle, tickCount, nowMs).ifPresent(trigger -> {
 			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 			dialogueRuntime.onPlannerTrigger(
@@ -4997,7 +5031,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (changes == null) {
 			return;
 		}
-		long timestampMs = System.currentTimeMillis();
+		long timestampMs = clock.millis();
 		if (changes.clearAll()) {
 			eventPolicyState.clear();
 		}
@@ -5064,6 +5098,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		String trimmed = ruleId.trim();
 		return trimmed.isEmpty() ? null : trimmed;
+	}
+
+	static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
+		return createEventRoutingProfiles();
 	}
 
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
@@ -5732,7 +5770,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		idleIdeaScheduler.recordActivity();
 		String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 		dialogueRuntime.onPlannerTrigger(
-			PlannerTrigger.pending(type, speaker, message, tickCount, System.currentTimeMillis()),
+			PlannerTrigger.pending(type, speaker, message, tickCount, clock.millis()),
 			sessionSnapshot,
 			primaryInteractionPlayer,
 			activeGoal(),

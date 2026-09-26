@@ -1,0 +1,112 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "nice weather",
+        "normalizedMessage": "nice weather",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "objective.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: nice weather"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 3,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Alex came nearby just now."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 3,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 1
+    }
+  ],
+  "scenario": "ambient_chat_proactive_on",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "ambient_player_chat"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    }
+  ]
+}

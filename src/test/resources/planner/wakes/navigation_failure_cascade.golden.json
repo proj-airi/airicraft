@@ -1,0 +1,424 @@
+{
+  "events": [
+    {
+      "payload": {
+        "activeJobType": "NAVIGATE_TO",
+        "intentType": "JOB_UPDATE"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "planner.response_applied"
+    },
+    {
+      "payload": {
+        "goalType": "NAVIGATE_TO",
+        "source": "planner_tool"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "planner.goal_set"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "",
+          "holdId": "",
+          "message": "",
+          "request": {
+            "position": {
+              "exactY": true,
+              "x": 12,
+              "y": 64,
+              "z": 8
+            },
+            "source": "planner_tool",
+            "type": "NAVIGATE_TO",
+            "updatedTick": 1
+          }
+        },
+        "foreground": true,
+        "label": "NAVIGATE_TO",
+        "parentWorkId": "",
+        "phase": "IDLE",
+        "state": "QUEUED",
+        "updatedTick": 1,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "work.changed"
+    },
+    {
+      "payload": {
+        "goalType": "NAVIGATE_TO"
+      },
+      "seqNo": 4,
+      "tick": 2,
+      "type": "task.started"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "",
+          "holdId": "",
+          "message": "",
+          "request": {
+            "position": {
+              "exactY": true,
+              "x": 12,
+              "y": 64,
+              "z": 8
+            },
+            "source": "planner_tool",
+            "type": "NAVIGATE_TO",
+            "updatedTick": 1
+          }
+        },
+        "foreground": true,
+        "label": "NAVIGATE_TO",
+        "parentWorkId": "",
+        "phase": "RUNNING",
+        "state": "QUEUED",
+        "updatedTick": 2,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 5,
+      "tick": 2,
+      "type": "work.changed"
+    },
+    {
+      "payload": {
+        "bounds": {
+          "coordinateMeaning": "inclusive occupied cells, including head and edits; search bounds are separate",
+          "error": ""
+        },
+        "causeKnown": false,
+        "failedPredicate": "eligible_path_found",
+        "goalType": "NAVIGATE_TO",
+        "message": "CALC_FAILED",
+        "scope": "target",
+        "target": {
+          "exactY": true,
+          "x": 12,
+          "y": 64,
+          "z": 8
+        },
+        "taskId": "job-<uuid>",
+        "terminationCause": "CALCULATION_FAILED"
+      },
+      "seqNo": 6,
+      "tick": 3,
+      "type": "task.failed"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "",
+          "holdId": "",
+          "message": "CALC_FAILED",
+          "request": {
+            "position": {
+              "exactY": true,
+              "x": 12,
+              "y": 64,
+              "z": 8
+            },
+            "source": "planner_tool",
+            "type": "NAVIGATE_TO",
+            "updatedTick": 1
+          }
+        },
+        "foreground": true,
+        "label": "NAVIGATE_TO",
+        "parentWorkId": "",
+        "phase": "FAILED",
+        "state": "RUNNING",
+        "updatedTick": 3,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 7,
+      "tick": 3,
+      "type": "work.changed"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 8,
+      "tick": 4,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "CALC_FAILED",
+          "holdId": "",
+          "message": "",
+          "request": {
+            "position": {
+              "exactY": true,
+              "x": 12,
+              "y": 64,
+              "z": 8
+            },
+            "source": "planner_tool",
+            "type": "NAVIGATE_TO",
+            "updatedTick": 1
+          }
+        },
+        "foreground": false,
+        "label": "NAVIGATE_TO",
+        "parentWorkId": "",
+        "phase": "FAILED",
+        "state": "FAILED",
+        "updatedTick": 4,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 9,
+      "tick": 4,
+      "type": "work.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "work",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "collected": 0,
+              "label": "NAVIGATE_TO",
+              "phase": "IDLE",
+              "state": "QUEUED",
+              "updatedTick": 1,
+              "workId": "JOB:job-<uuid>"
+            },
+            "seqNo": 3,
+            "tick": 1,
+            "type": "work.changed"
+          },
+          {
+            "payload": {
+              "goalType": "NAVIGATE_TO"
+            },
+            "seqNo": 4,
+            "tick": 2,
+            "type": "task.started"
+          },
+          {
+            "payload": {
+              "collected": 0,
+              "label": "NAVIGATE_TO",
+              "phase": "RUNNING",
+              "state": "QUEUED",
+              "updatedTick": 2,
+              "workId": "JOB:job-<uuid>"
+            },
+            "seqNo": 5,
+            "tick": 2,
+            "type": "work.changed"
+          },
+          {
+            "payload": {
+              "bounds": {
+                "coordinateMeaning": "inclusive occupied cells, including head and edits; search bounds are separate",
+                "error": ""
+              },
+              "causeKnown": false,
+              "failedPredicate": "eligible_path_found",
+              "goalType": "NAVIGATE_TO",
+              "message": "CALC_FAILED",
+              "scope": "target",
+              "target": {
+                "exactY": true,
+                "x": 12,
+                "y": 64,
+                "z": 8
+              },
+              "taskId": "job-<uuid>",
+              "terminationCause": "CALCULATION_FAILED"
+            },
+            "seqNo": 6,
+            "tick": 3,
+            "type": "task.failed"
+          },
+          {
+            "payload": {
+              "collected": 0,
+              "label": "NAVIGATE_TO",
+              "message": "CALC_FAILED",
+              "phase": "FAILED",
+              "state": "RUNNING",
+              "updatedTick": 3,
+              "workId": "JOB:job-<uuid>"
+            },
+            "seqNo": 7,
+            "tick": 3,
+            "type": "work.changed"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 8,
+            "tick": 4,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "Direct action goal: Navigate to 12, 64, 8 with exact Y.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "The planner set goal NAVIGATE_TO just now.",
+          "Work changed."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 8,
+        "tick": 4,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 4
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 8,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "collected": 0,
+              "failure": "CALC_FAILED",
+              "label": "NAVIGATE_TO",
+              "phase": "FAILED",
+              "state": "FAILED",
+              "updatedTick": 4,
+              "workId": "JOB:job-<uuid>"
+            },
+            "seqNo": 9,
+            "tick": 4,
+            "type": "work.changed"
+          }
+        ],
+        "notices": [
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "Work changed."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 9,
+        "tick": 5,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 5
+    }
+  ],
+  "scenario": "navigation_failure_cascade",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 6,
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "serverTick": -1,
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 3,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 9,
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "serverTick": -1,
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

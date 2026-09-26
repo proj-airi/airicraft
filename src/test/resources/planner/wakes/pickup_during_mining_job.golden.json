@@ -1,0 +1,147 @@
+{
+  "events": [
+    {
+      "payload": {
+        "activeJobType": "MINE_BLOCKS",
+        "intentType": "JOB_UPDATE"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "planner.response_applied"
+    },
+    {
+      "payload": {
+        "goalType": "MINE_BLOCKS",
+        "source": "planner_tool"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "planner.goal_set"
+    },
+    {
+      "payload": {
+        "goalType": "MINE_BLOCKS"
+      },
+      "seqNo": 3,
+      "tick": 2,
+      "type": "task.started"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "",
+          "holdId": "",
+          "message": "",
+          "request": {
+            "mineSpec": {
+              "blockIds": [
+                "minecraft:cobblestone"
+              ],
+              "constraints": {
+                "radius": 16,
+                "surfaceOnly": false,
+                "verticalRadius": 16,
+                "visibleOnly": false
+              },
+              "matchingItemIds": [
+                "minecraft:cobblestone"
+              ],
+              "quantity": 3,
+              "requiredToolItemIds": []
+            },
+            "source": "planner_tool",
+            "type": "MINE_BLOCKS",
+            "updatedTick": 1
+          }
+        },
+        "foreground": true,
+        "label": "MINE_BLOCKS",
+        "parentWorkId": "",
+        "phase": "RUNNING",
+        "state": "QUEUED",
+        "updatedTick": 2,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 4,
+      "tick": 2,
+      "type": "work.changed"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:cobblestone"
+      },
+      "seqNo": 5,
+      "tick": 2,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "effect": "SEMANTIC_ONLY",
+        "matchedRuleId": "default-mining-pickup-semantic-only",
+        "reason": "pickup progress is owned by the active mining job",
+        "sourceEventSeqNo": 5,
+        "sourceEventType": "pickup.item_picked_up"
+      },
+      "seqNo": 6,
+      "tick": 2,
+      "type": "policy.event_intervened"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "blockedReason": "",
+          "collected": 0,
+          "failure": "",
+          "holdId": "",
+          "message": "",
+          "request": {
+            "mineSpec": {
+              "blockIds": [
+                "minecraft:cobblestone"
+              ],
+              "constraints": {
+                "radius": 16,
+                "surfaceOnly": false,
+                "verticalRadius": 16,
+                "visibleOnly": false
+              },
+              "matchingItemIds": [
+                "minecraft:cobblestone"
+              ],
+              "quantity": 3,
+              "requiredToolItemIds": []
+            },
+            "source": "planner_tool",
+            "type": "MINE_BLOCKS",
+            "updatedTick": 1
+          }
+        },
+        "foreground": true,
+        "label": "MINE_BLOCKS",
+        "parentWorkId": "",
+        "phase": "RUNNING",
+        "state": "RUNNING",
+        "updatedTick": 3,
+        "workId": "JOB:job-<uuid>"
+      },
+      "seqNo": 7,
+      "tick": 3,
+      "type": "work.changed"
+    }
+  ],
+  "requests": [],
+  "scenario": "pickup_during_mining_job",
+  "wakeAudit": []
+}

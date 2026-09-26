@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "payload": {
+        "message": "old"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "task.notice"
+    },
+    {
+      "payload": {
+        "currentGuidanceRevision": 0,
+        "currentMissionId": "new-mission",
+        "reason": "mission_changed",
+        "supersededAtTick": 1,
+        "updateGuidanceRevision": 0,
+        "updateMissionId": "old-mission",
+        "updateTick": 1
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "planner.internal_task_update_superseded"
+    }
+  ],
+  "requests": [],
+  "scenario": "task_wakeup_mission_changed",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 1,
+      "gate": "G5.superseded",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

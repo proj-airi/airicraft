@@ -18,6 +18,12 @@ class IdleIdeaSchedulerTest {
 		"Idea B"
 	);
 
+	@Test void d7_CONFIRMED_wallClockPauseCountsAsIdle() {
+		var scheduler = new IdleIdeaScheduler(new IdleIdeasConfig(true, 30, 90, IDEAS));
+		assertTrue(scheduler.tick(true, 0, BASE_MS).isEmpty());
+		assertTrue(scheduler.tick(true, 1, BASE_MS + 300_000).isPresent());
+	}
+
 	@Test
 	void doesNotFireBeforeInitialDelay() {
 		IdleIdeaScheduler scheduler = new IdleIdeaScheduler(new IdleIdeasConfig(true, 30, 90, IDEAS));

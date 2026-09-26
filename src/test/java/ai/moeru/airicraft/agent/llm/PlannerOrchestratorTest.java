@@ -294,8 +294,9 @@ class PlannerOrchestratorTest {
 		};
 		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
 		registry.freezeToolPrefix();
+		var audit = new AgentDebugRecorder();
 		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED, PlannerLifecycleListener.NO_OP, audit);
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
 			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null)), null));
@@ -310,6 +311,8 @@ class PlannerOrchestratorTest {
 			future.complete("finished mining");
 			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 			assertTrue(conversationText(backend.conversation(1)).contains("finished mining"));
+			assertTrue(audit.queryTimeline(null).entries().stream().anyMatch(e -> e.domain().equals("planner_wake")
+				&& "W9".equals(e.payload().get("path"))), "FIFO result review must have an attributable wake");
 		} finally { orchestrator.shutdown(); }
 	}
 

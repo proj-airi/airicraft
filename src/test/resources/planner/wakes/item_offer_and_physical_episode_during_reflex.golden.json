@@ -1,0 +1,114 @@
+{
+  "events": [
+    {
+      "payload": {
+        "count": 1,
+        "itemId": "minecraft:diamond",
+        "player": "Alex",
+        "playerUuid": "alex"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.item_offered"
+    },
+    {
+      "payload": {
+        "kind": "pushed"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "player.physical"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "objective.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "reflex",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "kind": "pushed"
+            },
+            "seqNo": 2,
+            "tick": 1,
+            "type": "player.physical"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 3,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Alex possibly offered 1x minecraft:diamond toward you just now; inferred, pickup unconfirmed.",
+          "Possible item offer: Alex dropped 1x minecraft:diamond toward me at null. The player and intent are inferred from spawn position and motion; this is not confirmed pickup. Decide whether to collect or acknowledge the items using current world evidence."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 3,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 1
+    }
+  ],
+  "scenario": "item_offer_and_physical_episode_during_reflex",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "item_offer:alex"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{"record":{"sequenceId":1,"requestKind":"planner","status":"REQUESTED","dispatchServerTick":100,"usage":{}}}
+{"record":{"sequenceId":1,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":100,"usage":{"totalTokens":10}}}
+{"record":{"sequenceId":2,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":200,"usage":{"totalTokens":20}}}
+{"record":{"sequenceId":3,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":300,"usage":{"totalTokens":100}}}

@@ -7,6 +7,22 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerDecisionContextTest {
+	@Test void d8_CONFIRMED_itemOfferAndGraphFailureAreAbsentFromObserve() {
+		var events = new SemanticEventBuffer(4);
+		events.append(1, "social.item_offered", Map.of("itemId", "minecraft:diamond"));
+		events.append(2, "action_graph.goal_terminal", Map.of("state", "FAILED"));
+		var context = new PlannerDecisionContext("world", 2, 2, "controller", "idle", Map.of(), events.query(null));
+		assertTrue(((java.util.List<?>) context.observation(0).get("events")).isEmpty());
+		assertEquals(2L, context.observation(0).get("throughEventSequence"));
+	}
+	@Test void d8_CONFIRMED_samePlayerOfferCoalescingReplacesFirstText() {
+		var state = PlannerContextState.initial();
+		state = PlannerContextReducer.enqueueTrigger(state, PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "Alex", "diamond", 1, 50, "item_offer:alex"));
+		state = PlannerContextReducer.enqueueTrigger(state, PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "Alex", "bread", 2, 100, "item_offer:alex"));
+		assertEquals(1, state.queuedTriggers().size());
+		assertEquals("bread", state.queuedTriggers().getFirst().text());
+	}
+
 	@Test void sendsTerminalOutcomeOnceAndRefreshesAfterCompactionWithoutLosingHoldOrFailure() {
 		var events = new SemanticEventBuffer(8);
 		var failed = new ai.moeru.airicraft.agent.work.WorkSnapshot(new ai.moeru.airicraft.agent.work.WorkHandle("JOB:old"), "",

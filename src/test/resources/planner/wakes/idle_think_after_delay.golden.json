@@ -1,0 +1,86 @@
+{
+  "events": [
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 1,
+      "tick": 2,
+      "type": "objective.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 1,
+            "tick": 2,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently singleplayer LAN host.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "IDLE THINK: Nothing is running and nobody has asked you for anything lately. This is your free time. Do one small thing you would genuinely enjoy or care about right now, in character: start it with an action tool, or say something to a nearby player if you have something worth saying. Ask the player a question only when you really want their input, and never in back-to-back idle turns.\nThings you enjoy (pick what fits the moment; this is not a checklist):\n- exploring caves and ravines\n- building small cozy things\n- collecting flowers and odd blocks\n- visiting villages and watching the animals\n- decorating the base\nUseful survival progress you can also choose (only when its preconditions are met now):\n- Work toward stone-age tools: gather wood logs, craft planks and sticks, build a wooden pickaxe, mine cobblestone, then craft stone tools.\n- Progress toward iron-age tools: find a cave or strip-mine for iron and coal, build a furnace, smelt iron, craft an iron pickaxe and sword.\n- Build a minimal shelter so you survive the night. Even a dirt-block hut counts. Pick a flat spot near where you are.\n- Once a basic shelter exists, briefly ask the player what kind of real home they want and where to put it. Do not over-ask.\n- Stock up on basic food: kill cows, chickens, or pigs, or harvest crops; cook meat in the furnace.\nIf torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.\nDo not read these lists back to the player.\n"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 1,
+        "tick": 2,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 2
+    }
+  ],
+  "scenario": "idle_think_after_delay",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "idle_think"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W5",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 2,
+      "triggerTypes": [
+        "IDLE_THINK"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "events": [],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: inventory_tool_disabled"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "thinking",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently singleplayer LAN host.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "DELEGATED TASK: {\"controllerContext\":\"Stay safe\",\"currentFacts\":{\"decisionContext\":{\"actuatorOwner\":\"idle\",\"current\":{},\"decisionOwner\":\"thinking\",\"observations\":{\"events\":[],\"latestSeqNo\":0,\"oldestSeqNo\":1,\"truncated\":false},\"serverTick\":2,\"tick\":1,\"worldSessionId\":\"world\"},\"plannerGoal\":\"No planner goal.\",\"tick\":1,\"workIdle\":false},\"delegationId\":\"\\u003cuuid\\u003e\",\"guidanceDuringHandoff\":[],\"successCriteria\":\"Describe hazards\",\"task\":\"Inspect cave\"}"
+        ],
+        "serverTick": 2,
+        "stateBaseline": true,
+        "throughEventSequence": 0,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "thinking",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
+        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+      },
+      "tick": 1
+    }
+  ],
+  "scenario": "delegation_start_and_return",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "delegation"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "thinking",
+      "path": "W6",
+      "speakers": [
+        "controller"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}
