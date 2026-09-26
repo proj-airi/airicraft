@@ -980,52 +980,108 @@ original recommendation; the rest were accepted as recommended.
   the decision context today. Include one Codex-driver smoke test in the
   Phase 3 checks.
 
-## Appendix A: event inventory at `a1c05d8`
+## Appendix A: Phase 0 event inventory
 
-Key: S = semanticEligible, T = trigger type (from `createEventRoutingProfiles`),
-B = policy bypass, O = visible in `observe` (G10 prefix list), W = extra W2/W3
-wake path.
+Generated from `src/test/resources/planner/wakes/event-inventory.json`.
+S = semantic eligibility; T = trigger; B = policy bypass; O = observe visibility;
+W = additional task wake path. Dynamic families use a prefix entry.
 
-| Type(s) | Producer | S | T | B | O | W |
+| Type | Producer | S | T | B | O | W |
 |---|---|---|---|---|---|---|
-| `social.player_spoke` | `ChatIngestService` | – | CHAT | – | – | |
-| `social.player_addressed_agent`, `social.local_controller_spoke` | `ChatIngestService`, EAR | – | CHAT | ✓ | – | |
-| `social.system_message` | `ChatIngestService` | – | SYSTEM | – | – | |
-| `social.item_offered` | `ItemOfferObserver` via EAR | ✓ | SYSTEM | – | – | |
-| `social.player_{joined,left}_{game,nearby}` | EAR, `NearbyPlayerTracker` | ✓ | – | – | – | |
-| `pickup.item_picked_up` | mixin via EAR | ✓ | PICKUP | – | ✓ | |
-| `crafting.item_crafted` | mixin via EAR | ✓ | CRAFT | – | ✓ | |
-| `smelting.output_ready` | smelting poll | ✓ | SYSTEM | ✓ | ✓ | |
-| `combat.damage_taken` | `LocalDamageTracker` via EAR | ✓ | DAMAGE | – | ✓ | |
-| `player.physical` | `PhysicalEventObserver` | ✓ | SYSTEM | ✓ | ✓ | |
-| `reflex.{threat_detected,started,actuator_failed}` | `SurvivalReflexRuntime` | ✓ | – | ✓ | ✓ | W2 |
-| `reflex.resolved` | `SurvivalReflexRuntime` | ✓ | SYSTEM | ✓ | ✓ | W2 |
-| `reflex.{action_changed,hold_released}` | `SurvivalReflexRuntime` | ✓ | – | ✓ | ✓ | |
-| `reflex.food_{retreat_failed,unavailable}` | `SurvivalReflexRuntime` | – | – | – | ✓ | W3 |
-| other `reflex.*` (12 types) | `SurvivalReflexRuntime`, EAR | – | – | – | ✓ | |
-| `lighting.torch_placed` | `LightingRuntime` | ✓ | – | ✓ | ✓ | |
-| `player.{died,actions_cancelled,action_rejected,respawn_requested,respawn_request_failed,respawned}` | `SessionRuntime`, EAR | ✓ | – | ✓ | ✓ | |
-| `player.death_place_{saved,save_failed}` | EAR | – | – | – | ✓ | |
-| `session.{world_loaded,world_unloaded,connection_lost,lan_opened}` | `SessionRuntime` | ✓ | – | – | ✓ | |
-| `session.lan_open_failed` | EAR | – | – | – | ✓ | |
-| `follow.{target_acquired,target_lost,stuck}` | `FollowCapability`, EAR | ✓ | – | – | – | |
-| `planner.{goal_set,goal_cleared,degraded_entered,degraded_cleared}` | EAR, `DialogueCore` | ✓ | – | – | – | |
-| `planner.{reset_requested,stale_response_rejected}` | `DialogueCore`, EAR | ✓ | – | ✓ | – | |
-| `planner.{response_applied,internal_task_update_superseded,unknown_intent,degraded_blocked,timeout,parse_error,provider_error}` | EAR, `DialogueRuntime`, `DialogueCore` (`failureEventType`) | – | – | – | – | |
-| `task.blocked` | EAR task transitions | ✓ | SYSTEM | ✓ | ✓ | W2 |
-| `task.mining_opportunity` | `MiningOpportunityJournal` | ✓ | – | ✓ | ✓ | |
-| `task.{submitted,started,paused_by_session_gate,paused_by_reflex,completed,failed,cancelled}` | EAR | – | – | – | ✓ | W2 |
-| `task.notice` | EAR monitors, `DialogueRuntime` | – | – | – | ✓ | W2/W3 |
-| `work.changed`, `work.travel_restriction_violated` | EAR | – | – | – | ✓ | W2 |
-| `food.{eaten,eat_started,eat_failed}` | EAR | – | – | – | ✓ | |
-| `food.unavailable` | EAR | – | – | – | ✓ | W3 |
-| `action_graph.goal_{suspended,terminal}` | `ActionGraphCoordinator` | ✓ | SYSTEM | ✓ | – | |
-| `action_graph.goal_{started,runnable,resumed,cancelled,admission}` | `ActionGraphCoordinator`, EAR | – | – | – | – | |
-| `mission.submitted` | EAR | – | – | – | – | |
-| `objective.changed`, `policy.travel_changed` | EAR | – | – | – | ✓ | |
-| `policy.{event_intervened,rule_rejected}` | `AgentEventPipeline`, EAR | raw only | – | – | ✓ | |
-| `policy.continuation.<state>` (dormant) | `DialogueRuntime` | – | – | – | ✓ | |
-| `interaction.<action>`, `interaction.history_gap` | interaction logbook | – | – | – | ✓ | |
+| `action_graph.goal_admission` | EmbodiedAgentRuntime | – | – | – | – |  |
+| `action_graph.goal_cancelled` | ActionGraphCoordinator | – | – | – | – |  |
+| `action_graph.goal_resumed` | ActionGraphCoordinator | – | – | – | – |  |
+| `action_graph.goal_runnable` | ActionGraphCoordinator | – | – | – | – |  |
+| `action_graph.goal_started` | ActionGraphCoordinator | – | – | – | – |  |
+| `action_graph.goal_suspended` | ActionGraphCoordinator, EmbodiedAgentRuntime | yes | SYSTEM | yes | – |  |
+| `action_graph.goal_terminal` | ActionGraphCoordinator, EmbodiedAgentRuntime | yes | SYSTEM | yes | – |  |
+| `combat.damage_taken` | EmbodiedAgentRuntime | yes | DAMAGE | – | yes |  |
+| `crafting.item_crafted` | EmbodiedAgentRuntime | yes | CRAFT | – | yes |  |
+| `follow.stuck` | EmbodiedAgentRuntime | yes | – | – | – |  |
+| `follow.target_acquired` | EmbodiedAgentRuntime, FollowCapability | yes | – | – | – |  |
+| `follow.target_lost` | EmbodiedAgentRuntime, FollowCapability | yes | – | – | – |  |
+| `food.eat_failed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `food.eat_started` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `food.eaten` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `food.unavailable` | EmbodiedAgentRuntime | – | – | – | yes | W3 |
+| `lighting.torch_placed` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `mission.submitted` | EmbodiedAgentRuntime | – | – | – | – |  |
+| `objective.changed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `pickup.item_picked_up` | EmbodiedAgentRuntime | yes | PICKUP | – | yes |  |
+| `planner.degraded_blocked` | DialogueCore | – | – | – | – |  |
+| `planner.degraded_cleared` | DialogueCore | yes | – | – | – |  |
+| `planner.degraded_entered` | DialogueCore | yes | – | – | – |  |
+| `planner.goal_cleared` | EmbodiedAgentRuntime | yes | – | – | – |  |
+| `planner.goal_set` | EmbodiedAgentRuntime | yes | – | – | – |  |
+| `planner.internal_task_update_superseded` | DialogueRuntime | – | – | – | – |  |
+| `planner.parse_error` | DialogueCore | – | – | – | – |  |
+| `planner.provider_error` | DialogueCore | – | – | – | – |  |
+| `planner.reset_requested` | DialogueCore | yes | – | yes | – |  |
+| `planner.response_applied` | EmbodiedAgentRuntime | – | – | – | – |  |
+| `planner.stale_response_rejected` | EmbodiedAgentRuntime | yes | – | yes | – |  |
+| `planner.timeout` | DialogueCore | – | – | – | – |  |
+| `planner.unknown_intent` | DialogueCore | – | – | – | – |  |
+| `player.action_rejected` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `player.actions_cancelled` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `player.death_place_save_failed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `player.death_place_saved` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `player.died` | EmbodiedAgentRuntime, SessionRuntime | yes | – | yes | yes |  |
+| `player.physical` | EmbodiedAgentRuntime | yes | SYSTEM | yes | yes |  |
+| `player.respawn_request_failed` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `player.respawn_requested` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `player.respawned` | EmbodiedAgentRuntime, SessionRuntime | yes | – | yes | yes |  |
+| `policy.event_intervened` | AgentEventPipeline, EmbodiedAgentRuntime | – | – | – | yes |  |
+| `policy.rule_rejected` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `policy.travel_changed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `reflex.action_changed` | SurvivalReflexRuntime | yes | – | yes | yes |  |
+| `reflex.actuator_failed` | SurvivalReflexRuntime | yes | – | yes | yes | W2 |
+| `reflex.close_quarter_attack` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.combat_focus` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.combat_progress` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.combat_reposition` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.food_eat_failed` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.food_eat_interrupted` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.food_eat_started` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.food_retreat_failed` | SurvivalReflexRuntime | – | – | – | yes | W3 |
+| `reflex.food_unavailable` | SurvivalReflexRuntime | – | – | – | yes | W3 |
+| `reflex.hold_released` | SurvivalReflexRuntime | yes | – | yes | yes |  |
+| `reflex.movement_recovery` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.policy_changed` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.resolved` | SurvivalReflexRuntime | yes | SYSTEM | yes | yes | W2 |
+| `reflex.shield_lowered` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.shield_raised` | SurvivalReflexRuntime | – | – | – | yes |  |
+| `reflex.started` | SurvivalReflexRuntime | yes | – | yes | yes | W2 |
+| `reflex.task_resumed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `reflex.threat_detected` | SurvivalReflexRuntime | yes | – | yes | yes | W2 |
+| `session.connection_lost` | SessionRuntime | yes | – | – | yes |  |
+| `session.lan_open_failed` | EmbodiedAgentRuntime | – | – | – | yes |  |
+| `session.lan_opened` | SessionRuntime | yes | – | – | yes |  |
+| `session.world_loaded` | SessionRuntime | yes | – | – | yes |  |
+| `session.world_unloaded` | SessionRuntime | yes | – | – | yes |  |
+| `smelting.output_ready` | EmbodiedAgentRuntime | yes | SYSTEM | yes | yes |  |
+| `social.item_offered` | EmbodiedAgentRuntime | yes | SYSTEM | – | – |  |
+| `social.local_controller_spoke` | EmbodiedAgentRuntime | – | CHAT | yes | – |  |
+| `social.player_addressed_agent` | ChatIngestService, EmbodiedAgentRuntime | – | CHAT | yes | – |  |
+| `social.player_joined_game` | EmbodiedAgentRuntime | yes | – | – | – |  |
+| `social.player_joined_nearby` | EmbodiedAgentRuntime, NearbyPlayerTracker | yes | – | – | – |  |
+| `social.player_left_game` | EmbodiedAgentRuntime | yes | – | – | – |  |
+| `social.player_left_nearby` | EmbodiedAgentRuntime, NearbyPlayerTracker | yes | – | – | – |  |
+| `social.player_spoke` | ChatIngestService, EmbodiedAgentRuntime | – | CHAT | – | – |  |
+| `social.system_message` | ChatIngestService, EmbodiedAgentRuntime | – | SYSTEM | – | – |  |
+| `task.blocked` | EmbodiedAgentRuntime | yes | SYSTEM | yes | yes | W2 |
+| `task.cancelled` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.completed` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.failed` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.mining_opportunity` | EmbodiedAgentRuntime | yes | – | yes | yes |  |
+| `task.notice` | EmbodiedAgentRuntime | – | – | – | yes | W2/W3 |
+| `task.paused_by_reflex` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.paused_by_session_gate` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.started` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `task.submitted` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `work.changed` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `work.travel_restriction_violated` | EmbodiedAgentRuntime | – | – | – | yes | W2 |
+| `interaction.*` | InteractionLogbookRecorder | – | – | – | yes |  |
+| `policy.continuation.*` | DialogueRuntime | – | – | – | yes |  |
 
 ## Appendix B: proposed defaults (to be confirmed in Phase 0)
 

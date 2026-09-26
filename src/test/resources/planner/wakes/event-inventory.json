@@ -1,0 +1,1055 @@
+{
+  "schema": "airicraft.event-inventory.v1",
+  "types": [
+    {
+      "type": "action_graph.goal_admission",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_cancelled",
+      "producers": [
+        "ActionGraphCoordinator"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_resumed",
+      "producers": [
+        "ActionGraphCoordinator"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_runnable",
+      "producers": [
+        "ActionGraphCoordinator"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_started",
+      "producers": [
+        "ActionGraphCoordinator"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_suspended",
+      "producers": [
+        "ActionGraphCoordinator",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "action_graph.goal_terminal",
+      "producers": [
+        "ActionGraphCoordinator",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "combat.damage_taken",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "DAMAGE",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "crafting.item_crafted",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "CRAFT",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "follow.stuck",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "follow.target_acquired",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "FollowCapability"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "follow.target_lost",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "FollowCapability"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "food.eat_failed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "food.eat_started",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "food.eaten",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "food.unavailable",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W3"
+    },
+    {
+      "type": "lighting.torch_placed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "mission.submitted",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "objective.changed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "pickup.item_picked_up",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "PICKUP",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "planner.degraded_blocked",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.degraded_cleared",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.degraded_entered",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.goal_cleared",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.goal_set",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.internal_task_update_superseded",
+      "producers": [
+        "DialogueRuntime"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.parse_error",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.provider_error",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.reset_requested",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.response_applied",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.stale_response_rejected",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.timeout",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "planner.unknown_intent",
+      "producers": [
+        "DialogueCore"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "player.action_rejected",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.actions_cancelled",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.death_place_save_failed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.death_place_saved",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.died",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.physical",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.respawn_request_failed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.respawn_requested",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "player.respawned",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "policy.event_intervened",
+      "producers": [
+        "AgentEventPipeline",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "policy.rule_rejected",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "policy.travel_changed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.action_changed",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.actuator_failed",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "reflex.close_quarter_attack",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.combat_focus",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.combat_progress",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.combat_reposition",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.food_eat_failed",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.food_eat_interrupted",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.food_eat_started",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.food_retreat_failed",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W3"
+    },
+    {
+      "type": "reflex.food_unavailable",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W3"
+    },
+    {
+      "type": "reflex.hold_released",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.movement_recovery",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.policy_changed",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.resolved",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "reflex.shield_lowered",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.shield_raised",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.started",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "reflex.task_resumed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.threat_detected",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "session.connection_lost",
+      "producers": [
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "session.lan_open_failed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "session.lan_opened",
+      "producers": [
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "session.world_loaded",
+      "producers": [
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "session.world_unloaded",
+      "producers": [
+        "SessionRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "smelting.output_ready",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "social.item_offered",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.local_controller_spoke",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": "CHAT",
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_addressed_agent",
+      "producers": [
+        "ChatIngestService",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": "CHAT",
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_joined_game",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_joined_nearby",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "NearbyPlayerTracker"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_left_game",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_left_nearby",
+      "producers": [
+        "EmbodiedAgentRuntime",
+        "NearbyPlayerTracker"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.player_spoke",
+      "producers": [
+        "ChatIngestService",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": "CHAT",
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "social.system_message",
+      "producers": [
+        "ChatIngestService",
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "task.blocked",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.cancelled",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.completed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.failed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.mining_opportunity",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "task.notice",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2/W3"
+    },
+    {
+      "type": "task.paused_by_reflex",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.paused_by_session_gate",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.started",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "task.submitted",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "work.changed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "type": "work.travel_restriction_violated",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
+      "prefix": "interaction.",
+      "producers": [
+        "InteractionLogbookRecorder"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "prefix": "policy.continuation.",
+      "producers": [
+        "DialogueRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    }
+  ],
+  "notEventTypes": [
+    "inventory.item",
+    "inventory.resource",
+    "inventory.tool",
+    "planner.micro_compaction",
+    "session.lock",
+    "smelting.process"
+  ]
+}
