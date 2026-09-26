@@ -320,6 +320,7 @@ def build_ledger(run_dir):
         record = row["record"]
         if record.get("requestKind", "").lower() == "planner":
             llm_latest[record["sequenceId"]] = record
+    planner_llm_count_mismatch = not planner_calls_missing and len(llm_latest) != len(calls)
     if play_window is None and calls and len(llm_latest) == len(calls):
         dispatch_ticks = [number(record.get("dispatchServerTick")) for record in llm_latest.values()]
         if all(tick is not None and tick >= 0 for tick in dispatch_ticks):
@@ -327,7 +328,8 @@ def build_ledger(run_dir):
             window_end = max(window_end, *dispatch_ticks)
             window_source = "planner_and_llm_dispatch_estimate"
             span = window_end - window_start
-    llm_gaps = not (run_dir / "llm-calls.jsonl").exists() or bool(summary.get("llmCallsTruncated"))
+    llm_gaps = (not (run_dir / "llm-calls.jsonl").exists() or bool(summary.get("llmCallsTruncated"))
+                or planner_llm_count_mismatch)
     in_window = [record for record in llm_latest.values()
                  if window_start is not None and number(record.get("dispatchServerTick")) is not None
                  and window_start <= number(record["dispatchServerTick"]) <= window_end]
@@ -354,6 +356,8 @@ def build_ledger(run_dir):
                "tokensExcludedOutsideWindow": len(llm_latest) - len(in_window) - window_unplaced,
                "tokensUnknown": token_unknown,
                "llmGaps": llm_gaps, "tokensUnplaced": window_unplaced,
+               "plannerLlmRecordCount": len(llm_latest),
+               "plannerLlmCountMismatch": planner_llm_count_mismatch,
                "plannerCallsMissing": planner_calls_missing,
                "captureMetadataSources": capture_sources,
                "timelineGaps": not (run_dir / "debug-timeline.jsonl").exists() or bool(summary.get("debugTimelineTruncated")) or has_gap([entry["entryId"] for entry in timeline]),

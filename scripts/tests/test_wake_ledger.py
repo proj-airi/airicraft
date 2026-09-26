@@ -73,7 +73,9 @@ class WakeLedgerTest(unittest.TestCase):
         self.assertEqual(metrics["tokensInWindow"], 30)
         self.assertEqual(metrics["tokenWindow"], {"startServerTick": 100, "endServerTick": 200,
                                                   "durationTicks": 100, "source": "planner_submissions_estimate"})
-        self.assertEqual(metrics["tokensPerHour"], 21600.0)
+        self.assertEqual(metrics["tokensExcludedOutsideWindow"], 1)
+        self.assertTrue(metrics["plannerLlmCountMismatch"])
+        self.assertIsNone(metrics["tokensPerHour"])
         with tempfile.TemporaryDirectory() as tmp:
             target = pathlib.Path(tmp)
             for path in CANONICAL_FIXTURE.iterdir():
@@ -207,6 +209,24 @@ class WakeLedgerTest(unittest.TestCase):
             self.assertEqual(metrics["tokenWindow"]["endServerTick"], 201)
             self.assertEqual(metrics["tokenWindow"]["source"], "planner_and_llm_dispatch_estimate")
             self.assertEqual(metrics["tokensExcludedOutsideWindow"], 0)
+
+    def test_missing_planner_llm_record_is_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in CANONICAL_FIXTURE.iterdir():
+                (target / path.name).write_bytes(path.read_bytes())
+            records = [json.loads(line) for line in (target / "llm-calls.jsonl").read_text().splitlines()]
+            only_first = [row for row in records if row["record"]["sequenceId"] == 1
+                          and row["record"]["status"] == "COMPLETED"]
+            (target / "llm-calls.jsonl").write_text("".join(json.dumps(row) + "\n" for row in only_first))
+            metrics = wake_ledger.build_ledger(target)["metrics"]
+            self.assertEqual(metrics["modelCalls"], 2)
+            self.assertEqual(metrics["plannerLlmRecordCount"], 1)
+            self.assertTrue(metrics["plannerLlmCountMismatch"])
+            self.assertTrue(metrics["llmGaps"])
+            self.assertFalse(metrics["tokensComplete"])
+            self.assertFalse(metrics["inputComplete"])
+            self.assertIsNone(metrics["tokensPerHour"])
 
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:
