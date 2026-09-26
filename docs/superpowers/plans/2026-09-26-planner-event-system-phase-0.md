@@ -36,7 +36,7 @@ that document.
 
 Tasks 1–10 are implemented on PR #81. The full build passes (1,718 root
 tests, 95 wrapper tests; 3 opt-in root tests skipped), and the Python ledger
-suite passes 9 tests. Live baseline runs use the committed Phase 0 branch;
+suite passes 12 tests. Live baseline runs use the committed Phase 0 branch;
 Task 3 retention and Tasks 11–12 remain open until those records are checked.
 The branch has not been merged into `dev`.
 
@@ -60,8 +60,8 @@ limits. These changes characterize current scheduling without changing it.
    pinned expectation in its own PR, and the diff is the review evidence.
 3. **Prerequisites** are the ones in `AGENTS.md`: a JDK 25 Gradle JVM, the JBR 21
    toolchain, `git submodule update --init --recursive`, and `ffmpeg` on
-   `PATH`. None of the commands in this plan have been run yet. The build
-   was not available in the planning session.
+   `PATH`. The commands below were initially unrun in the planning session; the
+   implementation status and checked steps now record execution evidence.
 4. **PR slices.** Each slice merges independently, and Task 11 needs A–E:
    - A: Tasks 1–2
    - B: Tasks 3–4
@@ -438,29 +438,29 @@ Each scenario is one `@Test` using the harness, and ends with
 expected outcome, assert it explicitly as well, so a wrong golden cannot
 pass review unnoticed.
 
-- [ ] `addressed_chat_idle`: `@agent hello` from a nearby player. Expect one W1 submission with `DIRECT_GUIDANCE`.
-- [ ] `addressed_chat_while_turn_in_flight`: hold the first request, then chat. Expect supersede: the second request, and the first generation marked superseded.
-- [ ] `ambient_chat_proactive_on` and `ambient_chat_proactive_off`: a player without `@agent`. Expect a coalesced `ambient_player_chat` wake only when proactive mode is on.
-- [ ] `pickup_and_craft_idle`: `onPlayerPickedUpItem` and `onPlayerCraftedItem`. Expect generic-wake prompts.
-- [ ] `pickup_during_mining_job`: start a mining job through `executePlannerAction` with `FakeWorldTaskExecutor`, then pick up. Expect `default-mining-pickup-semantic-only` and no wake.
-- [ ] `damage_outside_reflex`: `onPlayerHealthUpdated(true, 20, 16)`. Expect a DAMAGE wake.
-- [ ] `death_then_respawn`: a fatal health update, then `onPlayerRespawned`. Expect no autonomous wake until respawn, and the conversation preserved.
-- [ ] `navigation_failure_cascade`: `navigate_to`, then a FAILED terminal from `FakeWorldTaskExecutor`, following the precedent in `plannerReceiptAndWorkInspectionShareDirectNavigationIdentityThroughFailure`. This pins every W2 submission and drop.
-- [ ] `reflex_started_then_resolved_with_hold`: inject `reflex.started`, then `reflex.resolved` carrying a `holdId`. Pins the W1+W2 double path (D4).
-- [ ] `item_offer_and_physical_episode`: `harness.event("social.item_offered", …)` and `player.physical`, both with and without reflex actuation.
-- [ ] `smelting_output_and_graph_failure`: `smelting.output_ready`, then `action_graph.goal_terminal` with state `FAILED`.
-- [ ] `idle_think_after_delay`: LAN-host session, idle, clock advanced past `initialDelaySeconds` (30 s by default). Expect W5.
-- [ ] `idle_think_invalidated_by_action_goal`: queue idle think while a turn is held, start an action goal, release. Expect the IDLE_THINK trigger to be gone.
-- [ ] `tick_debug_pause_then_resume`: idle, `advanceWallClock(5 min)` with no ticks, then one tick. Pins D7.
-- [ ] `degraded_mode`: inject timeouts until degraded, then chat. Expect no request, and the fixed character line queued.
-- [ ] `external_driver`: set `airicraft.codexDriver=true` before construction and restore it in `finally`. Expect no autonomous requests.
-- [ ] `evaluation_chat_then_suppression`: `emitEvaluationChat`, then `finishEvaluation()`, then autonomous events. Expect the listed types suppressed. If `prepareForEvaluation` needs a live client, cover only the reachable part and note the gap in the test comment.
+- [x] `addressed_chat_idle`: `@agent hello` from a nearby player. Expect one W1 submission with `DIRECT_GUIDANCE`.
+- [x] `addressed_chat_while_turn_in_flight`: hold the first request, then chat. Expect supersede: the second request, and the first generation marked superseded.
+- [x] `ambient_chat_proactive_on` and `ambient_chat_proactive_off`: a player without `@agent`. Expect a coalesced `ambient_player_chat` wake only when proactive mode is on.
+- [x] `pickup_and_craft_idle`: `onPlayerPickedUpItem` and `onPlayerCraftedItem`. Expect generic-wake prompts.
+- [x] `pickup_during_mining_job`: start a mining job through `executePlannerAction` with `FakeWorldTaskExecutor`, then pick up. Expect `default-mining-pickup-semantic-only` and no wake.
+- [x] `damage_outside_reflex`: `onPlayerHealthUpdated(true, 20, 16)`. Expect a DAMAGE wake.
+- [x] `death_then_respawn`: a fatal health update, then `onPlayerRespawned`. Expect no autonomous wake until respawn, and the conversation preserved.
+- [x] `navigation_failure_cascade`: `navigate_to`, then a FAILED terminal from `FakeWorldTaskExecutor`, following the precedent in `plannerReceiptAndWorkInspectionShareDirectNavigationIdentityThroughFailure`. This pins every W2 submission and drop.
+- [x] `reflex_started_then_resolved_with_hold`: inject `reflex.started`, then `reflex.resolved` carrying a `holdId`. Pins the W1+W2 double path (D4).
+- [x] `item_offer_and_physical_episode`: `harness.event("social.item_offered", …)` and `player.physical`, both with and without reflex actuation.
+- [x] `smelting_output_and_graph_failure`: `smelting.output_ready`, then `action_graph.goal_terminal` with state `FAILED`.
+- [x] `idle_think_after_delay`: LAN-host session, idle, clock advanced past `initialDelaySeconds` (30 s by default). Expect W5.
+- [x] `idle_think_invalidated_by_action_goal`: queue idle think while a turn is held, start an action goal, release. Expect the IDLE_THINK trigger to be gone.
+- [x] `tick_debug_pause_then_resume`: idle, `advanceWallClock(5 min)` with no ticks, then one tick. Pins D7.
+- [x] `degraded_mode`: inject timeouts until degraded, then chat. Expect no request, and the fixed character line queued.
+- [x] `external_driver`: set `airicraft.codexDriver=true` before construction and restore it in `finally`. Expect no autonomous requests.
+- [x] `evaluation_chat_then_suppression`: `emitEvaluationChat`, then `finishEvaluation()`, then autonomous events. Expect the listed types suppressed. If `prepareForEvaluation` needs a live client, cover only the reachable part and note the gap in the test comment.
 
 If a scenario turns out not to be reachable with a null client, move it to
 Task 7 at the dialogue level. Record the move in the test class Javadoc;
 don't drop it silently.
 
-- [ ] Run `./gradlew test --tests 'ai.moeru.airicraft.agent.WakeCharacterizationTest'`. Expected: PASS against the reviewed goldens. Review every golden file in the PR.
+- [x] Run `./gradlew test --tests 'ai.moeru.airicraft.agent.WakeCharacterizationTest'`. Expected: PASS against the reviewed goldens. Review every golden file in the PR.
 
 ### Task 7: Dialogue-level characterization scenarios
 
@@ -473,15 +473,15 @@ Use `newDialogueRuntime(backend, …, goalStore)` from `DialogueRuntimeTest`,
 moved into a shared fixture, and the same `WakeTranscript`, built from the
 backend and a recording `WakeAuditSink`.
 
-- [ ] `work_stalled_attention_during_accepted_work`: `observeAcceptedWork(RUNNING)`, then `queueTaskAttention`. Expect W3 to submit while an ordinary W2 wake is held.
-- [ ] `task_wakeups_superseded_by_guidance`: queue W2 wakes, then an addressed chat. Expect `planner.internal_task_update_superseded` events.
-- [ ] `task_wakeup_mission_changed`: the mission id changes between queueing and submitting.
-- [ ] `goal_continuation_idle_and_busy`: an active goal with `workIdle` true and then false. Expect the 20-tick cadence and the guards.
-- [ ] `blocked_goal_reconsider`: `block_planner_goal` with `reconsiderEvents: ["work.changed"]`. A `work.changed` event wakes; an unrelated event is dropped (`G4.blocked_goal`, `G5.blocked_irrelevant`).
-- [ ] `delegation_start_and_return`: `configureDelegation`, start, then return. Expect the W6 prompt and ownership.
-- [ ] `safety_hold_awaiting_decision`: `updateSafetyContext(epoch, "hold-1", false)` plus idle. Expect the safety-hold continuation text.
-- [ ] `stale_safety_response_rejected`: bump the safety epoch while a turn is held. Expect a stale rejection and no replay.
-- [ ] Run `./gradlew test --tests 'ai.moeru.airicraft.agent.dialogue.DialogueWakeCharacterizationTest'`. Expected: PASS.
+- [x] `work_stalled_attention_during_accepted_work`: `observeAcceptedWork(RUNNING)`, then `queueTaskAttention`. Expect W3 to submit while an ordinary W2 wake is held.
+- [x] `task_wakeups_superseded_by_guidance`: queue W2 wakes, then an addressed chat. Expect `planner.internal_task_update_superseded` events.
+- [x] `task_wakeup_mission_changed`: the mission id changes between queueing and submitting.
+- [x] `goal_continuation_idle_and_busy`: an active goal with `workIdle` true and then false. Expect the 20-tick cadence and the guards.
+- [x] `blocked_goal_reconsider`: `block_planner_goal` with `reconsiderEvents: ["work.changed"]`. A `work.changed` event wakes; an unrelated event is dropped (`G4.blocked_goal`, `G5.blocked_irrelevant`).
+- [x] `delegation_start_and_return`: `configureDelegation`, start, then return. Expect the W6 prompt and ownership.
+- [x] `safety_hold_awaiting_decision`: `updateSafetyContext(epoch, "hold-1", false)` plus idle. Expect the safety-hold continuation text.
+- [x] `stale_safety_response_rejected`: bump the safety epoch while a turn is held. Expect a stale rejection and no replay.
+- [x] Run `./gradlew test --tests 'ai.moeru.airicraft.agent.dialogue.DialogueWakeCharacterizationTest'`. Expected: PASS.
 
 ### Task 8: Defect probes D1–D8
 
@@ -495,17 +495,17 @@ the spec in Task 12.
   `PlannerDecisionContextTest.java`, `PlannerContextAggregatorTest.java`
   (a probe per class, where it belongs)
 
-- [ ] **D1, two sequence spaces with one cursor** (dialogue level). Put 10 events in a raw buffer R and submit a W2 wake with `poll(t, R)`, so the cursor advances to 10. Then append a pickup to a separate planner buffer P (seq 1) and call `onPlannerTrigger(PICKUP, …, P)`. Check whether the pickup's legacy notice is present in the second request.
-- [ ] **D2, duplicate evidence** (runtime). An idle pickup followed by an addressed chat. Check whether the request carries the pickup both as an `observe.notices` entry and in `observe.events`.
-- [ ] **D3, policy applies to only part of the pipeline** (runtime). Run `runtime.execute(update_event_policy {upserts:[{match:{eventType:"pickup.item_picked_up"}, effect:"ignore"}]})`, then a pickup and an addressed chat. Check whether `observe.events` still contains the pickup.
-- [ ] **D4, double wake paths** (runtime). Covered by `navigation_failure_cascade` and `reflex_started_then_resolved_with_hold`. Assert the number of `submitted` audit entries per fact against the number of model requests.
-- [ ] **D5, wrong wake reference** (runtime). In the cascade, compare each W2 audit `eventSequence` with the sequence of the task or work event that caused it. Check whether the rendered message fell back to "Work changed.".
-- [ ] **D6, the ring used as a state channel.** Try to reach `refreshWorkHistory`'s `EATING` lookup through `WorkHistory` with a synthetic EATING work entry. If that is not reachable without a client, record NOT REPRODUCIBLE with the reasoning: the scan runs every tick, so eviction needs more than 512 events in a single tick. This is a design smell, fixed by the Phase 1 subscriber.
-- [ ] **D7, pause counted as idle.** A unit test on `IdleIdeaScheduler`: call `tick(true, 0, t0)`, then `tick(true, 1, t0 + 300_000)`, and check whether it fires immediately. The runtime scenario `tick_debug_pause_then_resume` confirms the same end to end.
-- [ ] **D8, visibility and coalescing.**
+- [x] **D1, two sequence spaces with one cursor** (dialogue level). Put 10 events in a raw buffer R and submit a W2 wake with `poll(t, R)`, so the cursor advances to 10. Then append a pickup to a separate planner buffer P (seq 1) and call `onPlannerTrigger(PICKUP, …, P)`. Check whether the pickup's legacy notice is present in the second request.
+- [x] **D2, duplicate evidence** (runtime). An idle pickup followed by an addressed chat. Check whether the request carries the pickup both as an `observe.notices` entry and in `observe.events`.
+- [x] **D3, policy applies to only part of the pipeline** (runtime). Run `runtime.execute(update_event_policy {upserts:[{match:{eventType:"pickup.item_picked_up"}, effect:"ignore"}]})`, then a pickup and an addressed chat. Check whether `observe.events` still contains the pickup.
+- [x] **D4, double wake paths** (runtime). Covered by `navigation_failure_cascade` and `reflex_started_then_resolved_with_hold`. Assert the number of `submitted` audit entries per fact against the number of model requests.
+- [x] **D5, wrong wake reference** (runtime). In the cascade, compare each W2 audit `eventSequence` with the sequence of the task or work event that caused it. Check whether the rendered message fell back to "Work changed.".
+- [x] **D6, the ring used as a state channel.** Try to reach `refreshWorkHistory`'s `EATING` lookup through `WorkHistory` with a synthetic EATING work entry. If that is not reachable without a client, record NOT REPRODUCIBLE with the reasoning: the scan runs every tick, so eviction needs more than 512 events in a single tick. This is a design smell, fixed by the Phase 1 subscriber.
+- [x] **D7, pause counted as idle.** A unit test on `IdleIdeaScheduler`: call `tick(true, 0, t0)`, then `tick(true, 1, t0 + 300_000)`, and check whether it fires immediately. The runtime scenario `tick_debug_pause_then_resume` confirms the same end to end.
+- [x] **D8, visibility and coalescing.**
   - `PlannerDecisionContext` observations exclude `social.item_offered` and `action_graph.goal_terminal`.
   - `PlannerContextReducer.enqueueTrigger` with two `item_offer:<same uuid>` triggers keeps only the second text.
-- [ ] Run `./gradlew test --tests '*WakeDefectProbe*' --tests '*IdleIdeaSchedulerTest' --tests '*PlannerDecisionContextTest' --tests '*PlannerContextAggregatorTest' --tests '*DialogueRuntimeTest'`. Expected: PASS, with each probe pinning what it found.
+- [x] Run `./gradlew test --tests '*WakeDefectProbe*' --tests '*IdleIdeaSchedulerTest' --tests '*PlannerDecisionContextTest' --tests '*PlannerContextAggregatorTest' --tests '*DialogueRuntimeTest'`. Expected: PASS, with each probe pinning what it found.
 
 ### Task 9: Wake ledger tool
 
@@ -686,7 +686,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 - [ ] **Step 2: Run the full build** with `./gradlew build`. Expected:
   SUCCESS. The characterization, defect-probe and inventory tests run in
   the normal build; the spike does not.
-- [ ] **Step 3: Update `AGENTS.md`.** Add a Behavior Notes line: wake
+- [x] **Step 3: Update `AGENTS.md`.** Add a Behavior Notes line: wake
   behaviour is pinned by golden transcripts in
   `src/test/resources/planner/wakes/`, updated with
   `AIRICRAFT_UPDATE_WAKE_GOLDENS=1`, and every golden diff must be reviewed.
