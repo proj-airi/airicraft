@@ -31,6 +31,8 @@ final class WakeScenarioHarness implements AutoCloseable {
 	}
 	void tick(int count) {
 		for (int i = 0; i < count; i++) {
+			// Event callbacks can submit between ticks. Keep worker dispatch on that tick.
+			settle();
 			tick++;
 			clock.advance(Duration.ofMillis(50));
 			runtime.onClientTick(null);

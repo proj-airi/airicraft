@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WakeRuntimeSeamsTest {
+	@Test void tickSettlesSubmittedWorkBeforeAdvancingClock() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.runtime.onPlayerHealthUpdated(true, 20, 0);
+			h.tick(1);
+			assertEquals(1, h.backend.requests().getFirst().observedAtTick(),
+				"worker scheduling must not move an already-submitted request into the next fake tick");
+		}
+	}
 	@Test void injectedBackendUsesClockAndContinueEndsTurn() {
 		try (var harness = new WakeScenarioHarness()) {
 			harness.tick(1);
