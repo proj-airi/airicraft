@@ -1486,35 +1486,7 @@ class DialogueRuntimeTest {
 
 	private static DialogueRuntime newDialogueRuntime(LlmBackend backend, CurrentViewVisionTool visionTool,
 		PlannerVisionMode visionMode, ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore goal) {
-		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
-		Clock clock = Clock.systemDefaultZone();
-		PlannerOrchestrator orchestrator = new PlannerOrchestrator(
-			new PlannerExecutor(backend),
-			new PlannerCompactionService(new OpenAiCompatibleChatClient(config)),
-			new PlannerContextAggregator(
-				clock,
-				config.plannerCompactionTriggerTokens(),
-				config.plannerPendingSemanticEventCap(),
-				visionMode
-			),
-			visionTool,
-			CurrentInventoryTool.disabled(),
-			visionMode,
-			config.visionImageDetail(),
-			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
-			clock,
-			NoopObservability.INSTANCE,
-			PlannerLifecycleListener.NO_OP,
-			new AgentDebugRecorder(),
-			PlannerActionToolExecutor.DISABLED,
-			PlannerChatSink.NO_OP,
-			PlannerToolRegistry.empty(),
-			PlannerToolExecutionObserver.NO_OP
-		);
-		return new DialogueRuntime(orchestrator, 8, clock, goal);
+		return DialogueWakeFixture.create(backend, visionTool, visionMode, goal, Clock.systemDefaultZone());
 	}
 
 	private static TaskSnapshot activeTask(
