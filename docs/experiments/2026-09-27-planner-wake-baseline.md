@@ -59,7 +59,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 - Evaluator rates marked `*` use the first-to-last recorded dispatch window,
   normalized to 1,200 server ticks per minute or 72,000 per hour. Raw evaluator
   output lacks full server-clock endpoints. Quiet time after the final call is
-  excluded, and a single-call zero-span run has no rate. These are request-span
+  excluded, and a single-call run has no rate without an explicit full recording window. These are request-span
   estimates, not whole-run usage or wall-clock billing rates.
 - The automatic Play artifact supplies explicit start/end server ticks, so its
   rates use the full captured window.
@@ -92,7 +92,7 @@ intervals await that result.
 | 2 | iron-pickaxe | FAILED | 80 | 80/0 | 11.44 | 39 | 1/1/22 (40) | 25,720,730 | False/False | 0 |
 | 2 | pickup | PASSED | 1 | 1/0 | — | 0 | —/—/— (0) | — | False/False | 0 |
 | 2 | sea_grass | FAILED | 5 | 6/1 | 27.65 | 2 | 0/0/0 (1) | — | False/False | 0 |
-| 2 | underground | PASSED | 1 | 1/0 | 600.00 | 0 | —/—/— (0) | 778,104,000 | False/False | 0 |
+| 2 | underground | PASSED | 1 | 1/0 | — | 0 | —/—/— (0) | — | False/False | 0 |
 
 Batch 1 finished with five passes and four failures. Both harder farming
 scenarios exhausted their planner-turn budgets. Bread exhausted its 48,000-tick
@@ -104,7 +104,8 @@ exhausted its 80-turn budget, producing four passes and five failures.
 All 18 completed evaluation recordings have no event or debug-timeline gaps and zero
 unknown wake attributions. Seagrass has four/three planner journal/LLM entries in batch 1 and six/five
 in batch 2 after terminal cancellation, so its token rates are unavailable.
-The one-turn underground run has a zero dispatch span and no normalized rate.
+Single-call underground and pickup runs have no normalized rate. Journal/LLM
+timestamp skew within one call cannot establish a useful rate window.
 No addressed-chat latency samples were observed; fixture tests validate the
 calculation, but these runs provide no live chat-latency evidence.
 

@@ -36,7 +36,7 @@ that document.
 
 Tasks 1–10 are implemented on PR #81. The full build passes (1,718 root
 tests, 95 wrapper tests; 3 opt-in root tests skipped), and the Python ledger
-suite passes 12 tests. Live baseline runs use the committed Phase 0 branch;
+suite passes 13 tests. Live baseline runs use the committed Phase 0 branch;
 Task 3 retention and Tasks 11–12 remain open until those records are checked.
 The branch has not been merged into `dev`.
 
