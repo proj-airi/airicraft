@@ -31,6 +31,7 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 			context.clickScreenButton("button.airicraft.settings");
 			context.waitForScreen(AiricraftSettingsScreen.class);
 			context.takeScreenshot("airicraft-settings-connection");
+			previewModeControls(context);
 			saveReport(context, false);
 			inspectScreenshot(context);
 			if (!Files.readString(path).equals(original)) throw new AssertionError("Report changed settings");
@@ -157,6 +158,59 @@ public final class SettingsScreenGameTest implements FabricClientGameTest {
 				context.waitForScreen(GameMenuScreen.class);
 			}
 		} catch (Exception exception) { throw new AssertionError(exception); }
+	}
+
+	private static void previewModeControls(ClientGameTestContext context) {
+		var pending = new java.util.ArrayList<java.util.concurrent.CompletableFuture<ai.moeru.airicraft.dashboard.DiagnosticReport>>();
+		var requests = new java.util.ArrayList<ai.moeru.airicraft.dashboard.DiagnosticReport.Request>();
+		var draft = ai.moeru.airicraft.dashboard.DiagnosticReport.mark(
+			new ai.moeru.airicraft.dashboard.DashboardObservationStore(1024 * 1024), java.util.Map.of(), java.util.List.of());
+		context.runOnClient(client -> client.setScreen(new DiagnosticReportScreen(client.currentScreen, request -> {
+			requests.add(request);
+			var future = new java.util.concurrent.CompletableFuture<ai.moeru.airicraft.dashboard.DiagnosticReport>();
+			pending.add(future);
+			return future;
+		})));
+		context.clickScreenButton("Preview attachments");
+		context.runOnClient(client -> {
+			var developer = reportButton(client.currentScreen, "Developer");
+			if (developer.active) throw new AssertionError("Attachment choices remain enabled during preview preparation");
+			developer.mouseClicked(developer.getX() + 2, developer.getY() + 2, 0);
+			// A resize reconstructs widgets while the preview is still pending.
+			client.currentScreen.resize(client, client.currentScreen.width, client.currentScreen.height);
+		});
+		context.runOnClient(client -> pending.getFirst().complete(draft.prepare(requests.getFirst(), java.util.List.of())));
+		context.waitFor(client -> reportButton(client.currentScreen, "Save these attachments").active, 40);
+		context.runOnClient(client -> {
+			if (reportButton(client.currentScreen, "Minimal").active
+				|| !reportButton(client.currentScreen, "Summary").active || !reportButton(client.currentScreen, "Developer").active) {
+				throw new AssertionError("Preview completion did not restore attachment choices or changed the selected mode");
+			}
+		});
+		context.clickScreenButton("Developer");
+		context.runOnClient(client -> {
+			if (reportButton(client.currentScreen, "Save these attachments").active
+				|| reportButton(client.currentScreen, "Inspect evidence").active) throw new AssertionError("Mode change retained stale evidence");
+		});
+		context.clickScreenButton("Preview attachments");
+		context.runOnClient(client -> pending.getLast().completeExceptionally(new IllegalStateException("controlled preparation failure")));
+		context.waitFor(client -> reportButton(client.currentScreen, "Preview attachments").active, 40);
+		context.runOnClient(client -> {
+			if (!reportButton(client.currentScreen, "Minimal").active || !reportButton(client.currentScreen, "Summary").active
+				|| reportButton(client.currentScreen, "Developer").active || reportButton(client.currentScreen, "Save these attachments").active) {
+				throw new AssertionError("Failed preview did not restore attachment choices safely");
+			}
+			if (requests.getLast().mode() != ai.moeru.airicraft.dashboard.DiagnosticReport.Mode.DEVELOPER) throw new AssertionError("Selected mode was not applied");
+		});
+		context.clickScreenButton("Summary");
+		context.clickScreenButton("Cancel");
+		context.waitForScreen(AiricraftSettingsScreen.class);
+	}
+
+	private static net.minecraft.client.gui.widget.ButtonWidget reportButton(net.minecraft.client.gui.screen.Screen screen, String label) {
+		return screen.children().stream().filter(child -> child instanceof net.minecraft.client.gui.widget.ButtonWidget)
+			.map(child -> (net.minecraft.client.gui.widget.ButtonWidget) child).filter(button -> button.getMessage().getString().equals(label))
+			.findFirst().orElseThrow();
 	}
 
 	private static void inspectScreenshot(ClientGameTestContext context) throws Exception {

@@ -9,10 +9,15 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
+import java.util.EnumMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+
 /** The marker is fixed on entry. Only an explicitly reviewed report can be saved. */
 final class DiagnosticReportScreen extends Screen {
 	private final Screen parent;
-	private final DiagnosticReport.Draft draft;
+	private final Function<DiagnosticReport.Request, CompletableFuture<DiagnosticReport>> prepareReport;
+	private final EnumMap<DiagnosticReport.Mode, ButtonWidget> modeButtons = new EnumMap<>(DiagnosticReport.Mode.class);
 	private DiagnosticReport.Mode mode = DiagnosticReport.Mode.MINIMAL;
 	private String description = "";
 	private DiagnosticReport preview;
@@ -26,9 +31,13 @@ final class DiagnosticReportScreen extends Screen {
 	private String message = "Choose attachments, then preview. Nothing is saved or uploaded yet.";
 
 	DiagnosticReportScreen(Screen parent, DiagnosticReport.Draft draft) {
+		this(parent, request -> AiricraftClient.runtimeController().previewDiagnosticReport(draft, request));
+	}
+
+	DiagnosticReportScreen(Screen parent, Function<DiagnosticReport.Request, CompletableFuture<DiagnosticReport>> prepareReport) {
 		super(Text.literal("Report this moment"));
 		this.parent = parent;
-		this.draft = draft;
+		this.prepareReport = prepareReport;
 	}
 
 	@Override protected void init() {
@@ -38,24 +47,23 @@ final class DiagnosticReportScreen extends Screen {
 		descriptionField.setText(description);
 		descriptionField.setChangedListener(value -> { description = value; invalidate(); });
 		String[] names = {"Minimal", "Summary", "Developer"};
+		modeButtons.clear();
 		for (var option : DiagnosticReport.Mode.values()) {
 			var button = addDrawableChild(ButtonWidget.builder(Text.literal(names[option.ordinal()]), ignored -> {
 				mode = option; invalidate(); clearAndInit();
 			}).dimensions(left + option.ordinal() * (w / 3), 72, w / 3 - 4, 20).build());
-			button.active = option != mode && !busy;
+			modeButtons.put(option, button);
 		}
 		previewButton = addDrawableChild(ButtonWidget.builder(Text.literal("Preview attachments"), ignored -> preview())
 			.dimensions(left, 98, w / 2 - 2, 20).build());
 		inspectButton = addDrawableChild(ButtonWidget.builder(Text.literal("Inspect evidence"), ignored -> {
 			if (preview != null && !busy) client.setScreen(new DiagnosticEvidenceScreen(this, preview));
 		}).dimensions(left + w / 2 + 2, 98, w / 2 - 2, 20).build());
-		inspectButton.active = !busy && preview != null;
-		previewButton.active = !busy;
 		saveButton = addDrawableChild(ButtonWidget.builder(Text.literal("Save these attachments"), ignored -> save())
 			.dimensions(left, height - 28, w * 2 / 3 - 4, 20).build());
-		saveButton.active = !busy && preview != null;
 		addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), ignored -> close())
 			.dimensions(left + w * 2 / 3, height - 28, w / 3, 20).build());
+		updateControls();
 	}
 
 	private void invalidate() {
@@ -68,10 +76,10 @@ final class DiagnosticReportScreen extends Screen {
 	private void preview() {
 		if (busy) return;
 		busy = true;
-		previewButton.active = false; saveButton.active = false; inspectButton.active = false;
+		updateControls();
 		int expectedRevision = revision;
 		var minecraft = client;
-		AiricraftClient.runtimeController().previewDiagnosticReport(draft, new DiagnosticReport.Request(mode, description))
+		prepareReport.apply(new DiagnosticReport.Request(mode, description))
 			.whenComplete((report, failure) -> minecraft.execute(() -> {
 				busy = false;
 				if (revision == expectedRevision) {
@@ -79,16 +87,18 @@ final class DiagnosticReportScreen extends Screen {
 					message = failure == null ? report.preview().getAsJsonObject("summary").get("text").getAsString()
 						: "Could not prepare this report. Try again.";
 				}
+				updateControls();
 			}));
 	}
 
 	private void save() {
 		if (busy || preview == null) return;
 		busy = true;
-		previewButton.active = false; saveButton.active = false; inspectButton.active = false;
+		updateControls();
 		var minecraft = client;
 		AiricraftClient.runtimeController().saveDiagnosticReport(preview).whenComplete((path, failure) -> minecraft.execute(() -> {
 			busy = false;
+			updateControls();
 			Text title = Text.literal(failure == null ? "Bug report saved" : "Could not save bug report");
 			Text detail = Text.literal(failure == null ? "Saved to " + path.toAbsolutePath()
 				+ "\nReview the ZIP before sharing it. Nothing was uploaded."
@@ -105,16 +115,21 @@ final class DiagnosticReportScreen extends Screen {
 		}));
 	}
 
+	private void updateControls() {
+		modeButtons.forEach((option, button) -> button.active = !busy && option != mode);
+		saveButton.active = !busy && preview != null;
+		inspectButton.active = !busy && preview != null;
+		previewButton.active = !busy;
+		descriptionField.setEditable(!busy);
+	}
+
 	@Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
 		scroll = Math.max(0, scroll - (int) (vertical * 20));
 		return true;
 	}
 
 	@Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-		saveButton.active = !busy && preview != null;
-		inspectButton.active = !busy && preview != null;
-		previewButton.active = !busy;
-		descriptionField.setEditable(!busy);
+		updateControls();
 		super.render(context, mouseX, mouseY, delta);
 		int w = Math.min(560, width - 24), left = (width - w) / 2;
 		context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 14, 0xFFFFFFFF);
