@@ -5066,6 +5066,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return trimmed.isEmpty() ? null : trimmed;
 	}
 
+	static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
+		return createEventRoutingProfiles();
+	}
+
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
 		LinkedHashMap<String, EventRoutingProfile> profiles = new LinkedHashMap<>();
 		profiles.put("social.player_spoke", new EventRoutingProfile("social.player_spoke", false, PlannerTriggerType.CHAT, false));
