@@ -61,7 +61,7 @@ class ReiRecipeSearchToolProviderTest {
 		JsonObject args = new JsonObject();
 		args.addProperty("query", "oak planks");
 
-		String result = provider.execute(new PlannerToolCall("call_search", "search_recipes", args, null, null)).join();
+		String result = provider.execute(new PlannerToolCall("call_search", "search_recipes", args, null)).join();
 
 		assertEquals("Tool result for search_recipes: ok", result);
 		assertEquals(new RecipeSearchRequest("oak planks", RecipeSearchMode.ALL, 12), backend.lastRequest);

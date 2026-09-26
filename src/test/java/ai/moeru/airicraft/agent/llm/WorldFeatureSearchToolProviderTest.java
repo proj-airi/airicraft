@@ -35,7 +35,7 @@ class WorldFeatureSearchToolProviderTest {
 		JsonObject args = new JsonObject();
 		args.addProperty("featureKind", "water_body");
 
-		String text = provider.execute(new PlannerToolCall("call-feature", "find_world_features", args, null, null)).join();
+		String text = provider.execute(new PlannerToolCall("call-feature", "find_world_features", args, null)).join();
 
 		assertEquals("Tool result for find_world_features: ok", text);
 		assertEquals(List.of(target), observed.get());

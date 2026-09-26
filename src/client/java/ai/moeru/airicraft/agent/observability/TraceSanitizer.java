@@ -233,9 +233,7 @@ public final class TraceSanitizer {
 		if (toolCall != null && toolCall.name() != null) {
 			JsonObject tool = new JsonObject();
 			tool.addProperty("name", sanitizeTraceText(toolCall.name(), 64));
-			if (toolCall.narration() != null && !toolCall.narration().isBlank()) {
-				tool.addProperty("narration", sanitizeTraceText(toolCall.narration(), TRACE_TEXT_LIMIT));
-			}
+			addSaidText(tool, "said", toolCall);
 			root.add("toolCall", tool);
 		}
 		if (response.toolCalls() != null && response.toolCalls().size() > 1) {
@@ -246,14 +244,20 @@ public final class TraceSanitizer {
 				}
 				JsonObject tool = new JsonObject();
 				tool.addProperty("name", sanitizeTraceText(call.name(), 64));
-				if (call.narration() != null && !call.narration().isBlank()) {
-					tool.addProperty("narration", sanitizeTraceText(call.narration(), TRACE_TEXT_LIMIT));
-				}
+				addSaidText(tool, "said", call);
 				toolCalls.add(tool);
 			}
 			root.add("toolCalls", toolCalls);
 		}
 		return TRACE_GSON.toJson(root);
+	}
+
+	/** A say call's text is visible chat, the only player-facing text a tool call carries. */
+	private static void addSaidText(JsonObject target, String property, PlannerToolCall call) {
+		if (call == null || !ai.moeru.airicraft.agent.llm.SayToolProvider.SAY.equals(call.name())) return;
+		var text = call.arguments().get("text");
+		if (text != null && text.isJsonPrimitive() && text.getAsJsonPrimitive().isString() && !text.getAsString().isBlank())
+			target.addProperty(property, sanitizeTraceText(text.getAsString(), TRACE_TEXT_LIMIT));
 	}
 
 	public static String sanitizePlannerCompletionForGenAi(PlannerResponse response) {
@@ -269,9 +273,7 @@ public final class TraceSanitizer {
 				}
 				JsonObject tool = new JsonObject();
 				tool.addProperty("name", sanitizeTraceText(toolCall.name(), 64));
-				if (toolCall.narration() != null && !toolCall.narration().isBlank()) {
-					tool.addProperty("narration", sanitizeTraceText(toolCall.narration(), TRACE_TEXT_LIMIT));
-				}
+				addSaidText(tool, "said", toolCall);
 				toolCalls.add(tool);
 			}
 			root.add("tool_calls", toolCalls);
@@ -280,9 +282,7 @@ public final class TraceSanitizer {
 		if (response.toolCall() != null) {
 			JsonObject root = new JsonObject();
 			root.addProperty("tool_call", sanitizeTraceText(response.toolCall().name(), 64));
-			if (response.toolCall().narration() != null && !response.toolCall().narration().isBlank()) {
-				root.addProperty("narration", sanitizeTraceText(response.toolCall().narration(), TRACE_TEXT_LIMIT));
-			}
+			addSaidText(root, "said", response.toolCall());
 			return TRACE_GSON.toJson(root);
 		}
 		if (response.replyText() == null) {

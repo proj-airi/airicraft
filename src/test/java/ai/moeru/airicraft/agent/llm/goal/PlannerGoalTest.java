@@ -63,7 +63,7 @@ class PlannerGoalTest {
 		var registry = PlannerToolRegistry.of(provider);
 		assertTrue(registry.isActiveTool("set_planner_goal"));
 		assertTrue(registry.isActiveTool("finish_planner_goal"));
-		String result = provider.execute(new PlannerToolCall(null, "set_planner_goal", JsonParser.parseString("{\"objective\":\"Scout a cave\"}").getAsJsonObject(), null, null)).get();
+		String result = provider.execute(new PlannerToolCall(null, "set_planner_goal", JsonParser.parseString("{\"objective\":\"Scout a cave\"}").getAsJsonObject(), null)).get();
 		assertTrue(result.contains("ACTIVE"));
 		assertTrue(registry.contextSnapshot().contains("Scout a cave"));
 		assertFalse(registry.promptInstructions().contains("Scout a cave"));

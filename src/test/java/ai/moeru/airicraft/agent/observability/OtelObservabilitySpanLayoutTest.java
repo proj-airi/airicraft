@@ -69,7 +69,6 @@ class OtelObservabilitySpanLayoutTest {
 			try {
 				JsonObject followArgs = new JsonObject();
 				followArgs.addProperty("targetPlayer", "Alice");
-				followArgs.addProperty("narration", "Following you now");
 				Context turnContext = observability.startTurnSpan(null, "session:test:speaker=rin");
 				Context plannerContext = observability.startChildSpan(AgentObservability.PLANNER_REQUEST_SPAN_NAME, turnContext);
 			observability.recordLlmRequest(
@@ -102,7 +101,7 @@ class OtelObservabilitySpanLayoutTest {
 					new LlmUsageSnapshot(111, 22, 133),
 					new PlannerResponse(
 						"",
-						new PlannerToolCall("call_follow", "follow_player", followArgs, "Following you now", null),
+						new PlannerToolCall("call_follow", "follow_player", followArgs, null),
 						null
 					)
 				);
@@ -123,7 +122,6 @@ class OtelObservabilitySpanLayoutTest {
 			assertEquals("llm", plannerSpan.getAttributes().get(AttributeKey.stringKey("openinference.span.kind")));
 			assertEquals("llm", plannerSpan.getAttributes().get(AttributeKey.stringKey("weave.span.kind")));
 			assertEquals("follow_player", plannerSpan.getAttributes().get(AttributeKey.stringKey("airicraft.tool_name")));
-			assertEquals("Following you now", plannerSpan.getAttributes().get(AttributeKey.stringKey("airicraft.tool_narration")));
 			String inputValue = plannerSpan.getAttributes().get(AttributeKey.stringKey("input.value"));
 		String outputValue = plannerSpan.getAttributes().get(AttributeKey.stringKey("output.value"));
 		String genAiPrompt = plannerSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.prompt"));
@@ -150,7 +148,6 @@ class OtelObservabilitySpanLayoutTest {
 			JsonObject outputPayload = JsonParser.parseString(outputValue).getAsJsonObject();
 			assertEquals("assistant", outputPayload.get("role").getAsString());
 			assertEquals("follow_player", outputPayload.getAsJsonObject("toolCall").get("name").getAsString());
-			assertEquals("Following you now", outputPayload.getAsJsonObject("toolCall").get("narration").getAsString());
 			assertTrue(genAiCompletion.contains("follow_player"));
 	}
 

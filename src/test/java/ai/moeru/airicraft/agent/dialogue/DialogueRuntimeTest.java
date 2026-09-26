@@ -30,7 +30,7 @@ import ai.moeru.airicraft.agent.llm.PlannerResponse;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import ai.moeru.airicraft.agent.llm.PlannerToolCatalog;
 import ai.moeru.airicraft.agent.llm.PlannerToolExecutionObserver;
-import ai.moeru.airicraft.agent.llm.PlannerToolNarrationSink;
+import ai.moeru.airicraft.agent.llm.PlannerChatSink;
 import ai.moeru.airicraft.agent.llm.PlannerToolRegistry;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
@@ -127,7 +127,7 @@ class DialogueRuntimeTest {
 		response.complete(new PlannerResponse("", new PlannerToolCall("next", "run_policy", com.google.gson.JsonParser.parseString("""
 			{"source":"function* main(p) { return {crafted:true}; }", "input":{},
 			 "guard":{"parentResult":{"gathered":true},"inventoryMin":{},"blocks":[]}}
-			""").getAsJsonObject(), null, null), null));
+			""").getAsJsonObject(), null), null));
 		runtime.poll(11, events);
 		assertTrue(executed.isEmpty());
 		assertFalse(runtime.plannerConversationDebugSnapshot().messages().stream().anyMatch(m -> m.text().contains("crafted:true")));
@@ -1141,8 +1141,8 @@ class DialogueRuntimeTest {
 		craftArgs.addProperty("recipeId", "minecraft:oak_planks");
 		craftArgs.addProperty("times", 1);
 		backend.injectMockResponse(PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null, null),
-			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null, null)
+			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null),
+			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null)
 		), null));
 		backend.injectMockResponse(new PlannerResponse(
 			"I will do one step at a time.",
@@ -1477,7 +1477,7 @@ class DialogueRuntimeTest {
 			PlannerLifecycleListener.NO_OP,
 			new AgentDebugRecorder(),
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			PlannerToolRegistry.empty(),
 			PlannerToolExecutionObserver.NO_OP
 		);

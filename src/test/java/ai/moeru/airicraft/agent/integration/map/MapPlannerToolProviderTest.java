@@ -41,7 +41,7 @@ class MapPlannerToolProviderTest {
 		JsonObject args = new JsonObject();
 		args.addProperty("kind", "worldmap");
 
-		PlannerProviderToolResult result = provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null, null)).join();
+		PlannerProviderToolResult result = provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null)).join();
 
 		assertTrue(result.text().contains("Tool result for take_map_look"));
 		LlmImageAttachment attachment = result.imageAttachment();
@@ -58,7 +58,7 @@ class MapPlannerToolProviderTest {
 		args.addProperty("originX", 128);
 		args.addProperty("originZ", -64);
 
-		provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null, null)).join();
+		provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null)).join();
 
 		assertEquals(128, mapProvider.lastImageRequest.originX());
 		assertEquals(-64, mapProvider.lastImageRequest.originZ());
@@ -72,7 +72,7 @@ class MapPlannerToolProviderTest {
 		args.addProperty("zoom", 2);
 		args.addProperty("grid", true);
 
-		provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null, null)).join();
+		provider.executeResult(new PlannerToolCall("call-map", "take_map_look", args, null)).join();
 
 		assertEquals(2, mapProvider.lastImageRequest.zoom());
 		assertEquals(true, mapProvider.lastImageRequest.grid());
@@ -84,7 +84,7 @@ class MapPlannerToolProviderTest {
 		mapProvider.captureFailure = new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		MapPlannerToolProvider provider = new MapPlannerToolProvider(registrySupplier(mapProvider));
 
-		PlannerProviderToolResult result = provider.executeResult(new PlannerToolCall("call-map", "take_map_look", new JsonObject(), null, null)).join();
+		PlannerProviderToolResult result = provider.executeResult(new PlannerToolCall("call-map", "take_map_look", new JsonObject(), null)).join();
 
 		assertEquals("MAP_UNAVAILABLE: world_not_loaded - No world is currently loaded", result.text());
 		assertNull(result.imageAttachment());

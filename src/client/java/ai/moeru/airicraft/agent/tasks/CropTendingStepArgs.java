@@ -9,7 +9,7 @@ public record CropTendingStepArgs(String seedItemId, int x1, int y, int z1, int 
 			throw new IllegalArgumentException("crop plot must have ordered bounds and be at most 16 by 16 blocks");
 	}
 	public static CropTendingStepArgs parse(com.google.gson.JsonObject args) {
-		for (String key : args.keySet()) if (!java.util.List.of("seedItemId", "x1", "y", "z1", "x2", "z2", "narration").contains(key))
+		for (String key : args.keySet()) if (!java.util.List.of("seedItemId", "x1", "y", "z1", "x2", "z2").contains(key))
 			throw new IllegalArgumentException("unknown argument: " + key);
 		var seed = args.get("seedItemId");
 		if (seed == null || !seed.isJsonPrimitive() || !seed.getAsJsonPrimitive().isString())

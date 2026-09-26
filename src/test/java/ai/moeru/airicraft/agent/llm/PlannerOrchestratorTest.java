@@ -99,7 +99,7 @@ class PlannerOrchestratorTest {
 			public LlmCallResult<PlannerResponse> generate(LlmConversation conversation) {
 				conversations.add(conversation);
 				return LlmCallResult.of(switch (conversations.size()) {
-					case 1 -> new PlannerResponse("", new PlannerToolCall("wall-query", "query_world", new JsonObject(), null, null), null);
+					case 1 -> new PlannerResponse("", new PlannerToolCall("wall-query", "query_world", new JsonObject(), null), null);
 					case 2 -> noActionResponse();
 					default -> noActionResponse();
 				}, null);
@@ -142,7 +142,7 @@ class PlannerOrchestratorTest {
 				public LlmCallResult<PlannerResponse> generate(LlmConversation conversation) {
 					conversations.add(conversation);
 					int index = (conversations.size() - 1) % callsPerRun;
-					return LlmCallResult.of(index == maxImages ? new PlannerResponse("", new PlannerToolCall("map_" + conversations.size(), "take_map_look", new JsonObject(), null, null), null)
+					return LlmCallResult.of(index == maxImages ? new PlannerResponse("", new PlannerToolCall("map_" + conversations.size(), "take_map_look", new JsonObject(), null), null)
 						: index < maxImages + 2
 						? new PlannerResponse("", new PlannerIntent("none", null, null), new PlannerToolRequest("take_a_look", "Find a safe path"))
 						: new PlannerResponse("done", new PlannerIntent("reply_only", null, null)), LlmUsageSnapshot.unknown());
@@ -167,7 +167,7 @@ class PlannerOrchestratorTest {
 				new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), PlannerVisionMode.NATIVE_TOOL_IMAGE, tools),
 				vision, CurrentInventoryTool.disabled(), PlannerVisionMode.NATIVE_TOOL_IMAGE, "low", 1, 0, 0, 0,
 				clock, NoopObservability.INSTANCE, PlannerLifecycleListener.NO_OP, new AgentDebugRecorder(),
-				PlannerActionToolExecutor.DISABLED, PlannerToolNarrationSink.NO_OP, tools, PlannerToolExecutionObserver.NO_OP, maxImages, fallback);
+				PlannerActionToolExecutor.DISABLED, PlannerChatSink.NO_OP, tools, PlannerToolExecutionObserver.NO_OP, maxImages, fallback);
 			try {
 				for (int run = 0; run < 3; run++) {
 					tools.freezeToolPrefix();
@@ -219,7 +219,7 @@ class PlannerOrchestratorTest {
 		try {
 			orchestrator.submit(baseRequest(null));
 			backend.awaitCalls(1, Duration.ofSeconds(1));
-			backend.succeed(0, new PlannerResponse("", new PlannerToolCall("mine-1", "mine_blocks", new JsonObject(), null, null), null));
+			backend.succeed(0, new PlannerResponse("", new PlannerToolCall("mine-1", "mine_blocks", new JsonObject(), null), null));
 			long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 			while (orchestrator.hasInFlight() && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertFalse(orchestrator.hasInFlight());
@@ -253,7 +253,7 @@ class PlannerOrchestratorTest {
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
-			var calls = List.of("A", "B", "C", "D").stream().map(id -> new PlannerToolCall(id, "mine_blocks", new JsonObject(), null, null)).toList();
+			var calls = List.of("A", "B", "C", "D").stream().map(id -> new PlannerToolCall(id, "mine_blocks", new JsonObject(), null)).toList();
 			backend.succeed(0, new PlannerResponse("", null, null, null, calls.getFirst(), calls, List.of(), null));
 			long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 			while (executed.isEmpty() && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
@@ -298,7 +298,7 @@ class PlannerOrchestratorTest {
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
-			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null, null)), null));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null)), null));
 			long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
 			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertTrue(started.get());
@@ -330,14 +330,14 @@ class PlannerOrchestratorTest {
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
-			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null, null)), null));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null)), null));
 			long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 			while (!started.get() && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertTrue(started.get());
 			future.complete("quick result");
 			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 			assertTrue(conversationText(backend.conversation(1)).contains("quick result"));
-			backend.succeed(1, PlannerResponse.toolCalls(List.of(new PlannerToolCall("skip", "continue", new JsonObject(), null, null)), null));
+			backend.succeed(1, PlannerResponse.toolCalls(List.of(new PlannerToolCall("skip", "continue", new JsonObject(), null)), null));
 			deadline = System.nanoTime() + Duration.ofMillis(1200).toNanos();
 			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertEquals(2, backend.callCount(), "Quick completion must not produce a separate refill turn");
@@ -368,8 +368,8 @@ class PlannerOrchestratorTest {
 			orchestrator.submit(requestAt(10, 500, "Alice", "Inspect the area"));
 			backend.awaitCalls(1, Duration.ofSeconds(1));
 			backend.succeed(0, PlannerResponse.toolCalls(List.of(
-				new PlannerToolCall("read", "inspect_fixture", new JsonObject(), null, null),
-				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null, null)), null));
+				new PlannerToolCall("read", "inspect_fixture", new JsonObject(), null),
+				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null)), null));
 			backend.awaitCompletions(1, Duration.ofSeconds(1));
 			orchestrator.poll();
 			orchestrator.tickToolQueue();
@@ -377,7 +377,7 @@ class PlannerOrchestratorTest {
 			orchestrator.submit(requestAt(20, 1000, "Alice", "Cancel the plan"));
 			backend.awaitCalls(2, Duration.ofSeconds(1));
 			backend.succeed(1, PlannerResponse.toolCalls(List.of(
-				new PlannerToolCall("clear", "clear_queue", new JsonObject(), null, null)), null));
+				new PlannerToolCall("clear", "clear_queue", new JsonObject(), null)), null));
 			backend.awaitCompletions(2, Duration.ofSeconds(1));
 			// The read finishes between DialogueRuntime's queue tick and PlannerOrchestrator.poll's queue tick.
 			orchestrator.tickToolQueue();
@@ -419,8 +419,8 @@ class PlannerOrchestratorTest {
 			orchestrator.submit(requestAt(10, 500, "Alice", "Observe"));
 			backend.awaitCalls(1, Duration.ofSeconds(1));
 			backend.succeed(0, PlannerResponse.toolCalls(List.of(
-				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null, null),
-				new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null, null)), null));
+				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null),
+				new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null)), null));
 			backend.awaitCompletions(1, Duration.ofSeconds(1));
 			orchestrator.poll();
 			events.append(11, "task.failed", Map.of("failure", "search_exhausted"));
@@ -459,9 +459,9 @@ class PlannerOrchestratorTest {
 			orchestrator.submit(requestAt(10, 500, "Alice", "Observe"));
 			backend.awaitCalls(1, Duration.ofSeconds(1));
 			backend.succeed(0, PlannerResponse.toolCalls(List.of(
-				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null, null),
-				new PlannerToolCall("checkpoint", "report_to_me", JsonParser.parseString("{\"includeTools\":[]}").getAsJsonObject(), null, null),
-				new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null, null)), null));
+				new PlannerToolCall("observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null),
+				new PlannerToolCall("checkpoint", "report_to_me", JsonParser.parseString("{\"includeTools\":[]}").getAsJsonObject(), null),
+				new PlannerToolCall("slow", "mine_blocks", new JsonObject(), null)), null));
 			backend.awaitCompletions(1, Duration.ofSeconds(1));
 			orchestrator.poll();
 			events.append(11, "task.failed", Map.of("failure", "search_exhausted"));
@@ -493,7 +493,7 @@ class PlannerOrchestratorTest {
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
-			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("A", "mine_blocks", new JsonObject(), null, null), new PlannerToolCall("checkpoint", "report_to_me", JsonParser.parseString("{\"question\":\"Should we replace this plan?\",\"includeTools\":[]}").getAsJsonObject(), null, null), new PlannerToolCall("B", "mine_blocks", new JsonObject(), null, null), new PlannerToolCall("C", "mine_blocks", new JsonObject(), null, null)), null));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("A", "mine_blocks", new JsonObject(), null), new PlannerToolCall("checkpoint", "report_to_me", JsonParser.parseString("{\"question\":\"Should we replace this plan?\",\"includeTools\":[]}").getAsJsonObject(), null), new PlannerToolCall("B", "mine_blocks", new JsonObject(), null), new PlannerToolCall("C", "mine_blocks", new JsonObject(), null)), null));
 			long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 			while (executed.isEmpty() && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			futures.get("A").complete("PRIVATE_A_OUTPUT");
@@ -504,8 +504,8 @@ class PlannerOrchestratorTest {
 			assertTrue(report.contains("Output omitted by report_to_me"));
 			assertFalse(report.contains("PRIVATE_A_OUTPUT"));
 			backend.succeed(1, PlannerResponse.toolCalls(List.of(
-				new PlannerToolCall("clear", "clear_queue", new JsonObject(), null, null),
-				new PlannerToolCall("E", "mine_blocks", new JsonObject(), null, null)), null));
+				new PlannerToolCall("clear", "clear_queue", new JsonObject(), null),
+				new PlannerToolCall("E", "mine_blocks", new JsonObject(), null)), null));
 			deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 			while (aborted.get() == 0 && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertEquals(1, aborted.get());
@@ -539,7 +539,7 @@ class PlannerOrchestratorTest {
 			Map.of("work", List.of(Map.of("workId", "JOB:A", "state", workState.get()))), events.query(null)));
 		try {
 			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
-			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("A", "mine_blocks", new JsonObject(), null, null), new PlannerToolCall("checkpoint", "report_to_me", new JsonObject(), null, null), new PlannerToolCall("B", "mine_blocks", new JsonObject(), null, null)), null));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("A", "mine_blocks", new JsonObject(), null), new PlannerToolCall("checkpoint", "report_to_me", new JsonObject(), null), new PlannerToolCall("B", "mine_blocks", new JsonObject(), null)), null));
 			long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
 			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertEquals(List.of("A"), executed); assertEquals(1, backend.callCount());
@@ -547,7 +547,7 @@ class PlannerOrchestratorTest {
 			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 			assertEquals(List.of("A", "B"), executed);
 			assertTrue(conversationText(backend.conversation(1)).contains("FAILED"));
-			backend.succeed(1, PlannerResponse.toolCalls(List.of(new PlannerToolCall("skip", "continue", new JsonObject(), null, null)), null));
+			backend.succeed(1, PlannerResponse.toolCalls(List.of(new PlannerToolCall("skip", "continue", new JsonObject(), null)), null));
 			deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
 			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
 			assertEquals(2, backend.callCount(), "continue must not generate a follow-up loop");
@@ -578,7 +578,7 @@ class PlannerOrchestratorTest {
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		JsonObject args = new JsonObject();
 		args.addProperty("description", "The reported outcome contradicts the inventory.");
-		backend.succeed(0, new PlannerResponse("", new PlannerToolCall("bug-report", "something_wrong", args, null, null), null));
+		backend.succeed(0, new PlannerResponse("", new PlannerToolCall("bug-report", "something_wrong", args, null), null));
 		long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 		while (!order.contains("pause") && System.nanoTime() < deadline) {
 			orchestrator.poll();
@@ -625,7 +625,7 @@ class PlannerOrchestratorTest {
 			CompositePlannerLifecycleListener.of(plannerCallJournal),
 			new AgentDebugRecorder(),
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -1030,7 +1030,7 @@ class PlannerOrchestratorTest {
 		args.addProperty("mode", "output");
 		backend.injectMockResponse(new PlannerResponse(
 			"",
-			new PlannerToolCall("call_search", "search_recipes", args, null, null),
+			new PlannerToolCall("call_search", "search_recipes", args, null),
 			null
 		));
 		backend.injectMockResponse(new PlannerResponse(
@@ -1105,7 +1105,7 @@ class PlannerOrchestratorTest {
 		RecordingBackend backend = new RecordingBackend();
 		JsonObject args = new JsonObject();
 		args.addProperty("kind", "minimap");
-		PlannerToolCall toolCall = new PlannerToolCall("call_map", "take_map_look", args, null, null);
+		PlannerToolCall toolCall = new PlannerToolCall("call_map", "take_map_look", args, null);
 		ImagePlannerToolProvider provider = new ImagePlannerToolProvider();
 		StubVisionTool visionTool = new StubVisionTool(
 			true,
@@ -1142,7 +1142,7 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
-	void actionToolCallsRouteThroughExecutorWithNarration() {
+	void actionToolCallsRouteThroughExecutor() {
 		JsonObject followArgs = new JsonObject();
 		followArgs.addProperty("targetPlayer", "Alice");
 		assertActionToolRoute("follow_player", followArgs);
@@ -1314,7 +1314,7 @@ class PlannerOrchestratorTest {
 		args.addProperty("direction", "west");
 		backend.injectMockResponse(new PlannerResponse(
 			"",
-			new PlannerToolCall("call_look_west", "take_a_look", args, null, null),
+			new PlannerToolCall("call_look_west", "take_a_look", args, null),
 			null
 		));
 		backend.injectMockResponse(new PlannerResponse(
@@ -1350,7 +1350,7 @@ class PlannerOrchestratorTest {
 		args.addProperty("prompt", "Check whether this block is visible.");
 		backend.injectMockResponse(new PlannerResponse(
 			"",
-			new PlannerToolCall("call_look_block", "take_a_look", args, null, null),
+			new PlannerToolCall("call_look_block", "take_a_look", args, null),
 			null
 		));
 		backend.injectMockResponse(new PlannerResponse(
@@ -1804,14 +1804,14 @@ class PlannerOrchestratorTest {
 				invokedTools.add(toolCall.name());
 				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
 			},
-			PlannerToolNarrationSink.NO_OP
+			PlannerChatSink.NO_OP
 		);
 
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		orchestrator.updateSafetyContext(1L, "hold-1", true);
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("old_cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null, null)
+			new PlannerToolCall("old_cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null)
 		), null));
 
 		List<StalePlannerRejection> rejections = awaitStaleRejections(orchestrator);
@@ -1877,7 +1877,7 @@ class PlannerOrchestratorTest {
 				orchestratorRef.get().updateSafetyContext(1L, null, false);
 				return CompletableFuture.completedFuture("Tool result for cancel_task: ok");
 			},
-			PlannerToolNarrationSink.NO_OP
+			PlannerChatSink.NO_OP
 		);
 		orchestratorRef.set(orchestrator);
 		orchestrator.updateSafetyContext(1L, "hold-1", false);
@@ -1886,7 +1886,7 @@ class PlannerOrchestratorTest {
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null, null)
+			new PlannerToolCall("cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null)
 		), null));
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 
@@ -1993,11 +1993,11 @@ class PlannerOrchestratorTest {
 		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(),
 			CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, 3, 10, 10, 100, 128,
 			Clock.systemUTC(), call -> { invokedTools.add(call.name()); return CompletableFuture.completedFuture("done"); },
-			PlannerToolNarrationSink.NO_OP);
+			PlannerChatSink.NO_OP);
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "A"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, toolResponse ? PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("obsolete", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null, null)), null) : replyOnly("reply A"));
+			new PlannerToolCall("obsolete", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null)), null) : replyOnly("reply A"));
 		backend.awaitCompletions(1, Duration.ofSeconds(1));
 
 		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"));
@@ -2614,8 +2614,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent inspect and craft"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null, null),
-			new PlannerToolCall("call_craftables", "check_craftables", new JsonObject(), null, null)
+			new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null),
+			new PlannerToolCall("call_craftables", "check_craftables", new JsonObject(), null)
 		), null));
 
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
@@ -2661,8 +2661,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent inspect recipes"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_search", "search_recipes", new JsonObject(), null, null),
-			new PlannerToolCall("call_uses", "find_recipe_uses", new JsonObject(), null, null)
+			new PlannerToolCall("call_search", "search_recipes", new JsonObject(), null),
+			new PlannerToolCall("call_uses", "find_recipe_uses", new JsonObject(), null)
 		), null));
 
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
@@ -2706,8 +2706,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent find farm spots"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_world", PlannerToolCatalog.INSPECT_WORLD, worldArgs, null, null),
-			new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null, null)
+			new PlannerToolCall("call_world", PlannerToolCatalog.INSPECT_WORLD, worldArgs, null),
+			new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null)
 		), null));
 
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
@@ -2744,7 +2744,7 @@ class PlannerOrchestratorTest {
 				invokedTools.add(toolCall.name());
 				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
 			},
-			PlannerToolNarrationSink.NO_OP
+			PlannerChatSink.NO_OP
 		);
 
 		JsonObject navigateArgs = new JsonObject();
@@ -2759,8 +2759,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent move and craft"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null, null),
-			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null, null)
+			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null),
+			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null)
 		), null));
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 		assertTrue(
@@ -2768,8 +2768,8 @@ class PlannerOrchestratorTest {
 			conversationText(backend.conversation(1))
 		);
 		backend.succeed(1, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_nav_retry", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null, null),
-			new PlannerToolCall("call_craft_retry", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null, null)
+			new PlannerToolCall("call_nav_retry", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null),
+			new PlannerToolCall("call_craft_retry", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null)
 		), null));
 		awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(1));
 		assertTrue(
@@ -2777,8 +2777,8 @@ class PlannerOrchestratorTest {
 			conversationText(backend.conversation(2))
 		);
 		backend.succeed(2, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_nav_second_retry", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null, null),
-			new PlannerToolCall("call_craft_second_retry", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null, null)
+			new PlannerToolCall("call_nav_second_retry", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null),
+			new PlannerToolCall("call_craft_second_retry", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null)
 		), null));
 
 		PlannerExecutionResult result = awaitResult(orchestrator);
@@ -2839,7 +2839,7 @@ class PlannerOrchestratorTest {
 			orchestrator.submit(requestAt(10,1000,"Alice","gather wood"));
 			backend.awaitCalls(1,Duration.ofSeconds(1));
 			if (changeWorld) world.set("world-B"); else owns.set(false);
-			backend.succeed(0,PlannerResponse.toolCalls(List.of(new PlannerToolCall("late","cancel_task",new JsonObject(),null,null)),null));
+			backend.succeed(0,PlannerResponse.toolCalls(List.of(new PlannerToolCall("late","cancel_task",new JsonObject(),null)),null));
 			assertEquals(1,awaitStaleRejections(orchestrator).size());
 			assertEquals(0,invoked.get());
 		}
@@ -2865,13 +2865,13 @@ class PlannerOrchestratorTest {
 		events.append(20, "task.failed", Map.of("workId", "wood-job", "failure", "search_exhausted"));
 		JsonObject args = new JsonObject();
 		args.addProperty("query", "torch");
-		backend.succeed(1, new PlannerResponse("", new PlannerToolCall("read-two", "search_recipes", args, null, null), null));
+		backend.succeed(1, new PlannerResponse("", new PlannerToolCall("read-two", "search_recipes", args, null), null));
 		awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(1));
 		String updated = backend.conversation(2).messages().toString();
 		assertTrue(updated.contains("wood-job"), updated);
 		assertTrue(updated.contains("search_exhausted"), updated);
 		assertTrue(backend.conversation(2).messages().getLast().content().contains("\"position\":20"));
-		backend.succeed(2, new PlannerResponse("", new PlannerToolCall("read-three", "search_recipes", args, null, null), null));
+		backend.succeed(2, new PlannerResponse("", new PlannerToolCall("read-three", "search_recipes", args, null), null));
 		awaitBackendCallCount(orchestrator, backend, 4, Duration.ofSeconds(1));
 		var messages = backend.conversation(3).messages();
 		assertEquals(1, messages.stream().filter(m -> m.content() != null && m.content().contains("wood-job")).count());
@@ -2910,7 +2910,7 @@ class PlannerOrchestratorTest {
 		args.addProperty("query", "torch");
 		backend.succeed(1, new PlannerResponse(
 			"",
-			new PlannerToolCall("call_search", "search_recipes", args, null, null),
+			new PlannerToolCall("call_search", "search_recipes", args, null),
 			null
 		));
 
@@ -2953,8 +2953,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent what can I make?"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, new PlannerResponse("", List.of(
-			new PlannerToolCall("call_inventory", "inspect_inventory", inventoryArgs, null, null),
-			new PlannerToolCall("call_craftables", "check_craftables", craftablesArgs, null, null)
+			new PlannerToolCall("call_inventory", "inspect_inventory", inventoryArgs, null),
+			new PlannerToolCall("call_craftables", "check_craftables", craftablesArgs, null)
 		), null));
 
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
@@ -3001,8 +3001,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent inspect everything"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, new PlannerResponse("", List.of(
-			new PlannerToolCall("call_inventory", "inspect_inventory", inventoryArgs, null, null),
-			new PlannerToolCall("call_look", "take_a_look", lookArgs, null, null)
+			new PlannerToolCall("call_inventory", "inspect_inventory", inventoryArgs, null),
+			new PlannerToolCall("call_look", "take_a_look", lookArgs, null)
 		), null));
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 		assertEquals(1, inventoryTool.inventoryRequestCount());
@@ -3029,8 +3029,8 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent observe and inspect"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
 		backend.succeed(0, PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null, null),
-			new PlannerToolCall("call_inventory", PlannerToolCatalog.INSPECT_INVENTORY, new JsonObject(), null, null)
+			new PlannerToolCall("call_observe", PlannerToolCatalog.OBSERVE, new JsonObject(), null),
+			new PlannerToolCall("call_inventory", PlannerToolCatalog.INSPECT_INVENTORY, new JsonObject(), null)
 		), null));
 
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
@@ -3250,7 +3250,7 @@ class PlannerOrchestratorTest {
 				invokedTools.add(toolCall.name());
 				return actionResult;
 			},
-			PlannerToolNarrationSink.NO_OP
+			PlannerChatSink.NO_OP
 		);
 
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent craft sticks"));
@@ -3260,7 +3260,7 @@ class PlannerOrchestratorTest {
 		craftArgs.addProperty("times", 1);
 		backend.succeed(0, new PlannerResponse(
 			"",
-			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, "Crafting sticks.", null),
+			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null),
 			null
 		));
 		awaitInvokedToolCount(orchestrator, invokedTools, 1, Duration.ofSeconds(1));
@@ -3303,49 +3303,93 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
-	void longToolNarrationDoesNotRegenerateOrChangeTheAction() {
-		RecordingBackend backend = new RecordingBackend();
-		ArrayList<PlannerToolCall> executed = new ArrayList<>();
-		ArrayList<String> narrations = new ArrayList<>();
-		String narration = "Removing the three misplaced planks obstructing walking space at x=-1,y=134,z=3..5.";
-		// Reproduce the live narration-length repair without touching the action's target data.
-		narration += " Preserving the doorway.";
-		JsonObject arguments = com.google.gson.JsonParser.parseString("""
-			{"targets":[{"x":-1,"y":134,"z":3,"expectedBlockIds":["minecraft:spruce_planks"]},
-			{"x":-1,"y":134,"z":4,"expectedBlockIds":["minecraft:spruce_planks"]},
-			{"x":-1,"y":134,"z":5,"expectedBlockIds":["minecraft:spruce_planks"]}]}
-			""").getAsJsonObject();
-		arguments.addProperty("narration", narration);
-		PlannerToolCall original = new PlannerToolCall("call_remove", "break_blocks", arguments, narration, null);
-		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(),
-			CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, 3, 10, 10, 100, 128,
-			Clock.systemUTC(), call -> {
+	void sayNowSpeaksImmediatelyWhileQueuedSayWaitsForItsTurn() throws Exception {
+		var backend = new RecordingBackend();
+		var mining = new CompletableFuture<String>();
+		var said = new java.util.concurrent.CopyOnWriteArrayList<String>();
+		PlannerChatSink chat = said::add;
+		var registry = PlannerToolRegistry.of(slowMiningProvider(mining),
+			new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")), new SayToolProvider(chat));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED, PlannerLifecycleListener.NO_OP,
+			new AgentDebugRecorder(), chat);
+		try {
+			orchestrator.submit(baseRequest(null));
+			backend.awaitCalls(1, Duration.ofSeconds(1));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(
+				new PlannerToolCall("mine", "mine_blocks", new JsonObject(), null),
+				new PlannerToolCall("brb", SayToolProvider.SAY, sayArguments("brb, mining", null), null),
+				new PlannerToolCall("done", SayToolProvider.SAY, sayArguments("done mining!", SayToolProvider.QUEUED), null)), null));
+			long deadline = System.nanoTime() + Duration.ofMillis(300).toNanos();
+			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
+			assertEquals(List.of("brb, mining"), said, "say now never waits behind the active action");
+
+			mining.complete("finished mining");
+			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
+			assertEquals(List.of("brb, mining", "done mining!"), said, "queued say runs after the action before it");
+			assertTrue(conversationText(backend.conversation(1)).contains("finished mining"));
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
+	void longSayTextIsShortenedWithoutRegeneratingTheAction() throws Exception {
+		var backend = new RecordingBackend();
+		var executed = new java.util.concurrent.CopyOnWriteArrayList<PlannerToolCall>();
+		var said = new java.util.concurrent.CopyOnWriteArrayList<String>();
+		PlannerChatSink chat = said::add;
+		var provider = new PlannerToolProvider() {
+			public String id() { return "break_fixture"; }
+			public boolean handles(String name) { return name.equals("break_blocks"); }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("break_blocks", "Break", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) {
 				executed.add(call);
 				return CompletableFuture.completedFuture("Tool result for break_blocks: completed targets=3");
-			}, call -> narrations.add(call.narration()));
-		orchestrator.submit(baseRequest(null));
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-		backend.succeed(0, new PlannerResponse("", original, null));
-		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
-		assertEquals(1, executed.size());
-		assertEquals("call_remove", executed.getFirst().id());
-		assertEquals("break_blocks", executed.getFirst().name());
-		assertEquals(arguments.get("targets"), executed.getFirst().arguments().get("targets"));
-		assertEquals(arguments, original.arguments());
-		assertEquals(List.of(PlannerChatContract.contractText(narration)), narrations);
-		assertFalse(conversationText(backend.conversation(1)).contains("CHAT MESSAGE FORMAT REMINDER"));
-		assertTrue(conversationText(backend.conversation(1)).contains("completed targets=3"));
-		backend.succeed(1, replyOnly("Removed."));
-		assertTrue(awaitResult(orchestrator).succeeded());
-		assertEquals(1, executed.size());
+			}
+		};
+		var registry = PlannerToolRegistry.of(provider,
+			new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")), new SayToolProvider(chat));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED, PlannerLifecycleListener.NO_OP,
+			new AgentDebugRecorder(), chat);
+		String line = "Removing the three misplaced planks obstructing walking space at x=-1,y=134,z=3..5. Preserving the doorway.";
+		JsonObject targets = com.google.gson.JsonParser.parseString("{\"targets\":[{\"x\":-1,\"y\":134,\"z\":3}]}").getAsJsonObject();
+		try {
+			orchestrator.submit(baseRequest(null));
+			backend.awaitCalls(1, Duration.ofSeconds(1));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(
+				new PlannerToolCall("say", SayToolProvider.SAY, sayArguments(line, null), null),
+				new PlannerToolCall("call_remove", "break_blocks", targets, null)), null));
+			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
+			assertEquals(List.of(PlannerChatContract.contractText(line)), said);
+			assertEquals(1, executed.size());
+			assertEquals(targets, executed.getFirst().arguments());
+			assertFalse(conversationText(backend.conversation(1)).contains("CHAT MESSAGE FORMAT REMINDER"),
+				"A long line is shortened locally instead of regenerating the decision");
+			assertTrue(conversationText(backend.conversation(1)).contains("completed targets=3"));
+		} finally { orchestrator.shutdown(); }
+	}
+
+	private static PlannerToolProvider slowMiningProvider(CompletableFuture<String> mining) {
+		return new PlannerToolProvider() {
+			public String id() { return "slow_fixture"; }
+			public boolean handles(String name) { return name.equals("mine_blocks"); }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("mine_blocks", "Mine", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { return mining; }
+		};
+	}
+
+	private static JsonObject sayArguments(String text, String when) {
+		JsonObject arguments = new JsonObject();
+		arguments.addProperty("text", text);
+		if (when != null) arguments.addProperty("when", when);
+		return arguments;
 	}
 
 	private static void assertActionToolRoute(String toolName, JsonObject arguments) {
 		RecordingBackend backend = new RecordingBackend();
 		ArrayList<String> invokedTools = new ArrayList<>();
-		ArrayList<String> narrations = new ArrayList<>();
-		String narration = "Narrating " + toolName;
-		arguments.addProperty("narration", narration);
 		PlannerOrchestrator orchestrator = newOrchestrator(
 			backend,
 			CurrentViewVisionTool.disabled(),
@@ -3361,16 +3405,15 @@ class PlannerOrchestratorTest {
 				invokedTools.add(toolCall.name());
 				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
 			},
-			toolCall -> narrations.add(toolCall.narration())
+			PlannerChatSink.NO_OP
 		);
 
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "@agent " + toolName));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
-		backend.succeed(0, new PlannerResponse("", new PlannerToolCall("call_" + toolName, toolName, arguments, narration, null), null));
+		backend.succeed(0, new PlannerResponse("", new PlannerToolCall("call_" + toolName, toolName, arguments, null), null));
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 
 		assertEquals(List.of(toolName), invokedTools);
-		assertEquals(List.of(narration), narrations);
 		LlmConversation followUp = backend.conversation(1);
 		LlmChatMessage replayedToolCall = followUp.messages().get(followUp.messages().size() - 2);
 		LlmChatMessage replayedToolResult = followUp.messages().get(followUp.messages().size() - 1);
@@ -3474,7 +3517,7 @@ class PlannerOrchestratorTest {
 			PlannerLifecycleListener.NO_OP,
 			new AgentDebugRecorder(),
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			PlannerToolRegistry.empty(),
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -3520,7 +3563,7 @@ class PlannerOrchestratorTest {
 			lifecycleListener,
 			new AgentDebugRecorder(),
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -3553,7 +3596,7 @@ class PlannerOrchestratorTest {
 			PlannerLifecycleListener.NO_OP,
 			debugRecorder,
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -3596,6 +3639,14 @@ class PlannerOrchestratorTest {
 	private static PlannerOrchestrator newOrchestrator(LlmBackend backend, CurrentViewVisionTool visionTool,
 		CurrentInventoryTool inventoryTool, PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry,
 		PlannerActionToolExecutor actionToolExecutor, PlannerLifecycleListener listener, AgentDebugRecorder debugRecorder) {
+		return newOrchestrator(backend, visionTool, inventoryTool, visionMode, toolRegistry, actionToolExecutor, listener, debugRecorder,
+			PlannerChatSink.NO_OP);
+	}
+
+	private static PlannerOrchestrator newOrchestrator(LlmBackend backend, CurrentViewVisionTool visionTool,
+		CurrentInventoryTool inventoryTool, PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry,
+		PlannerActionToolExecutor actionToolExecutor, PlannerLifecycleListener listener, AgentDebugRecorder debugRecorder,
+		PlannerChatSink chatSink) {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		Clock clock = Clock.systemDefaultZone();
 		return new PlannerOrchestrator(
@@ -3615,7 +3666,7 @@ class PlannerOrchestratorTest {
 			listener,
 			debugRecorder,
 			actionToolExecutor,
-			PlannerToolNarrationSink.NO_OP,
+			chatSink,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -3648,7 +3699,7 @@ class PlannerOrchestratorTest {
 			PlannerLifecycleListener.NO_OP,
 			new AgentDebugRecorder(),
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);
@@ -3743,7 +3794,7 @@ class PlannerOrchestratorTest {
 			plannerPendingSemanticEventCap,
 			clock,
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP
+			PlannerChatSink.NO_OP
 		);
 	}
 
@@ -3759,7 +3810,7 @@ class PlannerOrchestratorTest {
 		int plannerPendingSemanticEventCap,
 		Clock clock,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink
+		PlannerChatSink chatSink
 	) {
 		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
 		PlannerToolRegistry toolRegistry = PlannerToolRegistry.empty();
@@ -3780,7 +3831,7 @@ class PlannerOrchestratorTest {
 			PlannerLifecycleListener.NO_OP,
 			new AgentDebugRecorder(),
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			toolRegistry,
 			PlannerToolExecutionObserver.NO_OP
 		);

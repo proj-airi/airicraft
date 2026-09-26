@@ -103,7 +103,7 @@ public final class PolicyContinuationPlanner implements AutoCloseable {
 		if (!context.actuatorOwner().equals("idle")) { discard("actuator_busy"); return null; }
 		var args = candidate.arguments().deepCopy();
 		args.remove("guard");
-		var accepted = new PlannerToolCall("continuation_" + baseline.workId(), "run_policy", args, null, null);
+		var accepted = new PlannerToolCall("continuation_" + baseline.workId(), "run_policy", args, null);
 		record("validated", "handoff");
 		baseline = null;
 		candidate = null;

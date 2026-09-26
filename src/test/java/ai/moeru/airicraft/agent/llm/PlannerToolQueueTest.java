@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerToolQueueTest {
-	private PlannerToolCall call(String id) { return new PlannerToolCall(id, "mine_blocks", new JsonObject(), null, null); }
+	private PlannerToolCall call(String id) { return new PlannerToolCall(id, "mine_blocks", new JsonObject(), null); }
 
 	@Test void advancesWithoutPlannerAndAppendsBehindExistingCalls() {
 		var queue = new PlannerToolQueue<String>();

@@ -22,7 +22,6 @@ public final class PlannerQueueToolProvider implements PlannerToolProvider {
 	}
 	public void validateArguments(String name, JsonObject arguments) {
 		for (String key : arguments.keySet()) {
-			if (key.equals("narration")) continue;
 			if (!REPORT.equals(name) || !List.of("question", "includeTools").contains(key)) throw new IllegalArgumentException("unknown report argument: " + key);
 		}
 		if (arguments.has("question") && (!arguments.get("question").isJsonPrimitive() || !arguments.getAsJsonPrimitive("question").isString()))
