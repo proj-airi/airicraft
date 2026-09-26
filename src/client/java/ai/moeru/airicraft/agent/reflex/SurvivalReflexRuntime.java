@@ -355,6 +355,10 @@ public final class SurvivalReflexRuntime {
 		);
 	}
 
+	void enqueueEventForTests(SurvivalReflexEvent event) {
+		pendingEvents.add(event);
+	}
+
 	public List<SurvivalReflexEvent> drainEvents() {
 		if (pendingEvents.isEmpty()) {
 			return List.of();
