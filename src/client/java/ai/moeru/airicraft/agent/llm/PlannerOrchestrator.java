@@ -1040,6 +1040,16 @@ public final class PlannerOrchestrator {
 		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
 		long now = clock.millis();
 		PlannerRequest seed = toolQueue.seed;
+		var wakeFields = new java.util.LinkedHashMap<String, Object>();
+		wakeFields.put("path", "W9");
+		wakeFields.put("triggerTypes", List.of("SYSTEM"));
+		wakeFields.put("origins", List.of("AUTONOMOUS"));
+		wakeFields.put("coalescingKeys", List.of());
+		wakeFields.put("speakers", List.of("tool_queue"));
+		wakeFields.put("owner", context == null ? "controller" : context.decisionOwner());
+		wakeFields.put("serverTick", context == null ? -1L : context.serverTick());
+		wakeFields.put("review", toolQueue.checkpoints.isEmpty() ? "fifo_empty" : "checkpoint");
+		debugRecorder.recordPlannerWake(toolQueue.observationTick, now, "submitted", wakeFields);
 		submit(PlannerRequest.ofTrigger(toolQueue.observationTick, now, seed.sessionMode(), seed.primaryInteractionPlayer(), seed.activeGoal(),
 			PlannerTriggerType.SYSTEM, "tool_queue", toolQueue.checkpoints.isEmpty() ? "FIFO empty. Review completed results and plan the next batch." : "report_to_me reached. Review the requested results; the remaining FIFO continues independently.", null)
 			.withSafetyContext(minimumSafetyEpoch, currentSafetyHoldId));
