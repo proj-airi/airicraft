@@ -189,3 +189,14 @@ streams and `playtest.json`; decompress the four ledger streams into a separate
 analysis directory and copy `playtest.json` alongside them. Do not alter the
 published artifact. Run `python3 scripts/wake_ledger.py ledger <run-dir>` or
 `summarize <run-dir>...` to reproduce metrics.
+
+## Validation
+
+The final implementation build passed at `677cd8cc` in an isolated checkout:
+1,719 root tests, 95 wrapper tests and 20 JourneyMap compatibility tests, with
+three opt-in root tests skipped. The offline ledger suite passes 13 tests.
+The characterization harness settles event-callback submissions before advancing
+its fake clock; this removes a worker-scheduling race without changing runtime
+behavior. The focused verification passed 153 tests including 100 repetitions of
+the death/respawn case. Its reviewed golden changes affect only four request-tick
+fields, with no wake, evidence or outcome changes.

@@ -34,13 +34,14 @@ that document.
 
 ## Implementation status (2026-09-27)
 
-Tasks 1–10 are implemented on PR #81. The full build passes (1,718 root
-tests, 95 wrapper tests; 3 opt-in root tests skipped), and the Python ledger
+Tasks 1–10 are implemented on PR #81. The full build passes (1,719 root
+tests, 95 wrapper tests and 20 compatibility tests; 3 opt-in root tests skipped), and the Python ledger
 suite passes 13 tests. Live baseline runs use the committed Phase 0 branch;
 Two evaluation batches and one automatic playtest are complete, with no event
 or timeline gaps and zero unknown wake attribution. Iron-pickaxe pass/fail
 differed, so a third batch is running. Task 3 retention and Tasks 11–12 remain
-open until the final records and closeout build are checked.
+open until the final records are checked. The closeout full build passed at
+`677cd8cc` in an isolated checkout, preserving the running baseline artifacts.
 The branch has not been merged into `dev`.
 
 Implementation adjustments: FIFO/checkpoint reviews are W9; retained W2 gate
@@ -686,7 +687,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
   - The spike numbers and caps, and the step deadline, in 4.12.
   - The tolerance and baseline link in the Phase 2 exit criteria.
   - Tick the Phase 0 checklist.
-- [ ] **Step 2: Run the full build** with `./gradlew build`. Expected:
+- [x] **Step 2: Run the full build** with `./gradlew build`. Expected:
   SUCCESS. The characterization, defect-probe and inventory tests run in
   the normal build; the spike does not.
 - [x] **Step 3: Update `AGENTS.md`.** Add a Behavior Notes line: wake
