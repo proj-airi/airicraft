@@ -338,9 +338,11 @@ def build_ledger(run_dir):
     token_unknown = sum(record.get("usage", {}).get("totalTokens") is None for record in in_window)
     window_unplaced = sum(record.get("dispatchServerTick") is None for record in llm_latest.values())
     tokens_complete = bool(in_window) and not token_unknown and not llm_gaps and not window_unplaced
-    metrics = {"requestsPerMinute": {"overall": rate(len(initial), span, 1200) if not planner_calls_missing else None,
-                                     "byOwner": {key: rate(count, span, 1200) for key, count in sorted(per_owner.items())},
-                                     "byPath": {key: rate(count, span, 1200) for key, count in sorted(per_path.items())}},
+    # Journal/LLM timestamps can differ for one call; that skew is not a run duration.
+    rate_span = span if play_window is not None or len(calls) > 1 else 0
+    metrics = {"requestsPerMinute": {"overall": rate(len(initial), rate_span, 1200) if not planner_calls_missing else None,
+                                     "byOwner": {key: rate(count, rate_span, 1200) for key, count in sorted(per_owner.items())},
+                                     "byPath": {key: rate(count, rate_span, 1200) for key, count in sorted(per_path.items())}},
                "followUpsPerTurn": len(followups) / len(initial) if initial else None,
                "initialTurns": len(initial), "modelCalls": len(requests), "retries": len(retries),
                "emptyWakes": dict(sorted(empty.items())),
@@ -348,7 +350,8 @@ def build_ledger(run_dir):
                "chatReplyLatencyTicks": {"toRequest": distribution(chat_request_latency),
                                          "toApplied": distribution(chat_applied_latency)},
                "droppedWakes": dict(sorted(Counter(drop["gate"] or "unknown" for drop in drops).items())),
-               "tokensPerHour": rate(tokens, span, 72000) if tokens_complete else None,
+               "tokensPerHour": rate(tokens, rate_span, 72000) if tokens_complete else None,
+               "rateWindowUsable": rate_span > 0,
                "tokensComplete": tokens_complete,
                "tokensTotalRecorded": tokens_total, "tokensInWindow": tokens,
                "tokenWindow": {"startServerTick": window_start, "endServerTick": window_end,

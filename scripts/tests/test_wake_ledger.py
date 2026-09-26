@@ -118,6 +118,31 @@ class WakeLedgerTest(unittest.TestCase):
                                                       "durationTicks": 1200, "source": "playtest_timeline"})
             self.assertEqual(len(metrics["captureMetadataSources"]), 1)
 
+    def test_single_call_dispatch_skew_does_not_define_a_rate_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in CANONICAL_FIXTURE.iterdir():
+                (target / path.name).write_bytes(path.read_bytes())
+            calls = (target / "planner-calls.jsonl").read_text().splitlines()
+            (target / "planner-calls.jsonl").write_text(calls[0] + "\n")
+            llm = json.loads((target / "llm-calls.jsonl").read_text().splitlines()[1])
+            llm["record"]["dispatchServerTick"] = 102
+            (target / "llm-calls.jsonl").write_text(json.dumps(llm) + "\n")
+            metrics = wake_ledger.build_ledger(target)["metrics"]
+            self.assertEqual(metrics["tokenWindow"]["durationTicks"], 2)
+            self.assertTrue(metrics["tokensComplete"])
+            self.assertIsNone(metrics["requestsPerMinute"]["overall"])
+            self.assertTrue(all(value is None for value in metrics["requestsPerMinute"]["byPath"].values()))
+            self.assertIsNone(metrics["tokensPerHour"])
+            self.assertFalse(metrics["rateWindowUsable"])
+
+            (target / "playtest.json").write_text(json.dumps({
+                "timeline": {"startServerTick": "0", "endServerTick": "1200"}}))
+            metrics = wake_ledger.build_ledger(target)["metrics"]
+            self.assertTrue(metrics["rateWindowUsable"])
+            self.assertEqual(metrics["requestsPerMinute"]["overall"], 1.0)
+            self.assertEqual(metrics["tokensPerHour"], 600.0)
+
     def test_same_server_tick_uses_submission_entry_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = pathlib.Path(tmp)
