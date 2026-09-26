@@ -1,0 +1,86 @@
+{
+  "events": [],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: inventory_tool_disabled"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: hello"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently singleplayer LAN host.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately."
+        ],
+        "serverTick": 2,
+        "stateBaseline": true,
+        "throughEventSequence": 0,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
+        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+      },
+      "tick": 1
+    }
+  ],
+  "scenario": "idle_think_invalidated_by_action_goal",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "idle_think"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W5",
+      "speakers": [
+        "self"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "IDLE_THINK"
+      ]
+    }
+  ]
+}

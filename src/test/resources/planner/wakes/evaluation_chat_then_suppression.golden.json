@@ -1,0 +1,98 @@
+{
+  "events": [
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 2,
+      "tick": 6,
+      "type": "pickup.item_picked_up"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "evaluation: collect wood"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 1,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 1
+    }
+  ],
+  "scenario": "evaluation_chat_then_suppression",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W7",
+      "serverTick": -1,
+      "speakers": [
+        "evaluation"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    }
+  ]
+}

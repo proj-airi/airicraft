@@ -1,0 +1,170 @@
+{
+  "events": [
+    {
+      "payload": {
+        "outputCount": 1,
+        "outputItemId": "minecraft:iron_ingot",
+        "processId": "furnace-1"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "smelting.output_ready"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 2,
+      "tick": 2,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "executionId": "graph-1",
+        "message": "no path",
+        "state": "FAILED"
+      },
+      "seqNo": 3,
+      "tick": 11,
+      "type": "action_graph.goal_terminal"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "outputCount": 1,
+              "outputItemId": "minecraft:iron_ingot",
+              "processId": "furnace-1"
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "smelting.output_ready"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 2,
+            "tick": 2,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Smelting output ready: processId=furnace-1 output=minecraft:iron_ingotx1. Output still needs collection: call collect_smelted_items with this processId, then verify inventory."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 2,
+        "tick": 2,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 2
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 2,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "ACTION GRAPH FAILED: executionId=graph-1 goal= failedPrimitive= failedTarget= failedArgs={} failureCode=failed message=no path. Explain the terminal failure accurately. Do not claim completion. Assess the identified failure and choose a supported next attempt toward the objective."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 3,
+        "tick": 12,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 12
+    }
+  ],
+  "scenario": "smelting_output_and_graph_failure",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "smelting_output:furnace-1"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "action_graph_terminal:graph-1"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "action_graph"
+      ],
+      "tick": 11,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

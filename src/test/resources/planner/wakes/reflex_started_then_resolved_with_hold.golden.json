@@ -1,0 +1,199 @@
+{
+  "events": [
+    {
+      "payload": {
+        "reason": "threat"
+      },
+      "seqNo": 1,
+      "tick": 2,
+      "type": "reflex.started"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 2,
+      "tick": 2,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "holdId": "hold-1",
+        "reason": "safe"
+      },
+      "seqNo": 3,
+      "tick": 12,
+      "type": "reflex.resolved"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "reason": "threat"
+            },
+            "seqNo": 1,
+            "tick": 2,
+            "type": "reflex.started"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 2,
+            "tick": 2,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Work changed."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 2,
+        "tick": 2,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 2
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 2,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "holdId": "hold-1",
+              "reason": "safe"
+            },
+            "seqNo": 3,
+            "tick": 12,
+            "type": "reflex.resolved"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Survival reflex resolved just now: safe.",
+          "SURVIVAL UPDATE: reflex resolved cause=unknown reason=safe state=IDLE holdId=hold-1. Review the consolidated safety episode and use continue to retain and resume the plan, or clear_queue to abort and replace it. Automatic reflex policy=ReflexPolicy[combatEnabled=true, drowningEnabled=true, maxThreatDistance=16, requireLineOfSight=true]. Use configure_reflex to read or override it for a deliberate tactic; policy changes do not resume paused work."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 3,
+        "tick": 12,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 12
+    }
+  ],
+  "scenario": "reflex_started_then_resolved_with_hold",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 1,
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "serverTick": -1,
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 2,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "survival_reflex_resolved"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "survival_runtime"
+      ],
+      "tick": 12,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "system"
+      ],
+      "eventSequence": 3,
+      "gate": "G5.incorporated",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W2",
+      "serverTick": -1,
+      "speakers": [
+        "runtime"
+      ],
+      "tick": 12,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

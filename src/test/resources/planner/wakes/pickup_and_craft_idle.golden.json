@@ -1,0 +1,181 @@
+{
+  "events": [
+    {
+      "payload": {
+        "actor": "self",
+        "count": 2,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 4,
+        "itemId": "minecraft:oak_planks"
+      },
+      "seqNo": 3,
+      "tick": 11,
+      "type": "crafting.item_crafted"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 2,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 2,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "You picked up 2x minecraft:oak_log just now."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 2,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 2
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 2,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 4,
+              "itemId": "minecraft:oak_planks"
+            },
+            "seqNo": 3,
+            "tick": 11,
+            "type": "crafting.item_crafted"
+          }
+        ],
+        "notices": [
+          "You crafted 4x minecraft:oak_planks just now."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 3,
+        "tick": 11,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 12
+    }
+  ],
+  "scenario": "pickup_and_craft_idle",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "PICKUP"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "craft:minecraft:oak_planks"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 11,
+      "triggerTypes": [
+        "CRAFT"
+      ]
+    }
+  ]
+}

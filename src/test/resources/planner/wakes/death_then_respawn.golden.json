@@ -1,0 +1,342 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent remember this conversation",
+        "normalizedMessage": "@agent remember this conversation",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent remember this conversation",
+        "normalizedMessage": "@agent remember this conversation",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "amount": 20.0,
+        "context": {
+          "reflexState": "IDLE",
+          "taskId": "job-idle",
+          "taskStatus": "IDLE",
+          "taskType": "IDLE"
+        },
+        "fatal": true,
+        "healthAfter": 0.0,
+        "healthBefore": 20.0
+      },
+      "seqNo": 5,
+      "tick": 6,
+      "type": "combat.damage_taken"
+    },
+    {
+      "payload": {
+        "dimensionId": "minecraft:overworld",
+        "mode": "REMOTE_MULTIPLAYER"
+      },
+      "seqNo": 6,
+      "tick": 6,
+      "type": "player.died"
+    },
+    {
+      "payload": {
+        "actionGraphCancelled": false,
+        "jobCancelled": false,
+        "reason": "player_died"
+      },
+      "seqNo": 7,
+      "tick": 6,
+      "type": "player.actions_cancelled"
+    },
+    {
+      "payload": {
+        "dimensionId": "minecraft:overworld",
+        "mode": "REMOTE_MULTIPLAYER"
+      },
+      "seqNo": 8,
+      "tick": 16,
+      "type": "player.respawned"
+    },
+    {
+      "payload": {
+        "message": "@agent hello again",
+        "normalizedMessage": "@agent hello again",
+        "player": "Alex"
+      },
+      "seqNo": 9,
+      "tick": 16,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent hello again",
+        "normalizedMessage": "@agent hello again",
+        "player": "Alex"
+      },
+      "seqNo": 10,
+      "tick": 16,
+      "type": "social.player_addressed_agent"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent remember this conversation"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 4,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Alex came nearby just now."
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 4,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 1
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 4,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "amount": 20.0,
+              "context": {
+                "reflexState": "IDLE",
+                "taskId": "job-idle",
+                "taskStatus": "IDLE",
+                "taskType": "IDLE"
+              },
+              "fatal": true,
+              "healthAfter": 0.0,
+              "healthBefore": 20.0
+            },
+            "seqNo": 5,
+            "tick": 6,
+            "type": "combat.damage_taken"
+          },
+          {
+            "payload": {
+              "dimensionId": "minecraft:overworld",
+              "mode": "REMOTE_MULTIPLAYER"
+            },
+            "seqNo": 6,
+            "tick": 6,
+            "type": "player.died"
+          },
+          {
+            "payload": {
+              "actionGraphCancelled": false,
+              "jobCancelled": false,
+              "reason": "player_died"
+            },
+            "seqNo": 7,
+            "tick": 6,
+            "type": "player.actions_cancelled"
+          }
+        ],
+        "notices": [
+          "You took 20 damage and dropped to 0 health just now."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 7,
+        "tick": 6,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 7
+    },
+    {
+      "discarded": false,
+      "generation": 3,
+      "index": 3,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent hello again"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 7,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "dimensionId": "minecraft:overworld",
+              "mode": "REMOTE_MULTIPLAYER"
+            },
+            "seqNo": 8,
+            "tick": 16,
+            "type": "player.respawned"
+          }
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 10,
+        "tick": 16,
+        "toolQueue": {
+          "aborting": true,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+      },
+      "tick": 16
+    }
+  ],
+  "scenario": "death_then_respawn",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "damage"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 6,
+      "triggerTypes": [
+        "DAMAGE"
+      ]
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 16,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    }
+  ]
+}

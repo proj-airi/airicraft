@@ -1,0 +1,66 @@
+{
+  "events": [],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: inventory_tool_disabled"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently singleplayer LAN host.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "GOAL CONTINUATION: No action is running. Review fresh evidence and advance the active planner goal, change it if appropriate, or finish explicitly with success/give_up. A prior plaintext reply did not end it.\n{\"completionCriteria\":\"\",\"constraints\":\"\",\"decisions\":{},\"id\":\"\\u003cuuid\\u003e\",\"objective\":\"Build chest\",\"outcome\":\"\",\"status\":\"ACTIVE\"}"
+        ],
+        "serverTick": 42,
+        "stateBaseline": true,
+        "throughEventSequence": 0,
+        "tick": 21,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
+        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+      },
+      "tick": 21
+    }
+  ],
+  "scenario": "goal_continuation_idle_and_busy",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "planner_goal"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W4",
+      "speakers": [
+        "self"
+      ],
+      "tick": 21,
+      "triggerTypes": [
+        "SYSTEM"
+      ]
+    }
+  ]
+}

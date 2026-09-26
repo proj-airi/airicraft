@@ -1,0 +1,110 @@
+{
+  "events": [
+    {
+      "payload": {
+        "failureType": "TIMEOUT",
+        "message": "Injected LLM timeout"
+      },
+      "seqNo": 1,
+      "tick": 2,
+      "type": "planner.timeout"
+    },
+    {
+      "payload": {
+        "failureType": "TIMEOUT",
+        "message": "Injected LLM timeout"
+      },
+      "seqNo": 2,
+      "tick": 3,
+      "type": "planner.timeout"
+    },
+    {
+      "payload": {
+        "failureType": "TIMEOUT",
+        "message": "Injected LLM timeout"
+      },
+      "seqNo": 3,
+      "tick": 4,
+      "type": "planner.timeout"
+    },
+    {
+      "payload": {
+        "consecutiveFailureCount": 3,
+        "failureType": "TIMEOUT"
+      },
+      "seqNo": 4,
+      "tick": 4,
+      "type": "planner.degraded_entered"
+    },
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 5,
+      "tick": 4,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 6,
+      "tick": 4,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 7,
+      "tick": 4,
+      "type": "social.player_addressed_agent"
+    }
+  ],
+  "requests": [],
+  "scenario": "degraded_mode",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    },
+    {
+      "coalescingKeys": [],
+      "gate": "G8.degraded",
+      "kind": "dropped",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    }
+  ]
+}

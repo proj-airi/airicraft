@@ -1,0 +1,85 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "pickup.item_picked_up"
+    }
+  ],
+  "requests": [],
+  "scenario": "external_driver",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ]
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "PICKUP"
+      ]
+    }
+  ]
+}
