@@ -1,7 +1,9 @@
 # Planner Perception, Event Bus and Wake Scheduling Design
 
-Status: **proposed** (2026-09-26). Nothing here is implemented. Section 9 lists
-the decisions that need an answer before Phase 1 starts. When they are settled,
+Status: **proposed** (2026-09-26). Nothing here is implemented. Section 9
+lists the decisions. O6 (the scope of what can be noticed) and O7 (rules in
+GraalJS, with planner authorship later) are decided; the rest need
+confirmation before Phase 1 starts. When they are settled,
 record them as ADR-0003 and add the new terms to `CONTEXT.md`.
 
 Evidence base: the code at `a1c05d8`. Line numbers in this document refer to
@@ -204,8 +206,8 @@ production callers.
 |---|---|---|
 | Four layers: Perception → Reflex → Conscious → Action | `integrations/minecraft/README.md` | Airicraft already has System 1 and System 2. Add the missing **perception** layer. |
 | Declarative perception events: `definePerceptionEvent({id, modality: sighted/heard/felt/system, kind, binding, filter, extract})` in a registry | `perception/events/*` | **Adopt** as `Sensor` and ingress adapters, with a modality field on percepts. |
-| Salience via **temporal detectors**: threshold within a sliding or tumbling window, grouped by entity or source, emitting `signal:*` with a description template and confidence | `perception/rules/engine.ts`, `temporal-detector.ts`, `rules/*.yaml` | **Adopt the detector, not the YAML DSL** (Java-first, config-tunable thresholds). |
-| Leaky bucket for attention | `services/minecraft/.../leaky-bucket.ts` (history, `a3a29ae2`) | **Adopt** as a global autonomous-wake budget. |
+| Salience via **temporal detectors**: threshold within a sliding or tumbling window, grouped by entity or source, emitting `signal:*` with a description template and confidence | `perception/rules/engine.ts`, `temporal-detector.ts`, `rules/*.yaml` | **Adopt the detector, not the YAML DSL.** Rules are GraalJS modules (4.12). Windowed detectors ship as helpers in the bundled rule library, so rule authors, including the planner later, can change them. |
+| Leaky bucket for attention | `services/minecraft/.../leaky-bucket.ts` (history, `a3a29ae2`) | **Adopt** as a global autonomous-wake budget. It is implemented **inside the bundled default JS rule**, not in Java. |
 | Reflex inhibits the conscious layer (`shouldForwardSignalToConscious`: never forward attention signals; suppress `damage` while attacking) | `reflex/reflex-manager.ts` | **Adopt** as ownership-inhibition rules (4.6). |
 | Priority tiers (urgent chat/command < perception < feedback < no-action follow-up); stable-sort, drop stale follow-ups while urgent input waits, bounded queue drops the lowest priority, and a starvation guard after 8 consecutive high-priority turns | `conscious/brain.ts` (`getEventPriority`, `coalesceQueue`, `dequeueNextQueuedEvent`) | **Adopt the ordering and the dropping of stale self-wakes.** Batches go out whole here, so the starvation guard becomes a **supersede budget**. |
 | Traced events (`traceId`, `parentId`); pattern subscriptions; isolated subscriber failures | `cognitive/event-bus.ts` | **Adopt** a `cause` reference on events and subscriber isolation. |
@@ -232,6 +234,11 @@ production callers.
    decision `(decision, rule id, reason)`. Each batch records its members.
 6. **Bounded and tick-driven.** State is bounded. Timing uses agent ticks, so
    tick-debug pause freezes perception and wakes consistently.
+7. **Mechanism in Java, judgement in rules.** Java owns sensing, the event
+   log, scheduling and a small fixed set of protections (the *constitution*).
+   Deciding what is salient and what deserves attention is written as GraalJS
+   rules (4.12) that people, coding agents and eventually the planner can
+   read and edit.
 
 ### 4.2 Vocabulary (candidates for `CONTEXT.md`)
 
@@ -256,14 +263,21 @@ production callers.
   preempt.
 - **Delivery**: the timing mode, one of `PREEMPT`, `IMMEDIATE`, `DEBOUNCE` or
   `NONE`.
+- **Candidate**: something a noticing sensor verified the player could
+  perceive. A candidate is not yet an event; salience rules decide whether it
+  becomes a percept.
+- **Rule module**: a GraalJS `step(input, state, lib)` program for the
+  `salience` or `attention` hook, with host-owned JSON state.
+- **Constitution**: the fixed Java protections that no rule module can
+  override.
 
 ### 4.3 Overview
 
 ```
  ┌─────────────── Perception (agent.perception) ───────────────┐   ┌─ Execution feedback ─┐  ┌─ Agent-internal ─┐
  │ Sensors (tick-sampled, budgeted):  physical, damage,        │   │ work projection,     │  │ planner, policy, │
- │   item-offer, presence, environment, notable-block,         │   │ tasks/graphs/process,│  │ reflex decisions,│
- │   entity-awareness, inventory-delta                         │   │ watchdog, mining     │  │ session          │
+ │   item-offer, presence, environment; noticing sensors emit  │   │ tasks/graphs/process,│  │ reflex decisions,│
+ │   candidates (block, entity, dropped item) → salience rules │   │ watchdog, mining     │  │ session          │
  │ Ingress adapters (mixin callbacks): chat, craft, pickup,    │   │ opportunities        │  │                  │
  │   death/respawn, join/leave                                 │   └──────────┬───────────┘  └────────┬─────────┘
  └──────────────────────────────┬──────────────────────────────┘              │                       │
@@ -274,8 +288,8 @@ production callers.
                    └───────────────────────┬──────────────────────────────────────────────────────────────┘
                                            ▼  every event
                    ┌──────────────────────────────────────────┐    decisions   ┌─────────────────────────┐
-                   │ AttentionPolicy (layered rules)          │───────────────►│ AttentionDecisionLog    │
-                   │  (event, AttentionState) → WakeDecision  │                │ (bounded; dashboard/CLI)│
+                   │ AttentionPolicy: Java constitution →     │───────────────►│ AttentionDecisionLog    │
+                   │  GraalJS rules (+ salience) → Java clamp │                │ (bounded; dashboard/CLI)│
                    └───────────────────────┬──────────────────┘                └─────────────────────────┘
                                            ▼ wakes (urgency, delivery, eventRefs, coalescing key)
                    ┌──────────────────────────────────────────┐◄── idle hook: delegation continuation,
@@ -346,14 +360,23 @@ interface Sensor {
 - `SensorRegistry` owns sensor order, per-tick budgets, and a single
   lifecycle-boundary dispatch. This replaces the five duplicated reset blocks
   (problem 5).
-- Salience utilities are small pure classes with unit tests:
-  - `Hysteresis`: enter and exit thresholds, as in Cortico's proximity
-    enter/exit ranges.
-  - `NoticedMemory`: a bounded seen-set per world and dimension, with TTL.
-  - `WindowedDetector`: AIRI's sliding or tumbling threshold detector, keyed
-    by entity or source.
-  - `NoticeBudget`: a per-category cooldown plus an hourly cap, as in
-    Cortico's goal-staleness notices.
+- **Sensors produce candidates; salience rules produce percepts.** Most
+  existing sensors publish percepts directly, because their logic is already
+  fact-shaped (falls, damage, chat). The new noticing sensors (section 5) are
+  split in two:
+  - **Java part: honest candidates.** It decides what the player could
+    actually perceive: line of sight, an exposed face, range, and enter/exit
+    `Hysteresis` for entities. It also keeps a `NoticedMemory` (a bounded
+    seen-set per world and dimension, with TTL) so each thing becomes a
+    candidate once.
+  - **GraalJS part: salience rules** (4.12). They decide which candidates
+    matter now, for example dropping common garbage, clustering, or noticing
+    a player punching the agent five times in two seconds. They then emit
+    percepts. The rules see only candidate records, never the live world, so
+    rules cannot "X-ray".
+- `WindowedDetector` (AIRI's sliding or tumbling threshold detector) and
+  `NoticeBudget` (a per-category cooldown plus an hourly cap) are helpers in
+  the bundled JS rule library rather than Java classes.
 - Migration map for today's producers:
 
 | Today | Becomes |
@@ -379,15 +402,23 @@ driver, goal status and blocker `reconsiderEvents`, delegation phase, session
 actuation allowed, evaluation suppression, proactive social mode, and the
 guidance revision.
 
-The rule layers are ordered, and the first decisive rule wins:
+The policy runs in three stages. Within the rules, the layers are ordered and
+the first decisive rule wins.
+
+**Stage A: the Java constitution** (fixed, and never editable by rules):
 
 1. **System gates.** Planner disabled, unconfigured or degraded, external
    driver, or world not loaded → `NONE`. Reset commands are handled before
    policy, as today.
 2. **Protected.** `DIRECT` urgency (addressed chat, operator, evaluation chat)
-   and `CRITICAL` safety handoffs → wake. The remaining soft gates are
-   skipped.
+   and `CRITICAL` safety handoffs → wake immediately. These decisions are
+   applied synchronously on the client thread and never wait for the rule
+   engine, so chat latency and safety handoffs don't depend on JS.
 3. **Evaluation suppression.** The current list of autonomous types → `NONE`.
+
+**Stage B: GraalJS attention rules** (4.12). The bundled default rule
+module implements the remaining layers, then the budgets from 4.7:
+
 4. **Ownership inhibition (AIRI's reflex inhibition, generalized).**
    - Reflex owns actuation → combat and physical percepts get `NONE`.
    - A job owns progress (collect-resource or mining) → pickups and crafts get
@@ -402,6 +433,17 @@ The rule layers are ordered, and the first decisive rule wins:
    reject rules, as `policyBypass` does today.
 7. **Social configuration.** Proactive social mode and chat distance.
 8. **Type defaults** from the catalog.
+
+**Stage C: Java clamp.** The host validates the rule output against the
+constitution:
+- Events whose type is `policyProtected` (today's `policyBypass` set: reflex
+  handoffs, `task.blocked`, smelting output, graph outcomes, `player.*`) may be
+  delayed by a rule, up to a bounded number of ticks, but never set to `NONE`.
+  This stops any rule from hiding the outcomes the planner needs to avoid
+  getting stuck.
+- An event with a missing or invalid decision falls back to its catalog
+  default.
+- Each clamp is recorded in the decision log.
 
 Phase 2 must reproduce today's effective behavior. The characterization suite
 decides this, not the order above. The only exceptions are the listed
@@ -440,9 +482,13 @@ and G9; G8 stays in the orchestrator (session mechanics).
   and any other pending wake drops them (AIRI's stale follow-up dropping). This
   retires W4, W5 and W6 as separate paths, and `invalidateIdleThinkTriggers`.
 - **Budgets.**
-  - A leaky bucket limits autonomous wakes. `NORMAL` and `LOW` wakes degrade
-    to `NONE` while the bucket is above its trigger level, and each such
-    decision is recorded.
+  - A leaky bucket limits autonomous wakes. It lives in the default GraalJS
+    attention rule, not in the scheduler. The rule keeps the bucket level in
+    its host-owned state, leaks it by tick delta, and degrades `NORMAL` and
+    `LOW` wakes to `NONE` while it is above the trigger level. Each such
+    decision is recorded with the rule's reason. Rule authors, and later the
+    planner, can therefore retune or replace the budget without a Java
+    change.
   - A supersede budget limits chat spam that supersedes every turn. After N
     supersedes within M ticks, `DIRECT` wakes queue instead of superseding.
   - The pending set is bounded. When full, it drops the lowest urgency and
@@ -490,12 +536,18 @@ tickClient
   3 reflex.tick()            System 1; publishes reflex.*
   4 dialogue.poll()          apply completed planner results (current position kept)
   5 executors.tick()         graphs, jobs, follow, lighting, monitors
-  6 scheduler.dispatch()     one WakeBatch at most; attention decisions were made at publish time
+  6 rules.collect()          apply the rule engine's result for the previous tick's step
+                             (percepts published, decisions clamped and queued), then
+                             submit this tick's step: new events + candidates + state
+  7 scheduler.dispatch()     one WakeBatch at most
 ```
 
 Chat and damage callbacks still arrive between ticks. They publish
 immediately, and their wake is dispatched at the end of the next tick, adding
-at most 50 ms of latency. Ordering is then explicit (problem 6), and
+at most 50 ms of latency. Constitution decisions (Stage A) are made
+synchronously when an event is published. Rule-decided events (Stage B) are
+decided one tick later, because the rule step runs on the rule engine's
+worker thread (4.12). Ordering is then explicit (problem 6), and
 aggregated percepts are settled before a batch leaves (Cortico's
 settle-before-flush rule).
 
@@ -545,56 +597,156 @@ settle-before-flush rule).
 - [ ] Recorder and dashboard exports stay replayable, and changes to them are
   additive only.
 - [ ] All new state is bounded.
+- [ ] No rule, bundled or authored, can suppress a protected event or delay
+  a `DIRECT` or `CRITICAL` wake (the Stage A constitution and the Stage C
+  clamp).
 
-## 5. Salience perception: "walked past a diamond"
+### 4.12 Rules in GraalJS: agentic authorship
 
-`NotableBlockSensor`:
+Salience and attention judgement are written as GraalJS modules. That lets
+people and coding agents author them without a Java rebuild. In a later phase
+the planner can inspect and edit them too. The engine reuses the sandbox
+already used by `GraalPolicyInvocation` and `query_world`:
+`HostAccess.NONE`, no class lookup, IO, threads, processes or native access,
+and a statement limit, running on a dedicated daemon worker thread.
 
-- **Honest noticing (no X-ray).** A candidate block must have at least one
-  face exposed to air or a transparent block. A budgeted raycast from the
-  eyes must reach that face within `radius`. The percept records its evidence
-  (`line_of_sight_to_exposed_face`). Fully enclosed blocks are never reported.
-- **Incremental scan.** Each tick the sensor checks at most K positions from a
-  shell around the player that moves with them, and runs at most R raycasts
-  on candidates. It is profiled with Arthas `trace`.
-- **Memory and clustering.** `NoticedMemory` is keyed by position, world and
-  dimension (bounded LRU, TTL). Adjacent same-type blocks cluster into one
-  percept (a vein) with a count.
-- **Salient set.** Configurable in `agent.yml` under `perception.blocks`.
-  Proposed defaults: diamond, emerald and ancient-debris ores, spawners, and
-  (decision O6) chests and portals. A later hook could extend it from the
-  character card's interests.
-- **Event.** `perception.block_noticed {blockId, position, count, distance,
-  direction, exposedFaces, evidence, dimension}`. Family `PERCEPT`,
-  visibility `PLANNER`, urgency `NORMAL`, delivery `DEBOUNCE`.
-- **Attention.** An active mining job for that block id owns it (`NONE`), and
-  so does an active reflex (`NONE`). When idle, the event wakes after
-  debounce. While other work runs, decision O5 applies. The recommendation is
-  to wake, debounced and within the autonomous-wake budget, so the model can
-  choose to divert (Cortico's minimal-intervention principle).
+**Contract.** Each tick the host makes one call per module with a JSON value.
+There are no host objects and no per-event host round trips.
 
-Example flow: the player walks along a ravine, and three `diamond_ore` blocks
-with an exposed face come into line of sight 7 blocks away. The sensor
-publishes one clustered percept. Policy layer 8 (type default) chooses
-`DEBOUNCE`. Ten quiet ticks later the scheduler releases a batch with
-`wake: [{seqNo, type: perception.block_noticed}]`. The controller sees the
-fact in `observe.events` and decides to mine, `remember_place`, or ignore it.
-No prose tells it what to do.
+```js
+// attention/default.js (bundled)
+function step(input, state, lib) {
+  // input: { tick, attention: {actuatorOwner, acceptedWork, goal, delegation, …},
+  //          events: [ {seqNo, type, urgency, delivery, payload, …} ],   // Stage-B events only
+  //          candidates: [ {kind: "block"|"entity"|"item", …evidence} ] }   // from noticing sensors
+  // state:  this module's previous JSON state (host-owned, size-capped)
+  // returns { percepts: [...], decisions: [{seqNo, delivery, urgency, reason}], state }
+}
+```
+
+- **Host-owned state.** A module keeps no hidden state. It receives its
+  previous JSON state and returns the next one, capped at 16 KiB (to be
+  tuned), for example the leaky bucket level, window counters and cooldowns.
+  This makes rule evaluation **deterministic and replayable**: wake replay
+  (Phase 0) can feed a recorded event log plus an initial state and get
+  exactly the same decisions. It also makes state inspectable in the
+  dashboard and by the planner. If a step fails, its returned state is
+  discarded and the previous state is kept.
+- **Determinism.** Time comes only from `input.tick`. `Date.now` and
+  `Math.random` are replaced with a tick-based clock and a seeded generator
+  provided through `lib`.
+- **Bundled library** (`src/main/resources/airicraft/rules/lib.js`, shipped
+  with the build and readable through a docs tool, like `read_policy_docs`
+  today). It provides `leakyBucket`, `slidingWindow` and `tumblingWindow`
+  (AIRI's temporal detector), `cooldown` and `hourlyCap` (Cortico-style
+  notice budgets), and `cluster`. The library is plain JS, so authored
+  rules can use it, copy it or replace it.
+- **Rule sets.** There are two hook points, `salience` (candidates →
+  percepts) and `attention` (events → decisions). Bundled defaults live in
+  `src/main/resources/airicraft/rules/`. They can be overridden from
+  `config/airicraft/rules/*.js` and reloaded with `airicraft reload`. This is
+  where people and coding agents author rules today.
+- **Budgets and failure handling.**
+  - The statement limit is reset each step.
+  - The step has a deadline measured in ticks. If a step overruns or throws,
+    that tick's Stage-B events fall back to catalog defaults and
+    `rules.step_failed` is published.
+  - After K consecutive failures, the module reverts to its previous version
+    (or to the bundled default) and `rules.reverted` is published.
+  - Guest heap is not hard-limited inside the shared JVM, a limitation the
+    policy docs already state. Capped state and capped input sizes are the
+    mitigation.
+- **Performance.** The client runs on JBR 21, so Graal JS runs
+  interpreter-only. Phase 0 includes a spike that measures one step with
+  the default rules and 20 events and 50 candidates. Stage A never waits on
+  it.
+- **Planner authorship (Phase 6).** This follows the
+  `define_tool`/`inspect_tool` precedent in `SelfToolProvider`. It adds native
+  tools `inspect_rules` (source, state, recent decisions and their rule
+  reasons) and `update_rules` (replace one module's source, with a reason).
+  An update is **dry-run by replay** before it is activated: the runtime
+  replays the last N logged events through both versions and returns the
+  decision diff in the tool result, so the planner sees what its edit would
+  have changed.
+  - Updates are versioned (a bounded history) and can be rolled back.
+  - Updates are session-local at first; the persistence scope is decision
+    O11.
+  - Updates can never change the constitution or the clamp.
+  - `update_event_policy` keeps its frozen schema. It becomes a shim that
+    writes a rules table the default attention module reads, so existing
+    prompts and persisted behaviour keep working.
+
+## 5. Salience perception: blocks, entities and dropped items
+
+Three noticing sensors share one pattern. Java produces **honest
+candidates**: things the player could actually perceive, each once, with
+evidence. The GraalJS `salience` rules then decide which candidates become
+percepts (4.12). Decision O6 resolved the scope: notable blocks, entities,
+and dropped items other than common garbage.
+
+| Sensor (Java) | Candidate when | Candidate record | Default salience rule |
+|---|---|---|---|
+| `NotableBlockSensor` | A block has at least one face exposed to air or a transparent block, **and** a budgeted raycast from the eyes reaches that face within `radius` (12 blocks proposed). Fully enclosed blocks are never candidates (no X-ray). | `blockId, position, exposedFaces, distance, direction, evidence: line_of_sight_to_exposed_face, dimension` | A notable-block list (diamond, emerald and ancient-debris ores, spawners, chests, portals); adjacent same-type blocks cluster into one vein percept with a count |
+| `EntityNoticeSensor` | An entity enters perception range with line of sight (*seen*), or is audible but occluded within a shorter range (*heard*). Enter/exit hysteresis applies, as in Cortico's proximity map | `entityType, uuid, name/customName, tamed/owner, baby, distance, direction, modality, holding/equipment summary` | Other players, villagers and traders, named or tamed animals, and passive mobs that are food or breeding sources when relevant. Hostile mobs are skipped while the reflex tracks them; the reflex's threat memory stays authoritative and is not duplicated |
+| `DroppedItemSensor` | An item entity is seen (line of sight) within `radius`, the first time for that entity uuid | `itemId, count, age, position, distance, attribution` (`thrown_by_player` from the existing offer inference, `own_mining_drop` when a job owns it, else `unknown`) | Every item **except common garbage**: `dirt`, `cobblestone`, `cobbled_deepslate`, `netherrack`, `gravel`, `sand`, `stone` variants (andesite, diorite, granite, tuff), `rotten_flesh`, seeds and similar. Garbage is **contextual**: an item stops being garbage when the goal, constraints or an inventory shortage needs it, for example cobblestone while the goal is a furnace. The JS rule decides this from `input.attention`. |
+
+Shared behaviour:
+
+- **Scanning within a budget.** Blocks are scanned incrementally from a shell
+  around the player that moves with them, at most K positions and R raycasts
+  per tick. Entities and items are read from the client entity list, which
+  is already filtered by range, with at most R raycasts per tick. Cost is
+  measured with Arthas `trace`.
+- **Memory.** `NoticedMemory` is keyed by position (blocks) or uuid (entities
+  and items), per world and dimension. It is a bounded LRU with a TTL, so
+  something seen again long after it was forgotten can be noticed again.
+- **Events.** `perception.block_noticed`, `perception.entity_noticed`,
+  `perception.entity_lost` (only for tracked entities the rules care about),
+  and `perception.item_noticed`. All are family `PERCEPT`, visibility
+  `PLANNER`, urgency `NORMAL`, delivery `DEBOUNCE`. The rules may lower any
+  of these.
+- **Existing offers stay.** `social.item_offered` keeps its id and its
+  inference. `DroppedItemSensor` reuses the same geometry, so one physical
+  drop does not produce both an offer and a separate noticed-item wake. The
+  rule suppresses `item_noticed` when the item already has an offer percept.
+- **Attention.**
+  - An executor that is doing that exact work owns the percept (`NONE`).
+    Examples: a mining job for that block id, a collection job picking up its
+    own drops, or the reflex tracking a hostile.
+  - When the agent is idle, percepts wake after debounce.
+  - While other work runs, they also wake, debounced and inside the leaky
+    bucket (recommendation for O5), so the model can choose to divert
+    (Cortico's minimal-intervention principle).
+
+Example flow: the agent walks along a ravine, and three `diamond_ore` blocks
+with an exposed face come into line of sight 7 blocks away.
+1. `NotableBlockSensor` produces three candidates.
+2. The salience rule clusters them into one `perception.block_noticed` with
+   `count: 3`.
+3. The attention rule finds the leaky bucket below its trigger level and
+   chooses `DEBOUNCE`.
+4. Ten quiet ticks later the scheduler releases a batch with
+   `wake: [{seqNo, type: perception.block_noticed}]`.
+5. The controller sees the fact in `observe.events` and decides to mine it,
+   `remember_place` it, or ignore it. No prose tells it what to do.
+
+A second example: a player drops a bread stack near the agent. The existing
+offer inference publishes `social.item_offered`, and `perception.item_noticed`
+is suppressed for that entity. A cobblestone drop from someone else's mining
+is garbage and is recorded as a candidate only, unless the goal needs
+cobblestone.
 
 Other sensors, in order of value:
 
 - `EnvironmentSensor`: dusk and dawn, weather, dimension or biome change, and
   darkness at the feet (Cortico's `isDark`, a connected-light mode). It emits
   on transitions only.
-- `EntityAwarenessSensor`: notable non-hostile entities (players approaching,
-  villagers, food animals) with enter/exit hysteresis and seen/heard
-  modality. Hostiles stay in the reflex's threat memory. The sensor reads that
-  memory and does not duplicate it.
 - `InventoryDeltaSensor`: aggregated deltas with resulting totals, such as
   `oak_log +4 (13)`. They become the canonical inventory fact. Pickup and craft
   events remain as attribution.
-- Social gestures (AIRI's punch and teabag windows) are optional. They are
-  useful for companion behaviour, not survival.
+- Social gestures (AIRI's punch and teabag windows) as salience rules over
+  entity animation candidates. These are optional, useful for companion
+  behaviour rather than survival.
 
 ## 6. Migration plan
 
@@ -629,6 +781,12 @@ Phases ship as several small PRs to limit conflicts in `EmbodiedAgentRuntime`.
   offline and diff the decisions. Use it in Phases 2 and 3.
 - [ ] Confirm or refute D1–D8 with focused tests and write the outcome into
   this document.
+- [ ] **GraalJS rule-engine spike.** Using the `GraalPolicyInvocation`
+  sandbox settings on the interpreter-only JBR 21 runtime, measure the
+  latency of one `step()` with a draft default attention rule, 20 events and
+  50 candidates, both cold and warm, and its steady-state memory. The result
+  sets the step deadline and the input caps, and confirms that one-tick-late
+  Stage-B decisions are acceptable.
 - [ ] Record baseline metrics (4.10) from one evaluation batch and one live
   playtest.
 - [ ] Resolve section 9, write ADR-0003, and add the vocabulary to `CONTEXT.md`.
@@ -653,8 +811,15 @@ evaluator (`semanticEventContains`) unchanged.
 
 ### Phase 2: attention policy and wake scheduler (behaviour-preserving)
 
-- [ ] Add `AttentionState`, the layered `AttentionPolicy` reproducing G1–G7
-  and G9, and `AttentionDecisionLog`.
+- [ ] Add `AttentionState`, the Stage A constitution and Stage C clamp in
+  Java, and `AttentionDecisionLog`.
+- [ ] Add the GraalJS rule engine (4.12): a worker thread, the per-step JSON
+  contract, host-owned state, the deterministic clock and seed, failure
+  fallback and revert, `rules/lib.js`, and loading overrides from
+  `config/airicraft/rules/` on `airicraft reload`.
+- [ ] Write the bundled `attention/default.js` so that it reproduces G1–G7
+  and G9. Planner-authored `update_event_policy` rules become a table this
+  module reads. The golden suite runs through the real engine.
 - [ ] Add `WakeScheduler` with the pending set, satisfaction, supersession and
   idle hook. Retire the W2/W3 deque, `continuePlannerGoal` scheduling,
   `IdleIdeaScheduler` timing (it becomes the idle-think generator), the
@@ -688,15 +853,22 @@ hour no worse; no new failure classes in playtest review.
 
 ### Phase 4: perception layer and salience sensors
 
-- [ ] Add `agent.perception` with the Sensor API, the registry and the
-  salience utilities, with unit tests.
+- [ ] Add `agent.perception` with the Sensor API, the registry,
+  `Hysteresis` and `NoticedMemory`, with unit tests.
 - [ ] Migrate the existing observers (4.5 table).
-- [ ] Add `NotableBlockSensor`, `EnvironmentSensor`, `EntityAwarenessSensor` and
-  `InventoryDeltaSensor`, with configuration in `agent.yml` (`perception:`),
-  reloadable through `airicraft reload`.
-- [ ] Add a new evaluation scenario, `notice-diamond`: a frozen world with an
-  exposed diamond vein beside a path. Check that the planner is woken by
-  `perception.block_noticed`, and review what the controller chooses to do.
+- [ ] Add `NotableBlockSensor`, `EntityNoticeSensor`, `DroppedItemSensor`,
+  `EnvironmentSensor` and `InventoryDeltaSensor`. Put the Java-side budgets
+  (radius, K, R) in `agent.yml` (`perception:`), reloadable through
+  `airicraft reload`.
+- [ ] Write the bundled `salience/default.js`: notable blocks, entity
+  categories, the contextual garbage list, vein clustering, and offer
+  deduplication.
+- [ ] Add new evaluation scenarios:
+  - `notice-diamond`: an exposed diamond vein beside a path, and a fully
+    enclosed one that must **not** be noticed.
+  - `notice-drop`: valuable and garbage drops near the path.
+
+  Check the wakes, and review what the controller chooses to do.
 - [ ] Budget check: perception tick cost measured with Arthas `trace` on a
   loaded world, within the budget set in Phase 0.
 
@@ -704,21 +876,40 @@ hour no worse; no new failure classes in playtest review.
 
 - [ ] `PREEMPT` for safety-epoch changes: cancel an unexternalized in-flight
   turn instead of paying for it and then rejecting it as stale.
-- [ ] Supersede budget, autonomous-wake leaky bucket, and per-category notice
-  budgets, each tuned from metrics.
+- [ ] Supersede budget (Java scheduler). Add the autonomous-wake leaky bucket
+  and the per-category notice budgets to the bundled JS rules, each tuned from
+  metrics. These are rule edits and need no Java changes.
 - [ ] Update `AGENTS.md` (behavior notes, key files), the docs index, and
   ADR-0003 (final).
+
+### Phase 6: planner-authored rules
+
+- [ ] Add native tools `inspect_rules` and `update_rules`, which change
+  the frozen native tool prefix in a deliberate release. They follow the
+  `SelfToolProvider` precedent: bounded source size, versioning with a bounded
+  history, rollback, and session-local scope unless O11 decides otherwise.
+- [ ] Dry-run every update by replaying the last N logged events through the
+  old and new module, and return the decision diff in the tool result.
+  Reject any update that fails to evaluate.
+- [ ] Automatically revert on repeated step failures, and publish
+  `rules.reverted` so the planner sees it in `observe`.
+- [ ] Add prompt guidance and `read_rules_docs` (the contract, `lib.js`, and
+  the constitution the planner cannot change).
+- [ ] Live playtest in which the planner tunes its own attention, for example
+  muting noticed-item wakes while building. Review rule edits in the decision
+  log.
 
 ## 7. Verification strategy
 
 | Level | What |
 |---|---|
-| Unit | Decision tables for `AttentionPolicy` (parameterized, one row per rule); `WakeScheduler` timing with a fake tick source; salience utilities; sensors with synthetic samples (the `PhysicalEventObserver` tests are the model) |
+| Unit | Constitution and clamp decision tables in Java; `WakeScheduler` timing with a fake tick source; `Hysteresis` and `NoticedMemory`; sensors with synthetic samples (the `PhysicalEventObserver` tests are the model) |
+| Rules | Bundled JS modules run in the real Graal sandbox against JSON fixtures, with the state threaded through consecutive steps (bucket fill and leak, windows, clustering, contextual garbage); determinism check (same input and state give identical output); failure paths (throw, statement limit, oversized state) |
 | Characterization | Golden wake scenarios (Phase 0), unchanged through Phases 1–2 |
 | Replay | Recorded playtest JSONL through the old and new policy, diffing decisions |
 | Integration | `EmbodiedAgentRuntimeTest`, `DialogueRuntimeTest`, `PlannerOrchestratorTest` |
 | Evaluation | All `scenarios/*` through the batch harness, before and after each phase, comparing pass/fail, planner turns and time used |
-| Live | Automatic and hosted playtests for Phases 3–5; export the incident before rebuilding (`docs/live-playtest-recording.md`) |
+| Live | Automatic and hosted playtests for Phases 3–6; export the incident before rebuilding (`docs/live-playtest-recording.md`) |
 
 ## 8. Compatibility surface
 
@@ -732,20 +923,26 @@ hour no worse; no new failure classes in playtest review.
 | Evaluator | `EvaluationAddonRuntime` uses `recentEvents(null)` as evidence and `semanticEventContains` for checks; both stay. Planner-call contract v1 has no trigger fields, so it is unaffected. |
 | Debug overlay | `PlannerDebugOverlay` reads `triggerBatch`. It must be adapted to `WakeBatch`. |
 
-## 9. Open decisions
+## 9. Decisions
 
-| # | Decision | Recommendation |
+O6 and O7 were decided on 2026-09-26. The others are recommendations that
+have not been confirmed yet.
+
+| # | Decision | Recommendation / outcome |
 |---|---|---|
 | O1 | Should the refactor preserve behaviour first (Phases 1–2), with model-visible changes isolated in Phase 3? | **Yes.** It keeps regressions attributable. |
 | O2 | Priority model: an AIRI-style numeric priority queue, or Cortico-style delivery modes plus an urgency enum decided by a layered policy? | **Urgency plus delivery, decided by the policy.** Batches are delivered whole, so ordering within a queue matters less than when to wake and whether to interrupt. |
 | O3 | Preemption scope | Direct guidance supersedes, as today. Add `PREEMPT` for safety-epoch changes. Never preempt after a side-effect tool has executed. |
 | O4 | Clock for debounce and idle timing | **Agent ticks.** LLM retry and backoff stay on wall clock. |
 | O5 | Should salient perceptions wake the planner while other work runs? | **Yes, debounced and inside the autonomous-wake budget.** When the owning executor is doing that exact work, `NONE`. |
-| O6 | Honesty rule and default salient block set | Require an exposed face plus line of sight within 12 blocks. Defaults: diamond, emerald and ancient-debris ores, and spawners. Chests and portals are the team's call. |
-| O7 | How rules are authored: Java, or AIRI-style YAML | **Java rules** with thresholds set in `agent.yml`. Revisit YAML only if non-developers need to author rules. |
+| O6 | What can be noticed | **Decided:** notable blocks, entities, and dropped items other than common garbage (section 5). The honesty rule applies to all three: line of sight within range, and for blocks an exposed face; no X-ray. Whether an item is garbage depends on the goal and inventory, decided by the salience rule. |
+| O7 | How rules are authored | **Decided: GraalJS.** Rules are written for flexible agentic authorship, and the planner will be able to edit its own rules in a later phase (Phase 6). The leaky bucket and other budgets live inside the JS rules. Java keeps only the constitution and clamp (4.6, 4.12). |
 | O8 | `update_event_policy` semantics once E2 retires: should `ignore` also hide events from `observe`? | **No, keep evidence visible.** `ignore` only stops wakes. Say so in the tool description without changing the schema. |
 | O9 | Event log bound **[ADR-0002]** | Keep 512 unless the Phase 0 gap measurements show loss within typical decision intervals. |
 | O10 | Where the scheduler lives | A new package `agent.attention`, owned by `EmbodiedAgentRuntime`, delivering to `DialogueRuntime`. |
+| O11 | How long planner-authored rules persist (Phase 6) | **Session-local first**, like `define_tool`. Consider world-persisted rules, stored next to `planner-goal.json`, only after live evidence that edits help across sessions. Operator files in `config/airicraft/rules/` always take precedence over bundled defaults. |
+| O12 | Which layers are in the constitution | Stage A: system gates, protected `DIRECT`/`CRITICAL` wakes, evaluation suppression. Stage C: protected types can be delayed but never dropped. Ownership inhibition and the blocked-goal gate stay in JS. They are heuristics, but the golden suite guards them. |
+| O13 | Whether rule engine failures should also stop wakes | **No.** Events fall back to catalog defaults, and repeated failures revert the module. An authored rule must never leave the agent unable to wake. |
 
 ## 10. Risks
 
@@ -760,6 +957,17 @@ hour no worse; no new failure classes in playtest review.
   minute as a phase exit metric.
 - **Perception CPU cost.** Mitigations: per-tick budgets, incremental scans,
   and measurement with Arthas `trace`.
+- **GraalJS cost and robustness.** Graal runs interpreter-only on JBR 21, and
+  guest heap is not hard-limited. Mitigations: the Phase 0 spike, one call
+  per tick with batched JSON, capped input and state, a step deadline,
+  default fallback, and automatic revert. Stage A keeps chat and safety
+  handoffs independent of JS.
+- **Planner-authored rules that tune attention badly** (Phase 6). For
+  example, the planner mutes everything and misses important events.
+  Mitigations: the constitution and clamp, dry-run replay diffs before
+  activation, versioning with rollback, session-local scope, and rule edits
+  shown in the decision log. The planner-authored ruleset is an explicit
+  playtest review item.
 - **Rendering differences between the Codex and OpenAI backends.** Both use
   the decision context today. Include one Codex-driver smoke test in the
   Phase 3 checks.
@@ -818,7 +1026,7 @@ wake path.
 | DIRECT | IMMEDIATE (may supersede) | addressed chat, operator chat, evaluation chat |
 | CRITICAL | IMMEDIATE, later PREEMPT | `reflex.started`, `reflex.resolved` with a hold, `reflex.actuator_failed`, `player.died`, `player.respawned` |
 | HIGH | IMMEDIATE (merging a burst in the same tick) | `work.changed` terminal/paused/check-output, `task.blocked`, `task.notice` (stalled, slow mining), `work.travel_restriction_violated`, `action_graph.goal_terminal` (failed), `action_graph.goal_suspended`, `smelting.output_ready`, `food.unavailable` |
-| NORMAL | DEBOUNCE | `social.item_offered`, `player.physical`, `perception.block_noticed`, `perception.entity_*`, `social.player_joined_nearby` (if proactive mode) |
+| NORMAL | DEBOUNCE | `social.item_offered`, `player.physical`, `perception.block_noticed`, `perception.entity_noticed`, `perception.item_noticed`, `social.player_joined_nearby` (if proactive mode) |
 | LOW | DEBOUNCE, often inhibited to NONE | ambient chat (proactive mode), system messages, pickups, crafts, `combat.damage_taken` outside a reflex |
 | SELF | idle hook only | goal continuation, idle think, delegation continuation, safety-hold reminder |
 | – | NONE (evidence only) | everything else visible to the planner, such as `lighting.*`, `reflex.combat_*`, `food.eat_*`, `session.*`, `interaction.*` |
