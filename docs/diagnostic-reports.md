@@ -58,7 +58,7 @@ JSONL uses UTF-8, one JSON object per line, with a final newline. Record order i
 
 The footer contains `complete: true`, `algorithm: SHA-256`, `sha256`, `bytes` and `observationCount`. The checksum/byte count cover every exact UTF-8 byte before the footer, including the manifest and newlines. The count excludes the embedded baseline. Verify all three; a missing footer, mismatch or trailing data means incomplete/altered evidence. Integrity is not authenticity or proof of complete history; also inspect coverage.
 
-Local saves write a temporary `.partial` ZIP and atomically rename after success, cleaning up failed temporary files. HTTP downloads stream the same bundle. Existing raw export/playback contracts remain unchanged.
+Every local save gets a unique filename, including repeated saves of the same preview. Editing a description or changing attachments for the same incident creates another ZIP and leaves earlier files intact; the `reportId` inside remains the original incident marker. Local saves write a temporary `.partial` ZIP and atomically rename after success, cleaning up failed temporary files. HTTP downloads stream the same bundle. Existing raw export/playback contracts remain unchanged.
 
 ### Dashboard API
 

@@ -262,7 +262,8 @@ public final class DiagnosticReport {
 		Path temporary = Files.createTempFile(directory, ".airicraft-report-", ".partial");
 		try {
 			try (OutputStream output = Files.newOutputStream(temporary)) { writeBundleTo(output); }
-			Path target = directory.resolve(fileName());
+			// Keep prior saves intact when this incident is reviewed again, including without edits.
+			Path target = directory.resolve("airicraft-report-" + reportId + "-" + UUID.randomUUID() + ".zip");
 			Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
 			return target;
 		} finally { Files.deleteIfExists(temporary); }

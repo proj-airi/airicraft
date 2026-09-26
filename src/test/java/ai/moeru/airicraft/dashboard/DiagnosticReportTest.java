@@ -35,6 +35,43 @@ class DiagnosticReportTest {
 	}
 
 	@Test
+	void savesUpdatedPreviewsSeparatelyWithoutChangingEarlierBundles() throws Exception {
+		var store = new DashboardObservationStore(1024 * 1024);
+		store.append("log", 1, 1, Map.of("message", "Developer evidence"));
+		var draft = DiagnosticReport.mark(store, Map.of(), java.util.List.of());
+		var minimal = draft.prepare(new DiagnosticReport.Request(DiagnosticReport.Mode.MINIMAL, "Initial description"), java.util.List.of());
+		Path first = minimal.save(directory);
+		byte[] original = Files.readAllBytes(first);
+		var developer = draft.prepare(new DiagnosticReport.Request(DiagnosticReport.Mode.DEVELOPER, "Updated description"), java.util.List.of());
+		Path second = developer.save(directory);
+		assertNotEquals(first, second, "Each save must publish a separate bundle");
+		assertArrayEquals(original, Files.readAllBytes(first), "A revised preview must not overwrite the earlier report");
+		try (var zip = new java.util.zip.ZipFile(second.toFile())) {
+			for (var attachment : developer.attachments().entrySet()) {
+				assertEquals(attachment.getValue(), new String(zip.getInputStream(zip.getEntry(attachment.getKey())).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+			}
+		}
+		var firstManifest = JsonParser.parseString(readReport(first).lines().findFirst().orElseThrow()).getAsJsonObject();
+		var secondManifest = JsonParser.parseString(readReport(second).lines().findFirst().orElseThrow()).getAsJsonObject();
+		assertEquals(firstManifest.get("reportId"), secondManifest.get("reportId"), "Both previews belong to the same marked incident");
+		assertEquals("minimal", firstManifest.get("mode").getAsString());
+		assertEquals("developer", secondManifest.get("mode").getAsString());
+		assertEquals("Updated description", secondManifest.get("description").getAsString());
+		assertTrue(readReport(second).contains("Developer evidence"));
+		try (var files = Files.list(directory)) { assertEquals(java.util.Set.of(first, second), files.collect(java.util.stream.Collectors.toSet())); }
+	}
+
+	@Test
+	void savingTheSamePreviewAgainPublishesAnotherCompleteBundle() throws Exception {
+		var report = DiagnosticReport.capture(new DashboardObservationStore(1024 * 1024), Map.of());
+		Path first = report.save(directory);
+		Path second = report.save(directory);
+		assertNotEquals(first, second);
+		assertEquals(readReport(first), readReport(second));
+		try (var files = Files.list(directory)) { assertEquals(java.util.Set.of(first, second), files.collect(java.util.stream.Collectors.toSet())); }
+	}
+
+	@Test
 	void bundlesCarryBuildIdentityEvenWhenRunningFromAReleasedJar() throws Exception {
 		Properties properties = new Properties();
 		try (var input = getClass().getResourceAsStream("/airicraft-build.properties")) {
