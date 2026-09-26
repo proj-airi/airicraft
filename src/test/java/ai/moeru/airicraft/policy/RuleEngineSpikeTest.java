@@ -46,50 +46,78 @@ class RuleEngineSpikeTest {
    JsonObject firstObject = JsonParser.parseString(first).getAsJsonObject();
    assertEquals(20, firstObject.getAsJsonArray("decisions").size());
    assertTrue(firstObject.getAsJsonArray("percepts").size() > 0);
-   assertEquals(first, runner.run(input, initialState), "identical input and state must replay exactly");
+   boolean replayEqual = first.equals(runner.run(input, initialState));
+   assertTrue(replayEqual, "identical input and state must replay exactly");
    JsonObject clock = firstObject.getAsJsonObject("probe");
    assertEquals(10_000, clock.get("now").getAsLong());
    assertEquals(10_000, clock.get("date").getAsLong());
    assertEquals(clock.get("random").getAsDouble(), JsonParser.parseString(runner.run(input, initialState)).getAsJsonObject().getAsJsonObject("probe").get("random").getAsDouble());
+   assertTrue(hasReason(firstObject, "ownership_gate"));
+   assertTrue(hasReason(JsonParser.parseString(runner.run(input(205, 20, 50), initialState)).getAsJsonObject(), "blocked_goal_gate"));
 
-   long[] direct = new long[STEPS];
-   String state = initialState;
+   String state = state(first);
    String output = first;
-   for (int i = 0; i < STEPS; i++) {
-    String stepInput = input(201 + i, 20, 50);
-    String previous = state;
-    Timed result = CompletableFuture.supplyAsync(() -> runner.runTimed(stepInput, previous), runner.worker).get(2, TimeUnit.SECONDS);
-    output = result.output();
-    direct[i] = result.nanos();
-    state = state(output);
-    assertTrue(state.getBytes(StandardCharsets.UTF_8).length <= MAX_STATE);
-   }
-   int stateBytes = state.getBytes(StandardCharsets.UTF_8).length;
-   long[] handoff = new long[STEPS];
-   for (int i = 0; i < STEPS; i++) {
-    String stepInput = input(3_000 + i, 20, 50);
-    String previous = state;
+   int tick = 201;
+   boolean sawWindow = false, sawCooldown = false, sawNoticeCap = false;
+   long[] earlyHandoff = new long[200];
+   for (int i = 0; i < earlyHandoff.length; i++, tick++) {
     long start = System.nanoTime();
-    output = runner.run(stepInput, previous);
+    output = runner.run(input(tick, 20, 50), state);
+    earlyHandoff[i] = System.nanoTime() - start;
+    state = state(output);
+    JsonObject observed = JsonParser.parseString(output).getAsJsonObject();
+    sawWindow |= hasReason(observed, "window_cap");
+    sawCooldown |= hasReason(observed, "cooldown");
+    sawNoticeCap |= hasReason(observed, "notice_cap");
+   }
+   for (int i = 0; i < 299; i++, tick++) state = state(runner.run(input(tick, 20, 50), state));
+   long[] handoff = new long[STEPS];
+   for (int i = 0; i < STEPS; i++, tick++) {
+    long start = System.nanoTime();
+    output = runner.run(input(tick, 20, 50), state);
     handoff[i] = System.nanoTime() - start;
     state = state(output);
+    assertTrue(state.getBytes(StandardCharsets.UTF_8).length <= MAX_STATE);
+    JsonObject observed = JsonParser.parseString(output).getAsJsonObject();
+    sawWindow |= hasReason(observed, "window_cap");
+    sawCooldown |= hasReason(observed, "cooldown");
+    sawNoticeCap |= hasReason(observed, "notice_cap");
    }
-   for (int i = 0; i < 6_000; i++) {
-    output = runner.run(input(5_000 + i, 20, 50), state);
+   assertTrue(sawWindow && sawCooldown && sawNoticeCap, "budgets must affect representative decisions");
+   int stateBytes = state.getBytes(StandardCharsets.UTF_8).length;
+   for (int i = 0; i < 7_500; i++, tick++) {
+    output = runner.run(input(tick, 20, 50), state);
     state = state(output);
    }
    long heapAfter10k = heapAfterGc();
+   long[] direct = new long[STEPS];
+   try (Runner directRunner = new Runner(200_000)) {
+    String directState = "{}";
+    for (int i = 0; i < 500; i++) directState = state(directRunner.run(input(20_000 + i, 20, 50), directState));
+    for (int i = 0; i < STEPS; i++) {
+     String stepInput = input(20_500 + i, 20, 50);
+     String previous = directState;
+     Timed result = CompletableFuture.supplyAsync(() -> directRunner.runTimed(stepInput, previous), directRunner.worker).get(1, TimeUnit.SECONDS);
+     direct[i] = result.nanos();
+     directState = state(result.output());
+    }
+   }
    String healthy = runner.run(input(11_001, 20, 50), state);
-   assertThrows(Exception.class, () -> runner.run(input(11_002, 20, 50).replace("\"tick\":11002", "\"tick\":11002,\"throwRule\":true"), "{}"));
-   assertEquals(healthy, runner.run(input(11_001, 20, 50), state));
+   double throwMs = expectFailure(() -> runner.run(input(11_002, 20, 50).replace("\"tick\":11002", "\"tick\":11002,\"throwRule\":true"), "{}"), org.graalvm.polyglot.PolyglotException.class, "intentional rule failure");
+   boolean throwRecovered = healthy.equals(runner.run(input(11_001, 20, 50), state));
+   assertTrue(throwRecovered);
+   double loopMs;
    try (Runner failing = new Runner(200_000)) {
-    assertThrows(Exception.class, () -> failing.run(input(11_002, 20, 50).replace("\"tick\":11002", "\"tick\":11002,\"loopRule\":true"), "{}"));
+    loopMs = expectResourceExhaustion(() -> failing.run(input(11_002, 20, 50).replace("\"tick\":11002", "\"tick\":11002,\"loopRule\":true"), "{}"));
    }
+   boolean loopRecovered;
    try (Runner recovered = new Runner(200_000)) {
-    assertEquals(healthy, recovered.run(input(11_001, 20, 50), state));
+    loopRecovered = healthy.equals(recovered.run(input(11_001, 20, 50), state));
+    assertTrue(loopRecovered);
    }
-   assertThrows(RuntimeException.class, () -> runner.run(input, "{\"pad\":\"" + "x".repeat(MAX_STATE) + "\"}"));
-   assertEquals(healthy, runner.run(input(11_001, 20, 50), state));
+   double oversizedMs = expectFailure(() -> runner.run(input, "{\"pad\":\"" + "x".repeat(MAX_STATE) + "\"}"), IllegalArgumentException.class, "state_size_limit");
+   boolean oversizedRecovered = healthy.equals(runner.run(input(11_001, 20, 50), state));
+   assertTrue(oversizedRecovered);
 
    boolean at50k = completesAtLimit(50_000);
    boolean at200k = completesAtLimit(200_000);
@@ -98,8 +126,10 @@ class RuleEngineSpikeTest {
    summary.addProperty("jvm", System.getProperty("java.runtime.version") + " " + System.getProperty("java.vm.name"));
    summary.addProperty("contextBuildMs", ms(buildNs));
    summary.addProperty("coldFirstStepMs", ms(coldNs));
+   summary.add("earlyHandoffMs", distribution(earlyHandoff));
    summary.add("directMs", distribution(direct));
    summary.add("handoffMs", distribution(handoff));
+   summary.addProperty("fixedWarmupSteps", 500);
    summary.addProperty("limit50000Completes", at50k);
    summary.addProperty("limit200000Completes", at200k);
    summary.addProperty("inputBytes", input.getBytes(StandardCharsets.UTF_8).length);
@@ -108,8 +138,13 @@ class RuleEngineSpikeTest {
    summary.addProperty("heapBeforeBytes", heapBefore);
    summary.addProperty("heapBuiltBytes", heapBuilt);
    summary.addProperty("heapAfter10000Bytes", heapAfter10k);
-   summary.addProperty("determinism", true);
-   summary.addProperty("failureRecovery", true);
+   summary.addProperty("replayEqual", replayEqual);
+   summary.addProperty("throwFailureMs", throwMs);
+   summary.addProperty("loopFailureMs", loopMs);
+   summary.addProperty("oversizedFailureMs", oversizedMs);
+   summary.addProperty("throwRecovered", throwRecovered);
+   summary.addProperty("loopRecoveredAfterContextReplacement", loopRecovered);
+   summary.addProperty("oversizedRecovered", oversizedRecovered);
    Path result = Path.of("build/rule-spike/result.json");
    Files.createDirectories(result.getParent());
    Files.writeString(result, summary.toString() + "\n");
@@ -141,6 +176,34 @@ class RuleEngineSpikeTest {
   return out;
  }
  private static double ms(long ns) { return ns / 1_000_000.0; }
+ private static boolean hasReason(JsonObject output, String reason) {
+  for (var decision : output.getAsJsonArray("decisions"))
+   if (reason.equals(decision.getAsJsonObject().get("reason").getAsString())) return true;
+  return false;
+ }
+ private static double expectFailure(Runnable action, Class<? extends Throwable> expected, String message) {
+  long start = System.nanoTime();
+  RuntimeException failure = assertThrows(RuntimeException.class, action::run);
+  double elapsed = ms(System.nanoTime() - start);
+  assertTrue(elapsed < 1_000, "failure exceeded one-second deadline: " + elapsed);
+  Throwable cause = deepestCause(failure);
+  assertInstanceOf(expected, cause);
+  assertTrue(cause.getMessage().contains(message), cause.toString());
+  return elapsed;
+ }
+ private static double expectResourceExhaustion(Runnable action) {
+  long start = System.nanoTime();
+  RuntimeException failure = assertThrows(RuntimeException.class, action::run);
+  double elapsed = ms(System.nanoTime() - start);
+  assertTrue(elapsed < 1_000, "statement-limit failure exceeded one-second deadline: " + elapsed);
+  var cause = assertInstanceOf(org.graalvm.polyglot.PolyglotException.class, deepestCause(failure));
+  assertTrue(cause.isResourceExhausted(), cause.toString());
+  return elapsed;
+ }
+ private static Throwable deepestCause(Throwable error) {
+  while (error.getCause() != null) error = error.getCause();
+  return error;
+ }
  private record Timed(String output, long nanos) {}
  private static String state(String output) { return JsonParser.parseString(output).getAsJsonObject().get("state").toString(); }
  private static long heapAfterGc() throws InterruptedException {
@@ -150,19 +213,23 @@ class RuleEngineSpikeTest {
  }
  private static String input(int tick, int eventCount, int candidateCount) {
   StringBuilder s = new StringBuilder(12_000);
-  s.append("{\"tick\":").append(tick).append(",\"seed\":42,\"attention\":{\"actuatorOwner\":\"agent\",\"acceptedWork\":true,\"goal\":\"gather wood\",\"blockedGoal\":false},\"plannerRules\":{\"world.block_changed\":\"NORMAL\"},\"events\":[");
+  s.append("{\"tick\":").append(tick).append(",\"seed\":").append(42 + tick % 17)
+   .append(",\"attention\":{\"actuatorOwner\":\"").append(tick % 4 == 0 ? "external" : "agent")
+   .append("\",\"acceptedWork\":true,\"goal\":\"gather wood\",\"blockedGoal\":").append(tick % 5 == 0)
+   .append("},\"plannerRules\":{\"world.block_changed\":\"NORMAL\"},\"events\":[");
   String[] types = {"player.chat", "player.hurt", "world.block_changed", "task.progress", "entity.nearby", "inventory.changed", "weather.changed", "goal.blocked"};
   for (int i = 0; i < eventCount; i++) {
    if (i > 0) s.append(',');
    s.append("{\"seqNo\":").append(tick * 100 + i).append(",\"type\":\"").append(types[i % types.length])
-    .append("\",\"urgency\":\"NORMAL\",\"delivery\":\"NEXT_BOUNDARY\",\"payload\":{\"source\":\"sensor\",\"description\":\"nearby game change with bounded representative evidence\",\"x\":").append(i).append("}}");
+    .append("\",\"urgency\":\"NORMAL\",\"delivery\":\"NEXT_BOUNDARY\",\"payload\":{\"source\":\"sensor-").append((tick + i) % 5)
+    .append("\",\"description\":\"nearby game change with bounded representative evidence\",\"x\":").append((tick + i) % 32).append("}}");
   }
   s.append("],\"candidates\":[");
   for (int i = 0; i < candidateCount; i++) {
    if (i > 0) s.append(',');
    s.append("{\"kind\":\"").append(i % 3 == 0 ? "block" : i % 3 == 1 ? "entity" : "item")
-    .append("\",\"id\":\"").append(i % 7 == 0 ? "minecraft:cobblestone" : "minecraft:oak_log")
-    .append("\",\"x\":").append(i % 12).append(",\"y\":64,\"z\":").append(i / 12)
+    .append("\",\"id\":\"").append((i + tick) % 7 == 0 ? "minecraft:cobblestone" : (i + tick) % 5 == 0 ? "minecraft:iron_ore" : "minecraft:oak_log")
+    .append("\",\"x\":").append((i + tick) % 12).append(",\"y\":64,\"z\":").append(i / 12)
     .append(",\"description\":\"visible candidate with line of sight and distance evidence\"}");
   }
   return s.append("]}").toString();
@@ -190,7 +257,7 @@ class RuleEngineSpikeTest {
    context = (Context) pair[0]; kernel = (Value) pair[1];
   }
   String run(String input, String state) {
-   try { return CompletableFuture.supplyAsync(() -> runDirect(input, state), worker).get(2, TimeUnit.SECONDS); }
+   try { return CompletableFuture.supplyAsync(() -> runDirect(input, state), worker).get(1, TimeUnit.SECONDS); }
    catch (Exception ex) { throw new RuntimeException(ex); }
   }
   Timed runTimed(String input, String state) {

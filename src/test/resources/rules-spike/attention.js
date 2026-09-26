@@ -24,6 +24,7 @@
       const urgency = input.plannerRules[event.type] || defaults[event.type] || event.urgency || 'LOW';
       let delivery = event.delivery || 'NEXT_BOUNDARY';
       let reason = 'catalog_default';
+      let bucketAccepted = true;
       if (owner !== 'agent' && ownedTypes.has(event.type)) {
         delivery = 'LOG_ONLY'; reason = 'ownership_gate';
       } else if (input.attention.blockedGoal && event.type !== 'goal.blocked' && urgency !== 'HIGH') {
@@ -32,12 +33,20 @@
         const cost = urgency === 'NORMAL' ? 1 : 0.5;
         const bucket = lib.leakyBucket(next.bucket, {capacity: 8, leakPerTick: 0.1, cost}, input.tick);
         next.bucket = bucket.state;
-        if (!bucket.accepted) { delivery = 'LOG_ONLY'; reason = 'leaky_bucket'; }
+        bucketAccepted = bucket.accepted;
       }
-      lib.slidingWindow(next.windows, event.type, input.tick, 120, 8);
-      lib.tumblingWindow(next.windows, `${event.type}:minute`, input.tick, 1200, 100);
-      lib.hourlyCap(next.hourly, event.type, input.tick, 30);
-      lib.cooldown(next.cooldowns, event.type, input.tick, 20);
+      const windowLimit = event.type === 'world.block_changed' ? 8 : 120;
+      const withinWindow = lib.slidingWindow(next.windows, event.type, input.tick, 120, windowLimit);
+      const withinMinute = lib.tumblingWindow(next.windows, `${event.type}:minute`, input.tick, 1200, 100);
+      const hourlyLimit = event.type === 'weather.changed' ? 30 : 60;
+      const withinHour = lib.hourlyCap(next.hourly, event.type, input.tick, hourlyLimit);
+      const offCooldown = lib.cooldown(next.cooldowns, event.type, input.tick, 20);
+      if (delivery !== 'LOG_ONLY' && urgency !== 'HIGH') {
+        if (!withinMinute || !withinHour) { delivery = 'LOG_ONLY'; reason = 'notice_cap'; }
+        else if (!withinWindow) { delivery = 'LOG_ONLY'; reason = 'window_cap'; }
+        else if (!offCooldown) { delivery = 'LOG_ONLY'; reason = 'cooldown'; }
+        else if (!bucketAccepted) { delivery = 'LOG_ONLY'; reason = 'leaky_bucket'; }
+      }
       decisions.push({seqNo: event.seqNo, delivery, urgency, reason});
     }
     const filtered = input.candidates.filter(candidate =>
