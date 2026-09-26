@@ -1365,6 +1365,17 @@ public final class PlannerOrchestrator {
 		if (overflowSnapshot == null) {
 			return true;
 		}
+		var wakeFields = new java.util.LinkedHashMap<String, Object>();
+		wakeFields.put("path", "W8");
+		wakeFields.put("triggerTypes", List.of());
+		wakeFields.put("origins", List.of("AUTONOMOUS"));
+		wakeFields.put("coalescingKeys", List.of());
+		wakeFields.put("speakers", List.of("runtime"));
+		var decision = decisionContextSource == null ? null : decisionContextSource.get();
+		wakeFields.put("owner", decision == null ? "controller" : decision.decisionOwner());
+		wakeFields.put("serverTick", decision == null ? -1L : decision.serverTick());
+		debugRecorder.recordPlannerWake(decision == null ? overflowSnapshot.request().tick() : decision.tick(),
+			clock.millis(), "submitted", wakeFields);
 		sessionCoordinator.submit(overflowSnapshot.withConversation(appendDecisionContext(overflowSnapshot.plannerConversation())), currentTurnContext());
 		return true;
 	}

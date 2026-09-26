@@ -157,6 +157,17 @@ public final class DialogueRuntime {
 		if (thinkingOrchestrator != null) thinkingOrchestrator.configureDecisionContext(() -> source.get().forOwner("thinking"));
 	}
 
+	public interface WakeAuditSink {
+		WakeAuditSink NO_OP = (tick, kind, fields) -> { };
+		void record(long tick, String kind, Map<String, Object> fields);
+	}
+
+	private WakeAuditSink wakeAudit = WakeAuditSink.NO_OP;
+
+	public void configureWakeAudit(WakeAuditSink sink) {
+		wakeAudit = Objects.requireNonNull(sink);
+	}
+
 	public String decisionOwner() { return delegation != null && delegation.active() ? "thinking" : "controller"; }
 
 	/** Seed scenario intent once; ordinary goal scheduling owns every subsequent decision. */
@@ -528,7 +539,10 @@ public final class DialogueRuntime {
 		MissionExecutionSnapshot missionExecution,
 		SemanticEventBuffer plannerEventBuffer
 	) {
-		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) return;
+		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) {
+			auditTrigger(trigger, "dropped", "G4.blocked_goal");
+			return;
+		}
 		if (trigger == null) {
 			return;
 		}
@@ -536,7 +550,11 @@ public final class DialogueRuntime {
 		// event buffer, but do not launch a competing turn for ordinary progress.
 		if ((acceptedWork != null || activePlanner().hasQueuedToolWork())
 			&& !trigger.maySupersedeLaunchedTurn() && safetyHoldId == null && !reflexActive
-			&& List.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK).contains(trigger.type())) return;
+			&& List.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK).contains(trigger.type())) {
+			auditTrigger(trigger, "dropped", "G4.accepted_work");
+			return;
+		}
+		auditTrigger(trigger, "submitted", null);
 		submitPlannerTrigger(
 			new PlannerRequest(
 				trigger.tick(),
@@ -771,6 +789,7 @@ public final class DialogueRuntime {
 			supersedePendingInternalTaskUpdates("new_user_guidance", request.tick(), eventBuffer);
 		}
 		if (state.degraded() && activePlanner().isEnabled()) {
+			for (var trigger : request.triggerBatch().triggers()) auditTrigger(trigger, "dropped", "G8.degraded");
 			applyTransition(
 				DialogueCore.onPlannerDegradedBlocked(state, request.senderName(), directUserGuidance,
 					request.tick(), resetGuidance(), messages),
@@ -817,13 +836,25 @@ public final class DialogueRuntime {
 		}
 		while (!pendingTaskWakeups.isEmpty()) {
 			if (acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive
-				&& !pendingTaskWakeups.peekFirst().attention()) return false;
-			if (activePlanner().hasQueuedToolWork() && !pendingTaskWakeups.peekFirst().attention()) return false;
+				&& !pendingTaskWakeups.peekFirst().attention()) {
+				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.run_policy");
+				return false;
+			}
+			if (activePlanner().hasQueuedToolWork() && !pendingTaskWakeups.peekFirst().attention()) {
+				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.queued_tool_work");
+				return false;
+			}
 			PendingTaskWakeup wake = pendingTaskWakeups.removeFirst();
-			if (activePlanner().hasIncorporatedDecisionEvent(wake.eventSequence())) continue;
+			if (activePlanner().hasIncorporatedDecisionEvent(wake.eventSequence())) {
+				auditTask(wake, "dropped", "G5.incorporated");
+				continue;
+			}
 			if (!wake.attention() && plannerGoal != null && plannerGoal.blocked() && !eventBuffer.query(wake.eventSequence()-1).events().stream()
 				.anyMatch(event -> event.seqNo() == wake.eventSequence() && (plannerGoal.relevantToBlock(event.type())
-					|| isSupervisoryEvent(event.type())))) continue;
+					|| isSupervisoryEvent(event.type())))) {
+				auditTask(wake, "dropped", "G5.blocked_irrelevant");
+				continue;
+			}
 			String currentMissionId = missionId(activeTask, missionExecution);
 			String superseded = wake.userGuidanceRevision() != userGuidanceRevision ? "new_user_guidance"
 				: wake.missionId() != null && currentMissionId != null && !Objects.equals(wake.missionId(), currentMissionId) ? "mission_changed" : null;
@@ -836,6 +867,7 @@ public final class DialogueRuntime {
 				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
 				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
 				.orElse("Work changed.");
+			auditTask(wake, "submitted", null);
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
@@ -844,6 +876,37 @@ public final class DialogueRuntime {
 			return true;
 		}
 		return false;
+	}
+
+	private void auditTrigger(PlannerTrigger trigger, String kind, String gate) {
+		String path = trigger.type() == PlannerTriggerType.IDLE_THINK ? "W5"
+			: "planner_goal".equals(trigger.coalescingKey()) ? "W4"
+			: "delegation".equals(trigger.coalescingKey()) ? "W6"
+			: "evaluation".equals(trigger.speaker()) ? "W7" : "W1";
+		var fields = wakeFields(path, gate);
+		fields.put("triggerTypes", List.of(trigger.type().name()));
+		fields.put("origins", List.of(trigger.origin().name()));
+		fields.put("coalescingKeys", trigger.coalescingKey() == null ? List.of() : List.of(trigger.coalescingKey()));
+		fields.put("speakers", List.of(trigger.speaker()));
+		wakeAudit.record(trigger.tick(), kind, fields);
+	}
+
+	private void auditTask(PendingTaskWakeup wake, String kind, String gate) {
+		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate);
+		fields.put("eventSequence", wake.eventSequence());
+		fields.put("triggerTypes", List.of("SYSTEM"));
+		fields.put("origins", List.of("AUTONOMOUS"));
+		fields.put("coalescingKeys", List.of("system"));
+		fields.put("speakers", List.of("runtime"));
+		wakeAudit.record(wake.tick(), kind, fields);
+	}
+
+	private java.util.LinkedHashMap<String, Object> wakeFields(String path, String gate) {
+		var fields = new java.util.LinkedHashMap<String, Object>();
+		fields.put("path", path);
+		fields.put("owner", decisionOwner());
+		if (gate != null) fields.put("gate", gate);
+		return fields;
 	}
 
 	private static boolean isSupervisoryEvent(String type) {
@@ -873,6 +936,7 @@ public final class DialogueRuntime {
 		if (pendingUpdate == null || eventBuffer == null) {
 			return;
 		}
+		auditTask(pendingUpdate, "dropped", "G5.superseded");
 		eventBuffer.append(supersededAtTick, "planner.internal_task_update_superseded", Map.of(
 			"reason", reason,
 			"updateTick", pendingUpdate.tick(),

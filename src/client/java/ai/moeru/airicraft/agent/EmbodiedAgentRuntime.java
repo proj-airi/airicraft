@@ -418,6 +418,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			);
 		this.visionService = plannerShell.visionService();
 		this.dialogueRuntime = plannerShell.dialogueRuntime();
+		this.dialogueRuntime.configureWakeAudit((tick, kind, fields) -> {
+			var payload = new LinkedHashMap<String, Object>(fields);
+			payload.put("serverTick", integratedServerTick());
+			debugRecorder.recordPlannerWake(tick, clock.millis(), kind, payload);
+		});
 		this.policyToolDispatcher = plannerShell.controllerPlanner();
 		ai.moeru.airicraft.memory.InteractionLogbookRecorder.observe((server, entries) -> {
 			if (!pendingInteractions.offer(new ObservedInteractions(server, entries))) droppedInteractionBatches.incrementAndGet();
