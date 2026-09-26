@@ -1,0 +1,24 @@
+# intent<TAB>message. Operator messages (default sender) address the agent; for a --sender player prefix "@agent ".
+# Intents follow READING v0 chat.intent. Used by `s15 probe --messages-file` (E0b, E4 scripted chat) and as extra
+# ground truth for chat.intent when the injected text is known.
+stop	stop
+stop	stop what you're doing
+stop	hold it, stop mining for a second
+wait	wait here
+wait	stay where you are until I say so
+follow	follow me
+come_here	come here
+come_here	come over to me
+go_home	go back home
+go_home	head back to the base
+protect	protect the cows near the barn
+dont_attack	don't attack the villagers
+dont_attack	leave the pigs alone
+give_item	give me some torches
+give_item	bring me your iron
+question	how many logs do you have?
+question	where are you right now?
+smalltalk	nice work!
+smalltalk	thanks, that looks good
+complex	build a small shelter next to the river before night
+complex	find diamonds, but stay above y 0
