@@ -96,7 +96,11 @@ intervals await that result.
 
 Batch 1 finished with five passes and four failures. Both harder farming
 scenarios exhausted their planner-turn budgets. Bread exhausted its 48,000-tick
-budget at 27 turns. Seagrass gave up after its graph reported an illumination
+budget at 27 turns. Both bread graph attempts had already failed `no_route`;
+the planner then marked its objective `BLOCKED`, and final task execution was
+`IDLE`. The last recorded crop inspection (agent tick 1,270) saw three wheat
+blocks at age 0. This was not a native graph suspended pending growth. Seagrass
+gave up after its graph reported an illumination
 failure and then no route. These are current-behavior observations; Phase 0
 makes no gameplay fixes. Batch 2 matched eight outcomes; iron pickaxe instead
 exhausted its 80-turn budget, producing four passes and five failures.
