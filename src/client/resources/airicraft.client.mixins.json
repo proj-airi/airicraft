@@ -13,6 +13,9 @@
 		"BaritoneDoorInteractionMixin",
 		"BaritoneInventoryBehaviorMixin",
 		"BaritoneMobAvoidanceMixin",
+		"CameraAccessor",
+		"CameraMixin",
+		"ChunkRendererRegionMixin",
 		"ClientPlayNetworkHandlerMixin",
 		"ClientPlayerInteractionManagerMixin",
 		"ClientPlayerInteractionManagerAccessor",
@@ -20,9 +23,13 @@
 		"CraftingResultSlotMixin",
 		"GameRendererMixin",
 		"GameRendererPauseMixin",
+		"IndigoTerrainRenderContextMixin",
 		"IntegratedServerOfflineMixin",
+		"LivingEntityRendererMixin",
 		"MessageHandlerMixin",
 		"MinecraftClientTickDebugMixin",
+		"RenderLayersMixin",
+		"SectionBuilderMixin",
 		"SlotMixin"
 	],
 	"injectors": {

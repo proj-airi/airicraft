@@ -100,6 +100,7 @@ public final class ModBridgeServer {
 	private final Supplier<HighlightManager> highlightManagerSupplier;
 	private final Supplier<EmbodiedAgentRuntime> agentRuntimeSupplier;
 	private final Supplier<FirstPersonScreenshotService> screenshotServiceSupplier;
+	private final Supplier<WorldCameraService> worldCameraServiceSupplier;
 	private final Supplier<ClientTickDebugRuntime> clientTickDebugRuntimeSupplier;
 	private final Supplier<ClientRuntimeController.ReloadResult> reloadSupplier;
 	private final Supplier<Map<String, Object>> dashboardStatusSupplier;
@@ -129,6 +130,7 @@ public final class ModBridgeServer {
 			highlightManagerSupplier,
 			agentRuntimeSupplier,
 			screenshotServiceSupplier,
+			() -> null,
 			clientTickDebugRuntimeSupplier,
 			reloadSupplier,
 			cameraController,
@@ -142,6 +144,7 @@ public final class ModBridgeServer {
 		Supplier<HighlightManager> highlightManagerSupplier,
 		Supplier<EmbodiedAgentRuntime> agentRuntimeSupplier,
 		Supplier<FirstPersonScreenshotService> screenshotServiceSupplier,
+		Supplier<WorldCameraService> worldCameraServiceSupplier,
 		Supplier<ClientTickDebugRuntime> clientTickDebugRuntimeSupplier,
 		Supplier<ClientRuntimeController.ReloadResult> reloadSupplier,
 		CameraController cameraController,
@@ -152,6 +155,7 @@ public final class ModBridgeServer {
 		this.highlightManagerSupplier = Objects.requireNonNull(highlightManagerSupplier, "highlightManagerSupplier");
 		this.agentRuntimeSupplier = Objects.requireNonNull(agentRuntimeSupplier, "agentRuntimeSupplier");
 		this.screenshotServiceSupplier = Objects.requireNonNull(screenshotServiceSupplier, "screenshotServiceSupplier");
+		this.worldCameraServiceSupplier = Objects.requireNonNull(worldCameraServiceSupplier, "worldCameraServiceSupplier");
 		this.clientTickDebugRuntimeSupplier = Objects.requireNonNull(clientTickDebugRuntimeSupplier, "clientTickDebugRuntimeSupplier");
 		this.reloadSupplier = Objects.requireNonNull(reloadSupplier, "reloadSupplier");
 		this.playerViewService = new PlayerViewService(Objects.requireNonNull(cameraController, "cameraController"));
@@ -179,13 +183,16 @@ public final class ModBridgeServer {
 			httpServer.createContext("/v1/servers/join", this::handleJoinServer);
 			httpServer.createContext("/v1/focus", exchange -> handleJson(exchange, this::createFocusResponse));
 			httpServer.createContext("/v1/player/nearby-entities", exchange -> handleJson(exchange, this::createNearbyEntitiesResponse));
-			httpServer.createContext("/v1/world-snapshot", exchange -> handleJson(exchange, () -> createWorldSnapshotResponse(exchange)));
 			httpServer.createContext("/v1/camera/screenshot", this::handleCameraScreenshot);
+			httpServer.createContext("/v1/camera/tactical", this::handleCameraTactical);
+			httpServer.createContext("/v1/camera/inspect-region", this::handleCameraInspectRegion);
+			httpServer.createContext("/v1/world-snapshot", exchange -> handleJson(exchange, () -> createWorldSnapshotResponse(exchange)));
 			httpServer.createContext("/v1/vision/describe", this::handleVisionDescribe);
 			httpServer.createContext("/v1/map/status", exchange -> handleJson(exchange, this::createMapStatusResponse));
 			httpServer.createContext("/v1/map/waypoints", this::handleMapWaypoints);
 			httpServer.createContext("/v1/map/image", this::handleMapImage);
 			httpServer.createContext("/v1/player/look-at", this::handlePlayerLookAt);
+			httpServer.createContext("/v1/player/command", this::handlePlayerCommand);
 			httpServer.createContext("/v1/player/attack-entity", this::handlePlayerAttackEntity);
 			httpServer.createContext("/v1/player/use-entity", this::handlePlayerUseEntity);
 			httpServer.createContext("/v1/highlights", this::handleHighlights);
@@ -355,6 +362,24 @@ public final class ModBridgeServer {
 		});
 	}
 
+	private void handlePlayerCommand(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", PlayerCommandRequest.class, request -> {
+			if (request == null || request.command() == null || request.command().isBlank()) {
+				throw new BridgeUnavailableException("invalid_request", "Missing command");
+			}
+			return onClientThread(() -> {
+				var client = getClient();
+				ensureWorldLoaded(client);
+				String command = request.command().trim();
+				if (command.startsWith("/")) {
+					command = command.substring(1);
+				}
+				client.player.networkHandler.sendChatCommand(command);
+				return Map.of("sent", true, "command", command);
+			});
+		});
+	}
+
 	private void handlePlayerAttackEntity(HttpExchange exchange) throws IOException {
 		handleJsonBody(exchange, "POST", EntityInteractionRequest.class, request -> {
 			EntityInteractionStepArgs entityInteraction = parseEntityInteractionRequest(request, false);
@@ -389,6 +414,179 @@ public final class ModBridgeServer {
 			return cameraScreenshotPayload(awaitCameraScreenshot(captureFuture));
 		});
 	}
+	private void handleCameraTactical(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", TacticalCameraRequest.class, request -> {
+			CompletableFuture<WorldCameraService.TacticalResult> captureFuture = onClientThread(() -> {
+				var client = getClient();
+				ensureWorldLoaded(client);
+				WorldCameraService service = worldCameraService();
+				if (service == null) {
+					throw new BridgeUnavailableException("minecraft_unavailable", "World camera service is not available");
+				}
+				String mode = request != null && request.mode() != null ? request.mode() : "auto";
+				if ("clear".equals(mode)) {
+					service.clear();
+					return CompletableFuture.completedFuture(new WorldCameraService.TacticalResult(null, null));
+				}
+				if ("shoulder".equals(mode)) {
+					int settleFrames = request != null && request.settleFrames() != null ? request.settleFrames() : 8;
+					boolean keepPose = request != null && Boolean.TRUE.equals(request.keepPose());
+					return service.captureShoulder(client, settleFrames, keepPose);
+				}
+				WorldCameraService.FrameResult framing;
+				if ("pose".equals(mode)) {
+					if (request == null || request.x() == null || request.y() == null || request.z() == null
+						|| request.yaw() == null || request.pitch() == null) {
+						throw new BridgeUnavailableException("invalid_request", "pose mode requires x, y, z, yaw, pitch");
+					}
+					WorldCameraService.CameraPose pose = new WorldCameraService.CameraPose(
+						request.x(), request.y(), request.z(), request.yaw().floatValue(), request.pitch().floatValue());
+					framing = new WorldCameraService.FrameResult(pose, 0, 0, 0, 0.0);
+				}
+				else if ("auto".equals(mode)) {
+					Vec3d focus;
+					if (request != null && request.x() != null && request.y() != null && request.z() != null) {
+						focus = new Vec3d(request.x(), request.y(), request.z());
+					}
+					else {
+						focus = client.player.getPos();
+					}
+					double radius = request != null && request.radius() != null ? request.radius() : 16.0;
+					String purpose = request != null && request.purpose() != null ? request.purpose() : "surroundings";
+					framing = service.autoFrame(client, focus, radius, purpose);
+				}
+				else {
+					throw new BridgeUnavailableException("invalid_request", "mode must be auto, pose, shoulder, or clear");
+				}
+				int settleFrames = request != null && request.settleFrames() != null ? request.settleFrames() : 8;
+				boolean keepPose = request != null && Boolean.TRUE.equals(request.keepPose());
+				boolean fadeOccluders = request != null && Boolean.TRUE.equals(request.fadeOccluders());
+				Integer hideAboveY = request != null ? request.hideAboveY() : null;
+				boolean fadeLeaves = request == null || !Boolean.FALSE.equals(request.fadeLeaves());
+				boolean autoFade = "auto".equals(mode) && !framing.focusClear();
+				if (fadeOccluders || hideAboveY != null || autoFade || fadeLeaves) {
+					Vec3d focus = request != null && request.x() != null && request.y() != null && request.z() != null
+						? new Vec3d(request.x(), request.y(), request.z())
+						: client.player.getPos();
+					double radius = request != null && request.radius() != null ? request.radius() : 16.0;
+					String purpose = request != null && request.purpose() != null ? request.purpose() : "surroundings";
+					java.util.Set<BlockPos> occluders = fadeOccluders
+						? service.computeOccluders(client, framing.pose(), service.samplesFor(client, focus, radius, purpose))
+						: java.util.Set.of();
+					if (autoFade) {
+						// No clear pose exists: fade whatever blocks the focus sphere.
+						java.util.Set<BlockPos> focusOccluders = service.computeOccluders(
+							client, framing.pose(),
+							service.focusSphereSamples(focus));
+						occluders = new java.util.HashSet<>(occluders);
+						occluders.addAll(focusOccluders);
+					}
+					service.setFade(client, new WorldCameraService.FadeFilter(occluders, hideAboveY, fadeLeaves),
+						BlockPos.ofFloored(focus).add(-(int) Math.ceil(radius) - 2, -16, -(int) Math.ceil(radius) - 2),
+						BlockPos.ofFloored(focus).add((int) Math.ceil(radius) + 2, 16, (int) Math.ceil(radius) + 2));
+					framing = new WorldCameraService.FrameResult(
+						framing.pose(), framing.candidates(), framing.samples(), framing.visibleSamples(),
+						framing.score(), occluders.size(), framing.focusClear());
+				}
+				if (request != null && request.queryBox() != null && request.queryBox().size() == 6) {
+					var qb = request.queryBox();
+					BlockPos qMin = new BlockPos(qb.get(0).intValue(), qb.get(1).intValue(), qb.get(2).intValue());
+					BlockPos qMax = new BlockPos(qb.get(3).intValue(), qb.get(4).intValue(), qb.get(5).intValue());
+					service.setTintBox(client,
+						new net.minecraft.util.math.Box(
+							qMin.getX(), qMin.getY(), qMin.getZ(),
+							qMax.getX() + 1.0, qMax.getY() + 1.0, qMax.getZ() + 1.0),
+						qMin, qMax);
+				}
+				return service.capture(client, framing.pose(), framing, settleFrames, keepPose);
+			});
+			WorldCameraService.TacticalResult result = awaitTacticalCapture(captureFuture);
+			Map<String, Object> payload = new LinkedHashMap<>();
+			if (result.framing() != null) {
+				Map<String, Object> framingPayload = new LinkedHashMap<>();
+				framingPayload.put("candidates", result.framing().candidates());
+				framingPayload.put("samples", result.framing().samples());
+				framingPayload.put("visibleSamples", result.framing().visibleSamples());
+				framingPayload.put("score", result.framing().score());
+				framingPayload.put("fadedBlocks", result.framing().fadedBlocks());
+				WorldCameraService.CameraPose pose = result.framing().pose();
+				framingPayload.put("pose", Map.of(
+					"x", pose.x(), "y", pose.y(), "z", pose.z(),
+					"yaw", pose.yaw(), "pitch", pose.pitch()));
+				payload.put("framing", framingPayload);
+			}
+			if (result.screenshot() != null) {
+				FirstPersonScreenshotService.CapturedScreenshot shot = result.screenshot();
+				if (request != null && request.queryBox() != null && request.queryBox().size() == 6) {
+					var qb = request.queryBox();
+					shot = WorldCameraService.withQueryOverlay(
+						shot,
+						result.framing() != null ? result.framing().pose() : null,
+						getClient().options.getFov().getValue(),
+						getClient().getWindow().getFramebufferWidth()
+							/ (double) Math.max(1, getClient().getWindow().getFramebufferHeight()),
+						new BlockPos(qb.get(0).intValue(), qb.get(1).intValue(), qb.get(2).intValue()),
+						new BlockPos(qb.get(3).intValue(), qb.get(4).intValue(), qb.get(5).intValue()));
+				}
+				payload.putAll(cameraScreenshotPayload(shot));
+				if (result.viewId() != null) {
+					payload.put("viewId", result.viewId());
+				}
+			}
+			else {
+				payload.put("cleared", true);
+			}
+			return payload;
+		});
+	}
+
+	private void handleCameraInspectRegion(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", InspectRegionRequest.class, request -> {
+			if (request == null || request.viewId() == null || request.box() == null || request.box().size() != 4) {
+				throw new BridgeUnavailableException("invalid_request", "viewId and box [x1,y1,x2,y2] are required");
+			}
+			return onClientThread(() -> {
+				var client = getClient();
+				ensureWorldLoaded(client);
+				WorldCameraService service = worldCameraService();
+				if (service == null) {
+					throw new BridgeUnavailableException("minecraft_unavailable", "World camera service is not available");
+				}
+				WorldCameraService.ViewRecord view = service.view(request.viewId());
+				if (view == null) {
+					throw new BridgeUnavailableException("invalid_request", "Unknown viewId: " + request.viewId());
+				}
+				var b = request.box();
+				String expand = request.expand() != null ? request.expand() : "visible";
+				return service.inspectRegion(client, view,
+					b.get(0), b.get(1), b.get(2), b.get(3), expand);
+			});
+		});
+	}
+
+
+
+	private WorldCameraService.TacticalResult awaitTacticalCapture(
+		CompletableFuture<WorldCameraService.TacticalResult> captureFuture
+	) {
+		try {
+			return captureFuture.get(SCREENSHOT_CAPTURE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+		}
+		catch (TimeoutException exception) {
+			throw new BridgeUnavailableException("capture_timeout", "Tactical capture timed out");
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new BridgeUnavailableException("capture_failed", "Tactical capture was interrupted");
+		}
+		catch (ExecutionException exception) {
+			if (exception.getCause() instanceof BridgeUnavailableException bridgeUnavailableException) {
+				throw bridgeUnavailableException;
+			}
+			throw new BridgeUnavailableException("capture_failed", "Tactical capture failed");
+		}
+	}
+
 
 	private void handleClientTickDebugState(HttpExchange exchange) throws IOException {
 		handleJson(exchange, () -> onClientThread(() -> clientTickDebugStatusPayload(clientTickDebugRuntime().status())));
@@ -2453,6 +2651,10 @@ public final class ModBridgeServer {
 	private FirstPersonScreenshotService screenshotService() {
 		return Objects.requireNonNull(screenshotServiceSupplier.get(), "screenshotService");
 	}
+	private WorldCameraService worldCameraService() {
+		return worldCameraServiceSupplier.get();
+	}
+
 
 	private ClientTickDebugRuntime clientTickDebugRuntime() {
 		return Objects.requireNonNull(clientTickDebugRuntimeSupplier.get(), "clientTickDebugRuntime");
@@ -2513,10 +2715,39 @@ public final class ModBridgeServer {
 	private record DifficultyRequest(String difficulty) {
 	}
 
+
 	private record JoinServerRequest(String serverId) {
 	}
 
 	private record LookAtRequest(Double x, Double y, Double z, Integer durationTicks) {
+	}
+
+	private record PlayerCommandRequest(String command) {
+	}
+
+	private record TacticalCameraRequest(
+		String mode,
+		Double x,
+		Double y,
+		Double z,
+		Double yaw,
+		Double pitch,
+		Double radius,
+		String purpose,
+		Integer settleFrames,
+		Boolean keepPose,
+		Boolean fadeOccluders,
+		Integer hideAboveY,
+		java.util.List<Double> queryBox,
+		Boolean fadeLeaves
+	) {
+	}
+
+	private record InspectRegionRequest(
+		String viewId,
+		java.util.List<Double> box,
+		String expand
+	) {
 	}
 
 	private record EntityInteractionRequest(String uuid, String name, String entityTypeId, String itemId, String mode) {

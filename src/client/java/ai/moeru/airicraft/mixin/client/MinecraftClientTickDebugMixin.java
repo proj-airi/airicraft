@@ -30,6 +30,11 @@ public abstract class MinecraftClientTickDebugMixin {
 			AiricraftClient.runtimeController().automaticPlaytest().maintainPausedHost(client);
 			return false;
 		}
+		// Tick debugging only applies in-world. Menus, the connect screen and
+		// Fabric tick events must keep running when there is no player.
+		if (client.player == null) {
+			return true;
+		}
 		return AiricraftClient.runtimeController().clientTickDebugRuntime().beginClientTick();
 	}
 
