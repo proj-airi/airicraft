@@ -832,12 +832,13 @@ debug-timeline instrumentation (`planner_wake` entries). Task-level plan:
   50 candidates, both cold and warm, and its steady-state memory. The result
   sets the step deadline and the input caps, and confirms that one-tick-late
   Stage-B decisions are acceptable.
-- [ ] Record baseline metrics (4.10) from one evaluation batch and one live
-  playtest.
+- [x] Record baseline metrics (4.10) from three evaluation batches and one live
+  playtest: [results, spread and tolerance](../../experiments/2026-09-27-planner-wake-baseline.md).
 - [x] Resolve section 9 (accepted 2026-09-26).
 - [x] Write ADR-0003 and add the vocabulary to `CONTEXT.md`.
 
-Exit: characterization suite green on `dev`; decisions recorded.
+Exit: characterization suite green on `dev`; decisions recorded. Implementation
+and baseline validation are complete on PR #81; merging into `dev` remains pending.
 
 ### Phase 1: event catalog and a single log (behaviour-preserving)
 
@@ -880,8 +881,17 @@ evaluator (`semanticEventContains`) unchanged.
 
 Exit: golden prompts unchanged (except documented timing); wake replay of at
 least two recorded playtests shows no unexplained decision diffs; the
-evaluation pass rate and planner-turn counts stay within tolerance (set in
-Phase 0). `EmbodiedAgentRuntime` loses the routing table, the trigger
+evaluation pass rate and planner-turn counts stay within the
+[Phase 0 baseline tolerance](../../experiments/2026-09-27-planner-wake-baseline.md#phase-2-tolerance).
+For each scenario, pass/fail must be no worse than its worst baseline result;
+turns and available request-span rates must stay within `[0.9 × minimum,
+1.1 × maximum]` across baseline runs. Compare like clock windows: evaluator
+rates estimate the dispatch span, whereas the automatic Play has a full server
+window. Single-call estimates cannot establish request-rate thresholds, and
+incomplete token records cannot establish token-rate thresholds. Wake-path
+changes require an explained, characterized defect fix;
+new failure classes and recording gaps are not excused by baseline failures.
+`EmbodiedAgentRuntime` loses the routing table, the trigger
 factories and the suppression helpers.
 
 ### Phase 3: wakes that reference evidence (changes what the model sees)

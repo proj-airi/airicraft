@@ -34,15 +34,19 @@ that document.
 
 ## Implementation status (2026-09-27)
 
-Tasks 1–10 are implemented on PR #81. The full build passes (1,719 root
-tests, 95 wrapper tests and 20 compatibility tests; 3 opt-in root tests skipped), and the Python ledger
-suite passes 13 tests. Live baseline runs use the committed Phase 0 branch;
-Two evaluation batches and one automatic playtest are complete, with no event
-or timeline gaps and zero unknown wake attribution. Iron-pickaxe pass/fail
-differed, so a third batch is running. Task 3 retention and Tasks 11–12 remain
-open until the final records are checked. The closeout full build passed at
-`677cd8cc` in an isolated checkout, preserving the running baseline artifacts.
-The branch has not been merged into `dev`.
+Tasks 1–12 are implemented and validated on PR #81. The full build passes
+(1,719 root tests, 95 wrapper tests, 20 compatibility tests; 3 opt-in root tests
+skipped), and the Python ledger suite passes 13 tests. Both GitHub builds of
+`677cd8cc` pass. The closeout build used an isolated checkout so live baseline
+artifacts remained frozen.
+
+The [baseline](../../experiments/2026-09-27-planner-wake-baseline.md) records three
+evaluation batches (5/9, 4/9, 5/9 passes), one complete 30-minute automatic
+playtest, and Phase 2 tolerance. All 27 evaluations and the Play have no event or
+timeline gaps and zero unknown wake attribution. The automatic run did not
+achieve its Nether objective. Rate windows and missing token evidence are
+explicitly qualified. The branch has not been merged into `dev`; merge-dependent
+exit criteria remain pending.
 
 Implementation adjustments: FIFO/checkpoint reviews are W9; retained W2 gate
 audits are emitted once per gate transition; fatal damage wakes before
@@ -283,7 +287,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
   - one W1 submission;
   - a W2 wake dropped as `G5.incorporated` after its event was observed;
   - a W3 attention submission while accepted work runs.
-- [ ] **Step 6: Check timeline retention.** The debug timeline holds 256
+- [x] **Step 6: Check timeline retention.** The debug timeline holds 256
   entries. Confirm in the Task 11 baseline that `debug-timeline.jsonl` has
   no gap markers caused by the extra entries. If it does, raise the
   recorder's poll frequency; don't raise the capacity.
@@ -648,7 +652,7 @@ This task needs slices A–D merged. It uses real model calls, so budget for
 the cost of about three evaluation batches.
 
 - [x] **Step 1: Build** from the committed Phase 0 PR branch (merge pending): `./gradlew build`. Expected: SUCCESS.
-- [ ] **Step 2: Run the evaluation batch twice** to measure run-to-run
+- [x] **Step 2: Run the evaluation batch twice** to measure run-to-run
   spread:
 
 ```sh
@@ -663,12 +667,12 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 - [x] **Step 3: Run one automatic playtest** with the world, objective and
   recording profile of the most recent documented automatic playtest, so the
   results are comparable (`docs/automatic-playtest.md`).
-- [ ] **Step 4: Compute the ledgers.**
+- [x] **Step 4: Compute the ledgers.**
   `python3 scripts/wake_ledger.py summarize <each scenario outputDir> <playtest dir> > /tmp/wake-baseline.md`.
   Check that `timelineGaps` and `eventGaps` are absent. If any are present,
   fix the recorder poll cadence (Task 3 Step 6) and re-run the affected
   scenario.
-- [ ] **Step 5: Write `docs/experiments/<date>-planner-wake-baseline.md`.**
+- [x] **Step 5: Write `docs/experiments/<date>-planner-wake-baseline.md`.**
   Include the commit, provider and model, per-scenario pass/fail and
   metrics, and the spread. Also propose the **Phase 2 tolerance**:
   - pass/fail must not be worse than the worst baseline run;
@@ -681,7 +685,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 
 ### Task 12: Close out Phase 0
 
-- [ ] **Step 1: Update the spec.**
+- [x] **Step 1: Update the spec.**
   - D1–D8 verdicts in 2.6.
   - Appendix A regenerated from the inventory.
   - The spike numbers and caps, and the step deadline, in 4.12.
@@ -694,7 +698,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
   behaviour is pinned by golden transcripts in
   `src/test/resources/planner/wakes/`, updated with
   `AIRICRAFT_UPDATE_WAKE_GOLDENS=1`, and every golden diff must be reviewed.
-- [ ] **Step 4: Commit and open the PR(s)** for the remaining slices.
+- [x] **Step 4: Commit and open the PR(s)** for the remaining slices.
 
 ## Exit criteria
 
