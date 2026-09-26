@@ -643,7 +643,7 @@ playtests write one under `automatic_playtest/`. The files used:
 This task needs slices A–D merged. It uses real model calls, so budget for
 the cost of about three evaluation batches.
 
-- [ ] **Step 1: Build** from the merged Phase 0 commit: `./gradlew build`. Expected: SUCCESS.
+- [x] **Step 1: Build** from the committed Phase 0 PR branch (merge pending): `./gradlew build`. Expected: SUCCESS.
 - [ ] **Step 2: Run the evaluation batch twice** to measure run-to-run
   spread:
 
@@ -656,7 +656,7 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 
   Run it a third time if the two runs disagree on any pass/fail.
 
-- [ ] **Step 3: Run one automatic playtest** with the world, objective and
+- [x] **Step 3: Run one automatic playtest** with the world, objective and
   recording profile of the most recent documented automatic playtest, so the
   results are comparable (`docs/automatic-playtest.md`).
 - [ ] **Step 4: Compute the ledgers.**
