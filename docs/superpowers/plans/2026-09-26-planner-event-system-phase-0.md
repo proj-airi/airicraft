@@ -27,7 +27,7 @@ decisions. Agent behaviour does not change in this phase.
 and the existing evaluation harness and automatic playtest scripts.
 
 **Spec:** [`specs/2026-09-26-planner-perception-and-wake-design.md`](../specs/2026-09-26-planner-perception-and-wake-design.md).
-Terms such as W1–W8, G1–G11, E1–E3, D1–D8, Stage A/B/C and O1–O13 refer to
+Terms such as W1–W9, G1–G11, E1–E3, D1–D8, Stage A/B/C and O1–O13 refer to
 that document.
 
 ---

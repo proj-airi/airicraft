@@ -117,7 +117,7 @@ production callers.
 
 ### 2.5 Problems
 
-1. **Too many wake paths, too many gates (W1–W8, G1–G11).** No single place
+1. **Too many wake paths, too many gates (W1–W9, G1–G11).** No single place
    answers "why did the planner wake at tick N?" or "why didn't it?". Only W1
    decisions are recorded (`AgentDebugRecorder.recordEventRouting`).
 2. **Evidence and instructions are mixed.** Trigger text contains both facts
@@ -869,7 +869,9 @@ evaluator (`semanticEventContains`) unchanged.
 - [ ] Add `WakeScheduler` with the pending set, satisfaction, supersession and
   idle hook. Retire the W2/W3 deque, `continuePlannerGoal` scheduling,
   `IdleIdeaScheduler` timing (it becomes the idle-think generator), the
-  delegation start wake, and evaluation seed wakes as separate paths.
+  delegation start wake, evaluation seed wakes, and FIFO/checkpoint result
+  review (W9) as separate scheduling paths. Preserve their characterized
+  evidence and tool-result delivery.
 - [ ] Move trigger prose out of `EmbodiedAgentRuntime` into a presenter keyed
   by event type, producing the same strings in this phase. Move the orchestrator's
   coalesce window into the scheduler. If tick timing changes delivery, record
