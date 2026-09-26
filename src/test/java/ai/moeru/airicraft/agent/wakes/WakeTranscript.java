@@ -17,6 +17,7 @@ public record WakeTranscript(JsonObject data) {
 		var root = new JsonObject();
 		root.addProperty("scenario", name);
 		var requests = new JsonArray();
+		List<LlmChatMessage> previousMessages = List.of();
 		for (var item : recorded) {
 			var backend = item.request();
 			var request = new JsonObject();
@@ -38,13 +39,12 @@ public record WakeTranscript(JsonObject data) {
 			request.addProperty("owner", observe.has("decisionOwner") ? observe.get("decisionOwner").getAsString() : "controller");
 			request.add("observe", observe);
 			int start = 0;
-			for (int i = 0; i < messages.size(); i++) {
-				var message = messages.get(i);
-				if (message.role().equals("assistant") && !PlannerObservation.isCallOnly(message)) start = i + 1;
-			}
+			while (start < previousMessages.size() && start < messages.size()
+				&& previousMessages.get(start).equals(messages.get(start))) start++;
 			var delta = new JsonArray();
 			for (var message : messages.subList(start, messages.size())) {
 				if (message.role().equals("system") || PlannerObservation.isCallOnly(message)
+					|| message.role().equals("assistant") && message.hasToolCalls()
 					|| message.toolCallId() != null && message.toolCallId().startsWith("call_observe_")) continue;
 				var entry = new JsonObject();
 				entry.addProperty("role", message.role());
@@ -53,6 +53,7 @@ public record WakeTranscript(JsonObject data) {
 				delta.add(entry);
 			}
 			request.add("newMessages", delta);
+			previousMessages = messages;
 			String system = messages.stream().filter(m -> m.role().equals("system")).map(LlmChatMessage::content).reduce("", String::concat);
 			request.add("prefix", JSON.toJsonTree(Map.of("systemSha", sha(system), "toolsSha", sha(JSON.toJson(normalize(JSON.toJsonTree(tools)))))));
 			requests.add(request);

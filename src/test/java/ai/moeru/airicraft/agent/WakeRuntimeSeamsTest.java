@@ -43,5 +43,21 @@ class WakeRuntimeSeamsTest {
 			assertNotEquals(pa.remove("systemSha"), pb.remove("systemSha")); assertEquals(a, b);
 		}
 	}
+	@Test void transcriptReportsOnlyMessagesAddedSincePreviousRequest() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1); h.chat("Alex", "@agent hello"); h.tick(5);
+			var first = h.backend.requests().getFirst();
+			var request = first.request();
+			var second = new ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.Request(2,
+				new ai.moeru.airicraft.agent.llm.PlannerBackendRequest(request.generation() + 1, request.attempt(), request.phase(), request.request(),
+					request.conversation().withAppended(ai.moeru.airicraft.agent.llm.LlmChatMessage.user("new guidance", ai.moeru.airicraft.agent.llm.LlmMessageKind.USER_TURN))),
+				first.observedAtTick() + 1);
+			var transcript = ai.moeru.airicraft.agent.wakes.WakeTranscript.capture("delta", java.util.List.of(first, second),
+				java.util.List.of(), java.util.List.of(), java.util.List.of()).data();
+			var delta = transcript.getAsJsonArray("requests").get(1).getAsJsonObject().getAsJsonArray("newMessages");
+			assertEquals(1, delta.size());
+			assertEquals("new guidance", delta.get(0).getAsJsonObject().get("text").getAsString());
+		}
+	}
 
 }

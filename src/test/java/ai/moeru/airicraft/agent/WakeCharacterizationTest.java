@@ -1,11 +1,22 @@
 package ai.moeru.airicraft.agent;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WakeCharacterizationTest {
+	private static List<String> auditOutcomes(WakeScenarioHarness h) {
+		var outcomes = new ArrayList<String>();
+		for (var value : h.transcript("audit").data().getAsJsonArray("wakeAudit")) {
+			var entry = value.getAsJsonObject();
+			outcomes.add(entry.get("kind").getAsString() + ":" + entry.get("path").getAsString()
+				+ (entry.has("gate") ? ":" + entry.get("gate").getAsString() : ""));
+		}
+		return outcomes;
+	}
 	@Test void identicalScenariosHaveIdenticalTranscripts() {
 		String first;
 		try (var h = new WakeScenarioHarness()) { h.tick(1); h.chat("Alex", "@agent hello"); h.tick(5); first = h.transcript("same").json(); }
@@ -26,6 +37,13 @@ class WakeCharacterizationTest {
 			h.tick(10);
 			h.runtime.onPlayerCraftedItem("minecraft:oak_planks", 4);
 			h.tick(10);
+			assertEquals(2, h.backend.requests().size());
+			assertEquals(List.of("submitted:W1", "submitted:W1"), auditOutcomes(h));
+			assertEquals(ai.moeru.airicraft.agent.llm.PlannerTriggerType.PICKUP,
+				h.backend.requests().get(0).request().request().triggerBatch().triggers().getFirst().type());
+			assertEquals(ai.moeru.airicraft.agent.llm.PlannerTriggerType.CRAFT,
+				h.backend.requests().get(1).request().request().triggerBatch().triggers().getFirst().type());
+			assertEquals("Recent context updates require one combined response.", h.backend.requests().get(0).request().request().message());
 			h.transcript("pickup_and_craft_idle").assertMatchesGolden("pickup_and_craft_idle");
 		}
 	}
@@ -56,12 +74,19 @@ class WakeCharacterizationTest {
 			h.tick(10);
 			h.reflex(new ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent("reflex.resolved", Map.of("holdId", "hold-1", "reason", "safe")));
 			h.tick(10);
+			assertEquals(2, h.backend.requests().size());
+			assertEquals(List.of("submitted:W2", "submitted:W1", "dropped:W2:G5.incorporated"), auditOutcomes(h));
 			h.transcript("reflex_started_then_resolved_with_hold").assertMatchesGolden("reflex_started_then_resolved_with_hold");
 		}
 	}
 	@Test void damage_outside_reflex() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerHealthUpdated(true, 20, 16); h.tick(10);
+			assertEquals(1, h.backend.requests().size());
+			assertEquals(List.of("submitted:W1"), auditOutcomes(h));
+			assertEquals(ai.moeru.airicraft.agent.llm.PlannerTriggerType.DAMAGE,
+				h.backend.requests().getFirst().request().request().triggerBatch().triggers().getFirst().type());
+			assertEquals("Recent context updates require one combined response.", h.backend.requests().getFirst().request().request().message());
 			h.transcript("damage_outside_reflex").assertMatchesGolden("damage_outside_reflex");
 		}
 	}
@@ -83,11 +108,17 @@ class WakeCharacterizationTest {
 			h.chat("Alex", "@agent gather wood");
 			h.backend.awaitRequests(1, Duration.ofSeconds(1));
 			h.chat("Alex", "@agent stop and listen");
+			assertEquals(1, h.runtime.dialogueRuntimeForTests().plannerDebugSnapshot().supersededCount(),
+				"the held first generation must be superseded by direct guidance");
 			h.tick(20);
 			held.complete(ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.yieldResponse());
 			h.settle();
 			assertEquals(2, h.backend.requests().size());
 			assertTrue(h.backend.requests().get(1).request().generation() > h.backend.requests().getFirst().request().generation());
+			var secondDelta = h.transcript("addressed_chat_while_turn_in_flight").data().getAsJsonArray("requests")
+				.get(1).getAsJsonObject().getAsJsonArray("newMessages");
+			assertFalse(secondDelta.toString().contains("\"text\":\"Alex: @agent gather wood\""),
+				"the second request delta must omit the old standalone user turn");
 			h.transcript("addressed_chat_while_turn_in_flight").assertMatchesGolden("addressed_chat_while_turn_in_flight");
 		}
 	}
@@ -122,11 +153,34 @@ class WakeCharacterizationTest {
 			h.executor.nextTerminalEvent = java.util.Optional.of(new ai.moeru.airicraft.agent.tasks.TaskTerminalEvent(request.taskId(), request.goal(),
 				ai.moeru.airicraft.agent.tasks.TaskExecutionState.FAILED, "CALC_FAILED", ai.moeru.airicraft.agent.tasks.TaskTerminationCause.CALCULATION_FAILED));
 			h.tick(10);
+			assertEquals(2, h.backend.requests().size());
+			assertEquals(List.of("submitted:W2", "submitted:W2"), auditOutcomes(h));
 			h.transcript("navigation_failure_cascade").assertMatchesGolden("navigation_failure_cascade");
 		}
 	}
 	@Test void idle_think_after_delay() { idlePause("idle_think_after_delay", Duration.ofSeconds(31)); }
 	@Test void tick_debug_pause_then_resume() { idlePause("tick_debug_pause_then_resume", Duration.ofMinutes(5)); }
+	@Test void idle_think_invalidated_by_action_goal() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			var held = h.backend.holdNext();
+			h.chat("Alex", "@agent hello");
+			h.backend.awaitRequests(1, Duration.ofSeconds(1));
+			h.runtime.dialogueRuntimeForTests().onPlannerTrigger(
+				ai.moeru.airicraft.agent.llm.PlannerTrigger.pending(ai.moeru.airicraft.agent.llm.PlannerTriggerType.IDLE_THINK,
+					"self", "idle", h.tick, h.clock.millis()),
+				new ai.moeru.airicraft.agent.session.SessionSnapshot(ai.moeru.airicraft.agent.session.SessionMode.REMOTE_MULTIPLAYER,
+					true, true, "minecraft:overworld", false, 0, 0), null, java.util.Optional.empty(), null, null,
+					h.runtimeEvents());
+			var started = h.runtime.startActionGoalDetailed(
+				ai.moeru.airicraft.agent.actions.ActionGoal.inventoryItem("minecraft:bread", 1), "test");
+			assertEquals(ai.moeru.airicraft.agent.actions.ActionGraphAdmission.STARTED, started.admission());
+			held.complete(ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.yieldResponse());
+			h.settle();
+			assertEquals(1, h.backend.requests().size(), "new action goal should invalidate the queued idle request");
+			h.transcript("idle_think_invalidated_by_action_goal").assertMatchesGolden("idle_think_invalidated_by_action_goal");
+		}
+	}
 	private void idlePause(String name, Duration pause) {
 		try (var h = new WakeScenarioHarness()) {
 			h.runtime.overrideSessionSnapshotForTests(new ai.moeru.airicraft.agent.session.SessionSnapshot(

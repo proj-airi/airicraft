@@ -47,7 +47,7 @@ final class WakeScenarioHarness implements AutoCloseable {
 			Thread.yield();
 		}
 	}
-	private ai.moeru.airicraft.agent.events.SemanticEventBuffer runtimeEvents() {
+	ai.moeru.airicraft.agent.events.SemanticEventBuffer runtimeEvents() {
 		try {
 			var field = EmbodiedAgentRuntime.class.getDeclaredField("eventBuffer");
 			field.setAccessible(true);

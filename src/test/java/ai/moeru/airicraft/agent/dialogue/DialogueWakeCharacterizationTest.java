@@ -120,15 +120,15 @@ class DialogueWakeCharacterizationTest {
 			h.advance(10); assertEquals(1, h.backend.requests().size()); h.golden("stale_safety_response_rejected");
 		}
 	}
-	/** Moved here: direct invalidation pins G9 independently of a live world action executor. */
-	@Test void idle_think_invalidated_by_action_goal() {
+	/** Pins the direct invalidation hook; the runtime scenario covers the action-goal caller. */
+	@Test void idle_think_direct_invalidation_hook() {
 		try (var h = new Harness()) {
 			var held = h.backend.holdNext();
 			h.trigger(PlannerTrigger.direct(PlannerTriggerType.CHAT, "Alex", "hello", 1, h.clock.millis()));
 			h.backend.awaitRequests(1, Duration.ofSeconds(1));
 			h.trigger(PlannerTrigger.pending(PlannerTriggerType.IDLE_THINK, "self", "idle", 1, h.clock.millis()));
 			h.dialogue.invalidateIdleThinkTriggers(); held.complete(RecordingPlannerBackend.yieldResponse()); h.poll(); h.advance(20);
-			assertEquals(1, h.backend.requests().size()); h.golden("idle_think_invalidated_by_action_goal");
+			assertEquals(1, h.backend.requests().size());
 		}
 	}
 	@Test void d1_CONFIRMED_rawCursorSkipsPlannerBufferNotice() {

@@ -122,16 +122,6 @@
       "index": 2,
       "newMessages": [
         {
-          "kind": "TOOL_RESULT",
-          "role": "tool",
-          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
-        },
-        {
-          "kind": "USER_TURN",
-          "role": "user",
-          "text": "Alex: @agent gather wood"
-        },
-        {
           "kind": "USER_TURN",
           "role": "user",
           "text": "Alex: @agent gather wood\nAlex: @agent stop and listen"

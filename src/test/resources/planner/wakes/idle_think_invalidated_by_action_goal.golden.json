@@ -1,5 +1,122 @@
 {
-  "events": [],
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent hello",
+        "normalizedMessage": "@agent hello",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "accepted": false,
+        "activePrimitive": false,
+        "activeTaskId": "",
+        "admission": "started",
+        "available": true,
+        "createdTick": 1,
+        "creationOrder": 0,
+        "cursor": 0,
+        "executionId": "action-graph-<uuid>",
+        "executionPhase": "PLANNING",
+        "failureCode": "",
+        "foregroundExecutionId": "action-graph-<uuid>",
+        "goal": {
+          "countAtLeast": 1,
+          "fact": "inventory.item",
+          "itemId": "minecraft:bread"
+        },
+        "message": "",
+        "pendingWatch": "",
+        "replanCount": 0,
+        "requestedGoal": "inventory.item|itemId=minecraft:bread|countAtLeast>=1",
+        "residency": "FOREGROUND",
+        "resolved": false,
+        "route": {
+          "cost": 0,
+          "steps": []
+        },
+        "runnableCount": 0,
+        "source": "test",
+        "state": "RESOLVING",
+        "stepAttempt": 0,
+        "suspendedCount": 0,
+        "trace": [],
+        "traceEventCount": 1,
+        "updatedTick": 1,
+        "watchCount": 0
+      },
+      "seqNo": 5,
+      "tick": 1,
+      "type": "action_graph.goal_admission"
+    },
+    {
+      "payload": {
+        "executionId": "action-graph-<uuid>",
+        "goal": "inventory.item|itemId=minecraft:bread|countAtLeast>=1"
+      },
+      "seqNo": 6,
+      "tick": 1,
+      "type": "action_graph.goal_started"
+    },
+    {
+      "payload": {
+        "controls": [
+          "inspect",
+          "cancel"
+        ],
+        "details": {
+          "activeTaskId": "",
+          "failureCode": "",
+          "goal": "ActionGoal[factType=INVENTORY_ITEM, keys={itemId=minecraft:bread}, minimums={countAtLeast=1}]",
+          "holdId": "",
+          "message": ""
+        },
+        "foreground": true,
+        "label": "resource goal",
+        "parentWorkId": "",
+        "phase": "RESOLVING",
+        "state": "QUEUED",
+        "updatedTick": 1,
+        "workId": "GRAPH:action-graph-<uuid>"
+      },
+      "seqNo": 7,
+      "tick": 1,
+      "type": "work.changed"
+    }
+  ],
   "requests": [
     {
       "discarded": false,
@@ -9,28 +126,39 @@
         {
           "kind": "TOOL_RESULT",
           "role": "tool",
-          "text": "INVENTORY_UNAVAILABLE: inventory_tool_disabled"
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
         },
         {
           "kind": "USER_TURN",
           "role": "user",
-          "text": "Alex: hello"
+          "text": "Alex: @agent hello"
         }
       ],
       "observe": {
         "actuatorOwner": "idle",
         "afterEventSequence": 0,
         "decisionOwner": "controller",
-        "events": [],
+        "events": [
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 4,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
         "notices": [
           "<time>",
-          "Session mode is currently singleplayer LAN host.",
+          "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
-          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately."
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
+          "Alex came nearby just now."
         ],
-        "serverTick": 2,
+        "serverTick": -1,
         "stateBaseline": true,
-        "throughEventSequence": 0,
+        "throughEventSequence": 4,
         "tick": 1,
         "toolQueue": {
           "aborting": false,
@@ -40,8 +168,8 @@
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
-        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
+        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
       },
       "tick": 1
     }
@@ -56,6 +184,7 @@
       ],
       "owner": "controller",
       "path": "W1",
+      "serverTick": -1,
       "speakers": [
         "Alex"
       ],
@@ -74,6 +203,7 @@
       ],
       "owner": "controller",
       "path": "W5",
+      "serverTick": -1,
       "speakers": [
         "self"
       ],
