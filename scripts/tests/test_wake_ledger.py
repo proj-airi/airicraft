@@ -1,4 +1,6 @@
 import copy
+from contextlib import redirect_stdout
+import io
 import json
 import pathlib
 import tempfile
@@ -140,6 +142,23 @@ class WakeLedgerTest(unittest.TestCase):
                               for request in ledger["requests"]], [["W1"], ["W2"]])
             self.assertEqual([request["attributionBasis"] for request in ledger["requests"]],
                              ["submission_entry_id", "submission_entry_id"])
+
+    def test_missing_planner_calls_is_incomplete_not_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in CANONICAL_FIXTURE.iterdir():
+                if path.name != "planner-calls.jsonl":
+                    (target / path.name).write_bytes(path.read_bytes())
+            ledger = wake_ledger.build_ledger(target)
+            self.assertEqual(ledger["requests"], [])
+            self.assertTrue(ledger["metrics"]["plannerCallsMissing"])
+            self.assertFalse(ledger["metrics"]["inputComplete"])
+            self.assertIsNone(ledger["metrics"]["requestsPerMinute"]["overall"])
+            output = io.StringIO()
+            with redirect_stdout(output):
+                wake_ledger.main(["summarize", str(target)])
+            self.assertIn("| n/a |", output.getvalue())
+            self.assertIn("| yes |", output.getvalue())
 
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:

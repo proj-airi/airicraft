@@ -134,7 +134,9 @@ def submission_key(generation, attempt, phase):
 
 def build_ledger(run_dir):
     run_dir = Path(run_dir)
-    calls = sorted(read_jsonl(run_dir / "planner-calls.jsonl"), key=lambda x: number(x["sequence"]))
+    planner_calls_path = run_dir / "planner-calls.jsonl"
+    planner_calls_missing = not planner_calls_path.exists()
+    calls = sorted(read_jsonl(planner_calls_path), key=lambda x: number(x["sequence"]))
     events = [row["event"] for row in read_jsonl(run_dir / "events.jsonl")]
     event_by_seq = {number(event["seqNo"]): event for event in events}
     timeline = [row["entry"] for row in read_jsonl(run_dir / "debug-timeline.jsonl")]
@@ -306,7 +308,7 @@ def build_ledger(run_dir):
     token_unknown = sum(record.get("usage", {}).get("totalTokens") is None for record in in_window)
     window_unplaced = sum(record.get("dispatchServerTick") is None for record in llm_latest.values())
     tokens_complete = bool(in_window) and not token_unknown and not llm_gaps and not window_unplaced
-    metrics = {"requestsPerMinute": {"overall": rate(len(initial), span, 1200),
+    metrics = {"requestsPerMinute": {"overall": rate(len(initial), span, 1200) if not planner_calls_missing else None,
                                      "byOwner": {key: rate(count, span, 1200) for key, count in sorted(per_owner.items())},
                                      "byPath": {key: rate(count, span, 1200) for key, count in sorted(per_path.items())}},
                "followUpsPerTurn": len(followups) / len(initial) if initial else None,
@@ -323,12 +325,15 @@ def build_ledger(run_dir):
                "tokensExcludedOutsideWindow": len(llm_latest) - len(in_window) - window_unplaced,
                "tokensUnknown": token_unknown,
                "llmGaps": llm_gaps, "tokensUnplaced": window_unplaced,
+               "plannerCallsMissing": planner_calls_missing,
                "captureMetadataSources": capture_sources,
                "timelineGaps": not (run_dir / "debug-timeline.jsonl").exists() or bool(summary.get("debugTimelineTruncated")) or has_gap([entry["entryId"] for entry in timeline]),
                "eventGaps": not (run_dir / "events.jsonl").exists() or bool(summary.get("eventsTruncated")) or has_gap([event["seqNo"] for event in events]) or any(r["evidenceGap"] for r in requests),
                "byPathAttribution": "multi_attributed_submitted_attempts",
                "chatAppliedClockEstimate": True,
                "observedServerTickSpan": span}
+    metrics["inputComplete"] = not (metrics["plannerCallsMissing"] or metrics["timelineGaps"]
+                                    or metrics["eventGaps"] or metrics["llmGaps"])
     return {"schema": SCHEMA, "runDir": str(run_dir), "requests": requests, "drops": drops, "metrics": metrics}
 
 
@@ -363,7 +368,8 @@ def summary_table(ledgers):
             rates.append(rpm)
         if m["tokensPerHour"] is not None:
             token_rates.append(m["tokensPerHour"])
-        rows.append(f"| {Path(ledger['runDir']).name} | {sum(r['phase'] in INITIAL_PHASES for r in ledger['requests'])} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if m['timelineGaps'] or m['eventGaps'] or m['llmGaps'] else 'no'} |")
+        initial_count = "n/a" if m["plannerCallsMissing"] else sum(r["phase"] in INITIAL_PHASES for r in ledger["requests"])
+        rows.append(f"| {Path(ledger['runDir']).name} | {initial_count} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if not m['inputComplete'] else 'no'} |")
     rows.append(f"\nRequests/min spread: {min(rates)}–{max(rates)}" if rates else "\nRequests/min spread: n/a")
     rows.append(f"Tokens/hour spread: {min(token_rates)}–{max(token_rates)}" if token_rates else "Tokens/hour spread: n/a")
     return "\n".join(rows)
