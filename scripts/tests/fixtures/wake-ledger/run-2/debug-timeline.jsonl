@@ -1,0 +1,4 @@
+{"collectedAt":"fixture","entry":{"entryId":1,"tick":40,"domain":"event_pipeline","action":"route","correlation":{"rawEventSeqNo":1,"plannerEventSeqNo":0},"payload":{"emitSemantic":false,"eventType":"social.system_message"}}}
+{"collectedAt":"fixture","entry":{"entryId":2,"tick":50,"domain":"event_pipeline","action":"route","correlation":{"rawEventSeqNo":2,"plannerEventSeqNo":0},"payload":{"emitSemantic":false,"eventType":"social.player_addressed_agent"}}}
+{"collectedAt":"fixture","entry":{"entryId":3,"tick":50,"domain":"planner_wake","action":"submitted","correlation":{},"payload":{"path":"W1","owner":"controller","serverTick":99,"triggerTypes":["CHAT"],"origins":["DIRECT_GUIDANCE"],"coalescingKeys":[],"speakers":["Alex"]}}}
+{"collectedAt":"fixture","entry":{"entryId":4,"tick":52,"domain":"event_pipeline","action":"route","correlation":{"rawEventSeqNo":3,"plannerEventSeqNo":1},"payload":{"emitSemantic":true,"eventType":"work.changed"}}}

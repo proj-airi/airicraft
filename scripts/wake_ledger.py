@@ -2,7 +2,7 @@
 """Build an auditable wake ledger from a RuntimeFlightRecorder directory."""
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 import json
 import math
 from pathlib import Path
@@ -26,6 +26,18 @@ def number(value):
 
 def observation(messages):
     """Read the canonical observe JSON, including legacy DECISION CONTEXT text."""
+    observe_ids = {call.get("id") for message in messages if message.get("role") == "assistant"
+                   for call in message.get("tool_calls", [])
+                   if call.get("function", {}).get("name") == "observe"}
+    for message in reversed(messages):
+        if message.get("role") != "tool" or message.get("tool_call_id") not in observe_ids:
+            continue
+        try:
+            value = json.loads(message.get("content") or "")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and {"tick", "serverTick", "afterEventSequence", "throughEventSequence", "events"} <= value.keys():
+            return value, None
     for message in reversed(messages):
         content = message.get("content")
         if not isinstance(content, str):
@@ -44,6 +56,22 @@ def observation(messages):
             if isinstance(value, dict) and {"tick", "serverTick", "throughEventSequence"} <= value.keys():
                 return value, content[:offset].strip()
     return None, None
+
+
+def latest_user_delta(messages, previous_messages):
+    previous = Counter(message.get("content") for message in previous_messages
+                       if message.get("role") == "user" and isinstance(message.get("content"), str))
+    for message in messages:
+        content = message.get("content")
+        if message.get("role") != "user" or not isinstance(content, str):
+            continue
+        if previous[content]:
+            previous[content] -= 1
+            continue
+        if not content.startswith(("Context update:", "Tool result", "Goal:", "DECISION CONTEXT:")) \
+                and "DECISION CONTEXT:" not in content and not content.lower().startswith(("trigger:", "manual trigger:")):
+            return True
+    return False
 
 
 def trigger_hint(prefix):
@@ -96,12 +124,14 @@ def build_ledger(run_dir):
     requests = []
     previous_initial_server = None
     previous_initial_agent = None
+    previous_messages = []
     consumed_wake_ids = set()
     for call in calls:
         phase = call.get("plannerAttempt", {}).get("phase")
         if phase not in INITIAL_PHASES | {"TOOL_FOLLOW_UP"}:
             continue
-        obs, prefix = observation(call.get("request", {}).get("messages", []))
+        messages = call.get("request", {}).get("messages", [])
+        obs, prefix = observation(messages)
         dispatch_server = number(call["timeline"]["submitted"]["serverTick"])
         agent_tick = number(obs.get("tick")) if obs else None
         server_tick = number(obs.get("serverTick")) if obs else None
@@ -131,32 +161,44 @@ def build_ledger(run_dir):
             if not attributed:
                 attributed = [{"path": "unknown", "reason": "no submitted audit in attribution window"}]
             previous_initial_server, previous_initial_agent = dispatch_server, agent_tick
-        user_turn = any(event.get("type") == "social.player_addressed_agent" for event in visible) or any(
-            "PLAYER" in wake.get("origins", []) for wake in attributed)
-        evidence_gaps = bool(obs and obs.get("missingEventRange")) or any(
-            number(event.get("seqNo")) not in event_by_seq for event in visible)
+        direct_guidance = any("DIRECT_GUIDANCE" in wake.get("origins", []) for wake in attributed)
+        user_delta = latest_user_delta(messages, previous_messages)
+        visible_chat = any(event.get("type") == "social.player_addressed_agent" for event in visible)
+        user_turn = direct_guidance or user_delta or visible_chat
+        user_turn_source = "direct_guidance_audit" if direct_guidance else "request_user_delta" if user_delta else "planner_visible_chat" if visible_chat else None
+        previous_messages = messages
+        visible_events = []
+        evidence_gaps = bool(obs and obs.get("missingEventRange"))
+        for event in visible:
+            raw_seq = number(event.get("seqNo"))
+            raw = event_by_seq.get(raw_seq)
+            recorded = raw is not None and raw.get("type") == event.get("type") and number(raw.get("tick")) == number(event.get("tick"))
+            evidence_gaps = evidence_gaps or not recorded
+            visible_events.append({"seqNo": raw_seq, "rawSeqNo": number(raw["seqNo"]) if recorded else None,
+                                   "tick": number(event.get("tick")), "type": event.get("type"), "recorded": recorded})
         requests.append({"seq": number(call["sequence"]), "turnId": call.get("turnId"),
                          "phase": phase, "dispatchAgentTick": agent_tick,
                          "dispatchServerTick": dispatch_server, "observeServerTick": server_tick,
                          "owner": obs.get("decisionOwner") if obs else None,
                          "afterEventSequence": number(obs.get("afterEventSequence")) if obs else None,
                          "throughEventSequence": number(obs.get("throughEventSequence")) if obs else None,
-                         "newEvents": [{"seqNo": number(event.get("seqNo")), "tick": number(event.get("tick")),
-                                        "type": event.get("type"), "recorded": number(event.get("seqNo")) in event_by_seq}
-                                       for event in visible],
-                         "userTurn": user_turn, "baselineRefresh": bool(obs and obs.get("stateBaseline")),
+                         "newEvents": visible_events,
+                         "userTurn": user_turn, "userTurnSource": user_turn_source,
+                         "baselineRefresh": bool(obs and obs.get("stateBaseline")),
                          "wakes": attributed, "triggerHint": trigger_hint(prefix) if attributed and attributed[0]["path"] == "unknown" else None,
                          "appliedServerTick": number((call["timeline"].get("applied") or {}).get("serverTick")),
+                         "clockAlignment": {"agentTick": agent_tick, "serverTick": server_tick},
                          "evidenceGap": evidence_gaps,
                          "uncertainty": [reason for condition, reason in
                                          ((obs is None, "observation_missing"),
                                           (bool(attributed) and attributed[0]["path"] == "unknown" and phase in INITIAL_PHASES, "wake_audit_missing"),
+                                          (user_turn_source == "request_user_delta", "user_turn_inferred_from_request"),
                                           (evidence_gaps, "event_evidence_incomplete")) if condition]})
 
     initial = [r for r in requests if r["phase"] in INITIAL_PHASES]
     followups = [r for r in requests if r["phase"] == "TOOL_FOLLOW_UP"]
     ticks = [r["dispatchServerTick"] for r in requests]
-    span = max(ticks) - min(ticks) if len(ticks) > 1 else 0
+    span = max(ticks) - min(ticks) if len(ticks) > 1 else (1 if ticks else 0)
     per_owner, per_path, empty = Counter(), Counter(), Counter()
     for request in initial:
         paths = {wake["path"] for wake in request["wakes"]}
@@ -172,10 +214,19 @@ def build_ledger(run_dir):
         terminal = kind == "work.changed" and str(event.get("payload", {}).get("state", "")).upper() in {"SUCCEEDED", "FAILED", "CANCELLED"}
         if not terminal and kind != "social.player_addressed_agent":
             continue
-        first = next((r for r in requests if r["throughEventSequence"] is not None
-                      and r["throughEventSequence"] >= number(event["seqNo"])
-                      and (terminal or r["afterEventSequence"] is not None
-                           and r["afterEventSequence"] < number(event["seqNo"]))), None)
+        raw_seq = number(event["seqNo"])
+        if terminal:
+            first = next((r for r in requests if r["throughEventSequence"] is not None
+                          and r["throughEventSequence"] >= raw_seq), None)
+        else:
+            speaker = event.get("payload", {}).get("player") or event.get("payload", {}).get("speaker")
+            first = next((r for r in requests if any(
+                "DIRECT_GUIDANCE" in wake.get("origins", []) and "CHAT" in wake.get("triggerTypes", [])
+                and wake.get("agentTick") is not None and wake["agentTick"] >= number(event["tick"])
+                and (not speaker or speaker in wake.get("speakers", [])) for wake in r["wakes"])), None)
+            if first is None:
+                first = next((r for r in requests if any(
+                    visible["seqNo"] == raw_seq and visible["type"] == kind for visible in r["newEvents"])), None)
         if first is None or first["dispatchAgentTick"] is None:
             continue
         agent_delta = first["dispatchAgentTick"] - number(event["tick"])
@@ -193,8 +244,18 @@ def build_ledger(run_dir):
         record = row["record"]
         if record.get("requestKind", "").lower() == "planner":
             llm_latest[record["sequenceId"]] = record
-    tokens = sum(number(record.get("usage", {}).get("totalTokens")) or 0 for record in llm_latest.values())
-    token_unknown = sum(record.get("usage", {}).get("totalTokens") is None for record in llm_latest.values())
+    summary_path = run_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
+    llm_gaps = not (run_dir / "llm-calls.jsonl").exists() or bool(summary.get("llmCallsTruncated"))
+    window_start, window_end = (min(ticks), max(ticks)) if ticks else (None, None)
+    in_window = [record for record in llm_latest.values()
+                 if window_start is not None and number(record.get("dispatchServerTick")) is not None
+                 and window_start <= number(record["dispatchServerTick"]) <= window_end]
+    tokens_total = sum(number(record.get("usage", {}).get("totalTokens")) or 0 for record in llm_latest.values())
+    tokens = sum(number(record.get("usage", {}).get("totalTokens")) or 0 for record in in_window)
+    token_unknown = sum(record.get("usage", {}).get("totalTokens") is None for record in in_window)
+    window_unplaced = sum(record.get("dispatchServerTick") is None for record in llm_latest.values())
+    tokens_complete = bool(in_window) and not token_unknown and not llm_gaps and not window_unplaced
     metrics = {"requestsPerMinute": {"overall": rate(len(initial), span, 1200),
                                      "byOwner": {key: rate(count, span, 1200) for key, count in sorted(per_owner.items())},
                                      "byPath": {key: rate(count, span, 1200) for key, count in sorted(per_path.items())}},
@@ -204,10 +265,17 @@ def build_ledger(run_dir):
                "chatReplyLatencyTicks": {"toRequest": distribution(chat_request_latency),
                                          "toApplied": distribution(chat_applied_latency)},
                "droppedWakes": dict(sorted(Counter(drop["gate"] or "unknown" for drop in drops).items())),
-               "tokensPerHour": rate(tokens, span, 72000) if llm_latest and not token_unknown else None,
+               "tokensPerHour": rate(tokens, span, 72000) if tokens_complete else None,
+               "tokensComplete": tokens_complete,
+               "tokensTotalRecorded": tokens_total, "tokensInWindow": tokens,
+               "tokenWindow": {"startServerTick": window_start, "endServerTick": window_end, "durationTicks": span},
+               "tokensExcludedOutsideWindow": len(llm_latest) - len(in_window) - window_unplaced,
                "tokensUnknown": token_unknown,
-               "timelineGaps": not (run_dir / "debug-timeline.jsonl").exists() or has_gap([entry["entryId"] for entry in timeline]),
-               "eventGaps": not (run_dir / "events.jsonl").exists() or has_gap([event["seqNo"] for event in events]) or any(r["evidenceGap"] for r in requests),
+               "llmGaps": llm_gaps, "tokensUnplaced": window_unplaced,
+               "timelineGaps": not (run_dir / "debug-timeline.jsonl").exists() or bool(summary.get("debugTimelineTruncated")) or has_gap([entry["entryId"] for entry in timeline]),
+               "eventGaps": not (run_dir / "events.jsonl").exists() or bool(summary.get("eventsTruncated")) or has_gap([event["seqNo"] for event in events]) or any(r["evidenceGap"] for r in requests),
+               "byPathAttribution": "multi_attributed_submitted_attempts",
+               "chatAppliedClockEstimate": True,
                "observedServerTickSpan": span}
     return {"schema": SCHEMA, "runDir": str(run_dir), "requests": requests, "drops": drops, "metrics": metrics}
 
@@ -235,14 +303,17 @@ def diff_ledgers(before, after):
 def summary_table(ledgers):
     rows = ["| Run | INITIAL | Requests/min | Follow-ups/turn | Empty | Drops | Tokens/hour | Gaps |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
-    rates = []
+    rates, token_rates = [], []
     for ledger in ledgers:
         m = ledger["metrics"]
         rpm = m["requestsPerMinute"]["overall"]
         if rpm is not None:
             rates.append(rpm)
-        rows.append(f"| {Path(ledger['runDir']).name} | {sum(r['phase'] in INITIAL_PHASES for r in ledger['requests'])} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if m['timelineGaps'] or m['eventGaps'] else 'no'} |")
+        if m["tokensPerHour"] is not None:
+            token_rates.append(m["tokensPerHour"])
+        rows.append(f"| {Path(ledger['runDir']).name} | {sum(r['phase'] in INITIAL_PHASES for r in ledger['requests'])} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if m['timelineGaps'] or m['eventGaps'] or m['llmGaps'] else 'no'} |")
     rows.append(f"\nRequests/min spread: {min(rates)}–{max(rates)}" if rates else "\nRequests/min spread: n/a")
+    rows.append(f"Tokens/hour spread: {min(token_rates)}–{max(token_rates)}" if token_rates else "Tokens/hour spread: n/a")
     return "\n".join(rows)
 
 

@@ -8,6 +8,7 @@ from scripts import wake_ledger
 
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wake-ledger" / "run-1"
+CANONICAL_FIXTURE = FIXTURE.parent / "run-2"
 
 
 class WakeLedgerTest(unittest.TestCase):
@@ -40,6 +41,54 @@ class WakeLedgerTest(unittest.TestCase):
         after["requests"][0]["wakes"][0]["path"] = "W2"
         result = wake_ledger.diff_ledgers(before, after)
         self.assertIn("wakePaths", result["changedRequests"][0]["differences"])
+
+    def test_canonical_observe_uses_raw_event_sequence(self):
+        ledger = wake_ledger.build_ledger(CANONICAL_FIXTURE)
+        first = ledger["requests"][0]
+        self.assertEqual((first["dispatchAgentTick"], first["observeServerTick"]), (55, 100))
+        self.assertEqual(first["owner"], "controller")
+        self.assertEqual(first["newEvents"], [{"seqNo": 3, "rawSeqNo": 3, "tick": 52,
+                                               "type": "work.changed", "recorded": True}])
+        self.assertTrue(first["userTurn"])
+        self.assertEqual(ledger["metrics"]["outcomeLatencyTicks"], {"p50": 3, "p90": 3, "max": 3, "count": 1})
+        self.assertEqual(ledger["metrics"]["chatReplyLatencyTicks"]["toRequest"]["p50"], 5)
+        self.assertEqual(ledger["metrics"]["chatReplyLatencyTicks"]["toApplied"]["p50"], 15)
+        self.assertFalse(ledger["metrics"]["eventGaps"])
+        self.assertFalse(ledger["requests"][1]["userTurn"])
+
+    def test_observe_result_requires_matching_call_id(self):
+        messages = [{"role": "assistant", "tool_calls": [{"id": "observe-1", "function": {"name": "observe"}}]},
+                    {"role": "tool", "tool_call_id": "observe-1", "content": json.dumps({"tick": 5,
+                        "serverTick": 10, "afterEventSequence": 0, "throughEventSequence": 1, "events": []})},
+                    {"role": "tool", "tool_call_id": "unrelated", "content": json.dumps({"tick": 99,
+                        "serverTick": 99, "afterEventSequence": 0, "throughEventSequence": 99, "events": []})}]
+        self.assertEqual(wake_ledger.observation(messages)[0]["tick"], 5)
+
+    def test_summary_truncation_and_token_window(self):
+        ledger = wake_ledger.build_ledger(CANONICAL_FIXTURE)
+        metrics = ledger["metrics"]
+        self.assertEqual(metrics["tokensTotalRecorded"], 130)
+        self.assertEqual(metrics["tokensInWindow"], 30)
+        self.assertEqual(metrics["tokenWindow"], {"startServerTick": 100, "endServerTick": 200, "durationTicks": 100})
+        self.assertEqual(metrics["tokensPerHour"], 21600.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = pathlib.Path(tmp)
+            for path in CANONICAL_FIXTURE.iterdir():
+                (target / path.name).write_bytes(path.read_bytes())
+            calls = (target / "planner-calls.jsonl").read_text().splitlines()
+            (target / "planner-calls.jsonl").write_text(calls[0] + "\n")
+            single = wake_ledger.build_ledger(target)["metrics"]
+            self.assertEqual(single["tokensInWindow"], 10)
+            self.assertEqual(single["tokenWindow"]["durationTicks"], 1)
+            self.assertEqual(single["tokensPerHour"], 720000.0)
+            (target / "planner-calls.jsonl").write_text("\n".join(calls) + "\n")
+            (target / "summary.json").write_text(json.dumps({"eventsTruncated": True,
+                "debugTimelineTruncated": True, "llmCallsTruncated": True}))
+            partial = wake_ledger.build_ledger(target)["metrics"]
+            self.assertTrue(partial["eventGaps"])
+            self.assertTrue(partial["timelineGaps"])
+            self.assertTrue(partial["llmGaps"])
+            self.assertIsNone(partial["tokensPerHour"])
 
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:
