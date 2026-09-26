@@ -84,6 +84,7 @@ the controller/thinker ownership rules.
 | W6 | Delegation start | `DialogueRuntime.poll` (641) |
 | W7 | Evaluation seeds | `emitEvaluationTrigger` (5728), `startEvaluationGoal` |
 | W8 | Semantic overflow flush | `PlannerOrchestrator.startOverflowFlushIfIdle` (1360), when pending semantic events ≥ cap |
+| W9 | FIFO result review | `PlannerOrchestrator.tickToolQueue`, after FIFO exhaustion or a `report_to_me` checkpoint |
 
 Also present: policy continuation (`DialogueRuntime.pollPolicyContinuation`) is
 wired but dormant, because action policies have been disabled since
@@ -149,7 +150,7 @@ production callers.
    milliseconds. Goal continuation uses ticks. Tick-debug pause therefore
    affects the paths differently.
 
-### 2.6 Suspected defects (confirm or refute in Phase 0)
+### 2.6 Defect characterization (Phase 0)
 
 - **D1 One cursor, two sequence spaces.** `DialogueRuntime.submitPlannerTrigger`
   (782–792) advances the role's `lastObservedEventSeqNo` by querying the buffer
@@ -181,6 +182,27 @@ production callers.
   and item offers reach the model only through prose (E1), which can be
   coalesced away. For example, a second `item_offer:<player>` replaces the
   first one.
+
+Phase 0 probes preserve current behavior. `WakeDefectProbeTest`,
+`DialogueWakeCharacterizationTest`, `IdleIdeaSchedulerTest`, and
+`PlannerDecisionContextTest` establish these bounded verdicts:
+
+| Probe | Verdict | Pinned evidence |
+| --- | --- | --- |
+| D1 | Confirmed | A W2 raw-buffer cursor of 10 skips a later planner-buffer pickup at sequence 1 in the legacy notice channel. |
+| D2 | Confirmed | A pickup appears in both `observe.events` and `observe.notices`. |
+| D3 | Confirmed | An `ignore` rule suppresses the pickup wake, but a later chat still observes its raw evidence. |
+| D4 | Confirmed paths; second request suppressed | One `reflex.resolved` attempts W1 and W2; `G5.incorporated` drops W2, leaving one backend request. |
+| D5 | Refuted for direct-navigation failure | Both W2 references identify the causal `task.failed` / `work.changed` event. Generic “Work changed.” prose still occurs because those events lack `task.notice` message prose. Other producers are not proven by this probe. |
+| D6 | Confirmed | A synthetic 512-event flood evicts `food.eaten`: EATING stays RUNNING, versus SUCCEEDED without the flood. This establishes the dependency, not its gameplay frequency. |
+| D7 | Confirmed | Five minutes of wall time with no ticks causes one idle-think wake on the first resumed tick; there is no catch-up burst. |
+| D8 | Confirmed | Offers and graph failures are absent from canonical observation; a second offer with the same player key replaces the first prose trigger. |
+
+Fatal damage currently wakes before respawn; the death golden pins this
+rather than adopting the original plan's no-wake expectation. W9, discovered
+during implementation, records FIFO exhaustion / `report_to_me` result
+review in `PlannerOrchestrator.tickToolQueue`. It is distinct from W8 overflow.
+These observations do not change production decisions.
 
 ## 3. What to adopt from the references
 
@@ -674,6 +696,22 @@ function step(input, state, lib) {
   - `update_event_policy` keeps its frozen schema. It becomes a shim that
     writes a rules table the default attention module reads, so existing
     prompts and persisted behaviour keep working.
+
+**Phase 0 measurement (2026-09-27).** The [corrected three-run spike](../../experiments/2026-09-27-attention-rule-engine-spike.md)
+used JBR 21 and the production sandbox restrictions. Median context build was
+410.852 ms, first step 80.828 ms, early handoff p99 6.955 ms, and steady-state
+handoff p99 1.462 ms after 500 warmup steps. Proceed for steady state, with
+startup measured separately in a live client. Synthetic input exercised
+20 events and 50 candidates (about 10.7 KiB), with state 6,995 bytes under the
+16 KiB cap. Keep those initial batch caps; larger traces need measurement.
+Both 50,000 and 200,000 statements completed the workload. Use 50,000 as the
+initial statement cap and a one-tick (50 ms) delivery deadline: a late Stage-B
+result falls back for that tick. The worker's hard cancellation ceiling remains
+one second as in the existing sandbox; the spike proves that ceiling for
+throw, statement exhaustion, and oversized-state failures. The measured cold
+step exceeds one tick, so context preparation and cold fallback must be
+accounted for explicitly in Phase 1/2. Stage A remains synchronous and never
+waits for the worker. This is benchmark evidence, not live scheduling proof.
 
 ## 5. Salience perception: blocks, entities and dropped items
 
