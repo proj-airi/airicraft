@@ -119,7 +119,11 @@ class WakeCharacterizationTest {
 				.get(1).getAsJsonObject().getAsJsonArray("newMessages");
 			assertFalse(secondDelta.toString().contains("\"text\":\"Alex: @agent gather wood\""),
 				"the second request delta must omit the old standalone user turn");
-			h.transcript("addressed_chat_while_turn_in_flight").assertMatchesGolden("addressed_chat_while_turn_in_flight");
+			var transcript = h.transcript("addressed_chat_while_turn_in_flight");
+			// Supersession cancels the pending generation before a discarded-result record exists.
+			transcript.data().getAsJsonArray("requests").get(0).getAsJsonObject().addProperty("superseded",
+				h.runtime.dialogueRuntimeForTests().plannerDebugSnapshot().supersededCount() == 1);
+			transcript.assertMatchesGolden("addressed_chat_while_turn_in_flight");
 		}
 	}
 	@Test void ambient_chat_proactive_on() { ambient(true); }
