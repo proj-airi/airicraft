@@ -798,9 +798,9 @@ Production edits are limited to package-private test seams and additive
 debug-timeline instrumentation (`planner_wake` entries). Task-level plan:
 [`plans/2026-09-26-planner-event-system-phase-0.md`](../plans/2026-09-26-planner-event-system-phase-0.md).
 
-- [ ] Generate the event inventory (Appendix A) from code and assert it in a
+- [x] Generate the event inventory (Appendix A) from code and assert it in a
   test that enumerates `createEventRoutingProfiles()`.
-- [ ] Build a wake-scenario harness on `EmbodiedAgentRuntime.createForTests`
+- [x] Build a wake-scenario harness on `EmbodiedAgentRuntime.createForTests`
   with a recording backend. The existing deterministic-response tests in
   `PlannerOrchestratorTest` and `DialogueRuntimeTest` are a starting point. For
   each scenario, record golden files under `src/test/resources/planner/wakes/`
@@ -817,16 +817,16 @@ debug-timeline instrumentation (`planner_wake` entries). Task-level plan:
   - delegation start
   - degraded mode, external driver, and evaluation suppression
   - tick-debug pause
-- [ ] Build the **wake ledger** (the first half of wake replay). It
+- [x] Build the **wake ledger** (the first half of wake replay). It
   reconstructs, for each planner request in a recorded run, why the request
   was made and which evidence was newly incorporated. Its input is the
   `RuntimeFlightRecorder` output written by evaluation runs and automatic
   playtests. Phase 2 adds a Java replay harness that emits the same ledger
   format from the new policy, and the two ledgers are diffed. Phases 2 and 3
   both use it.
-- [ ] Confirm or refute D1–D8 with focused tests and write the outcome into
+- [x] Confirm or refute D1–D8 with focused tests and write the outcome into
   this document.
-- [ ] **GraalJS rule-engine spike.** Using the `GraalPolicyInvocation`
+- [x] **GraalJS rule-engine spike.** Using the `GraalPolicyInvocation`
   sandbox settings on the interpreter-only JBR 21 runtime, measure the
   latency of one `step()` with a draft default attention rule, 20 events and
   50 candidates, both cold and warm, and its steady-state memory. The result
@@ -835,7 +835,7 @@ debug-timeline instrumentation (`planner_wake` entries). Task-level plan:
 - [ ] Record baseline metrics (4.10) from one evaluation batch and one live
   playtest.
 - [x] Resolve section 9 (accepted 2026-09-26).
-- [ ] Write ADR-0003 and add the vocabulary to `CONTEXT.md`.
+- [x] Write ADR-0003 and add the vocabulary to `CONTEXT.md`.
 
 Exit: characterization suite green on `dev`; decisions recorded.
 

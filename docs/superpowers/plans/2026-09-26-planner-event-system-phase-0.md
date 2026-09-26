@@ -32,6 +32,20 @@ that document.
 
 ---
 
+## Implementation status (2026-09-27)
+
+Tasks 1–10 are implemented on PR #81. The full build passes (1,718 root
+tests, 95 wrapper tests; 3 opt-in root tests skipped), and the Python ledger
+suite passes 9 tests. Live baseline runs use the committed Phase 0 branch;
+Task 3 retention and Tasks 11–12 remain open until those records are checked.
+The branch has not been merged into `dev`.
+
+Implementation adjustments: FIFO/checkpoint reviews are W9; retained W2 gate
+audits are emitted once per gate transition; fatal damage wakes before
+respawn; the rule spike lives in the `policy` test package to reuse production
+sandbox options. The spec records bounded D1–D8 verdicts and measured spike
+limits. These changes characterize current scheduling without changing it.
+
 ## Ground rules
 
 1. **No behaviour changes.** Two kinds of production edits are allowed:
@@ -107,7 +121,7 @@ that document.
 - Create: `docs/adr/0003-planner-perception-attention-and-wakes.md`
 - Modify: `CONTEXT.md`
 
-- [ ] **Step 1: Write ADR-0003** in the shape of ADR-0002: status, context,
+- [x] **Step 1: Write ADR-0003** in the shape of ADR-0002: status, context,
   decision, ownership and limits, consequences. Record O1–O13 as accepted on
   2026-09-26. Say explicitly that it extends ADR-0002:
   - the event log stays bounded at 512 events (O9);
@@ -115,7 +129,7 @@ that document.
   - `observe` stays the evidence channel.
   
   Link the spec instead of copying its tables.
-- [ ] **Step 2: Add a "Planner attention" section to `CONTEXT.md`** in the
+- [x] **Step 2: Add a "Planner attention" section to `CONTEXT.md`** in the
   existing `**Term**: … _Avoid_: …` format. Terms and the synonyms to avoid:
   - Sensor
   - Candidate
@@ -129,7 +143,7 @@ that document.
   - Wake batch (avoid: trigger batch)
   - Urgency (avoid: priority)
   - Delivery
-- [ ] **Step 3: Commit** (`docs(adr): accept planner perception, attention and wake design`).
+- [x] **Step 3: Commit** (`docs(adr): accept planner perception, attention and wake design`).
 
 ### Task 2: Event inventory guard
 
@@ -144,7 +158,7 @@ which the hand-built spec appendix had missed.
 - Create: `src/test/resources/planner/wakes/event-inventory.json`
 - Create: `src/test/java/ai/moeru/airicraft/agent/EventInventoryTest.java`
 
-- [ ] **Step 1: Expose the routing table to tests (no behaviour change)**
+- [x] **Step 1: Expose the routing table to tests (no behaviour change)**
 
 ```java
 // EmbodiedAgentRuntime, next to createEventRoutingProfiles()
@@ -153,7 +167,7 @@ static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
 }
 ```
 
-- [ ] **Step 2: Write the inventory.** Write one entry per type, and one
+- [x] **Step 2: Write the inventory.** Write one entry per type, and one
   prefix entry per dynamic family. Seed it from spec Appendix A plus the
   three failure types. For example:
 
@@ -178,7 +192,7 @@ static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
   `notEventTypes` lists string literals that look like event ids but are
   action-fact kinds, request kinds or file names.
 
-- [ ] **Step 3: Write the tests**
+- [x] **Step 3: Write the tests**
   - `routingProfilesMatchInventory`: compare
     `eventRoutingProfilesForTests()` with every `profile` in the inventory,
     in both directions.
@@ -195,10 +209,10 @@ static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
     directory under Gradle. Fail with the sorted list of ids that are neither
     an inventory type, covered by a prefix entry, nor in `notEventTypes`.
     The scan found 99 such literals when this plan was written.
-- [ ] **Step 4: Run** `./gradlew test --tests 'ai.moeru.airicraft.agent.EventInventoryTest'`.
+- [x] **Step 4: Run** `./gradlew test --tests 'ai.moeru.airicraft.agent.EventInventoryTest'`.
   Expected: PASS once the inventory is complete. Temporarily delete one
   entry and check that the failure message names it.
-- [ ] **Step 5: Regenerate spec Appendix A** from the inventory if they
+- [x] **Step 5: Regenerate spec Appendix A** from the inventory if they
   disagree, then commit.
 
 ### Task 3: Wake audit instrumentation (additive)
@@ -212,7 +226,7 @@ say *why* each planner request happened.
   `PlannerOrchestrator.java`, `EmbodiedAgentRuntime.java`
 - Test: `src/test/java/ai/moeru/airicraft/agent/dialogue/DialogueRuntimeTest.java`
 
-- [ ] **Step 1: Add the recorder entry**
+- [x] **Step 1: Add the recorder entry**
 
 ```java
 // AgentDebugRecorder
@@ -225,7 +239,7 @@ public synchronized void recordPlannerWake(long tick, long timestampMs, String k
   Check the existing `appendTimeline` parameter order before copying this.
   `kind` is `submitted` or `dropped`.
 
-- [ ] **Step 2: Add a sink to `DialogueRuntime`**
+- [x] **Step 2: Add a sink to `DialogueRuntime`**
 
 ```java
 public interface WakeAuditSink {
@@ -244,7 +258,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
   - `owner`: controller or thinking
   - `serverTick`
 
-- [ ] **Step 3: Call the sink.** Don't reorder any logic.
+- [x] **Step 3: Call the sink.** Don't reorder any logic.
 
   | Site | Record |
   |---|---|
@@ -255,12 +269,12 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
   | `submitPlannerTrigger`, degraded branch | `dropped`, gate `G8.degraded` |
   | `PlannerOrchestrator.startOverflowFlushIfIdle`, on submit | `submitted` W8, recorded through its existing `debugRecorder` |
 
-- [ ] **Step 4: Wire it.** In the `EmbodiedAgentRuntime` constructor, call
+- [x] **Step 4: Wire it.** In the `EmbodiedAgentRuntime` constructor, call
   `dialogueRuntime.configureWakeAudit((tick, kind, fields) -> debugRecorder.recordPlannerWake(tick, System.currentTimeMillis(), kind, withServerTick(fields)))`.
   Use the injected clock once Task 4 lands. The entries reach the dashboard
   export and `RuntimeFlightRecorder`'s `debug-timeline.jsonl` with no further
   work.
-- [ ] **Step 5: Test.** Add a `DialogueRuntimeTest` case using a recording
+- [x] **Step 5: Test.** Add a `DialogueRuntimeTest` case using a recording
   sink for:
   - one W1 submission;
   - a W2 wake dropped as `G5.incorporated` after its event was observed;
@@ -269,7 +283,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
   entries. Confirm in the Task 11 baseline that `debug-timeline.jsonl` has
   no gap markers caused by the extra entries. If it does, raise the
   recorder's poll frequency; don't raise the capacity.
-- [ ] **Step 7: Run and commit.** Run
+- [x] **Step 7: Run and commit.** Run
   `./gradlew test --tests 'ai.moeru.airicraft.agent.dialogue.*'`. Expected:
   PASS, with no changes to existing assertions.
 
@@ -278,14 +292,14 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
 **Files:**
 - Modify: `EmbodiedAgentRuntime.java`, `PlannerShellFactory.java`, `SurvivalReflexRuntime.java`
 
-- [ ] **Step 1: Planner backend factory.**
+- [x] **Step 1: Planner backend factory.**
   - Add a
     `PlannerShellFactory.create(..., Function<AgentConfig.LlmConfig, LlmBackend> backendFactory)`
     overload. The existing overloads delegate with the current `switch`,
     used in `createOrchestrator`.
   - Compaction and micro-compaction keep their own HTTP clients. The harness
     configures a compaction threshold high enough that they never run.
-- [ ] **Step 2: Inject the clock.** Add a package-private
+- [x] **Step 2: Inject the clock.** Add a package-private
   `EmbodiedAgentRuntime` constructor taking the backend factory and a
   `java.time.Clock`. The public constructors pass the current behaviour:
   the provider `switch` and `Clock.systemDefaultZone()`. Route every
@@ -297,7 +311,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
   
   Keep the event buffers' timestamps on the system clock. The transcripts
   strip them.
-- [ ] **Step 3: Injection hooks** (package-private, named `...ForTests`,
+- [x] **Step 3: Injection hooks** (package-private, named `...ForTests`,
   like the existing hooks):
   - `appendEventForTests(String type, Map<String,Object> payload)`: appends
     to the raw buffer at the current tick, for producers that need a live
@@ -312,7 +326,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
     `processSurvivalReflexEventsForTests()` to EAR.
   - `dialogueRuntimeForTests()`: for scenarios that need to read planner
     goal or delegation state.
-- [ ] **Step 4: Run and commit.** Run
+- [x] **Step 4: Run and commit.** Run
   `./gradlew test --tests 'ai.moeru.airicraft.agent.*'`. Expected: PASS with
   no assertion changes.
 
@@ -321,7 +335,7 @@ public void configureWakeAudit(WakeAuditSink sink) { wakeAudit = Objects.require
 **Files:**
 - Create: `RecordingPlannerBackend.java`, `WakeTranscript.java`, `WakeScenarioHarness.java`
 
-- [ ] **Step 1: Recording backend.** Generalize the `BlockingLlmBackend`
+- [x] **Step 1: Recording backend.** Generalize the `BlockingLlmBackend`
   pattern from `DialogueRuntimeTest`:
 
 ```java
@@ -343,7 +357,7 @@ public final class RecordingPlannerBackend implements LlmBackend {
   harness self-test, that `continue` ends the turn without a follow-up
   request.
 
-- [ ] **Step 2: Runtime harness.** `WakeScenarioHarness` builds the runtime
+- [x] **Step 2: Runtime harness.** `WakeScenarioHarness` builds the runtime
   with:
   - `AgentConfigLoader.fromMapStrict(Map.of("providerBaseUrl", "http://127.0.0.1:9", "apiKey", "test", "model", "test"), AgentConfig.defaults())`,
     so that `config.llm().isConfigured()` is true (check the key names
@@ -371,7 +385,7 @@ harness.transcript();            // WakeTranscript built from backend requests +
   1-second timeout, the same pattern as `BlockingLlmBackend`. Scenarios never
   sleep for time to pass; they move the clock.
 
-- [ ] **Step 3: Transcript content** (`WakeTranscript`, serialized with Gson in pretty-print):
+- [x] **Step 3: Transcript content** (`WakeTranscript`, serialized with Gson in pretty-print):
 
 ```json
 {
@@ -401,18 +415,18 @@ harness.transcript();            // WakeTranscript built from backend requests +
     - numbers that are wall-clock times → `<ms>`
     - time-beacon text → `<time>`
 
-- [ ] **Step 4: Golden compare.** Compare with
+- [x] **Step 4: Golden compare.** Compare with
   `src/test/resources/planner/wakes/<scenario>.golden.json`. When
   `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` is set, write the file instead and fail
   with "golden updated", so updates are never silent. On a mismatch, report
   a unified diff. Update command:
   `AIRICRAFT_UPDATE_WAKE_GOLDENS=1 ./gradlew test --tests '*WakeCharacterization*' --rerun`.
-- [ ] **Step 5: Harness self-tests.**
+- [x] **Step 5: Harness self-tests.**
   - Two identical scenario runs in one JVM produce identical transcripts.
     This catches static counters such as `PlannerObservation.NEXT_CALL`
     leaking through normalization.
   - A deliberately changed prompt changes only `systemSha`.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ### Task 6: Runtime-level characterization scenarios
 
@@ -509,7 +523,7 @@ playtests write one under `automatic_playtest/`. The files used:
 | `debug-timeline.jsonl` | `planner_wake` audit entries (Task 3) and `event_pipeline/route` entries |
 | `llm-calls.jsonl` | Token usage per planner request |
 
-- [ ] **Step 1: Output `airicraft.wake-ledger.v1`.** The output is one JSON
+- [x] **Step 1: Output `airicraft.wake-ledger.v1`.** The output is one JSON
   document per run. It contains:
   - `requests[]`: seq, dispatch agent tick and server tick, owner, phase, after and through sequence, the new planner-visible events, whether a user turn is present, and the attributed wakes. Wakes are the `submitted` audit entries since the previous INITIAL request; if none exist, the wake is `unknown` and the request text's trigger prefix is kept as a hint.
   - `drops[]`
@@ -517,7 +531,7 @@ playtests write one under `automatic_playtest/`. The files used:
 
   Align the agent and server clocks with the `(tick, serverTick)` pair
   carried by every `observe` payload.
-- [ ] **Step 2: Metrics.** These are the spec's 4.10 definitions made exact:
+- [x] **Step 2: Metrics.** These are the spec's 4.10 definitions made exact:
   - `requestsPerMinute`: INITIAL-phase gameplay requests per 1,200 server ticks, split by owner and by wake path.
   - `followUpsPerTurn`: TOOL_FOLLOW_UP calls per INITIAL call.
   - `emptyWakes`: INITIAL requests with no new planner-visible events, no user turn and no baseline refresh, split by path.
@@ -526,17 +540,17 @@ playtests write one under `automatic_playtest/`. The files used:
   - `droppedWakes`: counts per gate.
   - `tokensPerHour`: from `llm-calls.jsonl` planner records, per 72,000 server ticks.
   - `timelineGaps` and `eventGaps`: present or absent, so metrics from incomplete recordings are flagged.
-- [ ] **Step 3: CLI.** Three commands:
+- [x] **Step 3: CLI.** Three commands:
   - `python3 scripts/wake_ledger.py ledger <run-dir> -o ledger.json`
   - `python3 scripts/wake_ledger.py summarize <run-dir>...`: a Markdown table across runs, including the run-to-run spread
   - `python3 scripts/wake_ledger.py diff a.json b.json`: per-request wake-path and evidence differences, for Phase 2 replay
-- [ ] **Step 4: Tests.** Build a small hand-written fixture run with 3
+- [x] **Step 4: Tests.** Build a small hand-written fixture run with 3
   requests, one W2 drop, one terminal work event and one chat. Assert each
   metric, the clock alignment, the `unknown` fallback, and that `diff`
   reports a changed path. Run
   `python3 -m unittest scripts.tests.test_wake_ledger`, the same style as the
   existing script tests. Expected: PASS.
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ### Task 10: GraalJS rule-engine spike (opt-in)
 
@@ -544,7 +558,7 @@ playtests write one under `automatic_playtest/`. The files used:
 - Create: `RuleEngineSpikeTest.java`, `src/test/resources/rules-spike/{kernel,lib,attention}.js`,
   `docs/experiments/<date>-attention-rule-engine-spike.md`
 
-- [ ] **Step 1: Draft the modules.**
+- [x] **Step 1: Draft the modules.**
   - `lib.js`: `leakyBucket(state, {capacity, leakPerTick, cost}, tick)`,
     `slidingWindow`, `cooldown`, `hourlyCap`, `cluster`, and
     `seededRandom(seed)`.
@@ -554,7 +568,7 @@ playtests write one under `automatic_playtest/`. The files used:
     applied to NORMAL and LOW. It also has a small `salience` pass over
     candidates: garbage-list filtering and block clustering. It should be a
     realistic workload, not the Phase 2 rules.
-- [ ] **Step 2: Kernel with determinism overrides**
+- [x] **Step 2: Kernel with determinism overrides**
 
 ```js
 // kernel.js -- evaluated once per context
@@ -574,14 +588,14 @@ playtests write one under `automatic_playtest/`. The files used:
 })()
 ```
 
-- [ ] **Step 3: Harness.** Build the `Context` with **exactly** the
+- [x] **Step 3: Harness.** Build the `Context` with **exactly** the
   `GraalPolicyInvocation` builder options: `HostAccess.NONE`, no IO,
   threads, processes, native, environment or polyglot access, null streams,
   `engine.WarnInterpreterOnly=false`, and a `statementLimit`. Run it on a
   single-thread daemon executor, like the production worker. Call
   `context.resetLimits()` before each step. Put the test behind
   `@EnabledIfEnvironmentVariable(named = "AIRICRAFT_RULE_SPIKE", matches = "1")`.
-- [ ] **Step 4: Measure.** Print a JSON summary and write it to
+- [x] **Step 4: Measure.** Print a JSON summary and write it to
   `build/rule-spike/result.json`.
   - Context build plus module evaluation time.
   - First-step latency (cold), then p50, p95, p99 and max over 2,000
@@ -603,12 +617,12 @@ playtests write one under `automatic_playtest/`. The files used:
   - Failure paths: a throwing rule, an infinite loop (statement limit), and
     oversized state. Each must fail within the deadline without affecting
     later steps.
-- [ ] **Step 5: Run** with
+- [x] **Step 5: Run** with
   `AIRICRAFT_RULE_SPIKE=1 ./gradlew test --tests '*RuleEngineSpikeTest' --rerun`
   on the JBR 21 toolchain (the default), on a developer machine
   representative of playtests. Run it three times, and report the median
   run.
-- [ ] **Step 6: Decide.** These thresholds are proposed; record the chosen
+- [x] **Step 6: Decide.** These thresholds are proposed; record the chosen
   outcome.
   - **Proceed as designed** if warm p99 including handoff is at most 2 ms,
     the cold first step is at most 100 ms, and building the context is at
@@ -619,7 +633,7 @@ playtests write one under `automatic_playtest/`. The files used:
   - **Stop and revisit 4.12** if it is above 10 ms. Options are evaluating
     every N ticks, or a Graal JIT toolchain. Raise this with the team before
     Phase 1.
-- [ ] **Step 7: Write the experiment doc** with the machine, JVM, numbers,
+- [x] **Step 7: Write the experiment doc** with the machine, JVM, numbers,
   determinism results and the decision, then commit. The draft JS stays in
   test resources; Phase 2 promotes it to
   `src/main/resources/airicraft/rules/`.
