@@ -69,8 +69,9 @@ scripts/run-evaluation-scenarios --no-recorder --jobs 3 \
 
 ## Evaluation results
 
-Batch 1 is complete. Batch 2 is running; a third is required if any pass/fail
-outcome differs. The spread and final tolerance table remain pending.
+Batches 1 and 2 are complete. Iron pickaxe passed in batch 1 but failed in
+batch 2, so the plan's required third batch is running. Final numeric tolerance
+intervals await that result.
 
 | Batch | Scenario | Result | Turns | Calls/retries | Req/min* | Empty | Outcome p50/p90/max | Tokens/hour* | Timeline/event gaps | Unknown |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: | --- | ---: |
@@ -83,16 +84,26 @@ outcome differs. The spread and final tolerance table remain pending.
 | 1 | pickup | PASSED | 3 | 3/0 | 14.06 | 1 | 1/1/1 (1) | 18,453,375 | False/False | 0 |
 | 1 | sea_grass | FAILED | 4 | 4/0 | 36.36 | 1 | 0/0/0 (1) | — | False/False | 0 |
 | 1 | underground | PASSED | 1 | 1/0 | — | 0 | —/—/— (0) | — | False/False | 0 |
+| 2 | bread-cooperative-watch | FAILED | 30 | 31/1 | 38.05 | 26 | 0/1/1 (3) | 67,997,759 | False/False | 0 |
+| 2 | farm_easy | PASSED | 7 | 7/0 | 37.17 | 5 | —/—/— (0) | 56,039,257 | False/False | 0 |
+| 2 | farm_from_scratch | FAILED | 80 | 87/7 | 17.50 | 33 | 1/1/140 (40) | 47,159,698 | False/False | 0 |
+| 2 | farm_harder | FAILED | 30 | 32/2 | 15.53 | 19 | 1/1/1 (6) | 35,335,848 | False/False | 0 |
+| 2 | get_water | PASSED | 10 | 11/1 | 11.93 | 6 | 1/1/1 (3) | 19,270,378 | False/False | 0 |
+| 2 | iron-pickaxe | FAILED | 80 | 80/0 | 11.44 | 39 | 1/1/22 (40) | 25,720,730 | False/False | 0 |
+| 2 | pickup | PASSED | 1 | 1/0 | — | 0 | —/—/— (0) | — | False/False | 0 |
+| 2 | sea_grass | FAILED | 5 | 6/1 | 27.65 | 2 | 0/0/0 (1) | — | False/False | 0 |
+| 2 | underground | PASSED | 1 | 1/0 | 600.00 | 0 | —/—/— (0) | 778,104,000 | False/False | 0 |
 
 Batch 1 finished with five passes and four failures. Both harder farming
 scenarios exhausted their planner-turn budgets. Bread exhausted its 48,000-tick
 budget at 27 turns. Seagrass gave up after its graph reported an illumination
 failure and then no route. These are current-behavior observations; Phase 0
-makes no gameplay fixes.
+makes no gameplay fixes. Batch 2 matched eight outcomes; iron pickaxe instead
+exhausted its 80-turn budget, producing four passes and five failures.
 
-All nine batch-1 recordings have no event or debug-timeline gaps and zero
-unknown wake attributions. Seagrass has four planner journal entries but three
-planner LLM records after terminal cancellation, so its token rate is unavailable.
+All 18 completed evaluation recordings have no event or debug-timeline gaps and zero
+unknown wake attributions. Seagrass has four/three planner journal/LLM entries in batch 1 and six/five
+in batch 2 after terminal cancellation, so its token rates are unavailable.
 The one-turn underground run has a zero dispatch span and no normalized rate.
 No addressed-chat latency samples were observed; fixture tests validate the
 calculation, but these runs provide no live chat-latency evidence.
@@ -161,6 +172,7 @@ worlds, model, configs, budgets and metric definitions:
 Run bundles and derived ledgers remain ignored; this document is the tracked
 baseline. Paths are relative to the repository unless absolute:
 
+- Valid batch 2: `eval-output/phase0-wake-baseline-frozen/batch-2/20260927-035522-277283-65787/`.
 - Valid batch 1: `eval-output/phase0-wake-baseline-frozen/batch-1/20260927-031059-745572-54856/`.
 - Excluded startup attempt: `eval-output/phase0-wake-baseline/batch-1/20260927-030358-669411-52095/`.
 - Automatic index: `automatic_playtest/20260927-032451-928170-59722-6ff44014-7920-4964-9df1-72f4368918a6/summary.json`.
