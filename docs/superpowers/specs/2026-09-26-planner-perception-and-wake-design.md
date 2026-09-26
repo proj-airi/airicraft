@@ -1,9 +1,8 @@
 # Planner Perception, Event Bus and Wake Scheduling Design
 
-Status: **proposed** (2026-09-26). Nothing here is implemented. Section 9
-lists the decisions. O6 (the scope of what can be noticed) and O7 (rules in
-GraalJS, with planner authorship later) are decided; the rest need
-confirmation before Phase 1 starts. When they are settled,
+Status: **accepted** (2026-09-26). Nothing here is implemented yet. All
+decisions in section 9 were accepted on 2026-09-26. Phase 0 is planned in
+[`plans/2026-09-26-planner-event-system-phase-0.md`](../plans/2026-09-26-planner-event-system-phase-0.md). When they are settled,
 record them as ADR-0003 and add the new terms to `CONTEXT.md`.
 
 Evidence base: the code at `a1c05d8`. Line numbers in this document refer to
@@ -55,7 +54,7 @@ the controller/thinker ownership rules.
         │  eventBuffer.append(tick, "type.string", Map)   (~70 call sites in 6 classes + drained queues from
         ▼                                                   reflex, action graphs, dialogue effects, logbook)
  ┌───────────────────────┐   AgentEventPipeline.drain()  (drainEventPipeline() has 21 call sites: 6 in tickClient)
- │ eventBuffer (raw,512) │──► EventRoutingProfile table (46 of ~88 types) ──► EventPolicyState (planner rules)
+ │ eventBuffer (raw,512) │──► EventRoutingProfile table (46 of ~91 types) ──► EventPolicyState (planner rules)
  └───────────────────────┘        │ semanticEligible                    │ triggerType
         │                         ▼                                     ▼
         │              plannerEventBuffer (512,          createPlannerTrigger() switch (14 types, prose built here)
@@ -132,7 +131,7 @@ production callers.
    item offers. Safety events have no way to preempt a turn. They depend on
    rejecting a stale result after the turn has already been paid for.
 4. **Events are untyped.** Payloads are free-form `String` type plus
-   `Map<String,Object>`, with about 88 static ids and two dynamic families
+   `Map<String,Object>`, with about 91 static ids and two dynamic families
    (`interaction.<action>`, `policy.continuation.<state>`). There is no
    catalog, yet the ids are model-visible (`observe.events[].type`,
    `update_event_policy`, `block_planner_goal.reconsiderEvents`) and persisted
@@ -755,7 +754,11 @@ and an evaluation batch (`scripts/run-evaluation-scenarios`, all scenarios).
 Phases 3 and 4 change what the model sees and also require live playtests.
 Phases ship as several small PRs to limit conflicts in `EmbodiedAgentRuntime`.
 
-### Phase 0: characterize and decide (no production changes)
+### Phase 0: characterize and decide (no behaviour changes)
+
+Production edits are limited to package-private test seams and additive
+debug-timeline instrumentation (`planner_wake` entries). Task-level plan:
+[`plans/2026-09-26-planner-event-system-phase-0.md`](../plans/2026-09-26-planner-event-system-phase-0.md).
 
 - [ ] Generate the event inventory (Appendix A) from code and assert it in a
   test that enumerates `createEventRoutingProfiles()`.
@@ -776,9 +779,13 @@ Phases ship as several small PRs to limit conflicts in `EmbodiedAgentRuntime`.
   - delegation start
   - degraded mode, external driver, and evaluation suppression
   - tick-debug pause
-- [ ] Build **wake replay**: feed an exported flight-recorder JSONL (the
-  dashboard export is replayable) through the old and new attention logic
-  offline and diff the decisions. Use it in Phases 2 and 3.
+- [ ] Build the **wake ledger** (the first half of wake replay). It
+  reconstructs, for each planner request in a recorded run, why the request
+  was made and which evidence was newly incorporated. Its input is the
+  `RuntimeFlightRecorder` output written by evaluation runs and automatic
+  playtests. Phase 2 adds a Java replay harness that emits the same ledger
+  format from the new policy, and the two ledgers are diffed. Phases 2 and 3
+  both use it.
 - [ ] Confirm or refute D1–D8 with focused tests and write the outcome into
   this document.
 - [ ] **GraalJS rule-engine spike.** Using the `GraalPolicyInvocation`
@@ -789,7 +796,8 @@ Phases ship as several small PRs to limit conflicts in `EmbodiedAgentRuntime`.
   Stage-B decisions are acceptable.
 - [ ] Record baseline metrics (4.10) from one evaluation batch and one live
   playtest.
-- [ ] Resolve section 9, write ADR-0003, and add the vocabulary to `CONTEXT.md`.
+- [x] Resolve section 9 (accepted 2026-09-26).
+- [ ] Write ADR-0003 and add the vocabulary to `CONTEXT.md`.
 
 Exit: characterization suite green on `dev`; decisions recorded.
 
@@ -925,10 +933,10 @@ hour no worse; no new failure classes in playtest review.
 
 ## 9. Decisions
 
-O6 and O7 were decided on 2026-09-26. The others are recommendations that
-have not been confirmed yet.
+All decisions were accepted on 2026-09-26. O6 and O7 were changed from the
+original recommendation; the rest were accepted as recommended.
 
-| # | Decision | Recommendation / outcome |
+| # | Decision | Outcome |
 |---|---|---|
 | O1 | Should the refactor preserve behaviour first (Phases 1–2), with model-visible changes isolated in Phase 3? | **Yes.** It keeps regressions attributable. |
 | O2 | Priority model: an AIRI-style numeric priority queue, or Cortico-style delivery modes plus an urgency enum decided by a layered policy? | **Urgency plus delivery, decided by the policy.** Batches are delivered whole, so ordering within a queue matters less than when to wake and whether to interrupt. |
@@ -1003,7 +1011,7 @@ wake path.
 | `follow.{target_acquired,target_lost,stuck}` | `FollowCapability`, EAR | ✓ | – | – | – | |
 | `planner.{goal_set,goal_cleared,degraded_entered,degraded_cleared}` | EAR, `DialogueCore` | ✓ | – | – | – | |
 | `planner.{reset_requested,stale_response_rejected}` | `DialogueCore`, EAR | ✓ | – | ✓ | – | |
-| `planner.{response_applied,internal_task_update_superseded,unknown_intent,degraded_blocked}` | EAR, `DialogueRuntime`, `DialogueCore` | – | – | – | – | |
+| `planner.{response_applied,internal_task_update_superseded,unknown_intent,degraded_blocked,timeout,parse_error,provider_error}` | EAR, `DialogueRuntime`, `DialogueCore` (`failureEventType`) | – | – | – | – | |
 | `task.blocked` | EAR task transitions | ✓ | SYSTEM | ✓ | ✓ | W2 |
 | `task.mining_opportunity` | `MiningOpportunityJournal` | ✓ | – | ✓ | ✓ | |
 | `task.{submitted,started,paused_by_session_gate,paused_by_reflex,completed,failed,cancelled}` | EAR | – | – | – | ✓ | W2 |
