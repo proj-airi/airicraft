@@ -91,7 +91,8 @@ public record PlannerTriggerBatch(
 	}
 
 	public LlmChatMessage toTerminalMessage() {
-		return LlmChatMessage.user(renderPrompt(), LlmMessageKind.USER_TURN);
+		return LlmChatMessage.user(renderPrompt(), LlmMessageKind.USER_TURN,
+			triggers.size() == 1 ? triggers.getFirst().fields() : null);
 	}
 
 	/**
@@ -108,7 +109,7 @@ public record PlannerTriggerBatch(
 					.append(": ").append(trigger.text());
 			}
 			else if (!usesGenericWakePrompt(trigger.type()))
-				messages.add(LlmChatMessage.user(trigger.text(), LlmMessageKind.NOTICE));
+				messages.add(LlmChatMessage.user(trigger.text(), LlmMessageKind.NOTICE, trigger.fields()));
 		}
 		if (!chat.isEmpty()) messages.addFirst(LlmChatMessage.user(chat.toString(), LlmMessageKind.USER_TURN));
 		return List.copyOf(messages);

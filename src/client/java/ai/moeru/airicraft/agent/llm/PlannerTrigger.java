@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
+import com.google.gson.JsonElement;
 import java.util.Objects;
 
 public record PlannerTrigger(
@@ -10,8 +11,14 @@ public record PlannerTrigger(
 	long tick,
 	long timestampMs,
 	PlannerTriggerOrigin origin,
-	String coalescingKey
+	String coalescingKey,
+	JsonElement fields
 ) {
+	public PlannerTrigger(long seqNo, PlannerTriggerType type, String speaker, String text, long tick,
+		long timestampMs, PlannerTriggerOrigin origin, String coalescingKey) {
+		this(seqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, null);
+	}
+
 	public PlannerTrigger {
 		type = Objects.requireNonNullElse(type, PlannerTriggerType.CHAT);
 		speaker = speaker == null || speaker.isBlank() ? defaultSpeaker(type) : speaker;
@@ -20,6 +27,7 @@ public record PlannerTrigger(
 		coalescingKey = origin == PlannerTriggerOrigin.AUTONOMOUS
 			? (coalescingKey == null || coalescingKey.isBlank() ? type.name().toLowerCase(java.util.Locale.ROOT) : coalescingKey)
 			: null;
+		fields = fields == null || fields.isJsonNull() ? null : fields.deepCopy();
 	}
 
 	public PlannerTrigger(long seqNo, PlannerTriggerType type, String speaker, String text, long tick, long timestampMs) {
@@ -45,9 +53,16 @@ public record PlannerTrigger(
 		return new PlannerTrigger(0L, type, speaker, text, tick, timestampMs, PlannerTriggerOrigin.AUTONOMOUS, coalescingKey);
 	}
 
-	public PlannerTrigger withSeqNo(long replacementSeqNo) {
-		return new PlannerTrigger(replacementSeqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey);
+	public static PlannerTrigger autonomous(PlannerTriggerType type, String speaker, String text,
+		long tick, long timestampMs, String coalescingKey, JsonElement fields) {
+		return new PlannerTrigger(0L, type, speaker, text, tick, timestampMs, PlannerTriggerOrigin.AUTONOMOUS, coalescingKey, fields);
 	}
+
+	public PlannerTrigger withSeqNo(long replacementSeqNo) {
+		return new PlannerTrigger(replacementSeqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, fields);
+	}
+
+	@Override public JsonElement fields() { return fields == null ? null : fields.deepCopy(); }
 
 	public boolean maySupersedeLaunchedTurn() {
 		return origin == PlannerTriggerOrigin.DIRECT_GUIDANCE;

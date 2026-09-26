@@ -14,8 +14,14 @@ public record PlannerContextEntry(
 	long timestampMs,
 	SemanticContextUpdate semanticUpdate,
 	JsonElement rawAssistantContent,
-	List<PlannerToolCall> toolCalls
+	List<PlannerToolCall> toolCalls,
+	JsonElement fields
 ) {
+	public PlannerContextEntry(PlannerContextEntryType type, String speaker, String text, long tick,
+		long timestampMs, SemanticContextUpdate semanticUpdate, JsonElement rawAssistantContent,
+		List<PlannerToolCall> toolCalls) {
+		this(type, speaker, text, tick, timestampMs, semanticUpdate, rawAssistantContent, toolCalls, null);
+	}
 	public PlannerContextEntry(
 		PlannerContextEntryType type,
 		String speaker,
@@ -46,7 +52,12 @@ public record PlannerContextEntry(
 			rawAssistantContent = rawAssistantContent == null || rawAssistantContent.isJsonNull()
 				? null
 				: rawAssistantContent.deepCopy();
+			fields = fields == null || fields.isJsonNull()
+				? type == PlannerContextEntryType.TOOL_RESULT ? PlannerFieldPresentation.fields(text) : null
+				: fields.deepCopy();
 		}
+
+		@Override public JsonElement fields() { return fields == null ? null : fields.deepCopy(); }
 
 		public PlannerToolCall toolCall() {
 			return toolCalls.isEmpty() ? null : toolCalls.getFirst();
@@ -114,7 +125,8 @@ public record PlannerContextEntry(
 			timestampMs,
 			null,
 			null,
-			toolCall
+			toolCall == null ? List.of() : List.of(toolCall),
+			PlannerFieldPresentation.fields(body)
 		);
 	}
 }

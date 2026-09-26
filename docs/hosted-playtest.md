@@ -22,7 +22,7 @@ Airi is hosting on port 25565.
   Internet: forward TCP 25565 to this machine (or tunnel it), then share <public address>:25565
 ```
 
-Each session opens only the requested port, so the forwarding rule stays valid. If that port is in use, or the world opens on another port, the run stops with `lan_unavailable` before anyone is told to join. For internet testers, forward the TCP port on your router or use a TCP tunnel. Testers need Minecraft: Java Edition 1.21.8.
+Each session opens only the requested port, so the forwarding rule stays valid. If that port is in use, or the world opens on another port, the run stops with `lan_unavailable` before anyone is told to join. For internet testers, forward the TCP port on your router or use a TCP tunnel. Testers need a Minecraft: Java Edition 1.21.8 client. Airicraft opens LAN worlds in offline mode (see [LAN hosting](../README.md#lan-hosting)), so anyone who can reach the port can join under any name. Share a forwarded address only with invited testers, and end the session when they are done.
 
 `--companion-name` sets the companion's in-game name: 3–16 letters, digits or underscores, default `Airi`. It is an offline development profile, not a Minecraft account.
 
@@ -68,7 +68,7 @@ Sessions are written under `hosted_playtest/` (git-ignored). Workers live under 
 
 ## Consent and privacy
 
-A session records testers' usernames, UUIDs, chat, movement, and the companion's first-person video. Tell testers before they join, get their consent, including for any future training use, and keep recordings out of the repository. Pseudonymizing exports is not implemented yet.
+A session records testers' usernames, UUIDs, chat, movement, and the companion's first-person video. In offline mode, names are self-reported and UUIDs are derived from them. A name maps to the same UUID across sessions but does not prove who the tester is. Tell testers before they join, get their consent, including for any future training use, and keep recordings out of the repository. Pseudonymizing exports is not implemented yet.
 
 ## Verification status
 

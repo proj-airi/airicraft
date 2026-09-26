@@ -10,23 +10,8 @@ public final class PlannerInputText {
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 	private PlannerInputText() {}
 
-	/** The canonical history stays intact for cursors, replay and recorder dispatch metadata. */
+	/** Plain text stays plain text; only recognized tool envelopes have typed fields to present. */
 	public static String message(String role, String content) {
-		// Round only planner-facing evidence; canonical state and protocol identities stay exact.
-		// Quote alternatives are disjoint: possessive repetition avoids recursive backtracking
-		// (and stack overflow) on long quoted inspection evidence.
-		var numbers = java.util.regex.Pattern.compile(
-		"\"(?:\\\\.|[^\"\\\\])*+\"|(?<![\\p{L}\\p{N}_./@+-])[-+]?(?:[0-9]+\\.[0-9]+|\\.[0-9]+|[0-9]+[eE][+-]?[0-9]+)(?:[eE][+-]?[0-9]+)?(?![\\p{L}\\p{N}_./@])").matcher(content);
-		var rounded = new StringBuilder();
-		while (numbers.find()) {
-			String value = numbers.group();
-			String replacement = value.startsWith("\"") ? value : new java.math.BigDecimal(value)
-				.setScale(1, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
-			numbers.appendReplacement(rounded, java.util.regex.Matcher.quoteReplacement(replacement));
-		}
-		numbers.appendTail(rounded);
-		content = rounded.toString();
-
 		return role.equals("tool") ? toolResult(content) : content;
 	}
 
@@ -36,6 +21,7 @@ public final class PlannerInputText {
 
 	/** Prose rendering of an {@code observe} result; the canonical JSON stays in history. */
 	public static String observation(JsonObject payload) {
+		payload = PlannerFieldPresentation.project(payload, null, null).getAsJsonObject();
 		Fields context = new Fields(payload);
 		StringBuilder out = new StringBuilder();
 		out.append(context.phrase("worldSessionId", "World ")).append(context.phrase("tick", "; client tick "))
@@ -84,17 +70,17 @@ public final class PlannerInputText {
 	/** Only generated JSON tool envelopes are eligible. Plain text and unknown shapes stay exact. */
 	public static String toolResult(String content) {
 		if (!content.startsWith("Tool result for ")) return content;
-		int separator = content.indexOf(": ");
-		if (separator < 0) return content;
-		String body = content.substring(separator + 2);
-		if (!body.startsWith("{")) return content;
-		JsonElement parsed;
-		try { parsed = JsonParser.parseString(body); }
-		catch (JsonParseException exception) { return content; }
-		if (!parsed.isJsonObject()) return content;
-		JsonObject object = parsed.getAsJsonObject();
-		if (!object.has("workId") && !object.has("accepted")) return content;
-		return content.substring(0, separator + 2) + work(object);
+		String prefix = PlannerFieldPresentation.envelopePrefix(content);
+		if (prefix == null) return content;
+		JsonElement fields = PlannerFieldPresentation.fields(content);
+		if (fields == null) return content;
+		JsonObject object = PlannerFieldPresentation.project(fields, null, null).getAsJsonObject();
+		return !object.has("workId") && !object.has("accepted") ? content
+			: toolResult(prefix, object);
+	}
+
+	static String toolResult(String prefix, JsonObject object) {
+		return prefix + work(object);
 	}
 
 	static String work(JsonObject object) {

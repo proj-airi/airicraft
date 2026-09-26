@@ -39,6 +39,7 @@ public final class SurvivalReflexRuntime {
 	static final double MELEE_THREAT_DISTANCE = 6.0D;
 	private static final int SHELTER_CONFIRM_TICKS = 200;
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
+	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -72,6 +73,19 @@ public final class SurvivalReflexRuntime {
 	private String reportedCombatFocus;
 	private CombatRecovery combatRecovery;
 	private ReflexPolicy policyOverride;
+	private long foodRetreatStartedTick = -1L;
+	private boolean foodRetreatAbandoned;
+	private boolean foodUnavailableReported;
+
+	public interface CombatEating {
+		boolean needed(ClientPlayerEntity player);
+		boolean hasEligibleFood(ClientPlayerEntity player);
+		java.util.Optional<String> candidate(ClientPlayerEntity player);
+		boolean ready(long tick);
+		boolean eating();
+		void start(MinecraftClient client, String itemId, long tick);
+		void cancel(MinecraftClient client);
+	}
 
 	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config) {
 		this(config, new MovementController(), new CameraController(), null);
@@ -170,6 +184,16 @@ public final class SurvivalReflexRuntime {
 		long tick,
 		Runnable releaseNormalActuators
 	) {
+		return tick(client, interruptedWork, tick, releaseNormalActuators, null);
+	}
+
+	public SurvivalReflexSnapshot tick(
+		MinecraftClient client,
+		InterruptedWork interruptedWork,
+		long tick,
+		Runnable releaseNormalActuators,
+		CombatEating combatEating
+	) {
 		ClientPlayerEntity player = client == null ? null : client.player;
 		if (!config.enabled() || client == null || client.world == null || player == null || player.isDead()) {
 			reset(client);
@@ -233,12 +257,13 @@ public final class SurvivalReflexRuntime {
 			// The recovery navigator owns all movement until dry supported ground.
 		}
 		else if (drowningDanger || snapshot.cause() == SurvivalReflexCause.DROWNING) {
+			if (combatEating != null && combatEating.eating()) combatEating.cancel(client);
 			releaseShield(client);
 			tickDrowning(client, player, drowningDanger, threats.stream().filter(threat ->
 				policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())).toList(), tick);
 		}
 		else {
-			tickMobAttack(client, player, threats, tick);
+			tickMobAttack(client, player, threats, tick, combatEating);
 		}
 		drowningDamageObserved = false;
 		return snapshot;
@@ -299,6 +324,9 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public void reset(MinecraftClient client) {
+		foodRetreatStartedTick = -1L;
+		foodRetreatAbandoned = false;
+		foodUnavailableReported = false;
 		combatProgress = null;
 		tacticalWindow = null;
 		progressThreats = null;
@@ -339,6 +367,9 @@ public final class SurvivalReflexRuntime {
 		long tick,
 		Runnable releaseNormalActuators
 	) {
+		foodRetreatStartedTick = -1L;
+		foodRetreatAbandoned = false;
+		foodUnavailableReported = false;
 		long nextEpoch = snapshot.safetyEpoch() + 1L;
 		combatStalemate = null;
 		resetSecurityProgress();
@@ -469,6 +500,12 @@ public final class SurvivalReflexRuntime {
 		return false;
 	}
 
+	static boolean safeToEatDuringCombat(boolean grounded, boolean wet, boolean immediateDanger,
+		boolean sealed, boolean visibleThreat, double nearestDistance) {
+		return grounded && !wet && !immediateDanger
+			&& (sealed || !visibleThreat && nearestDistance >= 10D);
+	}
+
 	private boolean recoverCombatMovement(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats, long tick) {
 		CombatRecovery current = combatRecovery == null ? CombatRecovery.READY : combatRecovery;
 		if (current == CombatRecovery.READY && snapshot.cause() != SurvivalReflexCause.MOB_ATTACK) return false;
@@ -507,7 +544,8 @@ public final class SurvivalReflexRuntime {
 		return true;
 	}
 
-	private void tickMobAttack(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats, long tick) {
+	private void tickMobAttack(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats,
+		long tick, CombatEating combatEating) {
 		if (combatProgress != null && combatProgress.stalled()) {
 			tacticalWindow = new TacticalWindow(tick + 1200);
 			resolve(client, player, threats, tick, "combat_stalemate", true);
@@ -517,17 +555,18 @@ public final class SurvivalReflexRuntime {
 			resolve(client, player, threats, tick, "combat_approach_stalled", true);
 			return;
 		}
+		if (snapshot.action() != SurvivalReflexAction.DEFEND) {
+			changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, tick);
+		}
+		boolean usePositioning = shouldReposition(threats.size()) && baritone != null && baritone.isLoaded();
+		updateCreeperEscape(threats);
+		if (tickCombatEating(client, player, threats, tick, combatEating, usePositioning)) return;
 		if (threats.stream().noneMatch(threat ->
 			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())
 				|| combatPositioning != null && threat.distance() <= Math.min(10, policy().maxThreatDistance()))) {
 			resolve(client, player, threats, tick, "no_eligible_threats", false);
 			return;
 		}
-		if (snapshot.action() != SurvivalReflexAction.DEFEND) {
-			changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, tick);
-		}
-		boolean usePositioning = shouldReposition(threats.size()) && baritone != null && baritone.isLoaded();
-		updateCreeperEscape(threats);
 		equipBestCombatItem(client, player);
 		if (blockShieldThreat(client, player, threats, tick)) {
 			if (usePositioning) reposition(client, threats, tick, true);
@@ -565,6 +604,75 @@ public final class SurvivalReflexRuntime {
 			recordActuatorFailure("defend", exception, tick);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
 		}
+	}
+
+	private boolean tickCombatEating(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats,
+		long tick, CombatEating eating, boolean usePositioning) {
+		if (eating == null) return false;
+		var candidate = eating.candidate(player);
+		if (!eating.eating() && candidate.isEmpty()) {
+			if (eating.needed(player) && !eating.hasEligibleFood(player)
+				&& !foodUnavailableReported && !foodRetreatAbandoned) {
+				foodUnavailableReported = true;
+				pendingEvents.add(new SurvivalReflexEvent("reflex.food_unavailable", Map.of(
+					"tick", tick, "health", player.getHealth(),
+					"hunger", player.getHungerManager().getFoodLevel())));
+			}
+			foodRetreatStartedTick = -1L;
+			return false;
+		}
+		if (foodRetreatAbandoned) return false;
+		foodUnavailableReported = false;
+		boolean immediate = immediateCombatDanger(client, player, threats, tick);
+		boolean visible = threats.stream().anyMatch(ResolvedThreat::lineOfSight);
+		double nearest = threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
+		boolean sheltered = !immediate && assessMobSecurity(player, threats, tick) == SecurityKind.SEALED;
+		boolean safe = safeToEatDuringCombat(player.isOnGround(), player.isTouchingWater(), immediate,
+			sheltered, visible, nearest);
+		if (eating.eating()) {
+			if (!safe) {
+				eating.cancel(client);
+				pendingEvents.add(new SurvivalReflexEvent("reflex.food_eat_interrupted", Map.of("tick", tick, "reason", "threat_returned")));
+				return false;
+			}
+			stopCombatNavigation();
+			movementController.stop(client);
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+			return true;
+		}
+		if (foodRetreatStartedTick < 0) foodRetreatStartedTick = tick;
+		if (safe) {
+			releaseShield(client);
+			stopCombatNavigation();
+			movementController.stop(client);
+			if (!eating.ready(tick)) {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			try {
+				eating.start(client, candidate.orElseThrow(), tick);
+				foodRetreatStartedTick = -1L;
+				pendingEvents.add(new SurvivalReflexEvent("reflex.food_eat_started", Map.of("itemId", candidate.orElseThrow(), "tick", tick)));
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			catch (RuntimeException exception) {
+				pendingEvents.add(new SurvivalReflexEvent("reflex.food_eat_failed", Map.of("tick", tick,
+					"reason", failureText(exception))));
+				return false;
+			}
+		}
+		if (tick - foodRetreatStartedTick >= FOOD_RETREAT_LIMIT_TICKS || !usePositioning) {
+			foodRetreatAbandoned = true;
+			pendingEvents.add(new SurvivalReflexEvent("reflex.food_retreat_failed", Map.of(
+				"tick", tick, "reason", usePositioning ? "no_safe_window" : "no_safe_route")));
+			return false;
+		}
+		boolean shielding = blockShieldThreat(client, player, threats, tick);
+		if (!shielding) releaseShield(client);
+		reposition(client, threats, tick, shielding, true);
+		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+		return true;
 	}
 
 	private boolean blockShieldThreat(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats, long tick) {
@@ -756,6 +864,11 @@ public final class SurvivalReflexRuntime {
 	}
 
 	private void reposition(MinecraftClient client, List<ResolvedThreat> threats, long tick, boolean shielding) {
+		reposition(client, threats, tick, shielding, false);
+	}
+
+	private void reposition(MinecraftClient client, List<ResolvedThreat> threats, long tick,
+		boolean shielding, boolean retreatForFood) {
 		if (baritone == null || !baritone.isLoaded()) {
 			stopCombatNavigation();
 			movementController.stop(client);
@@ -771,7 +884,10 @@ public final class SurvivalReflexRuntime {
 		boolean escaping = focus.observed().uuid().equals(escapingCreeper);
 		boolean kiting = focus.entity() instanceof net.minecraft.entity.mob.CreeperEntity c
 			&& creeperShouldKite(client.player.getAttackCooldownProgress(0), c.getLerpedFuseTime(1));
-		var decision = combatPositioning.plan(client, threats.stream().map(ResolvedThreat::entity).toList(), focus.entity(), tick, shielding, escaping ? (((net.minecraft.entity.mob.CreeperEntity) focus.entity()).isCharged() ? 14 : 8) : kiting ? 5 : 2.6);
+		double desiredDistance = escaping ? (((net.minecraft.entity.mob.CreeperEntity) focus.entity()).isCharged() ? 14 : 8)
+			: kiting ? 5 : 2.6;
+		if (retreatForFood) desiredDistance = Math.max(10D, desiredDistance);
+		var decision = combatPositioning.plan(client, threats.stream().map(ResolvedThreat::entity).toList(), focus.entity(), tick, shielding, desiredDistance);
 		var step = decision.nextStep();
 		if (step == null) step = new CombatPositioning.Cell(client.player.getBlockX(), client.player.getBlockY(), client.player.getBlockZ());
 		if (!combatPositioning.canStepTo(step)) {
@@ -843,6 +959,9 @@ public final class SurvivalReflexRuntime {
 		String reason,
 		boolean keepSafetyHold
 	) {
+		foodRetreatStartedTick = -1L;
+		foodRetreatAbandoned = false;
+		foodUnavailableReported = false;
 		releaseShield(client);
 		underwaterEscape.reset(client);
 		stopCombatNavigation();

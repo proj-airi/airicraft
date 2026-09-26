@@ -230,7 +230,7 @@ function renderOverview(snapshot) {
   const hasDrops = Object.values(dropped).some(Number);
   const warnings = [
     hasDrops ? `Server history has evicted observations: ${escapeHtml(JSON.stringify(dropped))}` : '',
-    state.partialHistory ? 'Showing a recent browser window to stay responsive. Save session exports the full retained history.' : '',
+    state.partialHistory ? 'Showing a recent browser window to stay responsive. Raw developer export saves the full retained history.' : '',
   ].filter(Boolean);
   updateContent(`
     ${warnings.map(warning => `<div class="warning">${warning}</div>`).join('')}
@@ -437,17 +437,17 @@ function connected(isLive, error = '') {
   if (error) toast(error);
 }
 
-async function exportSession() {
+async function exportSession(mode = 'raw') {
   if (state.replay) return toast('This is already a saved session.');
   try {
-    const response = await api('/api/export');
+    const response = await api(mode === 'report' ? '/api/report' : '/api/export');
     const blob = await response.blob();
     const disposition = response.headers.get('content-disposition') || '';
     const name = disposition.match(/filename="([^"]+)"/)?.[1] || 'airicraft-debug.jsonl';
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob); link.download = name; link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    toast(`Saved ${name}`);
+    toast(mode === 'report' ? `Saved ${name}. Attach it with a description of the problem.` : `Saved ${name}`);
   } catch (error) { toast(error.message); }
 }
 
@@ -599,7 +599,8 @@ el('play-history').addEventListener('click', async () => {
   el('play-history').textContent = 'Pause history';
   state.playbackTimer = setTimeout(advancePlayback, 0);
 });
-el('export').addEventListener('click', exportSession);
+el('export').addEventListener('click', () => exportSession('raw'));
+el('report').addEventListener('click', () => exportSession('report'));
 el('session-file').addEventListener('change', event => event.target.files[0] && openSession(event.target.files[0]).catch(error => toast(error.message)));
 el('close-inspector').addEventListener('click', () => { el('inspector').classList.add('collapsed'); document.querySelector('.workspace').classList.add('inspector-collapsed'); });
 

@@ -1,38 +1,115 @@
-# Automatically build the project and run any configured tests for every push
-# and submitted pull request. This can help catch issues that only occur on
-# certain platforms or Java versions, and provides a first line of defence
-# against bad commits.
-
 name: build
-on: [pull_request, push]
+on:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['v*']
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
-      - name: validate gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
+          fetch-depth: 0
+          persist-credentials: false
+      - name: select mod version
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^mod_version=//p' gradle.properties)
+          prerelease=false
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version=${GITHUB_REF_NAME#v}
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Expected a version tag such as v1.2.3 or v1.2.3-rc.1" >&2
+              exit 1
+            fi
+            # Tags have no source branch. Prefer main when both branches contain
+            # the tagged commit; otherwise releases must come from dev.
+            if git show-ref --verify --quiet refs/remotes/origin/main && \
+                git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+              if [[ "${version%%+*}" == *-* ]]; then
+                prerelease=true
+              fi
+            elif git show-ref --verify --quiet refs/remotes/origin/dev && \
+                git merge-base --is-ancestor HEAD refs/remotes/origin/dev; then
+              if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                version="$version-alpha"
+              elif [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha(\.[0-9]+)?$ ]]; then
+                echo "Dev releases must use vX.Y.Z or vX.Y.Z-alpha.N; RCs require main" >&2
+                exit 1
+              fi
+              prerelease=true
+            else
+              echo "Release tags must point to a commit on origin/dev or origin/main" >&2
+              exit 1
+            fi
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
       - name: setup jdk
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: |
             21
             25
-          distribution: 'microsoft'
+          distribution: 'jetbrains'
       - name: install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: make gradle wrapper executable
-        run: chmod +x ./gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
       - name: build
-        run: ./gradlew build
-      - name: run tests
-        run: ./gradlew :test :wrapper:test
+        env:
+          MOD_VERSION: ${{ steps.version.outputs.value }}
+        run: ./gradlew build "-Pmod_version=$MOD_VERSION"
+      - name: collect release jars
+        env:
+          MOD_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          mkdir -p build/release
+          cp "build/libs/airicraft-$MOD_VERSION.jar" build/release/
+          cp "compat/journeymap/build/libs/airicraft-journeymap-compat-$MOD_VERSION.jar" build/release/
+          cp "compat/rei/build/libs/airicraft-rei-compat-$MOD_VERSION.jar" build/release/
       - name: capture build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Artifacts
-          path: build/libs/
+          name: mod-jars
+          path: build/release/*.jar
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: download tested jars
+        uses: actions/download-artifact@v8
+        with:
+          name: mod-jars
+          path: release
+      - name: publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        shell: bash
+        run: |
+          flags=()
+          if [[ "$PRERELEASE" == true ]]; then
+            flags+=(--prerelease --latest=false)
+          fi
+          gh release create "$RELEASE_TAG" release/*.jar \
+            --verify-tag --generate-notes --title "v$RELEASE_VERSION" "${flags[@]}"

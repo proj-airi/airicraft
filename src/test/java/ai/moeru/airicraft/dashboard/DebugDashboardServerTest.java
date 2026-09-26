@@ -118,6 +118,103 @@ class DebugDashboardServerTest {
 		}
 	}
 
+	@Test
+	void downloadsBoundedUserEvidenceSeparatelyFromRawDeveloperExports() throws Exception {
+		var store = new DashboardObservationStore(4L * 1024L * 1024L);
+		store.startSession("test", 0, 100);
+		store.advanceClock(10, false, true);
+		store.append("semantic_event", 10, 110, Map.of("type", "old_event"));
+		store.advanceClock(2000, false, true);
+		store.append("runtime_snapshot", 2100, 210, Map.of(
+			"plannerEnabled", true, "degraded", true,
+			"world", Map.of("loaded", true, "player", Map.of("health", 4, "name", "PRIVATE_PLAYER")),
+			"dialogue", "PRIVATE_CHAT"));
+		store.append("llm_call", 2100, 220, Map.of("status", "FAILED", "model", "test-model",
+			"statusCode", 503, "requestBody", "PRIVATE_PROMPT", "rawResponseBody", "PRIVATE_RESPONSE"));
+		store.append("log", 2100, 230, Map.of("message", "PRIVATE_TOKEN"));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 4L * 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			assertEquals(401, send(url + "/api/report", null).statusCode());
+			var response = send(url + "/api/report", token);
+			assertEquals(200, response.statusCode());
+			assertTrue(response.headers().firstValue("Content-Disposition").orElseThrow().contains("airicraft-report-"));
+			var lines = response.body().lines().toList();
+			var manifest = JsonParser.parseString(lines.getFirst()).getAsJsonObject();
+			assertEquals("airicraft.diagnostic-report", manifest.get("schema").getAsString());
+			assertEquals(1, manifest.get("schemaVersion").getAsInt());
+			assertEquals(store.sessionId(), manifest.getAsJsonObject("correlation").get("recordingSessionId").getAsString());
+			assertTrue(manifest.getAsJsonObject("correlation").has("hostedSessionId"));
+			assertTrue(manifest.getAsJsonObject("correlation").get("hostedSessionId").isJsonNull());
+			assertEquals(2000, manifest.getAsJsonObject("window").get("toTick").getAsInt());
+			assertTrue(response.body().contains("test-model"));
+			assertTrue(response.body().contains("503"));
+			assertTrue(response.body().contains("degraded"));
+			assertTrue(!response.body().contains("PRIVATE_") && !response.body().contains("old_event"));
+			var footer = JsonParser.parseString(lines.getLast()).getAsJsonObject();
+			assertEquals("integrity", footer.get("recordType").getAsString());
+			byte[] preceding = (String.join("\n", lines.subList(0, lines.size() - 1)) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(preceding));
+			assertEquals(digest, footer.get("sha256").getAsString());
+			assertEquals(preceding.length, footer.get("bytes").getAsInt());
+			assertEquals(lines.size() - 2, footer.get("observationCount").getAsInt());
+			assertTrue(send(url + "/api/export", token).body().contains("PRIVATE_PROMPT"));
+		} finally { server.stop(); }
+	}
+
+	@Test
+	void reportsLossAndUsesClientClockForRemoteSessions() throws Exception {
+		var store = new DashboardObservationStore(1024L * 1024L);
+		store.startSession("remote", 0, 100);
+		store.advanceClock(-1, false, false);
+		store.append("semantic_event", 1, 110, Map.of("type", "old_event"));
+		store.append("log", 2000, 120, Map.of("message", "x".repeat(2 * 1024 * 1024)));
+		store.append("semantic_event", 2000, 130, Map.of("type", "task.failed", "payload", Map.of("failureCode", "unreachable")));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			var response = send(url + "/api/report", token);
+			assertEquals(200, response.statusCode());
+			var manifest = JsonParser.parseString(response.body().lines().findFirst().orElseThrow()).getAsJsonObject();
+			assertEquals("client_tick", manifest.getAsJsonObject("window").get("clock").getAsString());
+			assertEquals(2000, manifest.getAsJsonObject("window").get("toTick").getAsInt());
+			assertTrue(manifest.getAsJsonObject("coverage").get("truncated").getAsBoolean());
+			assertEquals(1, manifest.getAsJsonObject("coverage").getAsJsonObject("droppedByType").get("log").getAsInt());
+			assertTrue(response.body().contains("observation_gap"));
+			assertTrue(response.body().contains("unreachable"));
+			assertTrue(!response.body().contains("old_event"));
+			store.startSession("reloaded", 0, 300);
+			String afterReload = send(url + "/api/report", token).body();
+			assertTrue(!afterReload.contains("unreachable"));
+		} finally { server.stop(); }
+	}
+
+	@Test
+	void reportsExplicitOmissionsWhenTheIncidentExceedsTheReportLimit() throws Exception {
+		var store = new DashboardObservationStore(16L * 1024L * 1024L);
+		store.advanceClock(20, false, true);
+		for (int i = 0; i < 2500; i++) store.append("semantic_event", i, i, Map.of("type", "event_" + i));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 16L * 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			var response = send(url + "/api/report", token);
+			assertEquals(200, response.statusCode());
+			var lines = response.body().lines().toList();
+			var manifest = JsonParser.parseString(lines.getFirst()).getAsJsonObject();
+			assertTrue(manifest.getAsJsonObject("coverage").get("truncated").getAsBoolean());
+			assertEquals(500, manifest.getAsJsonObject("coverage").get("reportLimitOmitted").getAsInt());
+			assertEquals(2002, lines.size());
+			assertTrue(response.body().contains("event_2499"));
+			assertTrue(response.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 3 * 1024 * 1024);
+		} finally { server.stop(); }
+	}
+
 	private static HttpResponse<String> send(String url, String token) throws Exception {
 		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url)).GET();
 		if (token != null) {

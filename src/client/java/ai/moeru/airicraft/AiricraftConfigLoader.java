@@ -69,7 +69,7 @@ public final class AiricraftConfigLoader {
 		return fromMap(root, defaults, false);
 	}
 
-	static AiricraftConfig fromMapStrict(Map<String, Object> root, AiricraftConfig defaults) {
+	public static AiricraftConfig fromMapStrict(Map<String, Object> root, AiricraftConfig defaults) {
 		return fromMap(root, defaults, true);
 	}
 

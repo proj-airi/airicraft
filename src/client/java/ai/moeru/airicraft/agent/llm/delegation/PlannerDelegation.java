@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.llm.delegation;
 
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
+import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
@@ -18,6 +19,10 @@ public final class PlannerDelegation {
 	private record Thinking(Work work) implements State { }
 	private record Returning(Work work, String status, String outcome) implements State { }
 	private State state = new Controller();
+	public record Prompt(String text, JsonObject fields) {
+		public Prompt { fields = fields.deepCopy(); }
+		@Override public JsonObject fields() { return fields.deepCopy(); }
+	}
 
 	private static final class Work {
 		final String id = UUID.randomUUID().toString();
@@ -53,20 +58,33 @@ public final class PlannerDelegation {
 
 	/** Called with fresh world facts immediately before starting the thinking session. */
 	public String start(Map<String, Object> currentFacts, long eventSequence) {
+		return startPrompt(currentFacts, eventSequence).text();
+	}
+
+	public Prompt startPrompt(Map<String, Object> currentFacts, long eventSequence) {
 		if (!(state instanceof Starting starting)) throw new IllegalStateException("No handoff is waiting to start");
 		Work work = starting.work();
 		work.lastEventSequence = eventSequence;
 		state = new Thinking(work);
-		return "DELEGATED TASK: " + GSON.toJson(Map.of("delegationId", work.id, "task", work.task,
+		JsonObject fields = GSON.toJsonTree(Map.of("delegationId", work.id, "task", work.task,
 			"successCriteria", work.successCriteria, "controllerContext", work.controllerContext,
-			"currentFacts", currentFacts, "guidanceDuringHandoff", work.evidence.stream().map(value -> GSON.fromJson(value, Object.class)).toList()));
+			"currentFacts", currentFacts, "guidanceDuringHandoff", work.evidence.stream().map(value -> GSON.fromJson(value, Object.class)).toList())).getAsJsonObject();
+		return new Prompt("DELEGATED TASK: " + GSON.toJson(fields), fields);
 	}
 
 	public String continuation() {
+		return continuationPrompt().text();
+	}
+
+	public Prompt continuationPrompt() {
 		Work work = work();
-		return "DELEGATED TASK CONTINUATION: " + work.id + "; task=" + work.task
+		String text = "DELEGATED TASK CONTINUATION: " + work.id + "; task=" + work.task
 			+ "; successCriteria=" + work.successCriteria
 			+ ". Continue from fresh evidence or call return_control with success/give_up. A plaintext reply only yields.";
+		JsonObject fields = GSON.toJsonTree(Map.of("delegationId", work.id, "task", work.task,
+			"successCriteria", work.successCriteria,
+			"instruction", "Continue from fresh evidence or call return_control with success/give_up. A plaintext reply only yields.")).getAsJsonObject();
+		return new Prompt(text, fields);
 	}
 
 	public String decide(String id, String name, String decision, String reason) {

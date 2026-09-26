@@ -40,6 +40,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlannerContextAggregatorTest {
+	@Test void retainedDelegationTriggerKeepsItsStructuredFields() {
+		var aggregator = new PlannerContextAggregator(Clock.systemUTC(), 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
+		String id = "1e5e7000-0000-4000-8000-000000000000";
+		var fields = JsonParser.parseString("{\"delegationId\":\"" + id + "\",\"task\":\"mine iron\"}").getAsJsonObject();
+		var trigger = PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
+			"DELEGATED TASK CONTINUATION: " + id + "; task=mine iron", 1, 1_000, "planner_goal", fields);
+		var request = requestAt(1_000L, "Alice", "placeholder").withTriggerBatch(PlannerTriggerBatch.of(List.of(trigger)));
+		var snapshot = freezeSnapshot(aggregator, request);
+		aggregator.commitAcceptedTriggerBatch(snapshot);
+		var retained = aggregator.currentRetainedConversation(1_000L);
+		assertTrue(retained.messages().stream().anyMatch(message -> message.fields() != null
+			&& id.equals(message.fields().getAsJsonObject().get("delegationId").getAsString())));
+	}
 	@Test
 	void completedJobContextDoesNotClaimWorkOrPlannerGoalIsActive() {
 		var aggregator = new PlannerContextAggregator(Clock.systemUTC(), 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);

@@ -26,12 +26,13 @@ final class PlannerSnapshotPresentation {
 		}
 	}
 
-	String message(JsonObject message, String content) {
+	String message(JsonObject message, String content, JsonElement fields, PlannerReferences references) {
 		JsonElement callId = message.get("tool_call_id");
 		if (!new JsonPrimitive("tool").equals(message.get("role")) || callId == null || !callId.isJsonPrimitive()
 			|| !observeCallIds.contains(callId.getAsString())) return content;
 		JsonObject payload;
-		try { payload = JsonParser.parseString(content).getAsJsonObject(); }
+		try { payload = fields != null && fields.isJsonObject() ? fields.getAsJsonObject().deepCopy()
+			: JsonParser.parseString(content).getAsJsonObject(); }
 		catch (JsonParseException | IllegalStateException exception) { return content; }
 		if (!payload.has("current") || !payload.get("current").isJsonObject()) return content;
 		JsonObject current = payload.getAsJsonObject("current");
@@ -56,7 +57,7 @@ final class PlannerSnapshotPresentation {
 		}
 		previous = current;
 		world = payload.get("worldSessionId");
-		return PlannerInputText.observation(payload);
+		return PlannerInputText.observation(PlannerFieldPresentation.project(payload, null, references).getAsJsonObject());
 	}
 
 	private static void rebuild(JsonObject payload, JsonArray patch) {

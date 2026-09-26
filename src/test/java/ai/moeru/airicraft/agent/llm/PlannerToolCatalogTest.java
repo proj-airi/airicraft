@@ -7,6 +7,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PlannerToolCatalogTest {
+	@Test void foodPolicyCanBeReadAndChangedAtomically() {
+		assertEquals("configure_food", PlannerToolCatalog.parseToolCall(toolCall("configure_food", "{}")).name());
+		assertEquals("heal", PlannerToolCatalog.parseToolCall(toolCall("configure_food",
+			"{\"goal\":\"heal\",\"foodChoice\":\"cooked_only\"}"))
+			.arguments().get("goal").getAsString());
+		for (String bad : java.util.List.of("{\"goal\":\"heal\"}",
+			"{\"goal\":\"always\",\"foodChoice\":\"any\"}",
+			"{\"goal\":\"movement\",\"foodChoice\":\"poisonous\"}")) {
+			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("configure_food", bad)));
+		}
+	}
+
 	@Test void validatesAtomicReflexPolicyAndEmptyQuery() {
 		assertEquals("configure_reflex", PlannerToolCatalog.parseToolCall(toolCall("configure_reflex", "{}")).name());
 		String policy = "{\"combatEnabled\":false,\"drowningEnabled\":true,\"maxThreatDistance\":16,\"requireLineOfSight\":true}";

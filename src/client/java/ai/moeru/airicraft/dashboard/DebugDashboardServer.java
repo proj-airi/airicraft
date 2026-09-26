@@ -44,19 +44,25 @@ public final class DebugDashboardServer {
 
 	private final DashboardObservationStore store;
 	private final Path logPath;
+	private final java.util.function.Supplier<Map<String, Object>> reportEnvironment;
 	private volatile HttpServer server;
 	private volatile ExecutorService requestExecutor;
 	private volatile ScheduledExecutorService logExecutor;
 	private volatile String token = "";
 	private volatile Status status = Status.stopped();
 
-	public DebugDashboardServer(DashboardObservationStore store) {
-		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"));
+	public DebugDashboardServer(DashboardObservationStore store, java.util.function.Supplier<Map<String, Object>> reportEnvironment) {
+		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"), reportEnvironment);
 	}
 
 	DebugDashboardServer(DashboardObservationStore store, Path logPath) {
+		this(store, logPath, () -> Map.of("availability", "unavailable"));
+	}
+
+	DebugDashboardServer(DashboardObservationStore store, Path logPath, java.util.function.Supplier<Map<String, Object>> reportEnvironment) {
 		this.store = store;
 		this.logPath = logPath;
+		this.reportEnvironment = reportEnvironment;
 	}
 
 	public synchronized void start(DebugDashboardConfig config) {
@@ -101,6 +107,7 @@ public final class DebugDashboardServer {
 		candidate.createContext("/api/observations", this::handleObservations);
 		candidate.createContext("/api/stream", this::handleStream);
 		candidate.createContext("/api/export", this::handleExport);
+		candidate.createContext("/api/report", this::handleReport);
 		candidate.createContext("/api/recording", this::handleRecordingSeek);
 		candidate.createContext("/api/frame", this::handleFrame);
 		candidate.start();
@@ -281,6 +288,16 @@ public final class DebugDashboardServer {
 		catch (IOException ignored) {
 			// Browser disconnected.
 		}
+	}
+
+	private void handleReport(HttpExchange exchange) throws IOException {
+		if (!authorizeGet(exchange)) return;
+		DiagnosticReport report = DiagnosticReport.capture(store, reportEnvironment.get());
+		exchange.getResponseHeaders().set("Content-Type", "application/x-ndjson; charset=utf-8");
+		exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + report.fileName() + "\"");
+		exchange.getResponseHeaders().set("Cache-Control", "no-store");
+		exchange.sendResponseHeaders(200, 0);
+		try (OutputStream output = exchange.getResponseBody()) { report.writeTo(output); }
 	}
 
 	private void handleExport(HttpExchange exchange) throws IOException {

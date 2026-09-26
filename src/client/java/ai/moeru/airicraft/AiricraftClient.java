@@ -31,6 +31,7 @@ public class AiricraftClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		ai.moeru.airicraft.settings.AiricraftSettings.register();
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
 			ClientCommandManager.literal("airicraft")
 				.then(ClientCommandManager.literal("noplanner")

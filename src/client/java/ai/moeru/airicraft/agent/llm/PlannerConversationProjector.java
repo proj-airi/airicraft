@@ -75,6 +75,8 @@ public final class PlannerConversationProjector {
 
 	private static PlannerConversationDebugMessage triggerCard(PlannerTurnEvent event, boolean superseded) {
 		PlannerRequest request = event.request();
+		PlannerTrigger trigger = request != null && request.triggerBatch() != null
+			&& request.triggerBatch().triggers().size() == 1 ? request.triggerBatch().triggers().getFirst() : null;
 		String speaker = request == null ? null : request.senderName();
 		String text = request == null ? "" : request.message();
 		if (text.isBlank()) {
@@ -89,7 +91,8 @@ public final class PlannerConversationProjector {
 			event.attempt(),
 			false,
 			event.timestampMs(),
-			superseded
+			superseded,
+			trigger == null ? null : trigger.fields()
 		);
 	}
 
@@ -111,7 +114,8 @@ public final class PlannerConversationProjector {
 			event.attempt(),
 			event.imageAttached(),
 			event.timestampMs(),
-			superseded
+			superseded,
+			event.toolResultFields()
 		);
 	}
 

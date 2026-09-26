@@ -15,6 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SurvivalReflexRuntimeTest {
+	@Test void combatMealNeedsShelterAndAFullUseWindow() {
+		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, true, false, 4D));
+		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, false, false, 12D));
+		assertFalse(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, false, true, 12D));
+		assertFalse(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, true, true, false, 12D));
+		assertFalse(SurvivalReflexRuntime.safeToEatDuringCombat(false, false, false, true, false, 12D));
+	}
+
 	@Test void resolvedCombatCanHaveNoStallDuration() {
 		assertNull(SurvivalReflexRuntime.noProgressTicks(null, null, 7609));
 		var progressing = new CombatProgress(7500, java.util.Map.of(), false);

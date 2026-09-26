@@ -196,6 +196,21 @@ class PlannerConversationProjectorTest {
 		assertTrue(expanded.get(1).text().contains("← Tool result: 2x2 crafts"));
 	}
 
+	@Test void chronicleKeepsStructuredToolEvidenceBesideItsTextView() {
+		var journal = new PlannerTurnJournal(fixedClock(), 64);
+		var projector = new PlannerConversationProjector(48);
+		var request = requestAt(10L, 1_000L, "first");
+		journal.recordSubmission(1L, 1, PlannerSessionPhase.PLANNER_REQUEST, request,
+			LlmConversation.of(List.of(LlmChatMessage.user("first", LlmMessageKind.USER_TURN))));
+		journal.recordToolExchange(1L, snapshot(request, LlmConversation.of(List.of())), null,
+			toolCall("call_inspect", "inspect_work", "workId", "job"),
+			"{\"delegationId\":\"1e5e7000-0000-4000-8000-000000000000\",\"progress\":1.2345}", false);
+		var entry = projector.chronicleSnapshot(journal).messages().get(1);
+		assertEquals("1e5e7000-0000-4000-8000-000000000000", entry.fields().getAsJsonObject().get("delegationId").getAsString());
+		assertEquals(1.2345, entry.fields().getAsJsonObject().get("progress").getAsDouble());
+		assertTrue(entry.text().contains("1.2345"));
+	}
+
 	@Test
 	void chronicleKeepsSupersededGenerationsMarked() {
 		var journal = new PlannerTurnJournal(fixedClock(), 64);

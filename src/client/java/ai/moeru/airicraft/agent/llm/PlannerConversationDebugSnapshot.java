@@ -47,7 +47,10 @@ public record PlannerConversationDebugSnapshot(
 				generation,
 				phase,
 				attempt,
-				message.hasImageAttachment()
+				message.hasImageAttachment(),
+				0L,
+				false,
+				message.fields()
 			));
 		}
 		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages);
@@ -63,13 +66,13 @@ public record PlannerConversationDebugSnapshot(
 		return new PlannerConversationDebugSnapshot(generation, phase, attempt, updated);
 	}
 
-	/** Use the model's shared reference table without changing the canonical journal. */
+	/** Present typed tool evidence through the model's shared reference table. */
 	public PlannerConversationDebugSnapshot presented(PlannerReferences references) {
 		return new PlannerConversationDebugSnapshot(generation, phase, attempt, messages.stream().map(message ->
 			new PlannerConversationDebugMessage(message.role(), message.kind(),
-				references.present(PlannerInputText.message(message.role(), message.text())),
+				references.presentContent(message.role(), message.text(), message.fields()),
 				message.generation(), message.phase(), message.attempt(), message.hasImageAttachment(),
-				message.timestampMs(), message.superseded())).toList());
+				message.timestampMs(), message.superseded(), message.fields())).toList());
 	}
 
 	private static String debugText(LlmChatMessage message) {

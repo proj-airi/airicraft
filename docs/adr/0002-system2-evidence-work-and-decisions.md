@@ -66,7 +66,7 @@ Work history retains128 terminal entries plus unresolved work. Ordinary decision
 
 ### Compact planner presentation (2026-09-14)
 
-The OpenAI-compatible request boundary presents UUID-bearing native identities as short opaque references such as @r12. Controller, thinker and compactor share one reference table while keeping separate histories/cache prefixes. Tool ID arguments resolve before existing parsing, ownership and exact work/hold validation. Native executor IDs, persisted goals, recorder events and protocol tool-call/result pairing remain unchanged. Known references in planning-note fields are restored before persistence. User narration is not rewritten on input.
+The OpenAI-compatible request boundary presents UUID-bearing native identity fields as short opaque references such as @r12. Controller, thinker and compactor share one reference table while keeping separate histories/cache prefixes. Tool ID arguments resolve before existing parsing, ownership and exact work/hold validation. Native executor IDs, persisted goals, recorder events and protocol tool-call/result pairing remain unchanged. Known references in planning-note fields are restored before persistence. Unstructured prose is not searched or rewritten; observations, JSON tool results and delegated system triggers retain typed fields in the canonical chronicle and receive field-specific presentation for the model.
 
 The table retains8192 mappings. Evicted/unknown references fail closed and require fresh inspection; numbers are never reassigned within the client process. They are session presentation, not durable world IDs. Existing response freshness checks and native work validation still gate actuation. Request text encoding does not alter images or role schema prefixes.
 

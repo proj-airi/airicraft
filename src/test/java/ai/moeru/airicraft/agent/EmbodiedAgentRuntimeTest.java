@@ -222,6 +222,28 @@ class EmbodiedAgentRuntimeTest {
 		finally { runtime.shutdown(); }
 	}
 
+	@Test void plannerCanReadAndReplaceFoodPolicyThroughActionExecutor() {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			var settings = com.google.gson.JsonParser.parseString("{\"goal\":\"heal\",\"foodChoice\":\"cooked_only\"}").getAsJsonObject();
+			String applied = runtime.execute(PlannerToolCatalog.parseToolCall("configure_food", settings,
+				ai.moeru.airicraft.agent.llm.PlannerToolRegistry.empty())).join();
+			assertTrue(applied.contains("goal=HEAL"), applied);
+			String queried = runtime.execute(PlannerToolCatalog.parseToolCall("configure_food", new com.google.gson.JsonObject(),
+				ai.moeru.airicraft.agent.llm.PlannerToolRegistry.empty())).join();
+			assertTrue(queried.contains("foodChoice=COOKED_ONLY"), queried);
+			String invalid = runtime.execute(new PlannerToolCall("bad-food", "configure_food",
+				com.google.gson.JsonParser.parseString("{\"goal\":\"heal\",\"foodChoice\":\"poisonous\"}").getAsJsonObject(),
+				null, null)).join();
+			assertTrue(invalid.startsWith("TOOL_ERROR:"), invalid);
+			runtime.onWorldLeave();
+			String reset = runtime.execute(PlannerToolCatalog.parseToolCall("configure_food", new com.google.gson.JsonObject(),
+				ai.moeru.airicraft.agent.llm.PlannerToolRegistry.empty())).join();
+			assertTrue(reset.contains("goal=MOVEMENT"), reset);
+		}
+		finally { runtime.shutdown(); }
+	}
+
 	@Test
 	void rejectedPolicyDoesNotBecomeATerminalToolReceipt() throws Exception {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());

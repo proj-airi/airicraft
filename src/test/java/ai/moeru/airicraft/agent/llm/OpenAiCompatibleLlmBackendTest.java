@@ -107,7 +107,9 @@ class OpenAiCompatibleLlmBackendTest {
 		String arguments = "{\"workId\":\"" + reference + "\",\"reason\":\"new approach\"}";
 		try (TestServer server = TestServer.start(body, toolCallResponse("call_1", "cancel_work", arguments.replace("\"", "\\\"")))) {
 			var backend = new OpenAiCompatibleLlmBackend(config(server.port(), false), registry);
-			var result = backend.generate(LlmConversation.of(List.of(LlmChatMessage.user("Current work: " + nativeId, LlmMessageKind.NOTICE))));
+			String context = "{\"workId\":\"" + nativeId + "\"}";
+			var result = backend.generate(LlmConversation.of(List.of(LlmChatMessage.user(context, LlmMessageKind.NOTICE,
+				JsonParser.parseString(context)))));
 			assertFalse(body.get().contains(nativeId));
 			assertTrue(body.get().contains(reference));
 			assertEquals(nativeId, result.payload().toolCall().arguments().get("workId").getAsString());

@@ -29,7 +29,8 @@ public final class PlannerObservation {
 	public static List<LlmChatMessage> exchange(Map<String, Object> payload) {
 		String callId = RUNTIME_CALL_ID_PREFIX + NEXT_CALL.incrementAndGet();
 		PlannerToolCall call = new PlannerToolCall(callId, TOOL_NAME, new JsonObject(), null, null);
-		return List.of(LlmChatMessage.assistantToolCall("", call), LlmChatMessage.tool(callId, render(payload)));
+		JsonObject fields = GSON.toJsonTree(payload).getAsJsonObject();
+		return List.of(LlmChatMessage.assistantToolCall("", call), LlmChatMessage.tool(callId, GSON.toJson(fields), fields));
 	}
 
 	public static String render(Map<String, Object> payload) {

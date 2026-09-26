@@ -12,8 +12,13 @@ public record LlmChatMessage(
 	LlmImageAttachment imageAttachment,
 	JsonElement rawContentOverride,
 	List<PlannerToolCall> toolCalls,
-	String toolCallId
+	String toolCallId,
+	JsonElement fields
 ) {
+	public LlmChatMessage(String role, String content, LlmMessageKind kind, LlmImageAttachment imageAttachment,
+		JsonElement rawContentOverride, List<PlannerToolCall> toolCalls, String toolCallId) {
+		this(role, content, kind, imageAttachment, rawContentOverride, toolCalls, toolCallId, null);
+	}
 	public LlmChatMessage(String role, String content, LlmMessageKind kind, LlmImageAttachment imageAttachment) {
 		this(role, content, kind, imageAttachment, null, List.of(), null);
 	}
@@ -29,6 +34,9 @@ public record LlmChatMessage(
 		rawContentOverride = rawContentOverride == null || rawContentOverride.isJsonNull()
 			? null
 			: rawContentOverride.deepCopy();
+		fields = fields == null || fields.isJsonNull()
+			? kind == LlmMessageKind.TOOL_RESULT ? PlannerFieldPresentation.fields(content) : null
+			: fields.deepCopy();
 		toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
 		toolCallId = toolCallId == null || toolCallId.isBlank() ? null : toolCallId;
 	}
@@ -39,6 +47,10 @@ public record LlmChatMessage(
 
 	public static LlmChatMessage user(String content, LlmMessageKind kind) {
 		return new LlmChatMessage("user", content, kind, null);
+	}
+
+	public static LlmChatMessage user(String content, LlmMessageKind kind, JsonElement fields) {
+		return new LlmChatMessage("user", content, kind, null, null, List.of(), null, fields);
 	}
 
 	public static LlmChatMessage userWithImage(String content, LlmMessageKind kind, LlmImageAttachment imageAttachment) {
@@ -74,6 +86,14 @@ public record LlmChatMessage(
 
 	public static LlmChatMessage tool(String toolCallId, String content) {
 		return new LlmChatMessage("tool", content, LlmMessageKind.TOOL_RESULT, null, null, List.of(), toolCallId);
+	}
+
+	public static LlmChatMessage tool(String toolCallId, String content, JsonElement fields) {
+		return new LlmChatMessage("tool", content, LlmMessageKind.TOOL_RESULT, null, null, List.of(), toolCallId, fields);
+	}
+
+	@Override public JsonElement fields() {
+		return fields == null ? null : fields.deepCopy();
 	}
 
 	public boolean hasImageAttachment() {

@@ -105,12 +105,17 @@ final class PlannerContextReducer {
 			return state;
 		}
 
+		PlannerTrigger structured = triggerBatch.triggers().size() == 1 ? triggerBatch.triggers().getFirst() : null;
 		PlannerContextEntry acceptedEntry = new PlannerContextEntry(
 			PlannerContextEntryType.USER_TURN,
 			triggerBatch.primarySpeaker(),
-			triggerBatch.renderPrompt(),
+			structured != null && structured.fields() != null ? structured.text() : triggerBatch.renderPrompt(),
 			tick,
-			timestampMs
+			timestampMs,
+			null,
+			null,
+			List.of(),
+			structured == null ? null : structured.fields()
 		);
 		ArrayList<PlannerContextEntry> acceptedHistory = new ArrayList<>(state.acceptedHistoryTape());
 		acceptedHistory.add(acceptedEntry);

@@ -106,6 +106,11 @@ final class PlayerItemUseController {
 	}
 
 	void reset(MinecraftClient client) {
+		if (eating != null && client != null && client.player != null && client.interactionManager != null
+			&& client.player.isUsingItem() && client.player.getActiveHand() == Hand.MAIN_HAND
+			&& eating.itemId().equals(itemId(client.player.getActiveItem()))) {
+			client.interactionManager.stopUsingItem(client.player);
+		}
 		useKey.release(client == null ? null : client.options.useKey);
 		eating = null;
 	}
@@ -120,8 +125,7 @@ final class PlayerItemUseController {
 
 	private Result finish(MinecraftClient client, boolean completed, String reason) {
 		String itemId = eating.itemId();
-		useKey.release(client == null ? null : client.options.useKey);
-		eating = null;
+		reset(client);
 		return new Result(itemId, completed, reason);
 	}
 

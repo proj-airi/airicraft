@@ -6,6 +6,7 @@ import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.NoopObservability;
 import ai.moeru.airicraft.agent.observability.TraceSanitizer;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -266,7 +267,7 @@ public final class OpenAiCompatibleChatClient {
 			payload.put("tools", toolRegistry.openAiTools());
 			payload.put("tool_choice", "auto");
 		}
-		var messages = toolRegistry.references().presentMessages(canonicalRequestMessages(conversation));
+		var messages = toolRegistry.references().presentMessages(conversation);
 		if (options.equals(LlmRequestOptions.compaction())) {
 			// Bound the entire serialized history, including raw replay content. Work on a copy:
 			// the live transcript and tool-call/result pairs must survive compaction failure intact.
@@ -295,6 +296,13 @@ public final class OpenAiCompatibleChatClient {
 	}
 
 	public static List<Map<String, Object>> canonicalRequestMessages(LlmConversation conversation) {
+		Objects.requireNonNull(conversation, "conversation");
+		return canonicalRequestEntries(conversation).stream().map(RequestMessage::wire).toList();
+	}
+
+	static record RequestMessage(Map<String, Object> wire, JsonElement fields) {}
+
+	static List<RequestMessage> canonicalRequestEntries(LlmConversation conversation) {
 		Objects.requireNonNull(conversation, "conversation");
 		return compactRequestMessages(conversation.messages());
 	}
@@ -332,15 +340,17 @@ public final class OpenAiCompatibleChatClient {
 		return payload;
 	}
 
-	private static List<Map<String, Object>> compactRequestMessages(List<LlmChatMessage> messages) {
-		ArrayList<Map<String, Object>> compacted = new ArrayList<>();
+	private static List<RequestMessage> compactRequestMessages(List<LlmChatMessage> messages) {
+		ArrayList<RequestMessage> compacted = new ArrayList<>();
 		for (LlmChatMessage message : messages) {
 			Map<String, Object> requestMessage = toRequestMessage(message);
-			if (!compacted.isEmpty() && shouldMergeUserMessage(compacted.getLast(), requestMessage)) {
-				compacted.set(compacted.size() - 1, mergeUserMessages(compacted.getLast(), requestMessage));
+			if (!compacted.isEmpty() && compacted.getLast().fields() == null && message.fields() == null
+				&& shouldMergeUserMessage(compacted.getLast().wire(), requestMessage)) {
+				compacted.set(compacted.size() - 1, new RequestMessage(mergeUserMessages(compacted.getLast().wire(), requestMessage), null));
 				continue;
 			}
-			compacted.add(requestMessage);
+			compacted.add(new RequestMessage(requestMessage,
+				message.rawContentOverride() == null ? message.fields() : null));
 		}
 		return List.copyOf(compacted);
 	}

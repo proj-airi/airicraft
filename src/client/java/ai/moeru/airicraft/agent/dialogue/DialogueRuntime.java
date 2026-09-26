@@ -247,14 +247,15 @@ public final class DialogueRuntime {
 		}
 		if (tick < nextGoalContinuationTick) return true;
 		nextGoalContinuationTick = tick + 20;
-		String continuation = delegated ? delegation.continuation() : "GOAL CONTINUATION: No action is running. Review fresh evidence and advance the active planner goal, "
+		var delegationPrompt = delegated ? delegation.continuationPrompt() : null;
+		String continuation = delegated ? delegationPrompt.text() : "GOAL CONTINUATION: No action is running. Review fresh evidence and advance the active planner goal, "
 			+ "change it if appropriate, or finish explicitly with success/give_up. A prior plaintext reply did not end it.\n"
 			+ plannerGoal.context();
 		if (awaitingSafetyDecision) continuation = "Safety hold " + safetyHoldId
 			+ " still awaits your decision. The previous job remains paused. Use continue to keep and resume the plan, or clear_queue to abort and replace it."
 			+ " Saying you will act does not release the hold.\n" + continuation;
 		onPlannerTrigger(PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
-			continuation, tick, clock.millis(), "planner_goal"),
+			continuation, tick, clock.millis(), "planner_goal", delegationPrompt == null ? null : delegationPrompt.fields()),
 			session, primaryPlayer, actionGoal, task, mission, events);
 		return true;
 	}
@@ -633,9 +634,9 @@ public final class DialogueRuntime {
 
 		if (delegation != null && delegation.starting()) {
 			delegationEventCursor = eventBuffer.latestSeqNo();
-			String message = delegation.start(delegationFacts(tick, activeTask, missionExecution), delegationEventCursor);
-			onPlannerTrigger(PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "controller", message,
-				tick, clock.millis(), "delegation"), sessionSnapshot, null, activeGoal, activeTask, missionExecution, eventBuffer);
+			var prompt = delegation.startPrompt(delegationFacts(tick, activeTask, missionExecution), delegationEventCursor);
+			onPlannerTrigger(PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "controller", prompt.text(),
+				tick, clock.millis(), "delegation", prompt.fields()), sessionSnapshot, null, activeGoal, activeTask, missionExecution, eventBuffer);
 		}
 		if (delegation != null && delegation.active()) {
 			var events = eventBuffer.query(delegationEventCursor);

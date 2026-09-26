@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Airicraft diagnostic report v1 JSONL record",
+  "$comment": "Sequence, newline and integrity rules are specified in diagnostic-reports.md. Validate each line, then verify order, counts and checksum.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/manifest"
+    },
+    {
+      "$ref": "#/$defs/observation"
+    },
+    {
+      "$ref": "#/$defs/integrity"
+    }
+  ],
+  "$defs": {
+    "manifest": {
+      "type": "object",
+      "properties": {
+        "recordType": {
+          "const": "manifest"
+        },
+        "schema": {
+          "const": "airicraft.diagnostic-report"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "reportId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "createdAtMs": {
+          "type": "integer"
+        },
+        "mode": {
+          "const": "user_summary"
+        },
+        "correlation": {
+          "type": "object",
+          "properties": {
+            "recordingSessionId": {
+              "type": "string"
+            },
+            "hostedSessionId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "recordingSessionId",
+            "hostedSessionId"
+          ]
+        },
+        "environment": {
+          "type": "object"
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "clock": {
+              "enum": [
+                "server_tick",
+                "client_tick"
+              ]
+            },
+            "fromTick": {
+              "type": "integer"
+            },
+            "toTick": {
+              "type": "integer"
+            },
+            "requestedTicks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "throughSequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "serverClockAvailable": {
+              "type": "boolean"
+            },
+            "paused": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "clock",
+            "fromTick",
+            "toTick",
+            "requestedTicks",
+            "throughSequence",
+            "serverClockAvailable",
+            "paused"
+          ]
+        },
+        "runtimeState": {
+          "type": "object",
+          "required": [
+            "available"
+          ],
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "observation": {
+              "$ref": "#/$defs/observation"
+            }
+          },
+          "if": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "observation"
+            ]
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "truncated": {
+              "type": "boolean"
+            },
+            "droppedByType": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "expiredByType": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "observationGap": {
+              "type": "boolean"
+            },
+            "reportLimitOmitted": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "clippedFields": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "excludedByPolicy": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "retainedObservationCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "includedObservationCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "lossCounterScope": {
+              "const": "recording_session"
+            }
+          },
+          "required": [
+            "truncated",
+            "droppedByType",
+            "expiredByType",
+            "observationGap",
+            "reportLimitOmitted",
+            "clippedFields",
+            "excludedByPolicy",
+            "retainedObservationCount",
+            "includedObservationCount",
+            "lossCounterScope"
+          ]
+        },
+        "privacy": {
+          "type": "object",
+          "properties": {
+            "projection": {
+              "const": "allowlisted_summary_v1"
+            },
+            "excluded": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "projection",
+            "excluded"
+          ]
+        }
+      },
+      "required": [
+        "recordType",
+        "schema",
+        "schemaVersion",
+        "reportId",
+        "createdAtMs",
+        "mode",
+        "correlation",
+        "environment",
+        "window",
+        "runtimeState",
+        "coverage",
+        "privacy"
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "recordType": {
+          "const": "observation"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "enum": [
+            "runtime_snapshot",
+            "decision_state",
+            "llm_call",
+            "semantic_event",
+            "debug_timeline",
+            "observation_gap",
+            "session_started"
+          ]
+        },
+        "tick": {
+          "type": "integer"
+        },
+        "serverTickId": {
+          "type": "integer"
+        },
+        "throughServerTickId": {
+          "type": "integer"
+        },
+        "capturedAtMs": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "recordType",
+        "sequence",
+        "type",
+        "tick",
+        "serverTickId",
+        "throughServerTickId",
+        "capturedAtMs",
+        "payload"
+      ]
+    },
+    "integrity": {
+      "type": "object",
+      "properties": {
+        "recordType": {
+          "const": "integrity"
+        },
+        "complete": {
+          "const": true
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observationCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "recordType",
+        "complete",
+        "algorithm",
+        "sha256",
+        "bytes",
+        "observationCount"
+      ]
+    }
+  }
+}

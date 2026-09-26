@@ -7,6 +7,11 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerInputTextTest {
+	@Test void unstructuredMessagePreservesDelegationUuidAndProgress() {
+		assertEquals("delegationId=1e2e3456-0000-4000-8000-000000000000; progress=1.25",
+			PlannerInputText.message("user", "delegationId=1e2e3456-0000-4000-8000-000000000000; progress=1.25"));
+	}
+
 	@Test void inventoryCapacitySurvivesPlannerPresentation() {
 		String text = PlannerInputText.observation(Map.of("current", Map.of("inventoryCapacity",
 			Map.of("freeStorageSlots", 0, "pickupConstraint", "Only compatible non-full stacks can accept pickups"))));
@@ -14,10 +19,10 @@ class PlannerInputTextTest {
 		assertTrue(text.contains("Only compatible non-full stacks can accept pickups"));
 	}
 
-	@Test void longQuotedInspectionEvidenceDoesNotOverflowOrRoundQuotedNumbers() {
+	@Test void longQuotedInspectionEvidenceStaysExact() {
 		String quoted = new Gson().toJson("block x=12.345; quote=\"; slash=\\; ".repeat(10000));
 		String input = "before=1.234 evidence=" + quoted + " after=-2.345";
-		String expected = "before=1.2 evidence=" + quoted + " after=-2.3";
+		String expected = input;
 		assertEquals(expected, PlannerInputText.message("user", input));
 		var wire = new PlannerReferences().presentMessages(java.util.List.of(
 			Map.<String, Object>of("role", "user", "content", input)));
@@ -56,6 +61,19 @@ class PlannerInputTextTest {
 		assertEquals(raw, PlannerInputText.message("assistant", raw));
 		assertEquals(raw, PlannerInputText.message("user", raw));
 		assertEquals("Tool result for custom: {\"unfamiliar\":true}", PlannerInputText.message("tool", "Tool result for custom: {\"unfamiliar\":true}"));
+	}
+
+	@Test void nestedGeneratedToolEnvelopesKeepFieldsAndCompactForPlanner() {
+		String id = "JOB:job-11111111-2222-3333-4444-555555555555";
+		String raw = "Tool result: Tool result for delegate_task: {\"accepted\":true,\"workId\":\"" + id + "\",\"progress\":1.256}";
+		var message = LlmChatMessage.user(raw, LlmMessageKind.TOOL_RESULT);
+		assertEquals(id, message.fields().getAsJsonObject().get("workId").getAsString());
+		var wire = new PlannerReferences().presentMessages(LlmConversation.of(java.util.List.of(message)))
+			.get(0).getAsJsonObject().get("content").getAsString();
+		assertTrue(wire.contains("Accepted; Work @r"), wire);
+		assertTrue(wire.contains("1.3"), wire);
+		assertFalse(wire.contains(id));
+		assertEquals(raw, message.content());
 	}
 
 	@Test void missingRangesAndUnknownFieldsPassThroughAndInputDoesNotMutate() {

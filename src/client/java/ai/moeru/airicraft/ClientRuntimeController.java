@@ -83,7 +83,7 @@ public final class ClientRuntimeController {
 					: dashboard;
 			}
 		);
-		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore);
+		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment);
 		this.bridgeServer = new ModBridgeServer(
 			this::highlightManager,
 			this::agentRuntime,
@@ -153,6 +153,19 @@ public final class ClientRuntimeController {
 
 	public DashboardObservationStore liveRecording() {
 		return dashboardObservationStore;
+	}
+
+	private Map<String, Object> diagnosticEnvironment() {
+		return ai.moeru.airicraft.dashboard.DiagnosticEnvironment.capture(currentAgentRuntime().config().llm());
+	}
+
+	public java.util.concurrent.CompletableFuture<java.nio.file.Path> saveDiagnosticReport() {
+		return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+			var report = ai.moeru.airicraft.dashboard.DiagnosticReport.capture(dashboardObservationStore, diagnosticEnvironment());
+			try {
+				return report.save(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("airicraft-reports"));
+			} catch (java.io.IOException exception) { throw new java.io.UncheckedIOException(exception); }
+		});
 	}
 
 	public FirstPersonScreenshotService screenshotService() {

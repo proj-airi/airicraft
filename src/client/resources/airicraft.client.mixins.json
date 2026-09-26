@@ -20,6 +20,7 @@
 		"CraftingResultSlotMixin",
 		"GameRendererMixin",
 		"GameRendererPauseMixin",
+		"IntegratedServerOfflineMixin",
 		"MessageHandlerMixin",
 		"MinecraftClientTickDebugMixin",
 		"SlotMixin"

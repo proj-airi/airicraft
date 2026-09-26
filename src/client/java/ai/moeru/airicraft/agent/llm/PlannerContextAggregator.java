@@ -631,14 +631,14 @@ public final class PlannerContextAggregator {
 
 	private static LlmChatMessage renderAcceptedHistoryEntry(PlannerContextEntry entry, long anchorTimeMs) {
 		return switch (entry.type()) {
-			case USER_TURN -> LlmChatMessage.user(entry.text(), LlmMessageKind.USER_TURN);
+			case USER_TURN -> LlmChatMessage.user(entry.text(), LlmMessageKind.USER_TURN, entry.fields());
 			case ASSISTANT_TURN -> LlmChatMessage.assistant(entry.text(), entry.rawAssistantContent());
 				case TOOL_REQUEST -> entry.toolCalls().isEmpty()
 					? LlmChatMessage.assistant(entry.text(), entry.rawAssistantContent())
 					: LlmChatMessage.assistantToolCalls(entry.text(), entry.toolCalls(), entry.rawAssistantContent());
 				case TOOL_RESULT -> entry.toolCall() == null
-					? LlmChatMessage.user(entry.text(), LlmMessageKind.TOOL_RESULT)
-					: LlmChatMessage.tool(entry.toolCall().id(), toolResultContent(entry.text()));
+					? LlmChatMessage.user(entry.text(), LlmMessageKind.TOOL_RESULT, entry.fields())
+					: LlmChatMessage.tool(entry.toolCall().id(), toolResultContent(entry.text()), entry.fields());
 				case NOTICE -> ContextMessageRenderer.renderEntry(entry, anchorTimeMs);
 			};
 		}

@@ -67,6 +67,7 @@ public final class PlannerToolCatalog {
 	public static final String UPDATE_EVENT_POLICY = "update_event_policy";
 	public static final String CONFIGURE_PATHFIND = "configure_pathfind";
 	public static final String CONFIGURE_LIGHTING = "configure_lighting";
+	public static final String CONFIGURE_FOOD = "configure_food";
 	public static final String CONFIGURE_REFLEX = "configure_reflex";
 
 	private static final Consumer<JsonObject> NO_ARGUMENT_VALIDATION = arguments -> {
@@ -369,6 +370,10 @@ public final class PlannerToolCatalog {
 			prop("maxThreatDistance", integer("Maximum eligible mob distance in blocks, 1..32; default 16.")),
 			prop("requireLineOfSight", bool("Ignore mobs out of line of sight when true; default true."))
 		), List.of()), PlannerToolCatalog::validateConfigureReflexArguments),
+		builtInTool(CONFIGURE_FOOD, false, tool(CONFIGURE_FOOD, "Read or replace automatic inventory eating policy. Call with {} to read; provide goal and foodChoice together to replace. Defaults: movement and any. movement eats only when hunger prevents sprinting; heal eats while injured to sustain natural regeneration; off disables idle eating. Combat reflex may eat below half health after a safe retreat, even when idle eating is off. cooked_only limits automatic choices to ordinary cooked food; any allows known ordinary safe vanilla food. Special and modded food remains available through eat_food. Policy lasts until agent session reset.", properties(
+			prop("goal", enumString("Automatic idle eating goal.", List.of("off", "movement", "heal"))),
+			prop("foodChoice", enumString("Automatic food selection.", List.of("any", "cooked_only")))
+		), List.of()), PlannerToolCatalog::validateConfigureFoodArguments),
 		builtInTool(CONFIGURE_LIGHTING, false, tool(CONFIGURE_LIGHTING, "Configure automatic torch placement while mining, navigating, or idle after standing still for five seconds. Uses the average over only air cells in a centered 5x5 horizontal square at foot level; occupied cells do not count. Any sky-visible cell in that square prevents placement. Enabled by default underground when average combined light is strictly below 4 (spacing 6); can be disabled explicitly. Keeps offhand equipment such as a shield, temporarily uses a carried torch and restores the held item. Does not interrupt combat, item use or active block breaking. Confirmed placements are batched into the next planner window.", properties(
 				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("enabled", bool("Whether automatic torch placement is enabled.")),
@@ -1058,6 +1063,16 @@ public final class PlannerToolCatalog {
 		int minSpacingBlocks = requireInt(arguments, "minSpacingBlocks");
 		if (minSpacingBlocks < 1 || minSpacingBlocks > 16) {
 			throw new JsonParseException("minSpacingBlocks must be between 1 and 16");
+		}
+	}
+
+	private static void validateConfigureFoodArguments(JsonObject arguments) {
+		if (arguments.isEmpty()) return;
+		String goal = requireString(arguments, "goal");
+		String foodChoice = requireString(arguments, "foodChoice");
+		if (arguments.size() != 2 || !List.of("off", "movement", "heal").contains(goal)
+			|| !List.of("any", "cooked_only").contains(foodChoice)) {
+			throw new JsonParseException("Expected goal=off|movement|heal and foodChoice=any|cooked_only");
 		}
 	}
 
