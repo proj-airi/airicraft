@@ -1,6 +1,9 @@
 package ai.moeru.airicraft.agent;
 
 import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventCatalog;
+import ai.moeru.airicraft.agent.events.EventRoutingProfile;
+import ai.moeru.airicraft.agent.events.EventVisibility;
 import ai.moeru.airicraft.agent.llm.PlannerDecisionContext;
 import ai.moeru.airicraft.agent.work.WorkHandle;
 import ai.moeru.airicraft.agent.work.WorkSnapshot;
@@ -17,6 +20,32 @@ class EventInventoryTest {
 	private static final Path INVENTORY = Path.of("src/test/resources/planner/wakes/event-inventory.json");
 	private JsonObject inventory() throws Exception {
 		return JsonParser.parseString(Files.readString(INVENTORY)).getAsJsonObject();
+	}
+
+	@Test void catalogMatchesInventory() throws Exception {
+		var catalog = EventCatalog.defaults();
+		var expected = new HashSet<String>();
+		for (var value : inventory().getAsJsonArray("types")) {
+			var entry = value.getAsJsonObject();
+			boolean prefix = entry.has("prefix");
+			String id = entry.get(prefix ? "prefix" : "type").getAsString();
+			assertTrue(expected.add(id), "duplicate fixture entry: " + id);
+			var spec = catalog.specs().stream().filter(item -> item.id().equals(id) && item.prefix() == prefix).findFirst().orElseThrow();
+			Set<String> producers = new HashSet<>();
+			entry.getAsJsonArray("producers").forEach(producer -> producers.add(producer.getAsString()));
+			assertEquals(producers, spec.producers(), id);
+			assertEquals(entry.get("observeVisible").getAsBoolean(), spec.observeVisibility() == EventVisibility.PLANNER, id);
+			EventRoutingProfile profile = EventRoutingProfile.rawOnly(id);
+			if (!entry.get("profile").isJsonNull()) {
+				var fields = entry.getAsJsonObject("profile");
+				profile = new EventRoutingProfile(id, fields.get("semantic").getAsBoolean(),
+					fields.get("trigger").isJsonNull() ? null : ai.moeru.airicraft.agent.llm.PlannerTriggerType.valueOf(fields.get("trigger").getAsString()),
+					fields.get("bypass").getAsBoolean());
+			}
+			assertEquals(profile, spec.routing(), id);
+		}
+		assertEquals(expected, catalog.specs().stream().map(item -> item.id()).collect(java.util.stream.Collectors.toSet()));
+		assertEquals(expected.size(), catalog.specs().size());
 	}
 
 	@Test void routingProfilesMatchInventory() throws Exception {
