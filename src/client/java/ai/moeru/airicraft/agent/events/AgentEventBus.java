@@ -62,7 +62,7 @@ public final class AgentEventBus implements EventStream {
 		if (spec == null) {
 			undeclared++;
 			validationFailure(new WarningKey(type, null), "Undeclared event type: " + type);
-		} else if (source == null || !spec.producers().contains(source)) {
+		} else if (source == null || !catalog.acceptsProducer(spec, source)) {
 			unknownSource++;
 			validationFailure(new WarningKey(type, source), "Undeclared producer for " + type + ": " + source);
 		}

@@ -1990,6 +1990,7 @@ public final class ModBridgeServer {
 			response.put("taskProgressProbe", agentRuntime().debugCollectResourceState());
 			response.put("chatProbe", agentRuntime().debugChatState());
 			response.put("eventPipeline", agentRuntime().debugEventPipelineState());
+			response.put("eventBus", agentRuntime().debugEventBusState());
 			response.put("timelineTail", agentRuntime().debugTimeline(null).entries());
 			return response;
 		});

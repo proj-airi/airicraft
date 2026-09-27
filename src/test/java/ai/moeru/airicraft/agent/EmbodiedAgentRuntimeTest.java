@@ -102,11 +102,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EmbodiedAgentRuntimeTest {
+	@Test void rawEventsRetainProducerAndRuntimeClock() {
+		try (var harness = new WakeScenarioHarness()) {
+			harness.runtime.onPlayerPickedUpItem("minecraft:apple", 1);
+			var event = harness.runtime.recentEvents(null).events().getFirst();
+			assertEquals("EmbodiedAgentRuntime", event.source());
+			assertEquals(harness.clock.millis(), event.timestampMs());
+			harness.runtime.injectNearbyPlayerForTests("Alice", Vec3d.ZERO);
+			assertEquals("NearbyPlayerTracker", harness.runtime.recentEvents(event.seqNo()).events().stream()
+				.filter(observed -> observed.type().equals("social.player_joined_nearby")).findFirst().orElseThrow().source());
+			harness.event("task.notice", Map.of("message", "test evidence"));
+			assertEquals("test", harness.runtime.recentEvents(null).events().getLast().source());
+			assertEquals(new ai.moeru.airicraft.agent.events.AgentEventBus.AgentEventBusStats(0, 0, 0, 0), harness.runtime.debugEventBusState());
+		}
+	}
+
 	@Test void optionalMiningObservationReachesNextPlannerDecisionContext() {
 		var config = AgentConfig.defaults();
 		var journal = new MiningOpportunityJournal();
@@ -1599,7 +1615,7 @@ class EmbodiedAgentRuntimeTest {
 		Field field = EmbodiedAgentRuntime.class.getDeclaredField("eventPipeline");
 		field.setAccessible(true);
 		var pipeline = (ai.moeru.airicraft.agent.events.AgentEventPipeline) field.get(runtime);
-		pipeline.appendRaw(20, "social.item_offered", payload);
+		runtime.appendEventForTests("social.item_offered", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
 		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
@@ -1620,7 +1636,7 @@ class EmbodiedAgentRuntimeTest {
 		Field field = EmbodiedAgentRuntime.class.getDeclaredField("eventPipeline");
 		field.setAccessible(true);
 		var pipeline = (ai.moeru.airicraft.agent.events.AgentEventPipeline) field.get(runtime);
-		pipeline.appendRaw(20, "player.physical", payload);
+		runtime.appendEventForTests("player.physical", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
 		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
@@ -1631,11 +1647,11 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(trigger.text().contains("-12"));
 		assertTrue(trigger.text().contains("not proof of an involuntary cause"));
 		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.ACTIVE, "hold-1", "nav-1", null));
-		pipeline.appendRaw(21, "player.physical", Map.of("kind", "burning", "phase", "started"));
+		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "started"));
 		assertTrue(pipeline.drain(runtime::createPlannerTriggerForTests).isEmpty());
 		assertEquals(2, pipeline.plannerEventBuffer().query(null).events().size());
 		setReflexSnapshot(runtime, SurvivalReflexSnapshot.idle());
-		pipeline.appendRaw(22, "player.physical", Map.of("kind", "burning", "phase", "ended"));
+		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "ended"));
 		assertEquals(1, pipeline.drain(runtime::createPlannerTriggerForTests).size());
 	}
 
@@ -2097,47 +2113,49 @@ class EmbodiedAgentRuntimeTest {
 
 	@Test
 	void replacementCompletesOnlyTheOldBlockModificationToolResult() throws Exception {
-		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
-		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
-		runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+		assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+			FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
+			EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
 
-		CompletableFuture<String> firstResult = startPendingUseBlock(runtime, executor, 1);
-		WorldTaskRequest firstRequest = executor.lastActiveTask.orElseThrow();
-		activeJobRuntime(runtime).clear();
-		setTaskSnapshot(runtime, TaskSnapshot.idle());
-		setTaskExecutionSnapshot(runtime, TaskExecutionSnapshot.idle());
-		runtime.recordWorldReadForTests(new BlockPos(2, 65, 2));
-		CompletableFuture<String> secondResult = assertTimeoutPreemptively(
-			Duration.ofSeconds(1),
-			() -> runtime.execute(useBlockToolCall("call_use_block_2", 2))
-		);
+			CompletableFuture<String> firstResult = startPendingUseBlock(runtime, executor, 1);
+			WorldTaskRequest firstRequest = executor.lastActiveTask.orElseThrow();
+			activeJobRuntime(runtime).clear();
+			setTaskSnapshot(runtime, TaskSnapshot.idle());
+			setTaskExecutionSnapshot(runtime, TaskExecutionSnapshot.idle());
+			runtime.recordWorldReadForTests(new BlockPos(2, 65, 2));
+			CompletableFuture<String> secondResult = assertTimeout(
+				Duration.ofSeconds(1),
+				() -> runtime.execute(useBlockToolCall("call_use_block_2", 2))
+			);
 
-		assertTrue(firstResult.isDone(), "secondResult=" + (secondResult.isDone() ? secondResult.getNow("<missing>") : "pending"));
-		String firstToolResult = firstResult.getNow("<missing>");
-		assertTrue(firstToolResult.contains("cancelled reason=superseded"), firstToolResult);
-		assertFalse(secondResult.isDone());
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertTrue(firstResult.isDone(), "secondResult=" + (secondResult.isDone() ? secondResult.getNow("<missing>") : "pending"));
+			String firstToolResult = firstResult.getNow("<missing>");
+			assertTrue(firstToolResult.contains("cancelled reason=superseded"), firstToolResult);
+			assertFalse(secondResult.isDone());
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
 
-		executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
-			firstRequest.taskId(),
-			firstRequest.goal(),
-			TaskExecutionState.COMPLETED,
-			"stale first result",
-			null
-		));
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
-		assertFalse(secondResult.isDone());
+			executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
+				firstRequest.taskId(),
+				firstRequest.goal(),
+				TaskExecutionState.COMPLETED,
+				"stale first result",
+				null
+			));
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertFalse(secondResult.isDone());
 
-		WorldTaskRequest currentRequestAfterStaleEvent = executor.lastActiveTask.orElseThrow();
-		executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
-			currentRequestAfterStaleEvent.taskId(),
-			currentRequestAfterStaleEvent.goal(),
-			TaskExecutionState.COMPLETED,
-			"second result",
-			null
-		));
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
-		assertTrue(secondResult.get(1, TimeUnit.SECONDS).contains("second result"));
+			WorldTaskRequest currentRequestAfterStaleEvent = executor.lastActiveTask.orElseThrow();
+			executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
+				currentRequestAfterStaleEvent.taskId(),
+				currentRequestAfterStaleEvent.goal(),
+				TaskExecutionState.COMPLETED,
+				"second result",
+				null
+			));
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertTrue(secondResult.get(1, TimeUnit.SECONDS).contains("second result"));
+		});
 	}
 
 	@Test

@@ -1,36 +1,37 @@
 package ai.moeru.airicraft.agent.session;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventPublisher;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.server.integrated.IntegratedServer;
 
 import java.util.Map;
 
 public final class SessionRuntime {
+	private static final String SOURCE = "SessionRuntime";
 	private SessionSnapshot snapshot = SessionSnapshot.initial();
 
-	public void onClientStarted(MinecraftClient client, long tick, SemanticEventBuffer eventBuffer) {
+	public void onClientStarted(MinecraftClient client, long tick, EventPublisher eventBuffer) {
 		snapshot = deriveSnapshot(client, tick);
 		if (!snapshot.clientBooted()) {
 			snapshot = snapshot.withClientBooted(true);
 		}
 	}
 
-	public SessionSnapshot poll(MinecraftClient client, long tick, SemanticEventBuffer eventBuffer) {
+	public SessionSnapshot poll(MinecraftClient client, long tick, EventPublisher eventBuffer) {
 		SessionSnapshot nextSnapshot = deriveSnapshot(client, tick).withClientBooted(true);
 		emitTransitions(snapshot, nextSnapshot, tick, eventBuffer);
 		snapshot = nextSnapshot;
 		return snapshot;
 	}
 
-	public void onWorldLeave(long tick, SemanticEventBuffer eventBuffer) {
+	public void onWorldLeave(long tick, EventPublisher eventBuffer) {
 		if (snapshot.worldLoaded()) {
 			if (snapshot.mode() == SessionMode.REMOTE_MULTIPLAYER) {
-				eventBuffer.append(tick, "session.connection_lost", Map.of(
+				eventBuffer.from(SOURCE).publish(tick, "session.connection_lost", Map.of(
 					"mode", snapshot.mode().name()
 				));
 			}
-			eventBuffer.append(tick, "session.world_unloaded", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "session.world_unloaded", Map.of(
 				"mode", snapshot.mode().name()
 			));
 		}
@@ -49,28 +50,28 @@ public final class SessionRuntime {
 		return snapshot;
 	}
 
-	public SessionSnapshot onPlayerDied(long tick, SemanticEventBuffer eventBuffer) {
+	public SessionSnapshot onPlayerDied(long tick, EventPublisher eventBuffer) {
 		if (!snapshot.worldLoaded() || snapshot.requiresRespawn()) {
 			return snapshot;
 		}
 		snapshot = snapshot
 			.withPlayerLifecycleState(PlayerLifecycleState.DEAD)
 			.withTickCount(tick);
-		eventBuffer.append(tick, "player.died", Map.of(
+		eventBuffer.from(SOURCE).publish(tick, "player.died", Map.of(
 			"mode", snapshot.mode().name(),
 			"dimensionId", snapshot.dimensionId()
 		));
 		return snapshot;
 	}
 
-	public SessionSnapshot onPlayerRespawned(long tick, SemanticEventBuffer eventBuffer) {
+	public SessionSnapshot onPlayerRespawned(long tick, EventPublisher eventBuffer) {
 		if (!snapshot.requiresRespawn()) {
 			return snapshot;
 		}
 		snapshot = snapshot
 			.withPlayerLifecycleState(PlayerLifecycleState.ALIVE)
 			.withTickCount(tick);
-		eventBuffer.append(tick, "player.respawned", Map.of(
+		eventBuffer.from(SOURCE).publish(tick, "player.respawned", Map.of(
 			"mode", snapshot.mode().name(),
 			"dimensionId", snapshot.dimensionId()
 		));
@@ -111,36 +112,36 @@ public final class SessionRuntime {
 		SessionSnapshot previousSnapshot,
 		SessionSnapshot nextSnapshot,
 		long tick,
-		SemanticEventBuffer eventBuffer
+		EventPublisher eventBuffer
 	) {
 		if (!previousSnapshot.worldLoaded() && nextSnapshot.worldLoaded()) {
-			eventBuffer.append(tick, "session.world_loaded", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "session.world_loaded", Map.of(
 				"mode", nextSnapshot.mode().name(),
 				"dimensionId", nextSnapshot.dimensionId()
 			));
 		}
 
 		if (previousSnapshot.worldLoaded() && !nextSnapshot.worldLoaded()) {
-			eventBuffer.append(tick, "session.world_unloaded", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "session.world_unloaded", Map.of(
 				"mode", previousSnapshot.mode().name()
 			));
 		}
 
 		if (!previousSnapshot.lanPublished() && nextSnapshot.lanPublished()) {
-			eventBuffer.append(tick, "session.lan_opened", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "session.lan_opened", Map.of(
 				"port", nextSnapshot.lanPort()
 			));
 		}
 
 		if (!previousSnapshot.requiresRespawn() && nextSnapshot.requiresRespawn()) {
-			eventBuffer.append(tick, "player.died", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "player.died", Map.of(
 				"mode", nextSnapshot.mode().name(),
 				"dimensionId", nextSnapshot.dimensionId()
 			));
 		}
 
 		if (previousSnapshot.requiresRespawn() && nextSnapshot.playerLifecycleState() == PlayerLifecycleState.ALIVE) {
-			eventBuffer.append(tick, "player.respawned", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "player.respawned", Map.of(
 				"mode", nextSnapshot.mode().name(),
 				"dimensionId", nextSnapshot.dimensionId()
 			));

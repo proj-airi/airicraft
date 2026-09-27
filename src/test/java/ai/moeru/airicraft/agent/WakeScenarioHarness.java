@@ -59,11 +59,11 @@ final class WakeScenarioHarness implements AutoCloseable {
 			backend.closeGate();
 		}
 	}
-	ai.moeru.airicraft.agent.events.SemanticEventBuffer runtimeEvents() {
+	ai.moeru.airicraft.agent.events.EventStream runtimeEvents() {
 		try {
-			var field = EmbodiedAgentRuntime.class.getDeclaredField("eventBuffer");
+			var field = EmbodiedAgentRuntime.class.getDeclaredField("eventBus");
 			field.setAccessible(true);
-			return (ai.moeru.airicraft.agent.events.SemanticEventBuffer) field.get(runtime);
+			return (ai.moeru.airicraft.agent.events.EventStream) field.get(runtime);
 		} catch (ReflectiveOperationException e) { throw new AssertionError(e); }
 	}
 	void advanceWallClock(Duration duration) { clock.advance(duration); }

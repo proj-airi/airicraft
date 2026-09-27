@@ -1,19 +1,20 @@
 package ai.moeru.airicraft.agent.social;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventPublisher;
 
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 public final class ChatIngestService {
+	private static final String SOURCE = "ChatIngestService";
 	public void ingest(
 		String senderName,
 		String plainTextMessage,
 		long tick,
 		NearbyPlayerTracker nearbyPlayerTracker,
 		PrimaryInteractionResolver primaryInteractionResolver,
-		SemanticEventBuffer eventBuffer
+		EventPublisher eventBuffer
 	) {
 		Objects.requireNonNull(senderName, "senderName");
 		Objects.requireNonNull(plainTextMessage, "plainTextMessage");
@@ -22,7 +23,7 @@ public final class ChatIngestService {
 		Objects.requireNonNull(eventBuffer, "eventBuffer");
 
 		String normalizedMessage = normalize(plainTextMessage);
-		eventBuffer.append(tick, "social.player_spoke", Map.of(
+		eventBuffer.from(SOURCE).publish(tick, "social.player_spoke", Map.of(
 			"player", senderName,
 			"message", plainTextMessage,
 			"normalizedMessage", normalizedMessage
@@ -31,7 +32,7 @@ public final class ChatIngestService {
 		nearbyPlayer.ifPresent(player -> primaryInteractionResolver.onPlayerSpoke(player, tick));
 
 		if (isAddressedToAgent(plainTextMessage)) {
-			eventBuffer.append(tick, "social.player_addressed_agent", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "social.player_addressed_agent", Map.of(
 				"player", senderName,
 				"message", plainTextMessage,
 				"normalizedMessage", normalizedMessage
@@ -45,17 +46,17 @@ public final class ChatIngestService {
 		long tick,
 		NearbyPlayerTracker nearbyPlayerTracker,
 		PrimaryInteractionResolver primaryInteractionResolver,
-		SemanticEventBuffer eventBuffer
+		EventPublisher eventBuffer
 	) {
 		ingest(senderName, plainTextMessage, tick, nearbyPlayerTracker, primaryInteractionResolver, eventBuffer);
 	}
 
-	public void ingestSystemMessage(String plainTextMessage, long tick, SemanticEventBuffer eventBuffer) {
+	public void ingestSystemMessage(String plainTextMessage, long tick, EventPublisher eventBuffer) {
 		Objects.requireNonNull(plainTextMessage, "plainTextMessage");
 		Objects.requireNonNull(eventBuffer, "eventBuffer");
 
 		String normalizedMessage = normalize(plainTextMessage);
-		eventBuffer.append(tick, "social.system_message", Map.of(
+		eventBuffer.from(SOURCE).publish(tick, "social.system_message", Map.of(
 			"message", plainTextMessage,
 			"normalizedMessage", normalizedMessage
 		));

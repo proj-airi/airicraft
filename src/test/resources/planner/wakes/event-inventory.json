@@ -965,6 +965,7 @@
     {
       "type": "task.notice",
       "producers": [
+        "DialogueRuntime",
         "EmbodiedAgentRuntime"
       ],
       "profile": null,

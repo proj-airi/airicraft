@@ -13,6 +13,15 @@ class AgentEventBusTest {
 	private static final String TYPE = "task.started";
 	private static final String SOURCE = "EmbodiedAgentRuntime";
 
+	@Test void testProducerAcceptsOnlyDeclaredTypesWithoutChangingInventory() {
+		var bus = bus(true);
+		assertEquals("test", bus.from("test").publish(1, TYPE, Map.of()).source());
+		assertThrows(IllegalArgumentException.class, () -> bus.from("test").publish(2, "missing.type", Map.of()));
+		assertEquals(1, bus.latestSeqNo());
+		assertEquals(0, bus.stats().unknownSource());
+		assertTrue(EventCatalog.defaults().specs().stream().noneMatch(spec -> spec.producers().contains("test")));
+	}
+
 	@Test
 	void strictValidationRejectsBeforeAppendAndCountsEachViolation() {
 		var bus = bus(true);
