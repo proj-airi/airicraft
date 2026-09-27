@@ -1,5 +1,7 @@
-package ai.moeru.airicraft.agent.events;
+package ai.moeru.airicraft.agent.food;
 
+import ai.moeru.airicraft.agent.events.EventCause;
+import ai.moeru.airicraft.agent.events.SemanticEvent;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
