@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent;
 
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
+import ai.moeru.airicraft.agent.events.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.work.*;
 import com.google.gson.JsonParser;
 import java.util.Map;
@@ -64,9 +65,24 @@ class WakeDefectProbeTest {
 	}
 
 	/** Synthetic single-tick flood reproduces the ring-state dependency, not its frequency in gameplay. */
-	@Test void d6_CONFIRMED_evictionLosesEatingCompletion() throws Exception {
+	@Test void d6_FIXED_eatingCompletesAfterLogEviction() throws Exception {
 		assertEquals(WorkSnapshot.State.SUCCEEDED, eatingAfterFlood(0));
-		assertEquals(WorkSnapshot.State.RUNNING, eatingAfterFlood(512));
+		assertEquals(WorkSnapshot.State.SUCCEEDED, eatingAfterFlood(512));
+	}
+	@Test void d6_foodOutcomesClearAtWorldLeaveAndShutdown() throws Exception {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			var field = EmbodiedAgentRuntime.class.getDeclaredField("foodOutcomes"); field.setAccessible(true);
+			var outcomes = (FoodOutcomeIndex) field.get(h.runtime);
+			h.event("food.eaten", Map.of("itemId", "minecraft:bread"));
+			assertTrue(outcomes.firstAfter(0).isPresent());
+			h.runtime.onWorldLeave();
+			assertTrue(outcomes.firstAfter(0).isEmpty());
+			h.event("food.eat_failed", Map.of("itemId", "minecraft:bread"));
+			assertTrue(outcomes.firstAfter(0).isPresent());
+			h.runtime.shutdown();
+			assertTrue(outcomes.firstAfter(0).isEmpty());
+		}
 	}
 	private WorkSnapshot.State eatingAfterFlood(int count) throws Exception {
 		try (var h = new WakeScenarioHarness()) {
