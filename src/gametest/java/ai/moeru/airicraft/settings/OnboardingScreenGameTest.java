@@ -57,8 +57,8 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			context.clickScreenButton("Local Codex");
 			String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
 			context.runOnClient(client -> {
-				field(client.currentScreen, "Provider URL").setText(url);
-				field(client.currentScreen, "API key").setText("onboarding-test-secret");
+				paste(client, "Provider URL", url);
+				paste(client, "API key", "onboarding-test-secret");
 			});
 			context.waitFor(client -> button(client.currentScreen, "▼").active, 200);
 			if (lists.get() != 1) throw new AssertionError("Model discovery was not debounced");
@@ -130,6 +130,29 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> AiricraftClient.runtimeController().reload());
 		}
 	}
+	private static void paste(net.minecraft.client.MinecraftClient client, String label, String value) {
+		String previous = client.keyboard.getClipboard();
+		try {
+			var input = field(client.currentScreen, label);
+			client.currentScreen.setFocused(input);
+			input.setFocused(true);
+			input.setText("replace this");
+			int modifier = net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+				? org.lwjgl.glfw.GLFW.GLFW_MOD_SUPER : org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL;
+			client.keyboard.setClipboard(value);
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
+			if (!input.getText().equals(value)) throw new AssertionError("Shortcut paste did not replace the selection in " + label);
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_C, 0, modifier);
+			if (!client.keyboard.getClipboard().equals(value)) throw new AssertionError("Shortcut copy failed");
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_X, 0, modifier);
+			if (!input.getText().isEmpty()) throw new AssertionError("Shortcut cut failed");
+			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
+			if (!input.getText().equals(value)) throw new AssertionError("Shortcut paste after cut failed");
+		} finally { client.keyboard.setClipboard(previous); }
+	}
+
 	private static void testConnection(ClientGameTestContext context) {
 		context.clickScreenButton("Test connection");
 		context.waitFor(client -> ((OnboardingScreen) client.currentScreen).checksFinished(), 200);

@@ -17,7 +17,7 @@ final class SecretEntry extends StringListEntry {
 	SecretEntry(Text label, String value, BooleanSupplier reveal, Consumer<String> save) {
 		super(label, value, Text.translatable("controls.reset"), () -> "", save);
 		TextFieldWidget previous = textFieldWidget;
-		textFieldWidget = new TextFieldWidget(MinecraftClient.getInstance().textRenderer,
+		textFieldWidget = new SettingsTextField(MinecraftClient.getInstance().textRenderer,
 			previous.getX(), previous.getY(), previous.getWidth(), previous.getHeight(), label) {
 			@Override
 			protected MutableText getNarrationMessage() {

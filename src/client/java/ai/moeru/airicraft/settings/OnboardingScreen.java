@@ -135,7 +135,7 @@ public final class OnboardingScreen extends Screen {
 	}
 	private TextFieldWidget field(String label, String initial, int y, int fieldWidth, boolean secret, Consumer<String> changed) {
 		Text name = Text.literal(label);
-		var field = new TextFieldWidget(textRenderer, left + 90, y, fieldWidth, 20, name) {
+		var field = new SettingsTextField(textRenderer, left + 90, y, fieldWidth, 20, name) {
 			@Override protected MutableText getNarrationMessage() {
 				return secret && !reveal ? name.copy().append(" — hidden") : super.getNarrationMessage();
 			}
