@@ -73,7 +73,7 @@ import ai.moeru.airicraft.agent.events.EventPolicyState;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.EventCatalog;
 import ai.moeru.airicraft.agent.events.EventCause;
-import ai.moeru.airicraft.agent.events.FoodOutcomeIndex;
+import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;

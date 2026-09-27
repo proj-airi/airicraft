@@ -1,5 +1,6 @@
-package ai.moeru.airicraft.agent.events;
+package ai.moeru.airicraft.agent.food;
 
+import ai.moeru.airicraft.agent.events.SemanticEvent;
 import java.util.ArrayDeque;
 import java.util.Optional;
 import java.util.function.Consumer;

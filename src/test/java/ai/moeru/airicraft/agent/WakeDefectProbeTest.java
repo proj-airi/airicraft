@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent;
 
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
-import ai.moeru.airicraft.agent.events.FoodOutcomeIndex;
+import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.work.*;
 import com.google.gson.JsonParser;
 import java.util.Map;
