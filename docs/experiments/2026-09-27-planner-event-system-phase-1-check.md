@@ -2,6 +2,8 @@
 
 **Status:** Phase 1 source and smoke verification passed; evaluation parity did not. Seven scenarios reached terminal reports and two were manually interrupted after sustained, captured stalls. Two of the seven request rates exceed the unchanged baseline bounds. The full nine-scenario tolerance gate remains unmet.
 
+**Paired follow-up:** A same-host, same-JVM A–B–B–A comparison of PR #81 and the updated PR #88 head is recorded in [the paired A/B report](2026-09-27-planner-event-system-paired-ab.md). It reports wall-clock rates alongside rates over identical server-tick windows. Use that matched experiment for these three scenarios rather than treating this older cross-session rate comparison as causal evidence. The complete nine-scenario gate remains open.
+
 ## Build and characterization
 
 Source is `9a4e317f` before this documentation commit. The build JVM was OpenJDK 26.0.2; compilation and tests used the configured JBR 21 toolchain. One combined `./gradlew --no-daemon -Pairicraft.includeEvaluator=true build :addons:evaluator:remapJar :compat:journeymap:remapJar :compat:rei:remapJar :prepareHotswapProductionConfigs` invocation passed in 48 seconds, preparing the production and hot-swap artifacts before either client run. Root tests: 1,770 run, 3 skipped, 0 failures/errors. Wrapper: 95; evaluator: 30; JourneyMap compatibility: 20; REI compatibility: no tests. All reported failures/errors were zero. The earlier Python ledger suite passed 95 tests; no file under `scripts/` changed after that run. Full logs and XML-derived counts are retained locally under `eval-output/phase1-event-system-check/build/`.
