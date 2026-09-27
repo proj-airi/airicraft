@@ -3518,6 +3518,43 @@ class EmbodiedAgentRuntimeTest {
 		}
 	}
 
+	@Test
+	void travelViolationWithoutJobStillPublishesAndWakesPlanner() throws Exception {
+		try (var harness = new WakeScenarioHarness()) {
+			harness.executor.forcedSnapshot = new TaskExecutionSnapshot(TaskExecutionState.RUNNING,
+				"non-job-task", null, null, null, null, null);
+			harness.tick(1);
+			assertTrue(harness.runtime.activeJob().isIdle());
+			assertEquals(TaskExecutionState.RUNNING, harness.runtime.snapshot().taskExecution().state());
+
+			Object world = new Object();
+			var stateField = ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.class.getDeclaredField("state");
+			stateField.setAccessible(true);
+			Object originalState = stateField.get(null);
+			var stateType = Class.forName("ai.moeru.airicraft.agent.spatial.WorldTravelPolicy$State");
+			var constructor = stateType.getDeclaredConstructor(Object.class,
+				ai.moeru.airicraft.agent.spatial.TravelBounds.class,
+				ai.moeru.airicraft.agent.spatial.TravelBounds.class, String.class);
+			constructor.setAccessible(true);
+			stateField.set(null, constructor.newInstance(world,
+				new ai.moeru.airicraft.agent.spatial.TravelBounds(0, 0, 0, 1, 100, 1), null, ""));
+			try {
+				var method = EmbodiedAgentRuntime.class.getDeclaredMethod("stopWorkOutsideTravelBounds", Object.class, BlockPos.class);
+				method.setAccessible(true);
+				method.invoke(harness.runtime, world, new BlockPos(5, 64, 5));
+			} finally {
+				stateField.set(null, originalState);
+			}
+			var violation = harness.runtime.recentEvents(null).events().stream()
+				.filter(event -> "work.travel_restriction_violated".equals(event.type())).findFirst().orElseThrow();
+			assertNull(violation.cause());
+			harness.tick(1);
+			assertTrue(harness.runtime.debugTimeline(null).entries().stream()
+				.anyMatch(entry -> "planner_wake".equals(entry.domain()) && "submitted".equals(entry.action())
+					&& ((Number) entry.payload().get("eventSequence")).longValue() == violation.seqNo()));
+		}
+	}
+
 
 	private static WorldTaskRequest runtimeTaskRequest(EmbodiedAgentRuntime runtime, FakeWorldTaskExecutor executor) {
 		runtime.onClientTick(null);

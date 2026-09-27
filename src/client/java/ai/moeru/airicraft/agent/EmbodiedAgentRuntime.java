@@ -2791,9 +2791,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void stopWorkOutsideTravelBounds(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null || !activeTaskInProgress()) return;
-		var pos = client.player.getBlockPos();
-		if (ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.permitsMovement(client.world,pos.getX(),pos.getY(),pos.getZ(),pos.getX(),pos.getY(),pos.getZ(),false)) return;
+		if (client == null || client.player == null || client.world == null) return;
+		stopWorkOutsideTravelBounds(client.world, client.player.getBlockPos());
+	}
+
+	private void stopWorkOutsideTravelBounds(Object world, BlockPos pos) {
+		if (!activeTaskInProgress()) return;
+		if (ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.permitsMovement(world,pos.getX(),pos.getY(),pos.getZ(),pos.getX(),pos.getY(),pos.getZ(),false)) return;
 		var job = activeJobRuntime.current();
 		cancelTask("travel_restriction_violated");
 		var evidence = new LinkedHashMap<String,Object>();
@@ -2803,7 +2807,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		evidence.put("bounds", ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.snapshot());
 		evidence.put("cause", "Observed outside restriction; displacement cause is not inferred. No recovery movement started.");
 		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount,"work.travel_restriction_violated",evidence,
-			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
+			job.isIdle() || job.jobId() == null || job.jobId().isBlank() ? null
+				: EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 		dialogueRuntime.queueTaskWakeup(null,tickCount,event.seqNo());
 	}
 
