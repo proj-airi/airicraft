@@ -4,39 +4,28 @@ import ai.moeru.airicraft.AiricraftClient;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 
-/** Rendered lifecycle checks, using the same isolated game directory as the settings smoke. */
+/** Exercises the rendered form against a real local provider, without touching user credentials. */
 public final class OnboardingScreenGameTest implements FabricClientGameTest {
 	@Override public void runTest(ClientGameTestContext context) {
 		try {
 			var directory = FabricLoader.getInstance().getConfigDir().resolve("airicraft");
 			context.waitForScreen(OnboardingScreen.class);
 			context.takeScreenshot("airicraft-onboarding-first-run");
-			context.runOnClient(client -> client.currentScreen.mouseScrolled(100, 100, 0, -20));
+			assertFinish(context, false);
+			context.clickScreenButton("Mods");
 			context.takeScreenshot("airicraft-onboarding-compatibility");
-			context.runOnClient(client -> {
-				var finish = client.currentScreen.children().stream().filter(child -> child instanceof ButtonWidget)
-					.map(child -> (ButtonWidget) child).filter(button -> button.getMessage().getString().equals("Finish setup"))
-					.findFirst().orElseThrow();
-				if (finish.active) throw new AssertionError("Unverified setup can be completed");
-			});
-			context.clickScreenButton("Configure providers");
-			context.waitForScreen(AiricraftSettingsScreen.class);
-			context.clickScreenButton("gui.cancel");
-			context.waitForScreen(OnboardingScreen.class);
-			context.clickScreenButton("Check connections");
-			context.waitFor(client -> ((OnboardingScreen) client.currentScreen).checksFinished(), 200);
-			context.takeScreenshot("airicraft-onboarding-unconfigured");
-			context.clickScreenButton("Set up later");
+			context.clickScreenButton("Later");
 			context.waitForScreen(TitleScreen.class);
 			if (!OnboardingState.required(SettingsDraft.open(directory))) throw new AssertionError("Skip marked setup complete");
 			context.clickScreenButton("button.airicraft.settings");
 			context.waitForScreen(AiricraftSettingsScreen.class);
 			context.clickScreenButton("Setup & checks");
 			context.waitForScreen(OnboardingScreen.class);
-			context.takeScreenshot("airicraft-onboarding-reopened");
 			successfulSetup(context, directory);
 			context.waitForScreen(AiricraftSettingsScreen.class);
 			context.clickScreenButton("gui.cancel");
@@ -47,59 +36,95 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 	private static void successfulSetup(ClientGameTestContext context, java.nio.file.Path directory) throws Exception {
 		var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
 		var images = new java.util.concurrent.atomic.AtomicInteger();
+		var lists = new java.util.concurrent.atomic.AtomicInteger();
+		server.createContext("/v1/models", exchange -> {
+			lists.incrementAndGet();
+			byte[] response = "{\"data\":[{\"id\":\"test-planner\"},{\"id\":\"test-vision\"}]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, response.length); exchange.getResponseBody().write(response); exchange.close();
+		});
 		server.createContext("/v1/chat/completions", exchange -> {
 			String request = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
 			if (request.contains("data:image/png;base64,")) images.incrementAndGet();
 			byte[] response = "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-			exchange.sendResponseHeaders(200, response.length);
-			exchange.getResponseBody().write(response);
-			exchange.close();
+			exchange.sendResponseHeaders(200, response.length); exchange.getResponseBody().write(response); exchange.close();
 		});
 		server.start();
 		var file = directory.resolve("agent.yml");
 		String original = java.nio.file.Files.readString(file);
 		try {
-			context.clickScreenButton("Configure providers");
-			context.waitForScreen(AiricraftSettingsScreen.class);
+			context.clickScreenButton("API provider");
+			context.takeScreenshot("airicraft-onboarding-codex");
+			context.clickScreenButton("Local Codex");
+			String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
 			context.runOnClient(client -> {
-				var screen = (AiricraftSettingsScreen) client.currentScreen;
-				String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
-				field(screen, "Provider URL").setValue(url);
-				field(screen, "API key").setValue("onboarding-test-secret");
-				field(screen, "Model").setValue("test-planner");
-				field(screen, "Vision provider URL").setValue(url);
-				field(screen, "Vision API key").setValue("onboarding-test-secret");
-				field(screen, "Vision model").setValue("test-vision");
+				field(client.currentScreen, "Provider URL").setText(url);
+				field(client.currentScreen, "API key").setText("onboarding-test-secret");
 			});
-			context.waitTick();
-			context.clickScreenButton("airicraft.settings.save");
-			context.waitForScreen(OnboardingScreen.class);
-			context.clickScreenButton("Check connections");
-			context.waitFor(client -> ((OnboardingScreen) client.currentScreen).checksFinished(), 200);
+			context.waitFor(client -> button(client.currentScreen, "▼").active, 200);
+			if (lists.get() != 1) throw new AssertionError("Model discovery was not debounced");
+			context.clickScreenButton("▼");
+			context.takeScreenshot("airicraft-onboarding-model-dropdown");
+			context.runOnClient(client -> field(client.currentScreen, "Model").setText("planner"));
+			context.clickScreenButton("test-planner");
+			context.runOnClient(client -> {
+				if (!field(client.currentScreen, "Model").getText().equals("test-planner")) throw new AssertionError("Model selection did not fill field");
+			});
+			testConnection(context);
+			assertFinish(context, true);
+			// Manual model entry remains available, and any edit invalidates inference proof.
+			context.runOnClient(client -> field(client.currentScreen, "Model").setText("manual-model"));
+			assertFinish(context, false);
+			testConnection(context);
+			context.runOnClient(client -> field(client.currentScreen, "API key").setText("updated-test-secret"));
+			assertFinish(context, false);
+			testConnection(context);
+			context.clickScreenButton("Vision");
+			context.clickScreenButton("Separate vision: off");
+			assertFinish(context, false);
+			context.runOnClient(client -> {
+				// Listing is unsupported at this URL; inference still works with a manual ID.
+				field(client.currentScreen, "Provider URL").setText(url + "/manual");
+				field(client.currentScreen, "API key").setText("onboarding-test-secret");
+				field(client.currentScreen, "Model").setText("test-vision");
+			});
+			server.createContext("/v1/manual/chat/completions", exchange -> {
+				String request = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+				if (request.contains("data:image/png;base64,")) images.incrementAndGet();
+				byte[] response = "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+				exchange.sendResponseHeaders(200, response.length); exchange.getResponseBody().write(response); exchange.close();
+			});
+			testConnection(context);
+			assertFinish(context, true);
+			if (!java.nio.file.Files.readString(file).equals(original)) throw new AssertionError("Editing or testing wrote settings");
 			context.runOnClient(client -> client.currentScreen.resize(client, client.currentScreen.width, client.currentScreen.height));
-			context.runOnClient(client -> {
-				client.options.getGuiScale().setValue(1);
-				client.onResolutionChanged();
-			});
+			assertFinish(context, true);
+			context.takeScreenshot("airicraft-onboarding-vision-ready");
+			context.clickScreenButton("Planner");
 			context.takeScreenshot("airicraft-onboarding-ready");
 			if (images.get() != 1) throw new AssertionError("Separate vision was not checked with a test image");
-			context.clickScreenButton("Finish setup");
+			context.clickScreenButton("Save & finish");
 			context.waitForScreen(AiricraftSettingsScreen.class);
-			if (OnboardingState.required(SettingsDraft.open(directory))) throw new AssertionError("Successful setup not persisted");
+			var saved = SettingsDraft.open(directory);
+			if (OnboardingState.required(saved)) throw new AssertionError("Successful setup not persisted");
+			if (!saved.get("agent.yml", "model", "").equals("manual-model")) throw new AssertionError("Manual model not saved");
 		} finally {
-			server.stop(0);
-			java.nio.file.Files.writeString(file, original);
+			server.stop(0); java.nio.file.Files.writeString(file, original);
 			context.runOnClient(client -> AiricraftClient.runtimeController().reload());
 		}
 	}
-
-	private static me.shedaniel.clothconfig2.gui.entries.StringListEntry field(AiricraftSettingsScreen screen, String label) {
-		return (me.shedaniel.clothconfig2.gui.entries.StringListEntry) screen.getCategorizedEntries().values().stream()
-			.flatMap(java.util.Collection::stream).flatMap(OnboardingScreenGameTest::flatten)
-			.filter(entry -> entry.getFieldName().getString().equals(label)).findFirst().orElseThrow();
+	private static void testConnection(ClientGameTestContext context) {
+		context.clickScreenButton("Test connection");
+		context.waitFor(client -> ((OnboardingScreen) client.currentScreen).checksFinished(), 200);
 	}
-	private static java.util.stream.Stream<me.shedaniel.clothconfig2.api.AbstractConfigEntry<?>> flatten(me.shedaniel.clothconfig2.api.AbstractConfigEntry<?> entry) {
-		if (entry instanceof me.shedaniel.clothconfig2.gui.entries.SubCategoryListEntry category) return category.getValue().stream().flatMap(OnboardingScreenGameTest::flatten);
-		return java.util.stream.Stream.of(entry);
+	private static void assertFinish(ClientGameTestContext context, boolean expected) {
+		context.runOnClient(client -> { if (button(client.currentScreen, "Save & finish").active != expected) throw new AssertionError("Wrong completion state"); });
+	}
+	private static ButtonWidget button(Screen screen, String label) {
+		return screen.children().stream().filter(child -> child instanceof ButtonWidget).map(child -> (ButtonWidget) child)
+			.filter(button -> button.getMessage().getString().equals(label)).findFirst().orElseThrow();
+	}
+	private static TextFieldWidget field(Screen screen, String label) {
+		return screen.children().stream().filter(child -> child instanceof TextFieldWidget).map(child -> (TextFieldWidget) child)
+			.filter(field -> field.getMessage().getString().equals(label)).findFirst().orElseThrow();
 	}
 }

@@ -4,19 +4,24 @@ Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for aut
 
 ## Settings
 
-On first launch, Airicraft opens setup before the main menu. Choose **Configure
-providers** to enter an OpenAI-compatible provider or select **Local Codex**,
-which uses an installed Codex executable and its existing sign-in. The Vision
-tab configures an optional separate vision provider. Save, then use **Check
-connections** to send small inference requests; these can consume provider
-credits. Vision checks send a built-in test image, not a game screenshot.
+On first launch, Airicraft opens setup before the main menu. The **Planner**
+tab keeps provider URL, masked API key, model and **Test connection** together.
+Available API models load automatically after you pause typing credentials;
+open the dropdown and type to filter or scroll to browse. You can always enter
+a model ID manually, including when a provider does not support model listing.
+Switch **API provider** to **Local Codex** to use an installed executable and
+its existing sign-in. The **Vision** tab adds an optional separate provider.
 
-Setup shows JourneyMap and REI versions, missing compatibility add-ons, and
-whether each integration has initialized. World-dependent features still need
-a loaded world. **Finish setup** is available after the configured connections
-pass. **Set up later** leaves setup incomplete so it returns next launch.
-After completion, reopen it through **Airicraft Settings → Setup & checks**.
-Save or cancel any pending settings edits before opening connection checks.
+Connection tests send small inference requests and may consume provider credits.
+Image checks use a built-in test image. Editing credentials or the model clears
+the previous result. Settings remain unsaved until **Save & finish**, which is
+available after the configured connections pass. **Later** discards edits and
+leaves setup incomplete so it returns next launch.
+
+The **Mods** tab shows JourneyMap and REI versions, missing compatibility add-ons,
+and integration state. World-dependent features still need a loaded world.
+After completion, reopen setup through **Airicraft Settings → Setup & checks**.
+Save or cancel any pending settings edits before opening setup.
 
 Click **Airicraft** on the title or pause screen, press **F8** in-game (rebindable
 under Controls), or run `/airicraft config`. With Mod Menu installed, use
