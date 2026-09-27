@@ -80,7 +80,8 @@
       "tick": 2,
       "triggerTypes": [
         "IDLE_THINK"
-      ]
+      ],
+      "wakeTick": 2
     }
   ]
 }

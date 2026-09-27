@@ -81,22 +81,6 @@
   "scenario": "task_wakeups_superseded_by_guidance",
   "wakeAudit": [
     {
-      "coalescingKeys": [],
-      "kind": "submitted",
-      "origins": [
-        "DIRECT_GUIDANCE"
-      ],
-      "owner": "controller",
-      "path": "W1",
-      "speakers": [
-        "Alex"
-      ],
-      "tick": 1,
-      "triggerTypes": [
-        "CHAT"
-      ]
-    },
-    {
       "coalescingKeys": [
         "system"
       ],
@@ -114,7 +98,25 @@
       "tick": 1,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 1
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 1
     }
   ]
 }

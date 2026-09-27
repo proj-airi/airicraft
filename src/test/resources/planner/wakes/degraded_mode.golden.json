@@ -73,23 +73,6 @@
   "wakeAudit": [
     {
       "coalescingKeys": [],
-      "kind": "submitted",
-      "origins": [
-        "DIRECT_GUIDANCE"
-      ],
-      "owner": "controller",
-      "path": "W1",
-      "serverTick": -1,
-      "speakers": [
-        "Alex"
-      ],
-      "tick": 4,
-      "triggerTypes": [
-        "CHAT"
-      ]
-    },
-    {
-      "coalescingKeys": [],
       "gate": "G8.degraded",
       "kind": "dropped",
       "origins": [
@@ -104,7 +87,8 @@
       "tick": 4,
       "triggerTypes": [
         "CHAT"
-      ]
+      ],
+      "wakeTick": 4
     }
   ]
 }

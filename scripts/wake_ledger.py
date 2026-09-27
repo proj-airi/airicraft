@@ -153,7 +153,7 @@ def build_ledger(run_dir):
         if entry.get("action") != "dropped":
             continue
         fields = entry.get("payload") or {}
-        drops.append({"entryId": entry["entryId"], "agentTick": entry.get("tick"),
+        drops.append({"entryId": entry["entryId"], "agentTick": entry.get("tick"), "wakeTick": fields.get("wakeTick"),
                       "serverTick": fields.get("serverTick"), "path": fields.get("path"),
                       "owner": fields.get("owner"), "gate": fields.get("gate"),
                       "eventSequence": fields.get("eventSequence"),
@@ -214,7 +214,7 @@ def build_ledger(run_dir):
                 if in_window:
                     attributed.append({"entryId": entry["entryId"], "path": fields.get("path", "unknown"),
                                        "submittedAttempt": True,
-                                       "owner": fields.get("owner"), "agentTick": wake_agent,
+                                       "owner": fields.get("owner"), "agentTick": wake_agent, "wakeTick": fields.get("wakeTick"),
                                        "serverTick": wake_server, "triggerTypes": fields.get("triggerTypes", []),
                                        "origins": fields.get("origins", []), "coalescingKeys": fields.get("coalescingKeys", []),
                                        "speakers": fields.get("speakers", []), "eventSequence": fields.get("eventSequence")})

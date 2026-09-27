@@ -28,6 +28,7 @@ final class WakeScenarioHarness implements AutoCloseable {
 			new ai.moeru.airicraft.agent.tasks.MiningOpportunityPolicyState(), new ai.moeru.airicraft.agent.tasks.MiningOpportunityJournal(),
 			ignored -> backend, clock);
 		runtime.overrideSessionSnapshotForTests(new SessionSnapshot(SessionMode.REMOTE_MULTIPLAYER, true, true, "minecraft:overworld", false, 0, 0));
+		backend.closeGate();
 	}
 	void tick(int count) {
 		for (int i = 0; i < count; i++) {
@@ -39,14 +40,23 @@ final class WakeScenarioHarness implements AutoCloseable {
 			settle();
 		}
 	}
+	/**
+	 * Waits for running provider calls and tool futures to finish without consuming their results. The next
+	 * {@code onClientTick} applies them through the runtime's own poll, with its real session, goal and task
+	 * context, exactly as in production. Polling here would apply results off-tick with fabricated context.
+	 * Provider calls are released only here, so a response never races the poll of the tick that submitted it.
+	 */
 	void settle() {
 		long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
 		var dialogue = runtime.dialogueRuntimeForTests();
-		while (dialogue.plannerDebugSnapshot().inFlight() && !backend.held()) {
-			var response = dialogue.poll(tick, runtimeEvents());
-			if (response != null) runtime.injectDialogueResponseForTests(response);
-			if (System.nanoTime() > deadline) throw new AssertionError("Planner did not settle at tick " + tick);
-			Thread.yield();
+		backend.openGate();
+		try {
+			while (dialogue.plannerWorkRunning() && !backend.held()) {
+				if (System.nanoTime() > deadline) throw new AssertionError("Planner did not settle at tick " + tick);
+				Thread.yield();
+			}
+		} finally {
+			backend.closeGate();
 		}
 	}
 	ai.moeru.airicraft.agent.events.SemanticEventBuffer runtimeEvents() {
@@ -74,5 +84,5 @@ final class WakeScenarioHarness implements AutoCloseable {
 		return WakeTranscript.capture(name, backend.requests(), runtime.debugTimeline(null).entries(),
 			runtime.recentEvents(null).events(), runtime.dialogueRuntimeForTests().allAvailableTools());
 	}
-	@Override public void close() { runtime.shutdown(); }
+	@Override public void close() { backend.openGate(); runtime.shutdown(); }
 }

@@ -62,7 +62,8 @@
       "tick": 1,
       "triggerTypes": [
         "CHAT"
-      ]
+      ],
+      "wakeTick": 1
     }
   ]
 }

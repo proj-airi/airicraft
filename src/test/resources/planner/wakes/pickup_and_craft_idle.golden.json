@@ -156,7 +156,8 @@
       "tick": 1,
       "triggerTypes": [
         "PICKUP"
-      ]
+      ],
+      "wakeTick": 1
     },
     {
       "coalescingKeys": [
@@ -175,7 +176,8 @@
       "tick": 11,
       "triggerTypes": [
         "CRAFT"
-      ]
+      ],
+      "wakeTick": 11
     }
   ]
 }

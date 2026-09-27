@@ -108,7 +108,8 @@
       "tick": 1,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 1
     }
   ]
 }

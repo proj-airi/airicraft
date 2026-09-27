@@ -113,7 +113,7 @@
         "workId": "GRAPH:action-graph-<uuid>"
       },
       "seqNo": 7,
-      "tick": 1,
+      "tick": 2,
       "type": "work.changed"
     }
   ],
@@ -191,7 +191,8 @@
       "tick": 1,
       "triggerTypes": [
         "CHAT"
-      ]
+      ],
+      "wakeTick": 1
     },
     {
       "coalescingKeys": [
@@ -210,7 +211,8 @@
       "tick": 1,
       "triggerTypes": [
         "IDLE_THINK"
-      ]
+      ],
+      "wakeTick": 1
     }
   ]
 }

@@ -47,7 +47,8 @@
   "wakeAudit": [
     {
       "coalescingKeys": [],
-      "kind": "submitted",
+      "gate": "G8.external_driver",
+      "kind": "dropped",
       "origins": [
         "DIRECT_GUIDANCE"
       ],
@@ -60,13 +61,15 @@
       "tick": 1,
       "triggerTypes": [
         "CHAT"
-      ]
+      ],
+      "wakeTick": 1
     },
     {
       "coalescingKeys": [
         "pickup:minecraft:oak_log"
       ],
-      "kind": "submitted",
+      "gate": "G8.external_driver",
+      "kind": "dropped",
       "origins": [
         "AUTONOMOUS"
       ],
@@ -79,7 +82,8 @@
       "tick": 1,
       "triggerTypes": [
         "PICKUP"
-      ]
+      ],
+      "wakeTick": 1
     }
   ]
 }

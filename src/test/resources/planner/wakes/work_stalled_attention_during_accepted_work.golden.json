@@ -111,7 +111,8 @@
       "tick": 1,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 1
     },
     {
       "coalescingKeys": [
@@ -130,7 +131,8 @@
       "tick": 2,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 2
     }
   ]
 }

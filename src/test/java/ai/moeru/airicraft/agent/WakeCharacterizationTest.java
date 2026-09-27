@@ -112,7 +112,7 @@ class WakeCharacterizationTest {
 				"the held first generation must be superseded by direct guidance");
 			h.tick(20);
 			held.complete(ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.yieldResponse());
-			h.settle();
+			h.settle(); h.tick(1);
 			assertEquals(2, h.backend.requests().size());
 			assertTrue(h.backend.requests().get(1).request().generation() > h.backend.requests().getFirst().request().generation());
 			var secondDelta = h.transcript("addressed_chat_while_turn_in_flight").data().getAsJsonArray("requests")
@@ -180,7 +180,7 @@ class WakeCharacterizationTest {
 				ai.moeru.airicraft.agent.actions.ActionGoal.inventoryItem("minecraft:bread", 1), "test");
 			assertEquals(ai.moeru.airicraft.agent.actions.ActionGraphAdmission.STARTED, started.admission());
 			held.complete(ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.yieldResponse());
-			h.settle();
+			h.settle(); h.tick(1);
 			assertEquals(1, h.backend.requests().size(), "new action goal should invalidate the queued idle request");
 			h.transcript("idle_think_invalidated_by_action_goal").assertMatchesGolden("idle_think_invalidated_by_action_goal");
 		}

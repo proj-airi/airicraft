@@ -156,10 +156,11 @@ class WakeLedgerTest(unittest.TestCase):
             (target / "events.jsonl").write_text("\n")
             (target / "llm-calls.jsonl").write_text("\n")
             entries = [
-                (1, "planner_wake", "submitted", {}, {"path": "W1", "serverTick": 100}),
+                (1, "planner_wake", "submitted", {}, {"path": "W1", "serverTick": 100, "wakeTick": 49}),
                 (2, "planner", "submission", {"generation": 1, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
-                (3, "planner_wake", "submitted", {}, {"path": "W2", "serverTick": 100}),
-                (4, "planner", "submission", {"generation": 2, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
+                (3, "planner_wake", "dropped", {}, {"path": "W1", "serverTick": 100, "gate": "G8.degraded", "wakeTick": 50}),
+                (4, "planner_wake", "submitted", {}, {"path": "W2", "serverTick": 100}),
+                (5, "planner", "submission", {"generation": 2, "attempt": 1, "phase": "PLANNER_REQUEST"}, {}),
             ]
             (target / "debug-timeline.jsonl").write_text("".join(json.dumps({"entry": {"entryId": entry_id,
                 "tick": 50, "domain": domain, "action": action, "correlation": correlation,
@@ -169,6 +170,9 @@ class WakeLedgerTest(unittest.TestCase):
                               for request in ledger["requests"]], [["W1"], ["W2"]])
             self.assertEqual([request["attributionBasis"] for request in ledger["requests"]],
                              ["submission_entry_id", "submission_entry_id"])
+            # Recording tick and wake-creation tick are reported separately; a final-gate drop is never a wake.
+            self.assertEqual(ledger["requests"][0]["wakes"][0]["wakeTick"], 49)
+            self.assertEqual([(drop["gate"], drop["wakeTick"]) for drop in ledger["drops"]], [("G8.degraded", 50)])
 
     def test_missing_planner_calls_is_incomplete_not_zero(self):
         with tempfile.TemporaryDirectory() as tmp:

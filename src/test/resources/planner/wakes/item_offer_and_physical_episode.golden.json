@@ -112,10 +112,11 @@
       "speakers": [
         "self"
       ],
-      "tick": 1,
+      "tick": 2,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 1
     },
     {
       "coalescingKeys": [
@@ -131,10 +132,11 @@
       "speakers": [
         "self"
       ],
-      "tick": 1,
+      "tick": 2,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 1
     }
   ]
 }

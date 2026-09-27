@@ -53,6 +53,11 @@ public final class PlannerExecutor {
 		return inFlightAttempts.values().stream().anyMatch(attempt -> !detachedGenerations.contains(attempt.generation()));
 	}
 
+	/** True while a submitted provider call has not completed yet; completed results wait for {@link #poll()}. */
+	public boolean hasRunningCall() {
+		return inFlightAttempts.values().stream().anyMatch(attempt -> !attempt.future().isDone());
+	}
+
 	public int activeAttemptCount() {
 		return (int) inFlightAttempts.values().stream()
 			.filter(attempt -> !detachedGenerations.contains(attempt.generation()))

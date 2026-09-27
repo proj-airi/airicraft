@@ -363,7 +363,7 @@
         ],
         "serverTick": -1,
         "throughEventSequence": 9,
-        "tick": 5,
+        "tick": 6,
         "toolQueue": {
           "aborting": false,
           "pending": []
@@ -375,7 +375,7 @@
         "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
         "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
       },
-      "tick": 5
+      "tick": 6
     }
   ],
   "scenario": "navigation_failure_cascade",
@@ -395,10 +395,11 @@
       "speakers": [
         "runtime"
       ],
-      "tick": 3,
+      "tick": 4,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 3
     },
     {
       "coalescingKeys": [
@@ -415,10 +416,11 @@
       "speakers": [
         "runtime"
       ],
-      "tick": 4,
+      "tick": 6,
       "triggerTypes": [
         "SYSTEM"
-      ]
+      ],
+      "wakeTick": 4
     }
   ]
 }

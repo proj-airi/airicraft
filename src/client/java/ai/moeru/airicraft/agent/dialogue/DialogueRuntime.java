@@ -157,6 +157,10 @@ public final class DialogueRuntime {
 		if (thinkingOrchestrator != null) thinkingOrchestrator.configureDecisionContext(() -> source.get().forOwner("thinking"));
 	}
 
+	/**
+	 * Receives wake audit records. {@code tick} and the {@code wakeTick} field are when the wake was created;
+	 * sinks that know the current tick should stamp the record with it so the entry matches its server tick.
+	 */
 	public interface WakeAuditSink {
 		WakeAuditSink NO_OP = (tick, kind, fields) -> { };
 		void record(long tick, String kind, Map<String, Object> fields);
@@ -319,6 +323,11 @@ public final class DialogueRuntime {
 		recordAgentTurn(pendingReply.response().text(), pendingReply.response().tick());
 		state = state.withPendingReply(!pendingVisibleReplies.isEmpty(), pendingReplyReason());
 		return true;
+	}
+
+	/** True while any planner role still waits on a provider call or tool future. */
+	public boolean plannerWorkRunning() {
+		return planners().stream().anyMatch(PlannerOrchestrator::hasRunningWork);
 	}
 
 	public boolean isDegraded() {
@@ -556,7 +565,6 @@ public final class DialogueRuntime {
 			auditTrigger(trigger, "dropped", "G4.accepted_work");
 			return;
 		}
-		auditTrigger(trigger, "submitted", null);
 		submitPlannerTrigger(
 			new PlannerRequest(
 				trigger.tick(),
@@ -571,7 +579,8 @@ public final class DialogueRuntime {
 			),
 			plannerEventBuffer,
 			trigger.timestampMs(),
-			trigger.maySupersedeLaunchedTurn()
+			trigger.maySupersedeLaunchedTurn(),
+			(kind, gate) -> auditTrigger(trigger, kind, gate)
 		);
 	}
 
@@ -773,25 +782,46 @@ public final class DialogueRuntime {
 		return DialogueCore.isResetCommand(plainTextMessage);
 	}
 
+	/** Receives the final outcome of one wake attempt: {@code submitted}, or {@code dropped} with its gate. */
+	@FunctionalInterface
+	private interface WakeOutcome {
+		WakeOutcome NONE = (kind, gate) -> { };
+		void record(String kind, String gate);
+	}
+
 	private void submitPlannerTrigger(
 		PlannerRequest request,
 		SemanticEventBuffer eventBuffer,
 		long timestampMs,
 		boolean directUserGuidance
 	) {
+		submitPlannerTrigger(request, eventBuffer, timestampMs, directUserGuidance, WakeOutcome.NONE);
+	}
+
+	private void submitPlannerTrigger(
+		PlannerRequest request,
+		SemanticEventBuffer eventBuffer,
+		long timestampMs,
+		boolean directUserGuidance,
+		WakeOutcome outcome
+	) {
 		if (externalDriverActive) {
+			outcome.record("dropped", "G8.external_driver");
 			return;
 		}
 		request = request.withSafetyContext(safetyEpoch, safetyHoldId);
 		if (directUserGuidance) {
 			if (delegation != null && delegation.active()) {
 				delegation.recordGuidance(request.senderName(), request.message());
-				if (delegation.starting() || delegation.returning()) return;
+				if (delegation.starting() || delegation.returning()) {
+					outcome.record("dropped", "G8.delegation_transition");
+					return;
+				}
 			}
 			supersedePendingInternalTaskUpdates("new_user_guidance", request.tick(), eventBuffer);
 		}
 		if (state.degraded() && activePlanner().isEnabled()) {
-			for (var trigger : request.triggerBatch().triggers()) auditTrigger(trigger, "dropped", "G8.degraded");
+			outcome.record("dropped", "G8.degraded");
 			applyTransition(
 				DialogueCore.onPlannerDegradedBlocked(state, request.senderName(), directUserGuidance,
 					request.tick(), resetGuidance(), messages),
@@ -811,6 +841,9 @@ public final class DialogueRuntime {
 				request.activeGoal()
 			)
 		);
+		// Record before submit: the orchestrator writes its own submission entry synchronously, and the
+		// wake ledger attributes audits by timeline order. A disabled planner discards the request.
+		outcome.record(activePlanner().isEnabled() ? "submitted" : "dropped", activePlanner().isEnabled() ? null : "G8.planner_disabled");
 		boolean submitted = activePlanner().submit(request);
 		if (submitted && safetyHoldId != null) lastSupervisedHold = safetyHoldId + ":" + reflexActive;
 		pendingTimeoutVisibleReply = directUserGuidance && submitted;
@@ -869,12 +902,12 @@ public final class DialogueRuntime {
 				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
 				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
 				.orElse("Work changed.");
-			auditTask(wake, "submitted", null);
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
 				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis()))), null
-			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false);
+			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false,
+				(kind, gate) -> auditTask(wake, kind, gate));
 			return true;
 		}
 		return false;
@@ -885,7 +918,7 @@ public final class DialogueRuntime {
 			: "planner_goal".equals(trigger.coalescingKey()) ? "W4"
 			: "delegation".equals(trigger.coalescingKey()) ? "W6"
 			: "evaluation".equals(trigger.speaker()) ? "W7" : "W1";
-		var fields = wakeFields(path, gate);
+		var fields = wakeFields(path, gate, trigger.tick());
 		fields.put("triggerTypes", List.of(trigger.type().name()));
 		fields.put("origins", List.of(trigger.origin().name()));
 		fields.put("coalescingKeys", trigger.coalescingKey() == null ? List.of() : List.of(trigger.coalescingKey()));
@@ -899,7 +932,7 @@ public final class DialogueRuntime {
 		if (deferred && wake == lastDeferredAudit && Objects.equals(gate, lastDeferredAuditGate)) return;
 		lastDeferredAudit = deferred ? wake : null;
 		lastDeferredAuditGate = deferred ? gate : null;
-		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate);
+		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate, wake.tick());
 		fields.put("eventSequence", wake.eventSequence());
 		fields.put("triggerTypes", List.of("SYSTEM"));
 		fields.put("origins", List.of("AUTONOMOUS"));
@@ -908,9 +941,10 @@ public final class DialogueRuntime {
 		wakeAudit.record(wake.tick(), kind, fields);
 	}
 
-	private java.util.LinkedHashMap<String, Object> wakeFields(String path, String gate) {
+	private java.util.LinkedHashMap<String, Object> wakeFields(String path, String gate, long wakeTick) {
 		var fields = new java.util.LinkedHashMap<String, Object>();
 		fields.put("path", path);
+		fields.put("wakeTick", wakeTick);
 		fields.put("owner", decisionOwner());
 		if (gate != null) fields.put("gate", gate);
 		return fields;
