@@ -4,6 +4,9 @@ import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +23,12 @@ class AgentEventBusTest {
 		assertEquals(1, bus.latestSeqNo());
 		assertEquals(0, bus.stats().unknownSource());
 		assertTrue(EventCatalog.defaults().specs().stream().noneMatch(spec -> spec.producers().contains("test")));
+	}
+
+	@Test void productionModeTreatsTestProducerAsUnknown() {
+		var bus = bus(false);
+		assertEquals("test", bus.from("test").publish(1, TYPE, Map.of()).source());
+		assertEquals(1, bus.stats().unknownSource());
 	}
 
 	@Test
@@ -206,6 +215,49 @@ class AgentEventBusTest {
 			logger.removeAppender(appender);
 			appender.stop();
 		}
+	}
+
+	@Test
+	void slowSubscriberDoesNotBlockReadersOrOtherPublishers() throws Exception {
+		var bus = bus(false);
+		var entered = new CountDownLatch(1);
+		var release = new CountDownLatch(1);
+		var delivered = new java.util.concurrent.CopyOnWriteArrayList<Long>();
+		bus.subscribe(TYPE::equals, event -> {
+			delivered.add(event.seqNo());
+			if (event.seqNo() == 1) {
+				entered.countDown();
+				try { assertTrue(release.await(5, TimeUnit.SECONDS)); }
+				catch (InterruptedException failure) { throw new AssertionError(failure); }
+			}
+		});
+		var first = CompletableFuture.runAsync(() -> bus.from(SOURCE).publish(1, TYPE, Map.of()));
+		assertTrue(entered.await(5, TimeUnit.SECONDS));
+		try {
+			// Readers and a second publisher complete while the first delivery is still blocked.
+			assertEquals(1L, CompletableFuture.supplyAsync(bus::latestSeqNo).get(1, TimeUnit.SECONDS));
+			assertEquals(2L, CompletableFuture.supplyAsync(() -> bus.from(SOURCE).publish(2, TYPE, Map.of()).seqNo())
+				.get(1, TimeUnit.SECONDS));
+			assertEquals(List.of(1L), delivered);
+		} finally {
+			release.countDown();
+		}
+		first.get(5, TimeUnit.SECONDS);
+		// The thread already delivering picks up the concurrent event, preserving sequence order.
+		assertEquals(List.of(1L, 2L), delivered);
+	}
+
+	@Test
+	void subscriberErrorDoesNotWedgeLaterDelivery() {
+		var bus = bus(false);
+		var delivered = new ArrayList<Long>();
+		bus.subscribe(TYPE::equals, event -> {
+			if (event.seqNo() == 1) throw new AssertionError("fatal subscriber");
+			delivered.add(event.seqNo());
+		});
+		assertThrows(AssertionError.class, () -> bus.from(SOURCE).publish(1, TYPE, Map.of()));
+		bus.from(SOURCE).publish(2, TYPE, Map.of());
+		assertEquals(List.of(2L), delivered);
 	}
 
 	private static AgentEventBus bus(boolean strict) {

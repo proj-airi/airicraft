@@ -479,11 +479,7 @@
         "AgentEventPipeline",
         "EmbodiedAgentRuntime"
       ],
-      "profile": {
-        "semantic": false,
-        "trigger": null,
-        "bypass": false
-      },
+      "profile": null,
       "observeVisible": true,
       "extraWake": null
     },
@@ -492,11 +488,7 @@
       "producers": [
         "EmbodiedAgentRuntime"
       ],
-      "profile": {
-        "semantic": false,
-        "trigger": null,
-        "bypass": false
-      },
+      "profile": null,
       "observeVisible": true,
       "extraWake": null
     },
