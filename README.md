@@ -4,6 +4,20 @@ Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for aut
 
 ## Settings
 
+On first launch, Airicraft opens setup before the main menu. Choose **Configure
+providers** to enter an OpenAI-compatible provider or select **Local Codex**,
+which uses an installed Codex executable and its existing sign-in. The Vision
+tab configures an optional separate vision provider. Save, then use **Check
+connections** to send small inference requests; these can consume provider
+credits. Vision checks send a built-in test image, not a game screenshot.
+
+Setup shows JourneyMap and REI versions, missing compatibility add-ons, and
+whether each integration has initialized. World-dependent features still need
+a loaded world. **Finish setup** is available after the configured connections
+pass. **Set up later** leaves setup incomplete so it returns next launch.
+After completion, reopen it through **Airicraft Settings → Setup & checks**.
+Save or cancel any pending settings edits before opening connection checks.
+
 Click **Airicraft** on the title or pause screen, press **F8** in-game (rebindable
 under Controls), or run `/airicraft config`. With Mod Menu installed, use
 **Mods → Airicraft → Configure**. Cloth Config is bundled; Mod Menu is optional.
