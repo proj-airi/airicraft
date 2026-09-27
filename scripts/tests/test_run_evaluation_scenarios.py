@@ -272,7 +272,12 @@ class RecorderPlayTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def write_play(self, relative_path: Path = FINALIZED_PLAY_RELATIVE_PATH, finalized: bool = True) -> Path:
+    def write_play(
+        self,
+        relative_path: Path = FINALIZED_PLAY_RELATIVE_PATH,
+        finalized: bool = True,
+        player_uuid: str = "22222222-2222-4222-8222-222222222222",
+    ) -> Path:
         play = self.recorder_root / relative_path
         events_path = play / runner.RECORDER_EVENTS_RELATIVE_PATH
         replay_path = play / runner.RECORDER_REPLAY_RELATIVE_PATH
@@ -287,7 +292,7 @@ class RecorderPlayTest(unittest.TestCase):
             connection.update({"endedAt": "2026-08-08T00:00:00Z", "endServerTick": "20"})
         runner.write_json(play / "metadata.json", {
             "server": {"name": "test", "instanceId": "11111111-1111-4111-8111-111111111111"},
-            "player": {"name": "Player", "uuid": "22222222-2222-4222-8222-222222222222"},
+            "player": {"name": "Player", "uuid": player_uuid},
             "connection": connection,
             "capture": {
                 "events": runner.RECORDER_EVENTS_RELATIVE_PATH.as_posix(),
@@ -342,6 +347,29 @@ class RecorderPlayTest(unittest.TestCase):
 
         with self.assertRaisesRegex(runner.RunnerError, "one finalized Recorder Play"):
             runner.discover_finalized_recorder_play(self.recorder_root)
+
+    def test_selects_one_players_play_among_connected_testers(self) -> None:
+        companion = self.write_play()
+        tester = "44444444-4444-4444-8444-444444444444"
+        self.write_play(Path("v1/server/players/tester/plays/first"), player_uuid=tester)
+        self.write_play(Path("v1/server/players/tester/plays/reconnect"), player_uuid=tester)
+
+        self.assertEqual(companion, runner.discover_finalized_recorder_play(
+            self.recorder_root, "22222222-2222-4222-8222-222222222222"))
+        with self.assertRaisesRegex(runner.RunnerError, f"for player {tester}, found 2"):
+            runner.discover_finalized_recorder_play(self.recorder_root, tester)
+        self.assertIsNone(runner.discover_finalized_recorder_play(
+            self.recorder_root, "55555555-5555-4555-8555-555555555555"))
+
+    def test_missing_player_play_names_the_player(self) -> None:
+        self.write_play(player_uuid="44444444-4444-4444-8444-444444444444")
+        result = {"harnessStatus": "OK"}
+
+        runner.finalize_recorder_capture(result, self.scenario_dir, self.recorder_root,
+                                         "22222222-2222-4222-8222-222222222222")
+
+        self.assertEqual("CAPTURE_ERROR", result["harnessStatus"])
+        self.assertIn("for player 22222222-2222-4222-8222-222222222222", result["message"])
 
     def test_stores_the_relative_play_path(self) -> None:
         self.write_play()

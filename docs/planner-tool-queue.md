@@ -1,15 +1,29 @@
-# Planner tool queue
+# Planner-selected report checkpoints (experiment)
 
-The embedded controller and thinking planner accept multiple tool calls per response. Calls append to the submitting role's FIFO and run sequentially on the client thread. A delegated planner has its own FIFO so its actions can run while the controller's `delegate_task` awaits its return. Only the role with decision authority dispatches calls.
+Branch `codex/planner-report-checkpoints` changes routine planner scheduling from automatic coalesced reviews to explicit queued checkpoints. User messages and urgent safety interruptions remain enabled. The original async-FIFO playtest remains on its original branch/build.
 
-For a plan A, B, C, accepting the response queues all three. Once A actually completes, B starts without waiting for another model response. A review carries A's result plus the active B and pending C. If the planner adds D, D goes behind C. `continue` adds no work and ends the decision turn; it is never required to advance the queue.
+Calls append to a role-owned FIFO and execute sequentially without waiting for inference. Ongoing work must actually finish before the next call starts. `continue` adds no work and ends the decision turn. `clear_queue` immediately discards pending calls and aborts active foreground work; replacement calls wait for abort completion. Completed physical effects are not undone.
 
-An action receipt admitting ongoing work does not complete the queue entry. The entry waits for that work ID's SUCCEEDED, FAILED, or CANCELLED state. A failure is reported and execution advances; the planner can abort and replace the remaining plan. Calls must therefore have concrete arguments supported by observations already available when queued, not invented outputs of earlier calls.
+Routine intermediate results accumulate without launching the planner. A review starts when:
 
-`clear_queue` is immediate, regardless of its position among calls in the response. It discards pending calls, abandons the current tool future, and cancels current foreground root work through the runtime's work cancellation paths. Replacement calls from that response wait for cancellation to complete. Cancellation cannot undo effects already completed or stop physical furnace cooking. A late result from an abandoned future cannot advance the old queue.
+1. A queued `report_to_me` call executes; or
+2. The FIFO becomes empty with new results to deliver.
 
-Results coalesce across a 250 ms quiet interval. If another read is running, the review waits for it, up to 1 second from the first buffered result. A review already in flight is not interrupted by another queue result; those results enter the next review. Safety/user events can still prompt a review. Queue dispatch continues independently of inference, including during coalescing.
+For example, the planner can queue `inspect_inventory`, `inspect_world`, `report_to_me({"question":"Is the site suitable?","includeTools":["inspect_world"]})`, then a previously justified long-running action. At the checkpoint, the long-running action starts independently and the planner receives the selected observation and question. The checkpoint does not pause execution. Plans that depend on an answer not yet known should end at the checkpoint instead.
 
-Conversation history acknowledges every submitted tool call as queued, preserving complete tool-call/result pairs. Actual results replace the queued acknowledgment when the next request is constructed. Provider-managed history or a context reset receives an explicit execution-result notice if the original envelope is absent. Raw exchanges remain in recording evidence. `TOOL QUEUE` is a current snapshot, not an accumulating history of queue snapshots.
+`report_to_me` accepts optional arguments:
 
-Short-term findings apply to completed observations, not queued acknowledgments. A review can summarize several completed queries and append a plan in the same response. `continue` and `clear_queue` remain available when findings are pending. This queue and its reports are session-local; there is no persistence mechanism.
+- `question`: what to assess or decide at this checkpoint.
+- `includeTools`: names of tools whose buffered raw outputs to include. Omit for all outputs; an empty list requests outcome acknowledgments and fresh decision context without buffered raw outputs.
+
+Unselected outputs are explicitly marked omitted, not summarized as success. Full outputs remain in recording evidence. Output selection does not strip the fresh decision context, including current work and safety state. FIFO-empty reviews with no explicit checkpoint include all buffered outputs. Multiple checkpoints reached while inference is busy merge into the next review; output selections are combined, and any checkpoint requesting all outputs takes precedence.
+
+Every submitted call retains a valid tool-call/result pair. Queued acknowledgments become execution results, or explicit omitted-output markers, when a review is constructed. `TOOL QUEUE` shows current active and pending calls, which may advance while the planner thinks. Queue state and buffered results are session-local.
+
+Short-term findings apply only to delivered raw observations. A findings-only reply can commit summaries incrementally; the next empty-FIFO review identifies the next unsummarized query. A reply adding new gameplay work must summarize remaining delivered observations first. This fixes the original async-FIFO run's all-or-nothing validation loop, where a valid south-forest finding was rejected because east/west observations remained.
+
+## Next playtest
+
+Use the saved checkpoint from run `20260920-225411-723089-16816-54fc7654-ad27-403a-a45b-003fb4b6ae48` after explicitly resuming testing. That run ended in `planner_degraded`; its recording and world checkpoint finalized successfully. Do not label it a successful async-FIFO gameplay test.
+
+Keep the original run artifacts unchanged. Compare review triggers, calls per batch, time without active work, rejection counts, and actual survival progress. The current branch has automated verification only until a new live run is launched.

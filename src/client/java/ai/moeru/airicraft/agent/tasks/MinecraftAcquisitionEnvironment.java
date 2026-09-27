@@ -83,6 +83,47 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 			.collect(java.util.stream.Collectors.toUnmodifiableSet());
 	}
 
+	@Override public List<Candidate> opportunityCandidates(GoalMineSpec spec, AcquisitionConstraints constraints,
+		boolean goalMet, Set<String> rejected) {
+		var client = client();
+		if (client.world == null || client.player == null || client.interactionManager == null
+			|| !client.player.isOnGround() || client.player.isUsingItem()
+			|| client.player.currentScreenHandler != client.player.playerScreenHandler
+			|| !client.player.currentScreenHandler.getCursorStack().isEmpty()
+			|| client.player.getInventory().getEmptySlot() < 0) return List.of();
+		BlockPos origin = client.player.getBlockPos();
+		Vec3d eye = client.player.getEyePos();
+		List<Candidate> candidates = new ArrayList<>();
+		for (BlockPos cursor : BlockPos.iterate(origin.add(-3, -2, -3), origin.add(3, 2, 3))) {
+			if (!client.world.isChunkLoaded(cursor)) continue;
+			BlockState state = client.world.getBlockState(cursor);
+			String blockId = id(state);
+			if (!isOreId(blockId) || goalMet != spec.blockIds().contains(blockId)
+				|| !inScope(position(cursor), constraints, false)
+				|| WorldPlacePreservation.contains(client.world, cursor)
+				|| !HarvestableBlocks.ready(state) || state.getHardness(client.world, cursor) < 0
+				|| !hasHarvestTool(state)) continue;
+			BlockHitResult hit = interactionPath(eye, cursor);
+			if (hit == null || !hit.getBlockPos().equals(cursor)) continue;
+			Candidate candidate = new Candidate(Kind.BLOCK, blockId, position(cursor), position(origin));
+			if (!rejected.contains(candidate.key())) candidates.add(candidate);
+		}
+		candidates.sort(Comparator.comparingDouble((Candidate value) ->
+			block(value.position()).getSquaredDistance(client.player.getPos())).thenComparing(Candidate::key));
+		return candidates;
+	}
+
+	private boolean hasHarvestTool(BlockState state) {
+		if (!state.isToolRequired()) return true;
+		var inventory = client().player.getInventory();
+		for (int slot = 0; slot < inventory.size(); slot++) {
+			var stack = inventory.getStack(slot);
+			if (!stack.isEmpty() && stack.isSuitableFor(state)
+				&& (!stack.isDamageable() || stack.getMaxDamage() - stack.getDamage() > 1)) return true;
+		}
+		return false;
+	}
+
 	private boolean eligibleSource(BlockPos pos, GoalMineSpec spec, AcquisitionConstraints constraints) {
 		var world = client().world;
 		if (!world.isChunkLoaded(pos) || !inScope(position(pos), constraints, false)) return false;
@@ -103,22 +144,7 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 		Set<GoalPosition> observedSources) {
 		var world = client().world;
 		BlockPos center = block(constraints.center());
-		List<Candidate> result = new ArrayList<>();
-		for (ItemEntity item : world.getEntitiesByClass(ItemEntity.class,
-			new Box(center).expand(constraints.radius(), constraints.verticalRadius(), constraints.radius()), ItemEntity::isAlive)) {
-			if (!spec.matchingItemIds().contains(Registries.ITEM.getId(item.getStack().getItem()).toString())) continue;
-			GoalPosition pos = position(item.getBlockPos());
-			if (!inScope(pos, constraints, true)) continue;
-			// A drop's cell may be water even when a dry adjacent landing collects it.
-			List<BlockPos> pickupSites = new ArrayList<>(AcquisitionPickupSites.find(block(pos), this::standable));
-			if (!pickupSites.contains(block(pos))) pickupSites.add(block(pos));
-			for (BlockPos site : pickupSites) {
-				GoalPosition work = position(site);
-				if (!travelEligible(work)) continue;
-				Candidate drop = new Candidate(Kind.DROP, item.getUuidAsString(), pos, work);
-				if (!rejected.contains(drop.key())) result.add(drop);
-			}
-		}
+		List<Candidate> result = new ArrayList<>(dropCandidates(spec, constraints, rejected));
 		List<BlockPos> blocks = new ArrayList<>();
 		Iterable<BlockPos> sources = constraints.visibleOnly()
 			? observedSources.stream().map(MinecraftAcquisitionEnvironment::block).toList()
@@ -136,6 +162,31 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 				if (!rejected.contains(candidate.key())) result.add(candidate);
 			}
 			if (result.size() >= 32) break;
+		}
+		result.sort(Comparator.comparing(Candidate::kind)
+			.thenComparingDouble(value -> distanceSquared(position(), value.workPosition()))
+			.thenComparing(Candidate::key));
+		return result;
+	}
+
+	@Override public List<Candidate> dropCandidates(GoalMineSpec spec, AcquisitionConstraints constraints, Set<String> rejected) {
+		BlockPos center = block(constraints.center());
+		List<Candidate> result = new ArrayList<>();
+		var world = client().world;
+		for (ItemEntity item : world.getEntitiesByClass(ItemEntity.class,
+			new Box(center).expand(constraints.radius(), constraints.verticalRadius(), constraints.radius()), ItemEntity::isAlive)) {
+			if (!spec.matchingItemIds().contains(Registries.ITEM.getId(item.getStack().getItem()).toString())) continue;
+			GoalPosition pos = position(item.getBlockPos());
+			if (!inScope(pos, constraints, true)) continue;
+			// A drop's cell may be water even when a dry adjacent landing collects it.
+			List<BlockPos> pickupSites = new ArrayList<>(AcquisitionPickupSites.find(block(pos), this::standable));
+			if (!pickupSites.contains(block(pos))) pickupSites.add(block(pos));
+			for (BlockPos site : pickupSites) {
+				GoalPosition work = position(site);
+				if (!travelEligible(work)) continue;
+				Candidate drop = new Candidate(Kind.DROP, item.getUuidAsString(), pos, work);
+				if (!rejected.contains(drop.key())) result.add(drop);
+			}
 		}
 		result.sort(Comparator.comparing(Candidate::kind)
 			.thenComparingDouble(value -> distanceSquared(position(), value.workPosition()))

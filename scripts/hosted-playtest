@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+cd "$repo_root"
+if [[ -f .envrc ]]; then
+	# shellcheck disable=SC1091
+	source .envrc
+fi
+exec python3 scripts/hosted_playtest.py "$@"

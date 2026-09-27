@@ -24,7 +24,8 @@
       </div>
       <div class="toolbar">
         <label class="file-button">Open session<input id="session-file" type="file" accept=".jsonl,.ndjson,application/x-ndjson"></label>
-        <button id="export">Save session</button>
+        <button id="report" title="Mark this moment and preview attachments before saving.">Report this moment</button>
+        <button id="export" title="Full retained history, including prompts, chat, logs and captured images.">Raw developer export</button>
       </div>
     </header>
 
@@ -67,6 +68,30 @@
       </aside>
     </main>
   </div>
+  <dialog id="report-dialog" aria-labelledby="report-title">
+    <h2 id="report-title">Report this moment</h2>
+    <p>The incident window is fixed when you open this dialog. Nothing is uploaded.</p>
+    <label for="report-description">What went wrong? (optional)</label>
+    <textarea id="report-description" maxlength="2000" rows="3" placeholder="What did you expect, and what happened?"></textarea>
+    <label for="report-mode">Attachments</label>
+    <select id="report-mode">
+      <option value="MINIMAL">Minimal — metadata only</option>
+      <option value="SUMMARY">Summary — diagnostic events and world state</option>
+      <option value="DEVELOPER">Developer — detailed content and screenshots</option>
+    </select>
+    <p id="report-categories"></p>
+    <button id="report-preview">Preview attachments</button>
+    <pre id="report-preview-text" aria-live="polite">Preparing incident marker…</pre>
+    <section id="report-evidence" aria-label="Attached evidence"></section>
+    <details id="report-files" hidden>
+      <summary>Exact report.jsonl attachment</summary>
+      <textarea id="report-raw" readonly rows="12" aria-label="Exact report.jsonl attachment"></textarea>
+    </details>
+    <div class="report-actions">
+      <button id="report-save" disabled>Save these attachments</button>
+      <button id="report-cancel">Cancel</button>
+    </div>
+  </dialog>
   <div id="toast" role="status"></div>
   <script type="module" src="/app.js"></script>
 </body>

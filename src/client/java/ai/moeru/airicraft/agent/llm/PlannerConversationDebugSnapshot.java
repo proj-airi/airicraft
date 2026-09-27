@@ -89,9 +89,6 @@ public record PlannerConversationDebugSnapshot(
 			if (toolCall.arguments() != null && !toolCall.arguments().isEmpty()) {
 				summary.append(" args=").append(toolCall.arguments());
 			}
-			if (toolCall.narration() != null && !toolCall.narration().isBlank()) {
-				summary.append(" | narration: ").append(toolCall.narration());
-			}
 			summaries.add(summary.toString());
 		}
 		if (message.content() != null && !message.content().isBlank()) {

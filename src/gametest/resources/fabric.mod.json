@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "airicraft-settings-test",
+  "version": "1.0.0",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["ai.moeru.airicraft.settings.SettingsScreenGameTest"]
+  }
+}

@@ -8,11 +8,18 @@ import java.util.Optional;
 
 public final class IdleIdeaScheduler {
 	private volatile IdleIdeasConfig config;
+	private final List<String> interests;
 	private long idleStartTimestampMs = -1L;
 	private long lastFireTimestampMs = -1L;
 
 	public IdleIdeaScheduler(IdleIdeasConfig config) {
+		this(config, List.of());
+	}
+
+	/** Interests come from the character card and make idle turns the character's free time. */
+	public IdleIdeaScheduler(IdleIdeasConfig config, List<String> interests) {
 		this.config = config == null ? IdleIdeasConfig.defaults() : config;
+		this.interests = interests == null ? List.of() : List.copyOf(interests);
 	}
 
 	public synchronized void updateConfig(IdleIdeasConfig nextConfig) {
@@ -30,7 +37,7 @@ public final class IdleIdeaScheduler {
 
 	public synchronized Optional<PlannerTrigger> tick(boolean activeJobIdle, long tickCount, long nowMs) {
 		IdleIdeasConfig current = config;
-		if (!current.enabled() || current.initialDelaySeconds() <= 0 || current.cooldownSeconds() <= 0 || current.ideas().isEmpty()) {
+		if (!current.enabled() || current.initialDelaySeconds() <= 0 || current.cooldownSeconds() <= 0 || nothingToSuggest(current)) {
 			idleStartTimestampMs = -1L;
 			return Optional.empty();
 		}
@@ -50,33 +57,45 @@ public final class IdleIdeaScheduler {
 			return Optional.empty();
 		}
 		lastFireTimestampMs = nowMs;
-		return Optional.of(buildTrigger(current.ideas(), tickCount, nowMs));
+		return Optional.of(buildTrigger(current.ideas(), interests, tickCount, nowMs));
 	}
 
 	public synchronized Optional<PlannerTrigger> fireNow(long tickCount, long nowMs) {
 		IdleIdeasConfig current = config;
-		if (current.ideas().isEmpty()) {
+		if (nothingToSuggest(current)) {
 			return Optional.empty();
 		}
 		if (idleStartTimestampMs < 0L) {
 			idleStartTimestampMs = nowMs;
 		}
 		lastFireTimestampMs = nowMs;
-		return Optional.of(buildTrigger(current.ideas(), tickCount, nowMs));
+		return Optional.of(buildTrigger(current.ideas(), interests, tickCount, nowMs));
 	}
 
-	private static PlannerTrigger buildTrigger(List<String> ideas, long tickCount, long nowMs) {
-		StringBuilder builder = new StringBuilder(512);
-		builder.append("IDLE THINK: You currently have no active task and no recent player input. ")
-			.append("Treat this turn as your own initiative window. ")
-			.append("Pick exactly one small concrete next step now by calling the appropriate action tool, ")
-			.append("or ask the player one short focused question in plaintext if a design decision genuinely needs their input. ")
-			.append("Do not ask the player questions back-to-back across idle turns.\n")
-			.append("If torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.\n")
-			.append("Survival progression ideas to consider (pick one whose preconditions are met now; do not read the list back to the player):\n");
-		for (String idea : ideas) {
-			builder.append("- ").append(idea).append('\n');
+	private boolean nothingToSuggest(IdleIdeasConfig current) {
+		return current.ideas().isEmpty() && interests.isEmpty();
+	}
+
+	private static PlannerTrigger buildTrigger(List<String> ideas, List<String> interests, long tickCount, long nowMs) {
+		StringBuilder builder = new StringBuilder(768);
+		builder.append("IDLE THINK: Nothing is running and nobody has asked you for anything lately. This is your free time. ")
+			.append("Do one small thing you would genuinely enjoy or care about right now, in character: start it with an action tool, ")
+			.append("or say something to a nearby player if you have something worth saying. ")
+			.append("Ask the player a question only when you really want their input, and never in back-to-back idle turns.\n");
+		if (!interests.isEmpty()) {
+			builder.append("Things you enjoy (pick what fits the moment; this is not a checklist):\n");
+			for (String interest : interests) {
+				builder.append("- ").append(interest).append('\n');
+			}
 		}
+		if (!ideas.isEmpty()) {
+			builder.append("Useful survival progress you can also choose (only when its preconditions are met now):\n");
+			for (String idea : ideas) {
+				builder.append("- ").append(idea).append('\n');
+			}
+			builder.append("If torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.\n");
+		}
+		builder.append("Do not read these lists back to the player.\n");
 		return PlannerTrigger.pending(PlannerTriggerType.IDLE_THINK, "self", builder.toString(), tickCount, nowMs);
 	}
 }

@@ -5,6 +5,8 @@ plugins {
 }
 
 repositories {
+	maven { url = uri("https://maven.shedaniel.me/") }
+	maven { url = uri("https://maven.terraformersmc.com/releases/") }
 	maven {
 		url = uri("vendor/action-plan-advisor/build/repository")
 	}
@@ -25,6 +27,9 @@ def devPlayerName = providers.gradleProperty("airicraft.devPlayerName").orElse("
 def automaticPlaytestEnabled = providers.gradleProperty("airicraft.automaticPlaytest").orElse("false")
 def automaticPlaytestId = providers.gradleProperty("airicraft.automaticPlaytestId")
 def automaticPlaytestDir = providers.gradleProperty("airicraft.automaticPlaytestDir").orElse(file("automatic_playtest").absolutePath)
+def automaticPlaytestMode = providers.gradleProperty("airicraft.automaticPlaytestMode")
+def hostedPlaytestAutoReset = providers.gradleProperty("airicraft.hostedPlaytestAutoReset").orElse("false")
+def lanPort = providers.gradleProperty("airicraft.lanPort")
 def codexDriverEnabled = providers.gradleProperty("airicraft.codexDriver").orElse("false")
 // Overrides navigation.backend (baritone or airicraft) for launched clients; blank keeps the config value.
 def navigationBackend = providers.gradleProperty("airicraft.navigationBackend").orElse("")
@@ -79,6 +84,14 @@ base {
 }
 
 configurations {
+	create('bundledLibraries') {
+		canBeConsumed = false
+		attributes {
+			attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+			attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
+		}
+	}
+	implementation.extendsFrom(bundledLibraries)
 	create('hotswapAgent') {
 		canBeConsumed = false
 		canBeResolved = true
@@ -135,6 +148,22 @@ loom {
 		}
 	}
 
+}
+
+// Opt-in rendered settings test; never touches the normal development game directory.
+if (providers.gradleProperty("airicraft.settingsSmoke").orElse("false").get().toBoolean()) {
+	if (providers.gradleProperty("airicraft.settingsSmokeModMenu").orElse("false").get().toBoolean()) {
+		dependencies { modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}" }
+	}
+	fabricApi.configureTests {
+		createSourceSet = true
+		modId = "airicraft-settings-test"
+		enableGameTests = false
+		enableClientGameTests = true
+	}
+	loom.runs.clientGameTest {
+		vmArg "-Dairicraft.bridgeStateFile=${layout.buildDirectory.file('settings-smoke-bridge.json').get().asFile.absolutePath}"
+	}
 }
 
 def prepareMinecraftRunOptions = tasks.register("prepareMinecraftRunOptions") {
@@ -297,6 +326,9 @@ tasks.named("runClient").configure {
 	systemProperty("airicraft.automaticPlaytest", automaticPlaytestEnabled.get())
 	if (automaticPlaytestId.isPresent()) systemProperty("airicraft.automaticPlaytestId", automaticPlaytestId.get())
 	systemProperty("airicraft.automaticPlaytestDir", automaticPlaytestDir.get())
+	if (automaticPlaytestMode.isPresent()) systemProperty("airicraft.automaticPlaytestMode", automaticPlaytestMode.get())
+	systemProperty("airicraft.hostedPlaytestAutoReset", hostedPlaytestAutoReset.get())
+	if (lanPort.isPresent()) systemProperty("airicraft.lanPort", lanPort.get())
 }
 
 allprojects {
@@ -326,6 +358,9 @@ allprojects {
 		jvmArgs.add("-Dairicraft.automaticPlaytest=${automaticPlaytestEnabled.get()}")
 		if (automaticPlaytestId.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestId=${automaticPlaytestId.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytestDir=${automaticPlaytestDir.get()}")
+		if (automaticPlaytestMode.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestMode=${automaticPlaytestMode.get()}")
+		jvmArgs.add("-Dairicraft.hostedPlaytestAutoReset=${hostedPlaytestAutoReset.get()}")
+		if (lanPort.isPresent()) jvmArgs.add("-Dairicraft.lanPort=${lanPort.get()}")
 		programArgs.addAll("--username", devPlayerName.get())
 	}
 
@@ -441,13 +476,18 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	modImplementation("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+		exclude group: "net.fabricmc.fabric-api"
+	}
+	include("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") { transitive = false }
+	modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 	modImplementation files("libs/baritone-unoptimized-fabric-1.15.0.jar")
 	modImplementation files("libs/nether-pathfinder-1.4.1.jar")
 	implementation "ai.moeru:action-plan-advisor:0.1.0"
 	include "ai.moeru:action-plan-advisor:0.1.0"
 	implementation project(":navigation-core")
 	include project(":navigation-core")
-	implementation "org.yaml:snakeyaml:2.4"
+	bundledLibraries "org.yaml:snakeyaml:2.4"
 	// Use concrete JARs: the js-community aggregate adds POM files that Fabric cannot load.
 	// Keep language/provider descriptors in separate nested jars (include is non-transitive).
 	[
@@ -460,9 +500,13 @@ dependencies {
 		include("${coordinate}:25.0.4") { transitive = false }
 	}
 
-	implementation "io.opentelemetry:opentelemetry-api:1.60.1"
-	implementation "io.opentelemetry:opentelemetry-sdk:1.60.1"
-	implementation "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	bundledLibraries "io.opentelemetry:opentelemetry-api:1.60.1"
+	bundledLibraries "io.opentelemetry:opentelemetry-sdk:1.60.1"
+	bundledLibraries "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	// Loom include is non-transitive: resolve the complete library runtime first.
+	configurations.bundledLibraries.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+		include(artifact.moduleVersion.id.toString()) { transitive = false }
+	}
 
 	// Source: https://mvnrepository.com/artifact/org.hotswapagent/hotswap-agent
 	runtimeOnly('org.hotswapagent:hotswap-agent:2.0.3') { transitive = false }
@@ -480,9 +524,21 @@ configurations.named("include") {
 	resolutionStrategy.useGlobalDependencySubstitutionRules = false
 }
 
+def reportBuildRevision = providers.gradleProperty("airicraft.buildRevision").orElse(
+	file(".git").exists()
+		? providers.exec { commandLine 'git', 'describe', '--always', '--dirty', '--exclude=*' }.standardOutput.asText.map { it.trim() }
+		: providers.provider { "unknown" }
+)
+
 processResources {
+	inputs.property "revision", reportBuildRevision
+	inputs.property "minecraftVersion", project.minecraft_version
 	inputs.property "version", project.version
 
+	filesMatching("airicraft-build.properties") {
+		expand "revision": inputs.properties.revision, "modVersion": inputs.properties.version,
+			"minecraftVersion": inputs.properties.minecraftVersion
+	}
 	filesMatching("fabric.mod.json") {
 		expand "version": inputs.properties.version
 	}
@@ -502,6 +558,8 @@ jar {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	inputs.file(tasks.named('remapJar').flatMap { it.archiveFile }).withPropertyName('releaseJar')
+	systemProperty 'airicraft.releaseJar', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath
 }
 
 // configure the maven publication

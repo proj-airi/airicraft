@@ -41,6 +41,11 @@ public final class SemanticContextUpdateFormatter {
 				}
 				yield actor + " took " + amount + " damage and dropped to " + healthAfter + " health " + relativeTime + ".";
 			}
+			case "reflex.resolved" -> event.payload().get("combatSummary") instanceof Map<?, ?> summary
+				? "Survival reflex resolved " + relativeTime + ". " + summary.get("text")
+				: "Survival reflex resolved " + relativeTime + ": " + event.payload().get("reason") + ".";
+			case "social.item_offered" -> playerName(event.payload()) + " possibly offered " + itemCount(event.payload())
+				+ "x " + itemId(event.payload()) + " toward you " + relativeTime + "; inferred, pickup unconfirmed.";
 			case "pickup.item_picked_up" -> actor(event.payload()) + " picked up " + itemCount(event.payload()) + "x " + itemId(event.payload()) + " " + relativeTime + ".";
 			case "lighting.torch_placed" -> {
 				int count = itemCount(event.payload());

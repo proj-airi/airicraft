@@ -100,7 +100,7 @@ def finalize_recording(pending: Path, destination: Path, world: Path, client_exi
     flight_finished = summary.get("status") in ("CAPTURE_READY", "FINISHED")
     reported = (pending / "bug-report.json").is_file()
     harness = {"harnessStatus": "OK", "message": failure, "clientExit": client_exit}
-    evaluation.finalize_recorder_capture(harness, pending, pending / "recorder")
+    evaluation.finalize_recorder_capture(harness, pending, pending / "recorder", artifact.companion_player_uuid(pending))
     if world.is_dir() and not (pending / "world-save").exists():
         checkpoint = pending / (".world-save-recovery-" + str(uuid.uuid4()))
         shutil.copytree(world, checkpoint, ignore=shutil.ignore_patterns("session.lock"))

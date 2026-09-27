@@ -77,7 +77,7 @@ public final class AgentConfigLoader {
 		return fromMap(root, defaults, false);
 	}
 
-	static AgentConfig fromMapStrict(Map<String, Object> root, AgentConfig defaults) {
+	public static AgentConfig fromMapStrict(Map<String, Object> root, AgentConfig defaults) {
 		return fromMap(root, defaults, true);
 	}
 

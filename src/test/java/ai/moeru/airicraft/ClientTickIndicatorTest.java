@@ -23,6 +23,16 @@ class ClientTickIndicatorTest {
 	}
 
 	@Test
+	void showsHostedPauseAndKeepsDebugPauseDistinct() {
+		var hosted = ClientTickIndicator.layout(null, traceStatus(false), true, true, 320, 36, 180, 30, 61, 9);
+		assertEquals(List.of("PAUSED — WAITING FOR PLAYERS"), labels(hosted));
+		assertEquals(180 + 8, hosted.getFirst().bounds().right() - hosted.getFirst().bounds().left());
+		var both = ClientTickIndicator.layout(debugStatus(ClientTickDebugController.Phase.PAUSED), traceStatus(false), true, true, 320, 36, 180, 30, 61, 9);
+		assertEquals(List.of("PAUSED", "PAUSED — WAITING FOR PLAYERS"), labels(both));
+		assertEquals(both.getFirst().bounds().bottom(), both.get(1).bounds().top());
+	}
+
+	@Test
 	void keepsSingleIndicatorsAtTheTopRight() {
 		assertEquals(
 			new ClientTickIndicator.IndicatorPanel(
@@ -63,7 +73,7 @@ class ClientTickIndicatorTest {
 		ClientTickTraceRecorder.TraceStatus traceStatus,
 		boolean plannerEnabled
 	) {
-		return ClientTickIndicator.layout(debugStatus, traceStatus, plannerEnabled, 320, 36, 30, 61, 9);
+		return ClientTickIndicator.layout(debugStatus, traceStatus, plannerEnabled, false, 320, 36, 180, 30, 61, 9);
 	}
 
 	private static List<String> labels(List<ClientTickIndicator.IndicatorPanel> panels) {

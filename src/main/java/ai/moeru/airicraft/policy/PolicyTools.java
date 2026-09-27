@@ -12,7 +12,7 @@ public final class PolicyTools {
 		"collect_resource", "craft_recipe", "smelt_items", "collect_smelted_items", "equip_item", "eat_food",
 		"drop_items", "give_player", "attack_entity", "use_entity", "place_block", "use_block", "break_blocks",
 		"tend_crops", "lure_entities", "start_action_goal", "close_container", "transfer_container",
-		"configure_pathfind", "configure_lighting", "configure_reflex", "inspect_inventory", "inspect_world",
+		"configure_pathfind", "configure_lighting", "configure_opportunistic_mining", "configure_reflex", "inspect_inventory", "inspect_world",
 		"inspect_nearby_entities", "inspect_container", "check_craftables", "check_smeltables", "inspect_smelting",
 		"list_action_capabilities", "query_world", "search_recipes", "find_world_features", "survey_cave",
 		"read_policy_docs");

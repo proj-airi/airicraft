@@ -116,7 +116,9 @@ public final class SemanticContextProjector {
 					"social.player_left_nearby",
 					"follow.stuck" -> DEDUPE_BY_TYPE_PLAYER;
 				case "planner.reset_requested", "planner.degraded_entered", "planner.degraded_cleared" -> DEDUP_BY_TYPE;
-				case "session.world_loaded",
+				case "reflex.resolved",
+					"social.item_offered",
+					"session.world_loaded",
 					"session.world_unloaded",
 					"session.connection_lost",
 					"session.lan_opened",

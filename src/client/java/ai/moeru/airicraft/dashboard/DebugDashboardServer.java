@@ -44,19 +44,32 @@ public final class DebugDashboardServer {
 
 	private final DashboardObservationStore store;
 	private final Path logPath;
+	private final java.util.function.Supplier<Map<String, Object>> reportEnvironment;
+	private final java.util.function.Supplier<List<String>> reportSecrets;
+	private final Object reportLock = new Object();
+	private DiagnosticReport.Draft reportDraft;
+	private DiagnosticReport reportPreview;
+	private String reportPreviewId;
+	private long reportExpiresAt;
 	private volatile HttpServer server;
 	private volatile ExecutorService requestExecutor;
 	private volatile ScheduledExecutorService logExecutor;
 	private volatile String token = "";
 	private volatile Status status = Status.stopped();
 
-	public DebugDashboardServer(DashboardObservationStore store) {
-		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"));
+	public DebugDashboardServer(DashboardObservationStore store, java.util.function.Supplier<Map<String, Object>> reportEnvironment, java.util.function.Supplier<List<String>> reportSecrets) {
+		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"), reportEnvironment, reportSecrets);
 	}
 
 	DebugDashboardServer(DashboardObservationStore store, Path logPath) {
+		this(store, logPath, () -> Map.of("availability", "unavailable"), List::of);
+	}
+
+	DebugDashboardServer(DashboardObservationStore store, Path logPath, java.util.function.Supplier<Map<String, Object>> reportEnvironment, java.util.function.Supplier<List<String>> reportSecrets) {
 		this.store = store;
 		this.logPath = logPath;
+		this.reportEnvironment = reportEnvironment;
+		this.reportSecrets = reportSecrets;
 	}
 
 	public synchronized void start(DebugDashboardConfig config) {
@@ -101,6 +114,7 @@ public final class DebugDashboardServer {
 		candidate.createContext("/api/observations", this::handleObservations);
 		candidate.createContext("/api/stream", this::handleStream);
 		candidate.createContext("/api/export", this::handleExport);
+		candidate.createContext("/api/report", this::handleReport);
 		candidate.createContext("/api/recording", this::handleRecordingSeek);
 		candidate.createContext("/api/frame", this::handleFrame);
 		candidate.start();
@@ -147,6 +161,7 @@ public final class DebugDashboardServer {
 			currentRequestExecutor.shutdownNow();
 		}
 		token = "";
+		synchronized (reportLock) { reportDraft = null; reportPreview = null; reportPreviewId = null; }
 		status = Status.stopped();
 	}
 
@@ -283,6 +298,82 @@ public final class DebugDashboardServer {
 		}
 	}
 
+	public DiagnosticReport.Draft markReport() {
+		return DiagnosticReport.mark(store, reportEnvironment.get(), currentReportSecrets());
+	}
+
+	public DiagnosticReport previewReport(DiagnosticReport.Draft draft, DiagnosticReport.Request request) {
+		return draft.prepare(request, currentReportSecrets());
+	}
+
+	private List<String> currentReportSecrets() {
+		List<String> secrets = new ArrayList<>(reportSecrets.get()); secrets.add(token); return secrets;
+	}
+
+	private record ReportReply(int status, Object body, DiagnosticReport download) {
+		static ReportReply json(int status, Object body) { return new ReportReply(status, body, null); }
+	}
+
+	private void handleReport(HttpExchange exchange) throws IOException {
+		if (!authorize(exchange, "POST")) return;
+		byte[] body = exchange.getRequestBody().readNBytes(16 * 1024 + 1);
+		if (body.length > 16 * 1024) { writeJson(exchange, 413, Map.of("error", "report_request_too_large")); return; }
+		ReportReply reply;
+		try {
+			JsonObject request = com.google.gson.JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
+			synchronized (reportLock) { reply = reportReply(exchange.getRequestURI().getPath(), request); }
+		} catch (IllegalArgumentException | IllegalStateException | NullPointerException | com.google.gson.JsonParseException invalidRequest) {
+			reply = ReportReply.json(400, Map.of("error", "invalid_report_request"));
+		}
+		// Never hold report state locks during network IO: a slow viewer must not delay shutdown/reload.
+		if (reply.download() == null) { writeJson(exchange, reply.status(), reply.body()); return; }
+		DiagnosticReport download = reply.download();
+		exchange.getResponseHeaders().set("Content-Type", "application/zip");
+		exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + download.fileName() + "\"");
+		exchange.getResponseHeaders().set("Cache-Control", "no-store");
+		exchange.sendResponseHeaders(200, 0);
+		try (OutputStream output = exchange.getResponseBody()) { download.writeBundleTo(output); }
+	}
+
+	private ReportReply reportReply(String path, JsonObject request) {
+		return switch (path) {
+			case "/api/report/mark" -> {
+				reportDraft = markReport(); reportPreview = null; reportPreviewId = null;
+				reportExpiresAt = System.nanoTime() + TimeUnit.MINUTES.toNanos(10);
+				yield ReportReply.json(200, Map.of("draftId", reportDraft.id()));
+			}
+			case "/api/report/preview" -> {
+				if (!activeReport() || !reportDraft.id().equals(request.get("draftId").getAsString())) {
+					yield ReportReply.json(409, Map.of("error", "report_marker_expired", "message", "This marker expired or was replaced. Mark a new moment."));
+				}
+				var options = GSON.fromJson(request.get("request"), DiagnosticReport.Request.class);
+				reportPreview = previewReport(reportDraft, java.util.Objects.requireNonNull(options));
+				reportPreviewId = java.util.UUID.randomUUID().toString();
+				JsonObject preview = reportPreview.preview(); preview.addProperty("previewId", reportPreviewId);
+				var attachments = reportPreview.attachments();
+				preview.add("attachments", GSON.toJsonTree(attachments));
+				preview.add("evidence", GSON.toJsonTree(DiagnosticEvidence.pages(attachments)));
+				yield ReportReply.json(200, preview);
+			}
+			case "/api/report/save" -> {
+				if (!activeReport() || reportPreview == null || !reportPreviewId.equals(request.get("previewId").getAsString())) {
+					yield ReportReply.json(409, Map.of("error", "report_preview_required"));
+				}
+				var consent = request.get("consent");
+				if (consent == null || !consent.isJsonPrimitive() || !consent.getAsJsonPrimitive().isBoolean() || !consent.getAsBoolean()) {
+					yield ReportReply.json(400, Map.of("error", "report_consent_required"));
+				}
+				yield new ReportReply(200, null, reportPreview);
+			}
+			default -> ReportReply.json(404, Map.of("error", "not_found"));
+		};
+	}
+
+	private boolean activeReport() {
+		if (reportDraft != null && System.nanoTime() < reportExpiresAt) return true;
+		reportDraft = null; reportPreview = null; reportPreviewId = null; return false;
+	}
+
 	private void handleExport(HttpExchange exchange) throws IOException {
 		if (!authorizeGet(exchange)) {
 			return;
@@ -307,8 +398,10 @@ public final class DebugDashboardServer {
 		}
 	}
 
-	private boolean authorizeGet(HttpExchange exchange) throws IOException {
-		if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+	private boolean authorizeGet(HttpExchange exchange) throws IOException { return authorize(exchange, "GET"); }
+
+	private boolean authorize(HttpExchange exchange, String method) throws IOException {
+		if (!method.equalsIgnoreCase(exchange.getRequestMethod())) {
 			writeJson(exchange, 405, Map.of("error", "method_not_allowed"));
 			return false;
 		}

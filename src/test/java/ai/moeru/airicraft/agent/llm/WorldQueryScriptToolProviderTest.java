@@ -26,7 +26,7 @@ class WorldQueryScriptToolProviderTest {
 		var args = new JsonObject();
 		args.addProperty("source", source);
 		args.add("input", new JsonObject());
-		return new PlannerToolCall("query", "query_world", args, null, null);
+		return new PlannerToolCall("query", "query_world", args, null);
 	}
 
 	@Test void projectionKeepsHostCoverageAndRegistersEvidenceOnClientExecutor() throws Exception {

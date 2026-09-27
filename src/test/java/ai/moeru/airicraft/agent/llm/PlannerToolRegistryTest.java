@@ -66,7 +66,6 @@ class PlannerToolRegistryTest {
 			"call_search",
 			"search_recipes",
 			arguments,
-			null,
 			null
 		)).join());
 	}
@@ -166,7 +165,7 @@ class PlannerToolRegistryTest {
 	}
 
 	private static PlannerToolCall call(String name) {
-		return new PlannerToolCall("call-" + name, name, new JsonObject(), null, null);
+		return new PlannerToolCall("call-" + name, name, new JsonObject(), null);
 	}
 
 	private static List<String> toolNames(List<Map<String, Object>> tools) {

@@ -118,6 +118,164 @@ class DebugDashboardServerTest {
 		}
 	}
 
+	@Test
+	void downloadsBoundedUserEvidenceSeparatelyFromRawDeveloperExports() throws Exception {
+		var store = new DashboardObservationStore(4L * 1024L * 1024L);
+		store.startSession("test", 0, 100);
+		store.advanceClock(10, false, true);
+		store.append("semantic_event", 10, 110, Map.of("type", "old_event"));
+		store.advanceClock(2000, false, true);
+		store.append("runtime_snapshot", 2100, 210, Map.of(
+			"plannerEnabled", true, "degraded", true,
+			"world", Map.of("loaded", true, "player", Map.of("health", 4, "name", "PRIVATE_PLAYER")),
+			"dialogue", "PRIVATE_CHAT"));
+		store.append("llm_call", 2100, 220, Map.of("status", "FAILED", "model", "test-model",
+			"statusCode", 503, "requestBody", "PRIVATE_PROMPT", "rawResponseBody", "PRIVATE_RESPONSE"));
+		store.append("log", 2100, 230, Map.of("message", "PRIVATE_TOKEN"));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 4L * 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			assertEquals(401, report(url, null).statusCode());
+			var response = report(url, token);
+			assertEquals(200, response.statusCode());
+			assertTrue(response.headers().firstValue("Content-Disposition").orElseThrow().contains("airicraft-report-"));
+			var lines = response.body().lines().toList();
+			var manifest = JsonParser.parseString(lines.getFirst()).getAsJsonObject();
+			assertEquals("airicraft.diagnostic-report", manifest.get("schema").getAsString());
+			assertEquals(2, manifest.get("schemaVersion").getAsInt());
+			assertEquals(store.sessionId(), manifest.getAsJsonObject("correlation").get("recordingSessionId").getAsString());
+			assertTrue(manifest.getAsJsonObject("correlation").has("hostedSessionId"));
+			assertTrue(manifest.getAsJsonObject("correlation").get("hostedSessionId").isJsonNull());
+			assertEquals(2000, manifest.getAsJsonObject("window").get("toTick").getAsInt());
+			assertTrue(response.body().contains("test-model"));
+			assertTrue(response.body().contains("503"));
+			assertTrue(response.body().contains("degraded"));
+			assertTrue(!response.body().contains("PRIVATE_") && !response.body().contains("old_event"));
+			var footer = JsonParser.parseString(lines.getLast()).getAsJsonObject();
+			assertEquals("integrity", footer.get("recordType").getAsString());
+			byte[] preceding = (String.join("\n", lines.subList(0, lines.size() - 1)) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(preceding));
+			assertEquals(digest, footer.get("sha256").getAsString());
+			assertEquals(preceding.length, footer.get("bytes").getAsInt());
+			assertEquals(lines.size() - 2, footer.get("observationCount").getAsInt());
+			assertTrue(send(url + "/api/export", token).body().contains("PRIVATE_PROMPT"));
+		} finally { server.stop(); }
+	}
+
+	@Test
+	void reportsLossAndUsesClientClockForRemoteSessions() throws Exception {
+		var store = new DashboardObservationStore(1024L * 1024L);
+		store.startSession("remote", 0, 100);
+		store.advanceClock(-1, false, false);
+		store.append("semantic_event", 1, 110, Map.of("type", "old_event"));
+		store.append("log", 2000, 120, Map.of("message", "x".repeat(2 * 1024 * 1024)));
+		store.append("semantic_event", 2000, 130, Map.of("type", "task.failed", "payload", Map.of("failureCode", "unreachable")));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			var response = report(url, token);
+			assertEquals(200, response.statusCode());
+			var manifest = JsonParser.parseString(response.body().lines().findFirst().orElseThrow()).getAsJsonObject();
+			assertEquals("client_tick", manifest.getAsJsonObject("window").get("clock").getAsString());
+			assertEquals(2000, manifest.getAsJsonObject("window").get("toTick").getAsInt());
+			assertTrue(manifest.getAsJsonObject("coverage").get("truncated").getAsBoolean());
+			assertEquals(1, manifest.getAsJsonObject("coverage").getAsJsonObject("droppedByType").get("log").getAsInt());
+			assertTrue(response.body().contains("observation_gap"));
+			assertTrue(response.body().contains("unreachable"));
+			assertTrue(!response.body().contains("old_event"));
+			store.startSession("reloaded", 0, 300);
+			String afterReload = report(url, token).body();
+			assertTrue(!afterReload.contains("unreachable"));
+		} finally { server.stop(); }
+	}
+
+	@Test
+	void reportsExplicitOmissionsWhenTheIncidentExceedsTheReportLimit() throws Exception {
+		var store = new DashboardObservationStore(16L * 1024L * 1024L);
+		store.advanceClock(20, false, true);
+		for (int i = 0; i < 2500; i++) store.append("semantic_event", i, i, Map.of("type", "event_" + i));
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 16L * 1024L * 1024L));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			var response = report(url, token);
+			assertEquals(200, response.statusCode());
+			var lines = response.body().lines().toList();
+			var manifest = JsonParser.parseString(lines.getFirst()).getAsJsonObject();
+			assertTrue(manifest.getAsJsonObject("coverage").get("truncated").getAsBoolean());
+			assertEquals(500, manifest.getAsJsonObject("coverage").get("reportLimitOmitted").getAsInt());
+			assertEquals(2002, lines.size());
+			assertTrue(response.body().contains("event_2499"));
+			assertTrue(response.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 3 * 1024 * 1024);
+		} finally { server.stop(); }
+	}
+
+	@Test void requiresAnExactPreviewAndConsentAndRedactsTheViewerCredential() throws Exception {
+		var store = new DashboardObservationStore(1024 * 1024);
+		store.advanceClock(20, false, true);
+		var server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 1024 * 1024));
+		try {
+			String url = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			assertEquals(405, send(url + "/api/report", token).statusCode());
+			var marker = JsonParser.parseString(post(url + "/api/report/mark", token, "{}").body()).getAsJsonObject();
+			String draftId = marker.get("draftId").getAsString();
+			assertEquals(409, post(url + "/api/report/save", token, "{\"previewId\":\"unknown\",\"consent\":true}").statusCode());
+			store.advanceClock(500, false, true);
+			var preview = post(url + "/api/report/preview", token, new com.google.gson.Gson().toJson(Map.of("draftId", draftId,
+				"request", Map.of("mode", "MINIMAL", "description", "My token is " + token))));
+			assertEquals(200, preview.statusCode());
+			assertTrue(!preview.body().contains(token));
+			var data = JsonParser.parseString(preview.body()).getAsJsonObject();
+			assertEquals(20, data.getAsJsonObject("window").get("toTick").getAsInt());
+			String previewId = data.get("previewId").getAsString();
+			assertEquals(400, post(url + "/api/report/save", token, new com.google.gson.Gson().toJson(Map.of("previewId", previewId, "consent", false))).statusCode());
+			post(url + "/api/report/mark", token, "{}");
+			assertEquals(409, post(url + "/api/report/save", token, new com.google.gson.Gson().toJson(Map.of("previewId", previewId, "consent", true))).statusCode());
+		} finally { server.stop(); }
+	}
+
+	private record ReportResponse(int statusCode, java.net.http.HttpHeaders headers, String body) {}
+	private static ReportResponse report(String url, String token) throws Exception {
+		var mark = post(url + "/api/report/mark", token, "{}");
+		if (mark.statusCode() != 200) return new ReportResponse(mark.statusCode(), mark.headers(), mark.body());
+		String draftId = JsonParser.parseString(mark.body()).getAsJsonObject().get("draftId").getAsString();
+		var preview = post(url + "/api/report/preview", token, new com.google.gson.Gson().toJson(Map.of("draftId", draftId,
+			"request", Map.of("mode", "SUMMARY", "description", "Test incident"))));
+		if (preview.statusCode() != 200) return new ReportResponse(preview.statusCode(), preview.headers(), preview.body());
+		var previewData = JsonParser.parseString(preview.body()).getAsJsonObject();
+		assertTrue(previewData.has("attachments"), "Preview must expose the actual attached files");
+		String expectedJsonl = previewData.getAsJsonObject("attachments").get("report.jsonl").getAsString();
+		String expectedSummary = previewData.getAsJsonObject("attachments").get("summary.txt").getAsString();
+		String previewId = previewData.get("previewId").getAsString();
+		var request = HttpRequest.newBuilder(URI.create(url + "/api/report/save")).header("Authorization", "Bearer " + token)
+			.POST(HttpRequest.BodyPublishers.ofString(new com.google.gson.Gson().toJson(Map.of("previewId", previewId, "consent", true)))).build();
+		var saved = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+		try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(saved.body()))) {
+			for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+				if (entry.getName().equals("report.jsonl")) {
+					String actual = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+					assertEquals(expectedJsonl, actual, "Save must contain the evidence shown before consent");
+					assertEquals("summary.txt", zip.getNextEntry().getName());
+					assertEquals(expectedSummary, new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+					return new ReportResponse(saved.statusCode(), saved.headers(), actual);
+				}
+			}
+		}
+		throw new AssertionError("Missing report.jsonl in bundle");
+	}
+	private static HttpResponse<String> post(String url, String token, String body) throws Exception {
+		var request = HttpRequest.newBuilder(URI.create(url)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body));
+		if (token != null) request.header("Authorization", "Bearer " + token);
+		return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+	}
+
 	private static HttpResponse<String> send(String url, String token) throws Exception {
 		HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url)).GET();
 		if (token != null) {

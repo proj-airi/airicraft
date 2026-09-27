@@ -14,6 +14,7 @@ import ai.moeru.airicraft.agent.session.SessionMode;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 
@@ -67,7 +68,7 @@ public final class PlannerOrchestrator {
 	private final PlannerLifecycleListener lifecycleListener;
 	private final AgentDebugRecorder debugRecorder;
 	private final PlannerActionToolExecutor actionToolExecutor;
-	private final PlannerToolNarrationSink narrationSink;
+	private final PlannerChatSink chatSink;
 	private final PlannerToolRegistry toolRegistry;
 	private final PlannerToolExecutionObserver toolExecutionObserver;
 	private final PlannerTurnJournal turnJournal;
@@ -114,7 +115,7 @@ public final class PlannerOrchestrator {
 		PlannerLifecycleListener lifecycleListener,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolRegistry toolRegistry,
 		PlannerToolExecutionObserver toolExecutionObserver
 	) {
@@ -135,7 +136,7 @@ public final class PlannerOrchestrator {
 			lifecycleListener,
 			debugRecorder,
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			toolRegistry,
 			toolExecutionObserver, 8,
 			new PlannerVisionService(conversation -> { throw new IllegalStateException("Planner vision fallback not configured"); }));
@@ -158,7 +159,7 @@ public final class PlannerOrchestrator {
 		PlannerLifecycleListener lifecycleListener,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolRegistry toolRegistry,
 		PlannerToolExecutionObserver toolExecutionObserver,
 		int plannerMaxImages,
@@ -189,7 +190,7 @@ public final class PlannerOrchestrator {
 		this.lifecycleListener = Objects.requireNonNull(lifecycleListener, "lifecycleListener");
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
 		this.actionToolExecutor = Objects.requireNonNull(actionToolExecutor, "actionToolExecutor");
-		this.narrationSink = Objects.requireNonNull(narrationSink, "narrationSink");
+		this.chatSink = Objects.requireNonNull(chatSink, "chatSink");
 		this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry");
 		this.toolExecutionObserver = Objects.requireNonNull(toolExecutionObserver, "toolExecutionObserver");
 		this.turnJournal = new PlannerTurnJournal(this.clock, CONVERSATION_HISTORY_CARD_LIMIT * 4);
@@ -371,27 +372,63 @@ public final class PlannerOrchestrator {
 			return contextAggregator.retainConversation(delivered);
 		}
 		PlannerDecisionContext context = decisionContextSource.get();
+		conversation = withGoalMessage(conversation, context);
 		conversation = deferredWorkReceipts.deliver(conversation, context.current());
 		if (endsWithObservation(conversation)) return contextAggregator.retainConversation(conversation);
 		var messages = new ArrayList<>(conversation.messages());
 		var notices = takeTrailingNotices(messages);
 		messages.addAll(PlannerObservation.exchange(observation(context, notices)));
 		// Commit to the role's history, not to a provider response. Retries reuse this conversation.
-		return contextAggregator.retainConversation(LlmConversation.of(messages));
+		LlmConversation retained = contextAggregator.retainConversation(LlmConversation.of(messages));
+		decisionWorldSessionId = context.worldSessionId();
+		incorporatedDecisionEventSequence = context.observations().latestSeqNo();
+		decisionRefreshPending = false;
+		return retained;
 	}
 
-	/** Advances the event cursor: every observation is committed to the role's history. */
-	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices) {
-		if (!context.worldSessionId().equals(decisionWorldSessionId)) {
-			decisionWorldSessionId = context.worldSessionId();
-			incorporatedDecisionEventSequence = 0;
+	/** Keep actual goal intent in the conversation; runtime events remain observe results. */
+	private static LlmConversation withGoalMessage(LlmConversation conversation, PlannerDecisionContext context) {
+		JsonElement value = GSON.toJsonTree(context.current().get("objective"));
+		if (value == null || !value.isJsonObject()) return conversation;
+		JsonObject goal = value.getAsJsonObject();
+		if (!goal.has("objective") || goal.get("objective").getAsString().isBlank()) return conversation;
+		String text = "Goal: " + goal.get("objective").getAsString();
+		for (String field : List.of("constraints", "completionCriteria")) {
+			if (goal.has(field) && !goal.get(field).isJsonNull() && !goal.get(field).getAsString().isBlank()) {
+				text += "\n" + field + ": " + goal.get(field).getAsString();
+			}
 		}
-		var payload = new java.util.LinkedHashMap<>(context.observation(incorporatedDecisionEventSequence, decisionRefreshPending));
-		decisionRefreshPending = false;
-		incorporatedDecisionEventSequence = context.observations().latestSeqNo();
+		// Inspect retained history so resets and compaction naturally restore the goal.
+		for (var message : conversation.messages().reversed()) {
+			if (message.kind() == LlmMessageKind.TASK && message.fields() != null
+				&& message.fields().isJsonObject() && message.fields().getAsJsonObject().has("plannerGoal")) {
+				if (message.content().equals(text)) return conversation;
+				break;
+			}
+		}
+		JsonObject fields = new JsonObject();
+		fields.addProperty("plannerGoal", true);
+		return conversation.withAppended(LlmChatMessage.user(text, LlmMessageKind.TASK, fields));
+	}
+
+	/** Capture evidence without acknowledging delivery: a queued result can still be cancelled. */
+	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices) {
+		long sinceSequence = context.worldSessionId().equals(decisionWorldSessionId) ? incorporatedDecisionEventSequence : 0;
+		var payload = new java.util.LinkedHashMap<>(context.observation(sinceSequence, decisionRefreshPending));
 		if (usesToolQueue()) payload.put("toolQueue", queueState());
 		if (!notices.isEmpty()) payload.put("notices", notices);
 		return payload;
+	}
+
+	/** Only completed observe payloads retained in a conversation can advance the shared cursor. */
+	private void incorporateObservationResult(ToolExecutionResult result) {
+		if (!PlannerObservation.TOOL_NAME.equals(normalizedToolName(result.toolCall()))
+			|| !result.toolResultText().startsWith("{")) return;
+		JsonObject payload = JsonParser.parseString(result.toolResultText()).getAsJsonObject();
+		if (payload.get("worldSessionId").getAsString().equals(decisionWorldSessionId)) {
+			incorporatedDecisionEventSequence = Math.max(incorporatedDecisionEventSequence,
+				payload.get("throughEventSequence").getAsLong());
+		}
 	}
 
 	private String observeToolResult() {
@@ -680,11 +717,7 @@ public final class PlannerOrchestrator {
 		for (PlannerToolCall toolCall : toolCalls) {
 			if (!isValidToolCall(toolCall)) {
 				String toolName = normalizedToolName(toolCall);
-				Airicraft.LOGGER.warn(
-					"Planner returned invalid tool call name={} narration={}",
-					toolCall.name(),
-					summarizeForLog(toolCall.narration())
-				);
+				Airicraft.LOGGER.warn("Planner returned invalid tool call name={}", toolCall.name());
 				return rejectToolRequest(
 					plannerResult,
 					toolRegistry.isKnownTool(toolName)
@@ -751,12 +784,12 @@ public final class PlannerOrchestrator {
 			result.response().chatMessages(),
 			"chatMessages"
 		);
-		PlannerChatContract.ValidationResult narrationValidation = validateToolNarration(result.response().toolCalls());
-		if (chatValidation.valid() && narrationValidation.valid()) {
+		PlannerChatContract.ValidationResult sayValidation = validateSayText(result.response().toolCalls());
+		if (chatValidation.valid() && sayValidation.valid()) {
 			return result;
 		}
-		String failureMessage = chatValidation.valid() ? narrationValidation.message() : chatValidation.message();
-		// Cosmetic tool narration must not regenerate an otherwise valid gameplay decision.
+		String failureMessage = chatValidation.valid() ? sayValidation.message() : chatValidation.message();
+		// A long say line is shortened locally; it must not regenerate an otherwise valid gameplay decision.
 		if (!chatValidation.valid() && result.attempt() <= 1 && scheduleChatRepairRetry(result, failureMessage)) {
 			return null;
 		}
@@ -791,20 +824,20 @@ public final class PlannerOrchestrator {
 			+ PlannerChatContract.MAX_MESSAGE_LENGTH
 			+ " characters. Use delayTicks or delaySeconds for pauses between messages."
 			+ "\nDo not use markdown, code fences, bullets, headings, links, decorative formatting, multiline text, or a leading slash."
-			+ "\nIf you still need a tool, keep the same tool intent and make narration one short plaintext line under "
+			+ "\nIf you still need a tool, keep the same tool intent; say text must be one short plaintext line under "
 			+ PlannerChatContract.MAX_MESSAGE_LENGTH
 			+ " characters.";
 	}
 
-	private static PlannerChatContract.ValidationResult validateToolNarration(List<PlannerToolCall> toolCalls) {
+	private static PlannerChatContract.ValidationResult validateSayText(List<PlannerToolCall> toolCalls) {
 		for (int index = 0; index < (toolCalls == null ? 0 : toolCalls.size()); index++) {
 			PlannerToolCall toolCall = toolCalls.get(index);
-			if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+			if (!isSay(toolCall)) {
 				continue;
 			}
 			PlannerChatContract.ValidationResult validation = PlannerChatContract.validateText(
-				toolCall.narration(),
-				"toolCalls[" + index + "].narration"
+				SayToolProvider.text(toolCall),
+				"toolCalls[" + index + "].text"
 			);
 			if (!validation.valid()) {
 				return validation;
@@ -815,28 +848,33 @@ public final class PlannerOrchestrator {
 
 	private static PlannerResponse contractVisibleChat(PlannerResponse response) {
 		List<PlannerToolCall> contractedToolCalls = response.toolCalls().stream()
-			.map(PlannerOrchestrator::contractToolNarration)
+			.map(PlannerOrchestrator::contractSayText)
 			.toList();
 		return response
 			.withChatMessages(PlannerChatContract.contractMessages(response.chatMessages()))
 			.withToolCalls(contractedToolCalls);
 	}
 
-	private static PlannerToolCall contractToolNarration(PlannerToolCall toolCall) {
-		if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+	private static PlannerToolCall contractSayText(PlannerToolCall toolCall) {
+		if (!isSay(toolCall)) {
 			return toolCall;
 		}
-		String contractedNarration = PlannerChatContract.contractText(toolCall.narration());
 		JsonObject arguments = toolCall.arguments().deepCopy();
-		arguments.addProperty("narration", contractedNarration);
+		arguments.addProperty("text", PlannerChatContract.contractText(SayToolProvider.text(toolCall)));
 		return new PlannerToolCall(
 			toolCall.id(),
 			toolCall.name(),
 			arguments,
-			contractedNarration,
 			null,
 			toolCall.repairedArgumentPaths()
 		);
+	}
+
+	/** Only a say call with usable text carries visible chat; its validation belongs to the provider. */
+	private static boolean isSay(PlannerToolCall toolCall) {
+		return toolCall != null && SayToolProvider.SAY.equals(toolCall.name()) && toolCall.arguments().has("text")
+			&& toolCall.arguments().get("text").isJsonPrimitive() && toolCall.arguments().getAsJsonPrimitive("text").isString()
+			&& !toolCall.arguments().get("text").getAsString().isBlank();
 	}
 
 	private static PlannerExecutionResult withResponse(PlannerExecutionResult result, PlannerResponse response) {
@@ -861,7 +899,7 @@ public final class PlannerOrchestrator {
 			.mapToInt(message -> message == null || message.text() == null ? 0 : message.text().length())
 			.sum();
 		length += response.toolCalls().stream()
-			.mapToInt(toolCall -> toolCall == null || toolCall.narration() == null ? 0 : toolCall.narration().length())
+			.mapToInt(toolCall -> isSay(toolCall) ? SayToolProvider.text(toolCall).length() : 0)
 			.sum();
 		return length;
 	}
@@ -872,7 +910,7 @@ public final class PlannerOrchestrator {
 			+ (failureMessage == null || failureMessage.isBlank() ? "parse error" : failureMessage)
 			+ (usesToolQueue() ? "\nTool calls append to a sequential FIFO. Use continue to yield or clear_queue to abort and replace the plan."
 				: "\nCall exactly one tool unless every call is a read-only text tool. Do not batch action calls.")
-			+ "\nWhen calling a tool, leave assistant content empty and put visible pre-action text in the tool narration argument.";
+			+ "\nWhen calling a tool, leave assistant content empty; to talk in the same turn, call say.";
 		String failedToolSchema = failedToolSchema(failureMessage);
 		if (failedToolSchema == null) {
 			return reminder;
@@ -904,11 +942,7 @@ public final class PlannerOrchestrator {
 		CompletableFuture<ToolExecutionOutcome> abort;
 		PlannerToolCall abortCall;
 		long observationTick;
-		long firstResultMs;
-		long lastResultMs;
-		PlannerToolCall loneCall;
-		PlannerToolCall reviewedLoneCall;
-		long loneSinceMs;
+		final List<PlannerToolCall> checkpoints = new ArrayList<>();
 	}
 	private final QueueState toolQueue = new QueueState();
 	private boolean queueReflexActive;
@@ -927,6 +961,7 @@ public final class PlannerOrchestrator {
 			var cancelled = new ArrayList<>(toolQueue.tools.pending());
 			if (toolQueue.tools.active() != null) cancelled.addFirst(toolQueue.tools.active());
 			toolQueue.tools.clear((call, work) -> {});
+			toolQueue.checkpoints.clear();
 			for (var call : cancelled) queueReport(call, new TextToolExecutionOutcome("Cancelled by clear_queue; completed effects are not undone."));
 			toolQueue.abortCall = clear.get();
 			toolQueue.abort = requestPlannerTools(List.of(clear.get()), snapshot.plannerConversation());
@@ -941,6 +976,11 @@ public final class PlannerOrchestrator {
 				}
 			}
 			else if (PlannerQueueToolProvider.CLEAR.equals(call.name())) receipt = "Queue cleared; aborting active work.";
+			else if (SayToolProvider.isSayNow(call)) {
+				// Talking never waits behind queued work, a safety hold or the active action.
+				chatSink.say(SayToolProvider.text(call));
+				receipt = "Said in chat.";
+			}
 			else {
 				toolQueue.tools.append(List.of(call));
 				receipt = "QUEUED: " + call.id() + "; execution result will arrive in a later review.";
@@ -951,6 +991,7 @@ public final class PlannerOrchestrator {
 		}
 		var acceptedConversation = contextAggregator.buildPlannerFollowUpConversation(snapshot, calls, receipts);
 		contextAggregator.retainConversation(acceptedConversation);
+
 		commitRecordedToolExchanges(result.generation());
 		toolQueue.seed = result.request();
 		debugRecorder.recordPlannerCompletion(result);
@@ -970,7 +1011,7 @@ public final class PlannerOrchestrator {
 		if (context != null && decisionWorldSessionId != null
 			&& !decisionWorldSessionId.equals(context.worldSessionId())) {
 			toolQueue.tools.clear((call, id) -> {});
-			toolQueue.reports.clear(); toolQueue.images.clear();
+			toolQueue.reports.clear(); toolQueue.images.clear(); toolQueue.checkpoints.clear();
 			return;
 		}
 		if (toolQueue.abort != null) {
@@ -983,10 +1024,7 @@ public final class PlannerOrchestrator {
 			toolQueue.abort = null;
 			if (PlannerQueueToolProvider.CLEAR.equals(toolQueue.abortCall.name()) && outcome.toolResultText().startsWith("TOOL_ERROR:")) toolQueue.tools.clear((call, id) -> {});
 		}
-		var completion = toolQueue.tools.tick(call -> {
-			narrationSink.onToolNarration(call);
-			return requestPlannerTools(List.of(call), contextAggregator.retainedToolContext());
-		}, outcome -> ongoingWorkId(outcome.toolResultText()), id -> terminalQueuedWork(id, context),
+		var completion = toolQueue.tools.tick(call -> requestPlannerTools(List.of(call), contextAggregator.retainedToolContext()), outcome -> ongoingWorkId(outcome.toolResultText()), id -> terminalQueuedWork(id, context),
 			!queueReflexActive && (toolQueue.tools.active() == null || !toolRegistry.endsTurn(toolQueue.tools.active().name())));
 		if (completion != null) {
 			ToolExecutionOutcome outcome = completion.failure() != null
@@ -996,33 +1034,19 @@ public final class PlannerOrchestrator {
 			if (!outcome.toolResultText().startsWith("TOOL_ERROR:") && !outcome.toolResultText().startsWith("TOOL_UNAVAILABLE:"))
 				toolRegistry.afterResultCommitted(completion.call().name());
 		}
+		// Routine reviews are explicitly placed in the plan, with FIFO exhaustion as the fallback.
+		if (toolQueue.reports.isEmpty() || toolQueue.seed == null || sessionCoordinator.hasInFlight()
+			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || compactionService.hasInFlight() || coalescePending) return;
+		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
 		long now = clock.millis();
-		var active = toolQueue.tools.active();
-		var lone = toolQueue.tools.pending().isEmpty() ? active : null;
-		if (lone != toolQueue.loneCall) {
-			toolQueue.loneCall = lone;
-			toolQueue.loneSinceMs = now;
-		}
-		boolean refill = lone != null && lone != toolQueue.reviewedLoneCall
-			&& !toolRegistry.endsTurn(lone.name()) && now - toolQueue.loneSinceMs >= 1000;
-		if ((!refill && toolQueue.reports.isEmpty()) || toolQueue.seed == null || sessionCoordinator.hasInFlight()
-			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || compactionService.hasInFlight()
-			|| coalescePending) return;
-		// Coalesce fast results even when a refill is due, but do not starve reports behind slow reads.
-		boolean nextReadRunning = active != null && toolRegistry.isReadTool(active.name());
-		if (!toolQueue.reports.isEmpty()
-			&& (now - toolQueue.lastResultMs < 250 || nextReadRunning) && now - toolQueue.firstResultMs < 1000) return;
 		PlannerRequest seed = toolQueue.seed;
 		submit(PlannerRequest.ofTrigger(toolQueue.observationTick, now, seed.sessionMode(), seed.primaryInteractionPlayer(), seed.activeGoal(),
-			PlannerTriggerType.SYSTEM, "tool_queue", toolQueue.reports.isEmpty()
-				? "Queued work is still running. Plan the next steps assuming it succeeds, without treating it as succeeded."
-				: "Queued tool results are ready for review.", null)
+			PlannerTriggerType.SYSTEM, "tool_queue", toolQueue.checkpoints.isEmpty() ? "FIFO empty. Review completed results and plan the next batch." : "report_to_me reached. Review the requested results; the remaining FIFO continues independently.", null)
 			.withSafetyContext(minimumSafetyEpoch, currentSafetyHoldId));
 	}
 
 	private void queueReport(PlannerToolCall call, ToolExecutionOutcome outcome) {
-		if (toolQueue.reports.isEmpty()) toolQueue.firstResultMs = clock.millis();
-		toolQueue.lastResultMs = clock.millis();
+		if (PlannerQueueToolProvider.REPORT.equals(call.name()) && !outcome.toolResultText().startsWith("Cancelled by clear_queue")) toolQueue.checkpoints.add(call);
 		toolQueue.reports.put(call.id(), new ToolExecutionResult(call, outcome.toolResultText(), outcome.hasImageAttachment()));
 		if (outcome instanceof ImageToolExecutionOutcome image) toolQueue.images.put(call.id(), image.imageAttachment());
 		debugRecorder.recordTerminalTool(toolQueue.observationTick, call, outcome.toolResultText(), outcome.hasImageAttachment());
@@ -1055,9 +1079,21 @@ public final class PlannerOrchestrator {
 	private LlmConversation appendQueueContext(LlmConversation conversation) {
 		if (!usesToolQueue()) return conversation;
 		var remaining = new java.util.LinkedHashMap<>(toolQueue.reports);
+		boolean allOutputs = toolQueue.checkpoints.isEmpty()
+			|| toolQueue.checkpoints.stream().anyMatch(c -> !c.arguments().has("includeTools"));
+		var included = new java.util.HashSet<String>();
+		for (var checkpoint : toolQueue.checkpoints) if (checkpoint.arguments().has("includeTools"))
+			checkpoint.arguments().getAsJsonArray("includeTools").forEach(value -> included.add(value.getAsString()));
+		if (!allOutputs) remaining.replaceAll((id, report) -> {
+			// Observations carry the shared evidence cursor and must be delivered before acknowledgement.
+			if (PlannerObservation.TOOL_NAME.equals(report.toolCall().name())
+				|| included.contains(report.toolCall().name()) || PlannerQueueToolProvider.REPORT.equals(report.toolCall().name())) return report;
+			toolQueue.images.remove(id);
+			return new ToolExecutionResult(report.toolCall(), "Output omitted by report_to_me: " + report.toolCall().name() + "; execution finished. Full output remains in the recording.", false);
+		});
 		var messages = new ArrayList<LlmChatMessage>();
 		for (var message : conversation.messages()) {
-			// Queue snapshots are current state, not growing historical narration.
+			// Queue snapshots are current state, not a growing history.
 			if (message.content().startsWith("TOOL QUEUE:")) continue;
 			var report = remaining.remove(message.toolCallId());
 			if (report == null) messages.add(message);
@@ -1072,9 +1108,14 @@ public final class PlannerOrchestrator {
 				: LlmChatMessage.userWithImage(text, LlmMessageKind.TOOL_RESULT, image));
 		}
 		if (plannerExecutor.managesConversationHistory()) backendHistoryImages += toolQueue.images.size();
+		for (var checkpoint : toolQueue.checkpoints) messages.add(LlmChatMessage.user("REPORT REQUEST: " + checkpoint.arguments(), LlmMessageKind.NOTICE));
+		toolQueue.checkpoints.clear();
+		LlmConversation retained = contextAggregator.retainConversation(LlmConversation.of(messages));
+		toolQueue.reports.values().forEach(this::incorporateObservationResult);
 		toolQueue.reports.clear(); toolQueue.images.clear();
-		if (decisionContextSource == null) messages.add(LlmChatMessage.user("TOOL QUEUE: " + GSON.toJson(queueState()), LlmMessageKind.NOTICE));
-		return LlmConversation.of(messages);
+		return decisionContextSource == null
+			? retained.withAppended(LlmChatMessage.user("TOOL QUEUE: " + GSON.toJson(queueState()), LlmMessageKind.NOTICE))
+			: retained;
 	}
 
 	private Map<String, Object> queueState() {
@@ -1083,7 +1124,6 @@ public final class PlannerOrchestrator {
 		state.put("workId", toolQueue.tools.activeWorkId());
 		state.put("pending", toolQueue.tools.pending().stream().map(PlannerOrchestrator::queuedCallView).toList());
 		state.put("aborting", toolQueue.abort != null);
-		if (toolQueue.tools.pending().isEmpty()) toolQueue.reviewedLoneCall = toolQueue.tools.active();
 		return state;
 	}
 
@@ -1097,9 +1137,6 @@ public final class PlannerOrchestrator {
 			return finishFailedPlannerResult(promotionFailure);
 		}
 		commitSnapshotIfNeeded(plannerResult.generation());
-		for (PlannerToolCall toolCall : toolCalls) {
-			narrationSink.onToolNarration(toolCall);
-		}
 		appendToolRequestCard(plannerResult, toolCalls);
 		debugRecorder.recordPlannerCompletion(plannerResult);
 		for (PlannerToolCall toolCall : toolCalls) {
@@ -1424,7 +1461,6 @@ public final class PlannerOrchestrator {
 			INVENTORY_BOOTSTRAP_TOOL_CALL_ID,
 			INVENTORY_TOOL_NAME,
 			arguments,
-			null,
 			null
 		);
 	}
@@ -1526,6 +1562,7 @@ public final class PlannerOrchestrator {
 		}
 		LlmConversation completedToolConversation = toolOutcome.appendFollowUp(contextAggregator, followUpSnapshot, toolExecution.assistantRawContent(), toolExecution.toolCalls());
 		completedToolConversation = contextAggregator.retainConversation(completedToolConversation);
+		toolResults.forEach(this::incorporateObservationResult);
 		if (plannerExecutor.managesConversationHistory() && toolOutcome.hasImageAttachment()) backendHistoryImages++;
 		// Completed effects remain evidence even when safety invalidates the next decision.
 		boolean terminalTool = toolExecution.toolCalls().stream().anyMatch(call -> toolRegistry.endsTurn(call.name()))
@@ -1807,9 +1844,7 @@ public final class PlannerOrchestrator {
 
 	private void cancelPendingTool() {
 		toolQueue.tools.clear((call, workId) -> {});
-		toolQueue.loneCall = null;
-		toolQueue.reviewedLoneCall = null;
-		toolQueue.reports.clear(); toolQueue.images.clear();
+		toolQueue.reports.clear(); toolQueue.images.clear(); toolQueue.checkpoints.clear();
 		if (toolQueue.abort != null) toolQueue.abort.cancel(true);
 		toolQueue.abort = null;
 		if (pendingToolExecution != null) {
@@ -1994,7 +2029,7 @@ public final class PlannerOrchestrator {
 		if (toolRequest.prompt() != null && !toolRequest.prompt().isBlank()) {
 			arguments.addProperty("prompt", toolRequest.prompt());
 		}
-		return new PlannerToolCall("legacy_" + name, name, arguments, null, null);
+		return new PlannerToolCall("legacy_" + name, name, arguments, null);
 	}
 
 	private static String toolPrompt(PlannerToolCall toolCall) {
@@ -2331,8 +2366,8 @@ public final class PlannerOrchestrator {
 			return null;
 		}
 		StringBuilder summary = new StringBuilder("Tool call: ").append(toolCall.name());
-		if (toolCall.narration() != null && !toolCall.narration().isBlank()) {
-			summary.append(" | narration: ").append(toolCall.narration());
+		if (isSay(toolCall)) {
+			summary.append(" | said: ").append(SayToolProvider.text(toolCall));
 		}
 		String prompt = toolPrompt(toolCall);
 		if (!prompt.isBlank()) {

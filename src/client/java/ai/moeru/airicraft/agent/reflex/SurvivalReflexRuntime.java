@@ -63,6 +63,8 @@ public final class SurvivalReflexRuntime {
 	private ShieldGuard shieldGuard;
 	private CombatStalemate combatStalemate;
 	private CombatProgress combatProgress;
+	private CombatEpisode combatEpisode;
+	private final Map<String, ResolvedThreat> combatParticipants = new LinkedHashMap<>();
 	private TacticalWindow tacticalWindow;
 	record TacticalWindow(long untilTick) {
 		boolean active(long tick, float health) { return tick < untilTick && health > 4; }
@@ -249,6 +251,8 @@ public final class SurvivalReflexRuntime {
 			return snapshot;
 		}
 
+		observeCombatEpisode(client, player, threats, tick);
+
 		if (snapshot.cause() == SurvivalReflexCause.DROWNING && !policy().drowningEnabled()
 			|| snapshot.cause() == SurvivalReflexCause.MOB_ATTACK && !policy().combatEnabled()) {
 			resolve(client, player, threats, tick, "reflex_policy_disabled", false);
@@ -328,6 +332,8 @@ public final class SurvivalReflexRuntime {
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
 		combatProgress = null;
+		combatEpisode = null;
+		combatParticipants.clear();
 		tacticalWindow = null;
 		progressThreats = null;
 		combatRecovery = CombatRecovery.READY;
@@ -370,6 +376,8 @@ public final class SurvivalReflexRuntime {
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
+		combatEpisode = null;
+		combatParticipants.clear();
 		long nextEpoch = snapshot.safetyEpoch() + 1L;
 		combatStalemate = null;
 		resetSecurityProgress();
@@ -951,6 +959,26 @@ public final class SurvivalReflexRuntime {
 		combatTarget = null;
 	}
 
+	private void observeCombatEpisode(MinecraftClient client, ClientPlayerEntity player, List<ResolvedThreat> threats, long tick) {
+		if (combatEpisode == null) {
+			if (snapshot.cause() != SurvivalReflexCause.MOB_ATTACK) return;
+			combatEpisode = new CombatEpisode(tick, player.getHealth());
+		}
+		for (ResolvedThreat threat : threats) combatParticipants.put(threat.observed().uuid(), threat);
+		List<CombatEpisode.Target> observations = new ArrayList<>();
+		for (ResolvedThreat threat : combatParticipants.values()) {
+			LivingEntity entity = threat.entity();
+			// Removal/unloading alone is not death. Retain the entity reference to observe the death state after filtering.
+			boolean dead = entity.isDead() || entity.getRemovalReason() == Entity.RemovalReason.KILLED;
+			boolean present = !entity.isRemoved() && client.world.getEntityById(entity.getId()) == entity;
+			if (!dead && !present) continue;
+			observations.add(new CombatEpisode.Target(entity.getUuidAsString(), entity.getName().getString(),
+				Registries.ENTITY_TYPE.getId(entity.getType()).toString(), dead ? CombatEpisode.Outcome.CONFIRMED_DEAD : CombatEpisode.Outcome.ALIVE,
+				entity.getHealth(), player.distanceTo(entity)));
+		}
+		combatEpisode.observe(player.getHealth(), observations);
+	}
+
 	private void resolve(
 		MinecraftClient client,
 		ClientPlayerEntity player,
@@ -978,9 +1006,12 @@ public final class SurvivalReflexRuntime {
 			"reason", reason,
 			"position", goal(player.getBlockPos()),
 			"remainingThreats", threatSnapshots(threats),
+			"combatSummary", combatEpisode == null ? null : combatEpisode.summary(tick, reason),
 			"noProgressTicks", noProgressTicks(combatProgress, combatStalemate, tick),
 			"nextState", nextState.name()
 		)));
+		combatEpisode = null;
+		combatParticipants.clear();
 		snapshot = new SurvivalReflexSnapshot(
 			nextState, snapshot.cause(), snapshot.action(), snapshot.safetyEpoch(), nextHoldId,
 			snapshot.interruptedJobId(), snapshot.interruptedActionExecutionId(), threatSnapshots(threats),

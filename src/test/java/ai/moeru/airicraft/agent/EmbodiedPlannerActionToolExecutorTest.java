@@ -51,6 +51,6 @@ class EmbodiedPlannerActionToolExecutorTest {
 			args -> { throw new AssertionError("unexpected craft"); },
 			call -> { throw new AssertionError("unexpected block edit"); },
 			call -> "executed:" + call.name());
-		return executor.execute(new PlannerToolCall("food-test", name, new JsonObject(), null, null)).join();
+		return executor.execute(new PlannerToolCall("food-test", name, new JsonObject(), null)).join();
 	}
 }

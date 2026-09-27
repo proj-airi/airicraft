@@ -76,7 +76,7 @@ public final class SelfToolProvider implements PlannerToolProvider {
 			}
 			if (name.equals("inspect_tool")) return CompletableFuture.completedFuture(args.has("name") ? definitions.get(args.get("name").getAsString()).toString() : definitions.keySet().toString());
 			if (name.equals("remove_tool")) { definitions.remove(args.get("name").getAsString()); return CompletableFuture.completedFuture("Tool removed"); }
-			return queries.execute(new PlannerToolCall(call.id(),"query_world",queryArguments(definitions.get(name),args),null,null))
+			return queries.execute(new PlannerToolCall(call.id(),"query_world",queryArguments(definitions.get(name),args),null))
 				.thenApply(result -> result.replaceFirst("query_world",name));
 		} catch (RuntimeException error) { return CompletableFuture.completedFuture("TOOL_ERROR: " + call.name() + " " + error.getMessage()); }
 	}

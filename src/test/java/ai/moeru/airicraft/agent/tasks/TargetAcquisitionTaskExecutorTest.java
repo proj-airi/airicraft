@@ -9,6 +9,176 @@ import static org.junit.jupiter.api.Assertions.*;
 import static ai.moeru.airicraft.agent.tasks.TargetAcquisitionTaskExecutor.*;
 
 class TargetAcquisitionTaskExecutorTest {
+	@Test void gatheringLogsDoesNotStartAnUnrelatedMiningDetour() {
+		Fixture f = new Fixture();
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.tick(2);
+		assertEquals(0, f.env.breaks);
+		assertTrue(f.nav.active);
+	}
+	@Test void distantCoalDropDoesNotTurnAReachableOpportunityIntoADetour() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.env.dropItemId = "minecraft:coal";
+		f.env.interactable = true;
+		f.env.selectiveInteractable = true;
+		f.tick(3);
+		f.env.sources = List.of(new Candidate(Kind.DROP, "old-coal", pos(20,64,0), pos(20,64,0)),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.interactable = false;
+		f.tick(25);
+		assertFalse(f.nav.goals.contains(pos(20,64,0)));
+		assertTrue(f.nav.goals.contains(pos(7,64,0)));
+	}
+	@Test void reachedIronQuotaSkipsUnrelatedCoalAndFinishesIronVein() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.tick(2);
+		f.request = f.request.withMineGoalSatisfied(true);
+		f.env.opportunities = List.of(
+			new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(2,64,0), pos(0,64,0)));
+		f.env.interactable = true;
+		f.tick(4);
+		assertEquals("minecraft:iron_ore", f.env.brokenIds.getFirst());
+	}
+	@Test void requestedIronDropTakesPriorityOverNearbyCoal() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3,
+				List.of("minecraft:raw_iron"), List.of()), 0, "test"));
+		f.env.dropItemId = "minecraft:raw_iron";
+		f.env.sources = List.of(new Candidate(Kind.DROP, "iron-drop", pos(1,64,0), pos(1,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,1), pos(0,64,0)));
+		f.tick(2);
+		assertEquals(0, f.env.breaks);
+		assertTrue(f.nav.active);
+	}
+	@Test void sameTickCoalPickupResumesIronWithoutWaitingForDropGrace() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.env.coalCountOnBreak = true;
+		f.env.interactable = true;
+		f.env.selectiveInteractable = true;
+		f.tick(5);
+		assertEquals(1, f.env.coalCount);
+		assertTrue(f.nav.active);
+		var notices = f.opportunityJournal.drain();
+		assertEquals(List.of(MiningOpportunityJournal.Stage.STARTED, MiningOpportunityJournal.Stage.BROKEN,
+			MiningOpportunityJournal.Stage.MATCHING_ITEM_GAIN_OBSERVED), notices.stream().map(MiningOpportunityJournal.Notice::stage).toList());
+		assertEquals(1, notices.getLast().observedItemGain());
+	}
+	@Test void fullInventoryAbandonsOptionalCoalDropWithoutFailingIron() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.env.dropItemId = "minecraft:coal";
+		f.env.interactable = true;
+		f.env.selectiveInteractable = true;
+		f.tick(3);
+		f.env.sources = List.of(new Candidate(Kind.DROP, "coal-drop", f.env.position, f.env.position),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.canCollectDrop = false;
+		f.tick(4);
+		assertTrue(f.events.isEmpty());
+		assertTrue(f.nav.active);
+		assertTrue(f.opportunityJournal.drain().stream().anyMatch(notice ->
+			notice.stage() == MiningOpportunityJournal.Stage.PICKUP_UNCONFIRMED));
+	}
+
+	@Test void disablingPolicyLeavesNearbyCoalForThePlanner() {
+		Fixture f = new Fixture();
+		f.opportunityPolicy.configure(false, 6, 200);
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.tick(4);
+		assertEquals(0, f.env.breaks);
+		assertTrue(f.nav.active);
+	}
+
+	@Test void extraBlockLimitStopsVeinCleanup() {
+		Fixture f = new Fixture();
+		f.opportunityPolicy.configure(true, 1, 200);
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test")).withMineGoalSatisfied(true);
+		f.env.sources = List.of();
+		f.env.opportunities = List.of(
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(1,64,0), pos(0,64,0)),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(2,64,0), pos(0,64,0)));
+		f.env.interactable = true;
+		f.tick(30);
+		assertEquals(1, f.env.brokenIds.size());
+		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
+	}
+	@Test void picksUpTheCoalDropBeforeResumingIron() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.env.dropItemId = "minecraft:coal";
+		f.env.interactable = true;
+		f.env.selectiveInteractable = true;
+		f.tick(3);
+		assertEquals(List.of("minecraft:coal_ore"), f.env.brokenIds);
+		f.env.sources = List.of(new Candidate(Kind.DROP, "coal-drop", f.env.position, f.env.position),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.tick(2);
+		assertTrue(f.executor.snapshot().lastPathEvent().contains("phase=PICKUP"));
+		f.env.sources = f.env.sources.stream().filter(candidate -> candidate.kind() != Kind.DROP).toList();
+		f.env.coalCount = 1;
+		f.env.interactable = false;
+		f.tick(4);
+		assertTrue(f.nav.active, "The original iron approach should resume after the coal pickup");
+	}
+	@Test void minesExposedCoalWithinReachBeforeResumingIronApproach() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(8,64,0), pos(7,64,0)));
+		f.tick(2);
+		assertTrue(f.nav.active);
+		f.env.opportunities = List.of(new Candidate(Kind.BLOCK, "minecraft:coal_ore", pos(1,64,0), pos(0,64,0)));
+		f.env.interactable = true;
+		f.tick(3);
+		assertEquals(List.of("minecraft:coal_ore"), f.env.brokenIds);
+		assertTrue(f.events.isEmpty());
+		f.env.interactable = false;
+		f.tick(24);
+		assertTrue(f.nav.active, "The original iron task should continue");
+	}
+
+	@Test void finishesNearbyIronVeinAfterRequestedCount() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("iron", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("minecraft:iron_ore"), 3), 0, "test")).withMineGoalSatisfied(true);
+		f.env.sources = List.of();
+		f.env.opportunities = List.of(
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(1,64,0), pos(0,64,0)),
+			new Candidate(Kind.BLOCK, "minecraft:iron_ore", pos(2,64,0), pos(0,64,0)));
+		f.env.interactable = true;
+		f.tick(60);
+		assertEquals(List.of("minecraft:iron_ore", "minecraft:iron_ore"), f.env.brokenIds);
+		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
+		assertTrue(f.events.getFirst().message().contains("opportunityBreaks={minecraft:iron_ore=2}"));
+		var breaks = f.opportunityJournal.drain().stream()
+			.filter(notice -> notice.stage() == MiningOpportunityJournal.Stage.BROKEN).toList();
+		assertEquals(List.of(pos(1,64,0), pos(2,64,0)), breaks.stream()
+			.map(MiningOpportunityJournal.Notice::position).toList());
+		assertTrue(breaks.stream().allMatch(MiningOpportunityJournal.Notice::afterRequestedQuota));
+	}
 	@Test void blockedDropReportsInventoryFullAndReleasesNavigation() {
 		Fixture f = new Fixture();
 		f.env.sources = List.of(new Candidate(Kind.DROP, "drop", pos(5,64,0), pos(5,64,0)));
@@ -332,11 +502,18 @@ class TargetAcquisitionTaskExecutorTest {
 	static final class Fixture {
 		final FakeEnvironment env = new FakeEnvironment();
 		final FakeNavigation nav = new FakeNavigation();
-		final TargetAcquisitionTaskExecutor executor = new TargetAcquisitionTaskExecutor(nav, env);
+		final MiningOpportunityPolicyState opportunityPolicy = new MiningOpportunityPolicyState();
+		final MiningOpportunityJournal opportunityJournal = new MiningOpportunityJournal();
+		final TargetAcquisitionTaskExecutor executor = new TargetAcquisitionTaskExecutor(nav, env, opportunityPolicy, opportunityJournal);
 		final List<TaskTerminalEvent> events = new ArrayList<>();
 		WorldTaskRequest request = WorldTaskRequest.collectMine("mine", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
 			new GoalMineSpec(List.of("log"), 1), 0, "test"));
 		long tick;
+		Fixture() {
+			opportunityPolicy.updateAcquisitions(ai.moeru.airicraft.agent.actions.BlockAcquisitionIndex.of(List.of(
+				new ai.moeru.airicraft.agent.actions.BlockAcquisitionRule("minecraft:coal_ore", "minecraft:coal",
+					List.of("minecraft:stone_pickaxe"), false, false, "minecraft:blocks/coal_ore"))));
+		}
 		void tick(int n) {
 			for (int i = 0; i < n; i++) executor.tick(new SessionSnapshot(SessionMode.SINGLEPLAYER_LAN_HOST,
 				true,true,"minecraft:overworld",true,25565,++tick), Optional.of(request)).ifPresent(events::add);
@@ -345,37 +522,54 @@ class TargetAcquisitionTaskExecutorTest {
 	static final class FakeEnvironment implements Environment {
 		GoalPosition position = pos(0,64,0);
 		List<Candidate> sources = List.of(new Candidate(Kind.BLOCK,"log",pos(5,64,0),pos(4,64,0)));
+		List<Candidate> opportunities = List.of();
+		List<String> brokenIds = new ArrayList<>();
 		boolean interactable, inScope = true;
+		boolean selectiveInteractable;
 		boolean requiredToolAvailable = true;
 		boolean canCollectDrop = true;
 		public boolean canCollectDrop(Candidate target) { return canCollectDrop; }
 		Set<GoalPosition> visible;
 		boolean countOnBreak;
+		boolean coalCountOnBreak;
+		String dropItemId = "log";
+		int coalCount;
 		BreakResult breakFailure;
 		public boolean requiredToolAvailable(GoalMineSpec spec) { return requiredToolAvailable; }
 		int count, breaks, rejections;
 		public GoalPosition position() { return position; }
-		public int inventoryCount(GoalMineSpec s) { return count; }
+		public int inventoryCount(GoalMineSpec s) { return s.matchingItemIds().contains("minecraft:coal") ? coalCount : count; }
 		public boolean inScope(GoalPosition p, AcquisitionConstraints c, boolean standing) { return inScope && c.contains(p); }
 		public Set<GoalPosition> observeSources(GoalMineSpec s, AcquisitionConstraints c) {
 			return sources.stream().filter(t -> t.kind() == Kind.BLOCK && (visible == null || visible.contains(t.position())))
 				.map(Candidate::position).collect(java.util.stream.Collectors.toSet());
 		}
+		public List<Candidate> opportunityCandidates(GoalMineSpec s, AcquisitionConstraints c, boolean goalMet, Set<String> rejected) {
+			return opportunities.stream().filter(t -> !rejected.contains(t.key())).toList();
+		}
 		public List<Candidate> candidates(GoalMineSpec s, AcquisitionConstraints c, Set<String> rejected, Set<GoalPosition> observedSources) {
 			rejections = rejected.size();
 			return sources.stream().filter(t -> !rejected.contains(t.key()))
+				.filter(t -> t.kind() != Kind.DROP || s.matchingItemIds().contains(dropItemId))
 				.filter(t -> !c.visibleOnly() || t.kind() == Kind.DROP || observedSources.contains(t.position())).toList();
 		}
-		public boolean targetPresent(Candidate t) { return sources.contains(t); }
+		public List<Candidate> dropCandidates(GoalMineSpec s, AcquisitionConstraints c, Set<String> rejected) {
+			return sources.stream().filter(t -> t.kind() == Kind.DROP && !rejected.contains(t.key())
+				&& s.matchingItemIds().contains(dropItemId)).toList();
+		}
+		public boolean targetPresent(Candidate t) { return sources.contains(t) || opportunities.contains(t); }
 		public boolean dropsAvailable(GoalMineSpec spec, AcquisitionConstraints constraints) {
 			return sources.stream().anyMatch(t -> t.kind() == Kind.DROP);
 		}
-		public boolean canInteract(Candidate t) { return interactable; }
+		public boolean canInteract(Candidate t) { return interactable && (!selectiveInteractable || t.workPosition().equals(position)); }
 		public BreakResult breakTarget(Candidate t, GoalMineSpec s) {
 			breaks++;
 			if (breakFailure != null) return breakFailure;
+			brokenIds.add(t.id());
 			if (countOnBreak) count++;
+			if (coalCountOnBreak && t.id().equals("minecraft:coal_ore")) coalCount++;
 			sources = sources.stream().filter(source -> !source.equals(t)).toList();
+			opportunities = opportunities.stream().filter(source -> !source.equals(t)).toList();
 			return BreakStatus.BROKEN;
 		}
 		public void cancelBreaking() {}

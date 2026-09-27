@@ -69,10 +69,10 @@ class PlannerReferencesTest {
 	@Test void notesPersistNativeIdentitiesButOrdinaryTextIsUntouched() {
 		var references = new PlannerReferences();
 		String ref = references.present(WORK);
-		var args = JsonParser.parseString("{\"evidence\":\"failed " + ref + "\",\"narration\":\"literal " + ref + "\",\"uuids\":[\"" + references.present(HOLD) + "\"]}").getAsJsonObject();
+		var args = JsonParser.parseString("{\"evidence\":\"failed " + ref + "\",\"text\":\"literal " + ref + "\",\"uuids\":[\"" + references.present(HOLD) + "\"]}").getAsJsonObject();
 		var resolved = references.resolveArguments(args);
 		assertEquals("failed " + WORK, resolved.get("evidence").getAsString());
-		assertEquals("literal " + ref, resolved.get("narration").getAsString());
+		assertEquals("literal " + ref, resolved.get("text").getAsString());
 		assertEquals(HOLD, resolved.getAsJsonArray("uuids").get(0).getAsString());
 	}
 	@Test void proseIsNotSearchedForAnIdentity() {

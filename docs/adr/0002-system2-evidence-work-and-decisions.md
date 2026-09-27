@@ -35,6 +35,16 @@ delegation and may return its outcome, not finish the overall objective. Objecti
 have an explicit blocked state distinct from failed attempts, yielded turns and terminal
 outcomes. Constraints and named decisions are stored separately from observations.
 
+The current goal and its constraints/completion criteria are carried in a user-role
+message when establishing planner context and when that intent changes. Runtime
+notifications, including death and respawn, remain observation tool results. Death
+cancels physical actions and gates new actuation until respawn, but preserves the
+planner conversation, pending replies, and delegation. Explicit reset and world
+changes still own conversation resets. Provider completions containing neither
+visible text nor tool calls are parse failures, subject to the existing bounded
+repair/failure policy; they must not count as successful goal-continuation turns.
+
+
 Decision ownership is separate from actuator ownership. Reflexes gate physical actions
 but allow bounded, event-driven inspection and policy changes by the active model role.
 Do not add a continuous position controller or change model/effort settings.

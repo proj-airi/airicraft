@@ -154,3 +154,20 @@ pre.json { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #b8
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timebar { grid-template-columns: 70px 100px minmax(120px, 1fr) 180px 180px; }
 }
+
+#report-dialog { width: min(600px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; padding: 24px; border: 1px solid #385163; border-radius: 10px; background: #0e151c; color: #cad5dd; box-shadow: var(--shadow); }
+#report-dialog::backdrop { background: #000a; }
+#report-dialog h2 { margin-top: 0; }
+#report-dialog p, #report-dialog label { font-size: 13px; line-height: 1.5; }
+#report-dialog label { display: block; margin-top: 14px; }
+#report-dialog textarea, #report-dialog select { width: 100%; padding: 8px; color: inherit; background: #14202a; border: 1px solid #385163; border-radius: 4px; }
+#report-dialog textarea { resize: vertical; }
+#report-preview-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+.report-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
+#report-dialog button:disabled { opacity: .45; cursor: default; }
+
+#report-evidence { margin-top: 16px; }
+#report-evidence summary, #report-files summary { font-size: 12px; }
+#report-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 8px; font-size: 12px; }
+#report-evidence img { display: block; max-width: 100%; max-height: 500px; object-fit: contain; }
+#report-raw { font: 11px/1.5 ui-monospace, monospace; }

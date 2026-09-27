@@ -11,6 +11,7 @@ import java.util.List;
 
 final class ClientTickIndicator {
 	private static final String PAUSED_LABEL = "PAUSED";
+	private static final String HOSTED_PAUSED_LABEL = "PAUSED — WAITING FOR PLAYERS";
 	private static final String TRACE_LABEL = "TRACE";
 	private static final String PLANNER_OFF_LABEL = "PLANNER OFF";
 	private static final int PAUSED_COLOR = 0xD0B52222;
@@ -25,9 +26,10 @@ final class ClientTickIndicator {
 		DrawContext drawContext,
 		ClientTickDebugController.DebugStatus debugStatus,
 		ClientTickTraceRecorder.TraceStatus traceStatus,
-		boolean plannerEnabled
+		boolean plannerEnabled,
+		boolean hostedPaused
 	) {
-		if ((debugStatus == null || !debugStatus.paused()) && (traceStatus == null || !traceStatus.active()) && plannerEnabled) {
+		if ((debugStatus == null || !debugStatus.paused()) && (traceStatus == null || !traceStatus.active()) && plannerEnabled && !hostedPaused) {
 			return;
 		}
 		if (client == null || drawContext == null || client.textRenderer == null) {
@@ -39,8 +41,10 @@ final class ClientTickIndicator {
 			debugStatus,
 			traceStatus,
 			plannerEnabled,
+			hostedPaused,
 			drawContext.getScaledWindowWidth(),
 			textRenderer.getWidth(PAUSED_LABEL),
+			textRenderer.getWidth(HOSTED_PAUSED_LABEL),
 			textRenderer.getWidth(TRACE_LABEL),
 			textRenderer.getWidth(PLANNER_OFF_LABEL),
 			textRenderer.fontHeight
@@ -62,8 +66,10 @@ final class ClientTickIndicator {
 		ClientTickDebugController.DebugStatus debugStatus,
 		ClientTickTraceRecorder.TraceStatus traceStatus,
 		boolean plannerEnabled,
+		boolean hostedPaused,
 		int scaledWindowWidth,
 		int pausedTextWidth,
+		int hostedPausedTextWidth,
 		int traceTextWidth,
 		int plannerOffTextWidth,
 		int fontHeight
@@ -73,6 +79,11 @@ final class ClientTickIndicator {
 		if (debugStatus != null && debugStatus.paused()) {
 			IndicatorBounds bounds = bounds(scaledWindowWidth, pausedTextWidth, fontHeight, top);
 			panels.add(new IndicatorPanel(PAUSED_LABEL, PAUSED_COLOR, bounds));
+			top = bounds.bottom();
+		}
+		if (hostedPaused) {
+			IndicatorBounds bounds = bounds(scaledWindowWidth, hostedPausedTextWidth, fontHeight, top);
+			panels.add(new IndicatorPanel(HOSTED_PAUSED_LABEL, PAUSED_COLOR, bounds));
 			top = bounds.bottom();
 		}
 		if (traceStatus != null && traceStatus.active()) {

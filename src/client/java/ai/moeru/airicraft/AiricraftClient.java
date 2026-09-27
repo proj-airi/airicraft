@@ -31,6 +31,9 @@ public class AiricraftClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		ai.moeru.airicraft.settings.AiricraftSettings.register();
+		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.START_SERVER_TICK.register(
+			server -> RUNTIME_CONTROLLER.automaticPlaytest().onHostedServerTick(server));
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
 			ClientCommandManager.literal("airicraft")
 				.then(ClientCommandManager.literal("noplanner")

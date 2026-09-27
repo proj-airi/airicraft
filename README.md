@@ -2,6 +2,37 @@
 
 Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for automating common tasks. It targets Minecraft `1.21.8` with Java `21`, plus a `wrapper/` CLI subproject.
 
+## Settings
+
+Click **Airicraft** on the title or pause screen, press **F8** in-game (rebindable
+under Controls), or run `/airicraft config`. With Mod Menu installed, use
+**Mods → Airicraft → Configure**. Cloth Config is bundled; Mod Menu is optional.
+
+The menu groups connection, behaviour, vision, and advanced settings. API keys
+are masked unless you choose **Show API keys**. **Save & reload agent** applies
+changes and ends the agent's current work; Cancel discards edits. Opening the
+menu or saving unchanged settings does not reload the agent. Existing YAML
+files remain compatible, including settings not exposed in the menu.
+
+Use **Profiles…** to switch connections or duplicate, rename, and delete named
+profiles. Duplicate copies the selected connection; enter a new name first.
+Profiles keep provider credentials, planner/Codex and vision models, reasoning,
+timeouts, and model context limits together. Behaviour settings stay shared.
+Switching and profile edits remain provisional until **Save & reload agent**.
+Profiles are stored in `agent.yml`; its existing top-level settings always
+represent the active connection and remain editable by advanced users.
+
+Run the isolated rendered menu test with
+`./gradlew runClientGameTest -Pairicraft.includeCompat=false -Pairicraft.settingsSmoke=true`.
+Add `-Pairicraft.settingsSmokeModMenu=true` to also exercise Mod Menu integration.
+The test uses `build/run/clientGameTest` and writes screenshots there.
+
+## Bug reports
+
+Open **Airicraft Settings → Report a problem** to mark the incident, describe what went wrong, choose attachments and preview before saving. **Minimal** metadata is the default; **Summary** adds diagnostic events/world state; **Developer** explicitly includes chat, model content and screenshots. **Save these attachments** creates a ZIP in `airicraft-reports` with JSONL evidence and a readable summary; nothing is uploaded. The dashboard offers the same flow through **Report this moment**.
+
+Reports contain version/model identifiers and a bounded diagnostic summary. Nothing is uploaded automatically. See [diagnostic reports](docs/diagnostic-reports.md) for contents, limits, and the versioned format. **Raw developer export** is a separate, full-history mode.
+
 ## Development And Verification
 
 Prerequisites:
@@ -23,6 +54,42 @@ Prerequisites:
 ./gradlew build
 ./gradlew test wrapper:test --rerun-tasks
 ```
+
+### Releases
+
+CI builds and tests every branch push and pull request, and saves the installable
+mod jars as the `mod-jars` workflow artifact. Push a version tag to also publish
+those jars to GitHub Releases:
+
+```shell
+git tag v1.2.3-alpha.1
+git push origin v1.2.3-alpha.1
+```
+
+Releases from `dev` are always alpha prereleases, never GitHub's latest release.
+Use `vX.Y.Z-alpha.N` tags; a plain `vX.Y.Z` tag on `dev` automatically builds
+version `X.Y.Z-alpha` and uses that version in the release title. The original
+Git tag is preserved. Jar filenames and mod metadata use the resolved version.
+
+Once release candidates are ready, move release work to `main`. On `main`,
+`vX.Y.Z-rc.N` publishes a prerelease and `vX.Y.Z` publishes a stable release.
+RC tags on `dev` are rejected. Tags do not record their source branch, so CI checks
+whether the tagged commit is an ancestor of `origin/main` or `origin/dev`, giving
+`main` precedence when both contain it. Tags outside both branches are rejected.
+An absent remote `main` is supported during alpha development.
+
+Publishing requires a successful build and tests; the workflow uses the
+repository's automatic `GITHUB_TOKEN` without extra secrets.
+
+Each release contains the main `airicraft` jar and the optional
+`airicraft-journeymap-compat` and `airicraft-rei-compat` jars. Install the main jar
+in a Fabric 1.21.8 client's `mods` directory with Fabric API and Baritone 1.15.0
+or newer; add a compatibility jar only with its corresponding mod. Sources,
+development jars, and the wrapper CLI are excluded from release assets.
+
+The main jar bundles SnakeYAML and the OpenTelemetry API, SDK, OTLP exporter,
+and their runtime dependencies. The build tests YAML parsing and telemetry
+initialization against the packaged libraries in an isolated classloader.
 
 ### Planner world inspection contract
 
@@ -120,6 +187,18 @@ jdb -attach 127.0.0.1:5005
 
 Run `scripts/automatic-playtest --world <saved-world-directory> --recorder-jar <profile> --objective <instruction>`. The planner can call `something_wrong` with a natural-language bug report to pause the game and archive the shared evaluation flight records, live RGB, required Recorder Play, and paused world checkpoint under `automatic_playtest/`. See [automatic playtest reports](docs/automatic-playtest.md) for the shutdown/finalization flow and offline review.
 
+### Companion character
+
+The companion plays a character defined by a Character Card V3 file, the format AIRI uses, with an Airicraft extension for interests, dislikes, chattiness, mischief and fixed chat lines. Without `config/airicraft/character.json` it plays the built-in generic Minecraft player; copy `character.json.example` to customize, then run `airicraft reload`. See [companion character](docs/character-card.md).
+
+### Hosted playtests
+
+Run `scripts/hosted-playtest --world <template-world-directory> --recorder-jar <profile>` to let human testers play with the companion. The companion hosts a fresh copy of the world on one fixed LAN port (`--lan-port`, default 25565), which testers join directly or through a forwarded port. The session ends after its testers leave, and it is recorded with the same pipeline plus tester join/leave records and every tester's Recorder Play under `hosted_playtest/`. See [hosted playtests](docs/hosted-playtest.md).
+
+### LAN hosting
+
+Worlds opened to LAN with Airicraft use offline mode: joining players are not verified against the Minecraft Session Service. This applies to both automatic hosting and the in-game Open to LAN button. Player names are self-reported and use offline UUIDs.
+
 ### Realtime debug dashboard
 
 Every Airicraft client starts its own read-only debug dashboard. The client binds the first available LAN port starting at `8765` and prints a clickable viewer-token URL in the log, in `airicraft status`, and once in Minecraft chat after a world loads.
@@ -133,7 +212,7 @@ The dashboard provides:
 - bounded history with explicit eviction/gap reporting
 - JSONL session export and replay through **Open session**
 
-The dashboard is observation-only. It has a separate viewer token and does not expose the localhost bridge token or any bridge mutation route. Runtime state is sampled every five client ticks while discrete transitions are captured as they arrive. The browser keeps a recent memory-bounded window; **Save session** exports the full retained server history. A slow or disconnected browser never backpressures the game.
+The dashboard is observation-only. It has a separate viewer token and does not expose the localhost bridge token or any bridge mutation route. Runtime state is sampled every five client ticks while discrete transitions are captured as they arrive. The browser keeps a recent memory-bounded window; **Raw developer export** exports the full retained server history. A slow or disconnected browser never backpressures the game.
 
 Configure it in `config/airicraft/airicraft.yml`:
 

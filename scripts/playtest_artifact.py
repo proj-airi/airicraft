@@ -24,6 +24,15 @@ def write_json(path: Path, value):
     temporary.replace(path)
 
 
+def companion_player_uuid(run: Path) -> str | None:
+    """The client's own player; hosted runs also record every tester's connection as a separate Play."""
+    try:
+        value = read_json(run / "recording-start.json", {}).get("context", {}).get("playerUuid")
+        return str(uuid.UUID(value)) if isinstance(value, str) else None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def published_play(run: Path, artifacts: Path) -> Path | None:
     try:
         summary = read_json(run / "summary.json", {})
@@ -81,6 +90,42 @@ def video_index(run: Path, offset: int) -> dict:
             "frameCount": str(len(packets)), "durationSeconds": end + 1 / fps, "sizeBytes": str(video.stat().st_size)}
 
 
+def _metadata_player_uuid(metadata_path: Path) -> str | None:
+    try:
+        return str(uuid.UUID(str(read_json(metadata_path)["player"]["uuid"])))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _select_companion_play(metadata_paths: list[Path], companion: str | None) -> tuple[Path, list[Path]]:
+    """Hosted runs record every tester's connection too; the playtest extension belongs to the companion's Play."""
+    if companion is None:
+        if len(metadata_paths) != 1:
+            raise ValueError(f"Expected one Recorder Play, found {len(metadata_paths)}")
+        selected = metadata_paths
+    else:
+        selected = [path for path in metadata_paths if _metadata_player_uuid(path) == companion]
+        if len(selected) != 1:
+            raise ValueError(f"Expected one Recorder Play for companion {companion}, found {len(selected)}")
+    return selected[0], [path for path in metadata_paths if path != selected[0]]
+
+
+def _participant(recorder: Path, metadata_path: Path) -> dict:
+    """A tester's Play stays unmodified beside the companion's; this entry only locates it."""
+    entry = {"path": (Path("v1") / metadata_path.parent.relative_to(recorder)).as_posix()}
+    try:
+        metadata = read_json(metadata_path)
+        player, connection = metadata.get("player", {}), metadata.get("connection", {})
+        entry.update(playerUuid=player.get("uuid"), playerName=player.get("name"), connectionId=connection.get("id"),
+                     finalized=bool(connection.get("endedAt")))
+        for key in ("startServerTick", "endServerTick"):
+            if connection.get(key) is not None:
+                entry[key] = str(int(connection[key]))
+    except (OSError, ValueError, AttributeError, TypeError):
+        entry["metadataReadable"] = False
+    return entry
+
+
 def _asset(path: str, role: str, media: str, schema: str) -> dict:
     return {"path": path, "role": role, "mediaType": media, "schema": schema}
 
@@ -117,13 +162,13 @@ def publish(run: Path, artifacts: Path) -> Path | None:
     existing = published_play(run, artifacts)
     if existing:
         return existing
-    metadata_paths = list((run / "recorder/v1").glob("*/players/*/plays/*/metadata.json"))
+    metadata_paths = sorted((run / "recorder/v1").glob("*/players/*/plays/*/metadata.json"))
     if not metadata_paths:
         return None
-    if len(metadata_paths) != 1:
-        raise ValueError(f"Expected one Recorder Play, found {len(metadata_paths)}")
-    play = metadata_paths[0].parent
-    metadata = read_json(metadata_paths[0])
+    selected, others = _select_companion_play(metadata_paths, companion_player_uuid(run))
+    play = selected.parent
+    metadata = read_json(selected)
+    participants = [_participant(run / "recorder/v1", path) for path in others]
     identity = {"serverInstanceId": metadata["server"]["instanceId"],
                 "playerUuid": metadata["player"]["uuid"], "connectionId": metadata["connection"]["id"]}
     for value in identity.values():
@@ -230,7 +275,7 @@ def publish(run: Path, artifacts: Path) -> Path | None:
             else:
                 name, media = _copy_evidence(source, temporary / source.name)
                 target = temporary / name
-            role = {"live-recording.jsonl.gz": "observations",
+            role = {"live-recording.jsonl.gz": "observations", "players.jsonl.gz": "participants",
                     "world-save.zip": "world_checkpoint"}.get(target.name, "evidence")
             assets.append(_asset(target.name, role, media, "airicraft.evidence.v1"))
             files.append({"path": target.name, "bytes": target.stat().st_size})
@@ -263,8 +308,10 @@ def publish(run: Path, artifacts: Path) -> Path | None:
         execution = {key: client_exit[key] for key in ("method", "finalReturnCode", "minecraftExited") if key in client_exit}
         write_json(temporary / "playtest.json", {"schemaVersion": 1, "run": portable_run,
             "timeline": timeline, "debugTickOffset": offset, "bugReport": report,
-            "environment": {"dimension": context.get("dimension"),
+            "environment": {"dimension": context.get("dimension"), "mode": context.get("mode", "automatic"),
+                "companion": {"playerUuid": context.get("playerUuid"), "playerName": context.get("playerName")},
                 "sourceWorld": Path(launch["sourceWorld"]).name if launch.get("sourceWorld") else None},
+            "participants": participants,
             "capture": capture, "execution": execution, "pause": pause_details or None,
             "checkpoint": checkpoint or None, "pausedState": pause_snapshot.get("snapshot"), "files": files})
         write_json(temporary / "manifest.json", {"manifestVersion": 1, "extensionType": EXTENSION_TYPE,

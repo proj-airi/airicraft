@@ -29,8 +29,9 @@ const fmt = new Intl.NumberFormat();
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
 
 function authHeaders() { return { Authorization: `Bearer ${state.token}` }; }
-async function api(path) {
-  const response = await fetch(path, { headers: authHeaders(), cache: 'no-store' });
+async function api(path, body) {
+  const response = await fetch(path, { headers: { ...authHeaders(), ...(body === undefined ? {} : {'Content-Type':'application/json'}) },
+    method: body === undefined ? 'GET' : 'POST', body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store' });
   if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
   return response;
 }
@@ -230,7 +231,7 @@ function renderOverview(snapshot) {
   const hasDrops = Object.values(dropped).some(Number);
   const warnings = [
     hasDrops ? `Server history has evicted observations: ${escapeHtml(JSON.stringify(dropped))}` : '',
-    state.partialHistory ? 'Showing a recent browser window to stay responsive. Save session exports the full retained history.' : '',
+    state.partialHistory ? 'Showing a recent browser window to stay responsive. Raw developer export saves the full retained history.' : '',
   ].filter(Boolean);
   updateContent(`
     ${warnings.map(warning => `<div class="warning">${warning}</div>`).join('')}
@@ -437,18 +438,103 @@ function connected(isLive, error = '') {
   if (error) toast(error);
 }
 
+async function download(response) {
+  const blob = await response.blob();
+  const disposition = response.headers.get('content-disposition') || '';
+  const name = disposition.match(/filename="([^"]+)"/)?.[1] || 'airicraft-report.zip';
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob); link.download = name; link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  toast(`Saved ${name}. Review the file before sharing it.`);
+}
+
 async function exportSession() {
   if (state.replay) return toast('This is already a saved session.');
+  if (!window.confirm('Raw developer export includes the entire retained session: chat, model inputs/outputs, logs, screenshots and world/session metadata. Credentials are NOT redacted. Save this trusted debugging export?')) return;
+  try { await download(await api('/api/export')); } catch (error) { toast(error.message); }
+}
+
+const reportState = { draftId: null, previewId: null, generation: 0, busy: false };
+const reportCategories = {
+  MINIMAL: 'Description, build/model IDs, anonymous session ID and incident tick marker. No recorded observations or world state.',
+  SUMMARY: 'Description, build/model IDs, incident marker, diagnostic events, model-call statistics, world/session state, dimension and player health. No chat, model content, logs or screenshots.',
+  DEVELOPER: 'Description, build/model IDs, incident marker, chat, model inputs/outputs, logs, full world/session metadata and captured screenshots. Text credentials are redacted; screenshot pixels are not automatically redacted.',
+};
+function reportControls() {
+  el('report-preview').disabled = reportState.busy || !reportState.draftId;
+  el('report-save').disabled = reportState.busy || !reportState.previewId;
+  el('report-mode').disabled = reportState.busy;
+  el('report-description').disabled = reportState.busy;
+}
+function invalidateReport() {
+  reportState.generation++; reportState.previewId = null;
+  clearReportEvidence();
+  el('report-categories').textContent = reportCategories[el('report-mode').value];
+  el('report-preview-text').textContent = 'Preview required before saving these attachments.';
+  reportControls();
+}
+async function markReport() {
+  if (state.replay) return toast('Reporting needs the live recorder. This is an existing saved session.');
+  reportState.draftId = null; reportState.previewId = null;
+  el('report-description').value = ''; el('report-mode').value = 'MINIMAL';
+  invalidateReport();
+  const generation = reportState.generation;
+  reportState.busy = true; reportControls(); el('report-dialog').showModal();
+  el('report-preview-text').textContent = 'Preparing incident marker…';
   try {
-    const response = await api('/api/export');
-    const blob = await response.blob();
-    const disposition = response.headers.get('content-disposition') || '';
-    const name = disposition.match(/filename="([^"]+)"/)?.[1] || 'airicraft-debug.jsonl';
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob); link.download = name; link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    toast(`Saved ${name}`);
-  } catch (error) { toast(error.message); }
+    const marker = await (await api('/api/report/mark', {})).json();
+    if (generation !== reportState.generation) return;
+    reportState.draftId = marker.draftId;
+    el('report-preview-text').textContent = 'Moment marked. Choose attachments and preview before saving.';
+  } catch (error) { if (generation === reportState.generation) el('report-preview-text').textContent = error.message; }
+  finally { if (generation === reportState.generation) { reportState.busy = false; reportControls(); } }
+}
+function clearReportEvidence() {
+  el('report-evidence').replaceChildren();
+  el('report-raw').value = '';
+  el('report-files').hidden = true;
+}
+function showReportEvidence(preview) {
+  clearReportEvidence();
+  el('report-raw').value = preview.attachments['report.jsonl'];
+  el('report-files').hidden = false;
+  for (const page of preview.evidence) {
+    const detail = document.createElement('details');
+    const heading = document.createElement('summary'); heading.textContent = page.title;
+    const text = document.createElement('pre'); text.textContent = page.text;
+    detail.append(heading, text);
+    if (page.imageDataUrl?.match(/^data:image\/(png|jpeg);base64,/)) {
+      const img = document.createElement('img'); img.alt = page.title; img.loading = 'lazy';
+      img.src = page.imageDataUrl;
+      img.addEventListener('error', () => { text.textContent += '\nImage could not be decoded; encoded data is in report.jsonl.'; });
+      detail.append(img);
+    }
+    el('report-evidence').append(detail);
+  }
+}
+async function previewReport() {
+  if (reportState.busy || !reportState.draftId) return;
+  reportState.previewId = null; reportState.busy = true; clearReportEvidence(); reportControls();
+  const generation = reportState.generation;
+  try {
+    const preview = await (await api('/api/report/preview', {draftId:reportState.draftId,
+      request:{mode:el('report-mode').value, description:el('report-description').value}})).json();
+    if (generation !== reportState.generation) return;
+    el('report-preview-text').textContent = preview.summary.text;
+    showReportEvidence(preview);
+    reportState.previewId = preview.previewId;
+  } catch (error) { if (generation === reportState.generation) el('report-preview-text').textContent = error.message; }
+  finally { if (generation === reportState.generation) { reportState.busy = false; reportControls(); } }
+}
+async function saveReport() {
+  if (reportState.busy || !reportState.previewId) return;
+  reportState.busy = true; reportControls();
+  const generation = reportState.generation;
+  try {
+    await download(await api('/api/report/save', {previewId:reportState.previewId, consent:true}));
+    if (generation === reportState.generation) el('report-dialog').close();
+  } catch (error) { if (generation === reportState.generation) el('report-preview-text').textContent = error.message; }
+  finally { if (generation === reportState.generation) { reportState.busy = false; reportControls(); } }
 }
 
 async function loadRecordedFrame(frame) {
@@ -600,6 +686,13 @@ el('play-history').addEventListener('click', async () => {
   state.playbackTimer = setTimeout(advancePlayback, 0);
 });
 el('export').addEventListener('click', exportSession);
+el('report').addEventListener('click', markReport);
+el('report-mode').addEventListener('change', invalidateReport);
+el('report-description').addEventListener('input', invalidateReport);
+el('report-preview').addEventListener('click', previewReport);
+el('report-save').addEventListener('click', saveReport);
+el('report-cancel').addEventListener('click', () => el('report-dialog').close());
+el('report-dialog').addEventListener('close', () => { reportState.generation++; reportState.busy = false; reportState.previewId = null; clearReportEvidence(); });
 el('session-file').addEventListener('change', event => event.target.files[0] && openSession(event.target.files[0]).catch(error => toast(error.message)));
 el('close-inspector').addEventListener('click', () => { el('inspector').classList.add('collapsed'); document.querySelector('.workspace').classList.add('inspector-collapsed'); });
 
