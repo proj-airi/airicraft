@@ -67,6 +67,7 @@ import ai.moeru.airicraft.agent.events.EventPolicyRule;
 import ai.moeru.airicraft.agent.events.EventPolicyRuleUpsert;
 import ai.moeru.airicraft.agent.events.EventPolicyState;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
+import ai.moeru.airicraft.agent.events.EventCatalog;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -5106,54 +5107,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
-		LinkedHashMap<String, EventRoutingProfile> profiles = new LinkedHashMap<>();
-		profiles.put("social.player_spoke", new EventRoutingProfile("social.player_spoke", false, PlannerTriggerType.CHAT, false));
-		profiles.put("social.player_addressed_agent", new EventRoutingProfile("social.player_addressed_agent", false, PlannerTriggerType.CHAT, true));
-		profiles.put("social.local_controller_spoke", new EventRoutingProfile("social.local_controller_spoke", false, PlannerTriggerType.CHAT, true));
-		profiles.put("social.system_message", new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false));
-		profiles.put("social.item_offered", new EventRoutingProfile("social.item_offered", true, PlannerTriggerType.SYSTEM, false));
-		profiles.put("pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false));
-		profiles.put("crafting.item_crafted", new EventRoutingProfile("crafting.item_crafted", true, PlannerTriggerType.CRAFT, false));
-		profiles.put("smelting.output_ready", new EventRoutingProfile("smelting.output_ready", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("combat.damage_taken", new EventRoutingProfile("combat.damage_taken", true, PlannerTriggerType.DAMAGE, false));
-		profiles.put("player.physical", new EventRoutingProfile("player.physical", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("reflex.threat_detected", new EventRoutingProfile("reflex.threat_detected", true, null, true));
-		profiles.put("reflex.started", new EventRoutingProfile("reflex.started", true, null, true));
-		profiles.put("reflex.action_changed", new EventRoutingProfile("reflex.action_changed", true, null, true));
-		profiles.put("reflex.resolved", new EventRoutingProfile("reflex.resolved", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("reflex.hold_released", new EventRoutingProfile("reflex.hold_released", true, null, true));
-		profiles.put("reflex.actuator_failed", new EventRoutingProfile("reflex.actuator_failed", true, null, true));
-		profiles.put("lighting.torch_placed", new EventRoutingProfile("lighting.torch_placed", true, null, true));
-		profiles.put("planner.stale_response_rejected", new EventRoutingProfile("planner.stale_response_rejected", true, null, true));
-		profiles.put("player.died", new EventRoutingProfile("player.died", true, null, true));
-		profiles.put("player.actions_cancelled", new EventRoutingProfile("player.actions_cancelled", true, null, true));
-		profiles.put("player.action_rejected", new EventRoutingProfile("player.action_rejected", true, null, true));
-		profiles.put("player.respawn_requested", new EventRoutingProfile("player.respawn_requested", true, null, true));
-		profiles.put("player.respawn_request_failed", new EventRoutingProfile("player.respawn_request_failed", true, null, true));
-		profiles.put("player.respawned", new EventRoutingProfile("player.respawned", true, null, true));
-		profiles.put("session.world_loaded", new EventRoutingProfile("session.world_loaded", true, null, false));
-		profiles.put("session.world_unloaded", new EventRoutingProfile("session.world_unloaded", true, null, false));
-		profiles.put("session.connection_lost", new EventRoutingProfile("session.connection_lost", true, null, false));
-		profiles.put("session.lan_opened", new EventRoutingProfile("session.lan_opened", true, null, false));
-		profiles.put("social.player_joined_game", new EventRoutingProfile("social.player_joined_game", true, null, false));
-		profiles.put("social.player_left_game", new EventRoutingProfile("social.player_left_game", true, null, false));
-		profiles.put("social.player_joined_nearby", new EventRoutingProfile("social.player_joined_nearby", true, null, false));
-		profiles.put("social.player_left_nearby", new EventRoutingProfile("social.player_left_nearby", true, null, false));
-		profiles.put("follow.target_acquired", new EventRoutingProfile("follow.target_acquired", true, null, false));
-		profiles.put("follow.target_lost", new EventRoutingProfile("follow.target_lost", true, null, false));
-		profiles.put("follow.stuck", new EventRoutingProfile("follow.stuck", true, null, false));
-		profiles.put("planner.goal_set", new EventRoutingProfile("planner.goal_set", true, null, false));
-		profiles.put("planner.goal_cleared", new EventRoutingProfile("planner.goal_cleared", true, null, false));
-		profiles.put("planner.degraded_entered", new EventRoutingProfile("planner.degraded_entered", true, null, false));
-		profiles.put("planner.degraded_cleared", new EventRoutingProfile("planner.degraded_cleared", true, null, false));
-		profiles.put("planner.reset_requested", new EventRoutingProfile("planner.reset_requested", true, null, true));
-		profiles.put("task.blocked", new EventRoutingProfile("task.blocked", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("task.mining_opportunity", new EventRoutingProfile("task.mining_opportunity", true, null, true));
-		profiles.put("action_graph.goal_suspended", new EventRoutingProfile("action_graph.goal_suspended", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("action_graph.goal_terminal", new EventRoutingProfile("action_graph.goal_terminal", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened"));
-		profiles.put("policy.rule_rejected", EventRoutingProfile.rawOnly("policy.rule_rejected"));
-		return Map.copyOf(profiles);
+		return EventCatalog.defaults().routingProfiles();
 	}
 
 	private boolean suppressPlannerTriggersForCollectResourceProgress() {
