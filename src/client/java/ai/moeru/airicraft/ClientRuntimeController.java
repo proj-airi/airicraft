@@ -476,6 +476,11 @@ public final class ClientRuntimeController {
 	}
 
 	private BaritoneFacade navigationBackend(AiricraftConfig airicraftConfig) {
+		String override = System.getProperty("airicraft.navigation.backend", "").trim();
+		if (!override.isEmpty() && !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_BARITONE)
+			&& !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_AIRICRAFT)) {
+			Airicraft.LOGGER.warn("Ignoring airicraft.navigation.backend={}: expected baritone or airicraft", override);
+		}
 		boolean airicraft = AiricraftConfig.NAVIGATION_AIRICRAFT.equals(airicraftConfig.effectiveNavigationBackend());
 		Airicraft.LOGGER.info("Airicraft navigation backend: {}", airicraft ? "airicraft" : "baritone");
 		return airicraft ? airicraftBackend : baritoneBackend;

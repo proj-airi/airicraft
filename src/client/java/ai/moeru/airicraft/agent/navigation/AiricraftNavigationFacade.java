@@ -66,6 +66,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 	private Object liveWorld;
 	private final List<Map<String, Object>> plans = new ArrayList<>();
 	private double pendingCaptureMillis;
+	private long cancellations;
 
 	public AiricraftNavigationFacade(CameraController camera) {
 		this(new MinecraftMotor(camera), NavigationPlanner.shared());
@@ -122,14 +123,23 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		return mode != Mode.IDLE;
 	}
 
-	/** Stops in the same call: keys are released now and no {@code CANCELED} event follows. */
+	/**
+	 * Stops in the same call: keys are released now and no {@code CANCELED} event follows, so the
+	 * cancellation is acknowledged at once.
+	 */
 	@Override
 	public boolean cancel() {
 		stop();
 		events.clear();
+		cancellations++;
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client != null && client.isOnThread()) motor.release(client);
 		return false;
+	}
+
+	@Override
+	public long cancellationAcknowledgement() {
+		return cancellations;
 	}
 
 	@Override

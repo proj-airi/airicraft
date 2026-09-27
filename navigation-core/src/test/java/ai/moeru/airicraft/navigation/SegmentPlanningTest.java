@@ -43,6 +43,18 @@ class SegmentPlanningTest {
 			"no waypoint segment through bedrock: " + result.outcome());
 	}
 
+	@Test
+	void theWaypointAndTheFallbackShareOneBudget() {
+		MapTerrain terrain = corridor(300);
+		for (int x = 50; x <= 80; x++) for (int y = 1; y <= 6; y++) for (int z = 0; z <= 2; z++) terrain.set(x, y, z, AsciiTerrain.BEDROCK);
+		SearchBudget budget = new SearchBudget(120, 1_000_000_000L, 2.0);
+
+		SearchResult result = SegmentPlanning.plan(terrain, MovementPolicy.defaults().noEdits(), new GridPos(0, 1, 1),
+			new Goal.Block(299, 1, 1), new GridPos(299, 1, 1), budget, () -> false);
+
+		assertTrue(result.stats().expanded() <= budget.maxExpanded() + 1, "expanded " + result.stats().expanded());
+	}
+
 	private static MapTerrain corridor(int length) {
 		MapTerrain terrain = new MapTerrain(CellInfo.AIR, new Box(0, 0, 0, length - 1, 8, 2));
 		for (int x = 0; x < length; x++) for (int z = 0; z <= 2; z++) terrain.set(x, 0, z, AsciiTerrain.STONE);

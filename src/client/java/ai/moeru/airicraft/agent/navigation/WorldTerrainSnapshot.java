@@ -4,14 +4,17 @@ import ai.moeru.airicraft.navigation.CellInfo;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.TerrainView;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.chunk.ChunkSection;
+import net.minecraft.world.chunk.PalettedContainer;
 import net.minecraft.world.chunk.WorldChunk;
 
 /**
- * Block states copied from loaded chunks on the client thread, then classified lazily by the search
- * thread. Cells outside the box or in chunks that were not loaded are unloaded to search.
+ * Chunk sections copied on the client thread, then read and classified by the search thread. Only
+ * each section's block-state container is copied, an array copy, so capturing costs little on the
+ * client thread. Cells outside the box or in chunks that were not loaded are unloaded to search.
  */
 public final class WorldTerrainSnapshot implements TerrainView {
 	/** Horizontal reach of one snapshot around the start; farther goals are planned in segments. */
@@ -19,26 +22,41 @@ public final class WorldTerrainSnapshot implements TerrainView {
 	private static final int GOAL_MARGIN = 24;
 	private static final int VERTICAL_MARGIN = 24;
 	private static final int MAX_HEIGHT = 96;
+	private static final BlockState AIR = Blocks.AIR.getDefaultState();
 
 	private final int minX;
 	private final int minY;
 	private final int minZ;
-	private final int sizeX;
-	private final int sizeY;
-	private final int sizeZ;
-	private final BlockState[] states;
+	private final int maxX;
+	private final int maxY;
+	private final int maxZ;
+	private final int minChunkX;
+	private final int minChunkZ;
+	private final int chunksZ;
+	private final int minSection;
+	private final int sections;
+	private final boolean[] loadedColumns;
+	/** Copied containers per chunk column and section; null for an empty section. */
+	private final PalettedContainer<BlockState>[] containers;
 	private final MinecraftCellClassifier classifier;
 	private final long captureNanos;
 
-	private WorldTerrainSnapshot(int minX, int minY, int minZ, int sizeX, int sizeY, int sizeZ, BlockState[] states,
-		MinecraftCellClassifier classifier, long captureNanos) {
+	private WorldTerrainSnapshot(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, int chunksZ, int minSection,
+		int sections, boolean[] loadedColumns, PalettedContainer<BlockState>[] containers, MinecraftCellClassifier classifier,
+		long captureNanos) {
 		this.minX = minX;
 		this.minY = minY;
 		this.minZ = minZ;
-		this.sizeX = sizeX;
-		this.sizeY = sizeY;
-		this.sizeZ = sizeZ;
-		this.states = states;
+		this.maxX = maxX;
+		this.maxY = maxY;
+		this.maxZ = maxZ;
+		this.minChunkX = minX >> 4;
+		this.minChunkZ = minZ >> 4;
+		this.chunksZ = chunksZ;
+		this.minSection = minSection;
+		this.sections = sections;
+		this.loadedColumns = loadedColumns;
+		this.containers = containers;
 		this.classifier = classifier;
 		this.captureNanos = captureNanos;
 	}
@@ -47,6 +65,7 @@ public final class WorldTerrainSnapshot implements TerrainView {
 	 * Copies the box around {@code start} and toward {@code target} (a goal cell; its y is ignored
 	 * when {@code targetHasY} is false). Must run on the client thread.
 	 */
+	@SuppressWarnings("unchecked")
 	public static WorldTerrainSnapshot capture(ClientWorld world, GridPos start, GridPos target, boolean targetHasY,
 		MinecraftCellClassifier classifier) {
 		long started = System.nanoTime();
@@ -58,49 +77,49 @@ public final class WorldTerrainSnapshot implements TerrainView {
 		int lowY = targetHasY ? Math.min(start.y(), aim.y()) : start.y();
 		int highY = targetHasY ? Math.max(start.y(), aim.y()) : start.y();
 		int minY = Math.max(world.getBottomY(), Math.max(lowY - VERTICAL_MARGIN, start.y() - MAX_HEIGHT / 2));
-		int maxY = Math.min(world.getTopYInclusive(), Math.min(highY + VERTICAL_MARGIN, start.y() + MAX_HEIGHT / 2));
-		int sizeX = maxX - minX + 1, sizeY = Math.max(1, maxY - minY + 1), sizeZ = maxZ - minZ + 1;
-		BlockState[] states = new BlockState[sizeX * sizeY * sizeZ];
+		int maxY = Math.max(minY, Math.min(world.getTopYInclusive(), Math.min(highY + VERTICAL_MARGIN, start.y() + MAX_HEIGHT / 2)));
+		int chunksX = (maxX >> 4) - (minX >> 4) + 1, chunksZ = (maxZ >> 4) - (minZ >> 4) + 1;
+		int minSection = minY >> 4, sections = (maxY >> 4) - minSection + 1;
+		boolean[] loadedColumns = new boolean[chunksX * chunksZ];
+		PalettedContainer<BlockState>[] containers = new PalettedContainer[chunksX * chunksZ * sections];
 		BlockPos.Mutable probe = new BlockPos.Mutable();
-		for (int chunkX = minX >> 4; chunkX <= maxX >> 4; chunkX++) {
-			for (int chunkZ = minZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+		for (int cx = 0; cx < chunksX; cx++) {
+			for (int cz = 0; cz < chunksZ; cz++) {
+				int chunkX = (minX >> 4) + cx, chunkZ = (minZ >> 4) + cz;
 				if (!world.isChunkLoaded(probe.set(chunkX << 4, minY, chunkZ << 4))) continue;
+				int column = cx * chunksZ + cz;
+				loadedColumns[column] = true;
 				WorldChunk chunk = world.getChunk(chunkX, chunkZ);
-				ChunkSection[] sections = chunk.getSectionArray();
-				int x0 = Math.max(minX, chunkX << 4), x1 = Math.min(maxX, (chunkX << 4) + 15);
-				int z0 = Math.max(minZ, chunkZ << 4), z1 = Math.min(maxZ, (chunkZ << 4) + 15);
-				for (int y = minY; y <= maxY; y++) {
-					int sectionIndex = chunk.getSectionIndex(y);
-					if (sectionIndex < 0 || sectionIndex >= sections.length) continue;
-					ChunkSection section = sections[sectionIndex];
-					for (int x = x0; x <= x1; x++) {
-						for (int z = z0; z <= z1; z++) {
-							BlockState state = section == null || section.isEmpty()
-								? net.minecraft.block.Blocks.AIR.getDefaultState()
-								: section.getBlockState(x & 15, y & 15, z & 15);
-							states[((y - minY) * sizeZ + (z - minZ)) * sizeX + (x - minX)] = state;
-						}
-					}
+				ChunkSection[] chunkSections = chunk.getSectionArray();
+				for (int section = 0; section < sections; section++) {
+					int index = chunk.getSectionIndex((minSection + section) << 4);
+					if (index < 0 || index >= chunkSections.length) continue;
+					ChunkSection chunkSection = chunkSections[index];
+					if (chunkSection == null || chunkSection.isEmpty()) continue;
+					containers[column * sections + section] = chunkSection.getBlockStateContainer().copy();
 				}
 			}
 		}
-		return new WorldTerrainSnapshot(minX, minY, minZ, sizeX, sizeY, sizeZ, states, classifier, System.nanoTime() - started);
+		return new WorldTerrainSnapshot(minX, minY, minZ, maxX, maxY, maxZ, chunksZ, minSection, sections, loadedColumns,
+			containers, classifier, System.nanoTime() - started);
 	}
 
 	@Override
 	public CellInfo cell(int x, int y, int z) {
-		int dx = x - minX, dy = y - minY, dz = z - minZ;
-		if (dx < 0 || dy < 0 || dz < 0 || dx >= sizeX || dy >= sizeY || dz >= sizeZ) return CellInfo.UNLOADED;
-		BlockState state = states[(dy * sizeZ + dz) * sizeX + dx];
-		return state == null ? CellInfo.UNLOADED : classifier.classify(state);
+		if (x < minX || y < minY || z < minZ || x > maxX || y > maxY || z > maxZ) return CellInfo.UNLOADED;
+		int column = ((x >> 4) - minChunkX) * chunksZ + ((z >> 4) - minChunkZ);
+		if (!loadedColumns[column]) return CellInfo.UNLOADED;
+		PalettedContainer<BlockState> container = containers[column * sections + ((y >> 4) - minSection)];
+		return classifier.classify(container == null ? AIR : container.get(x & 15, y & 15, z & 15));
 	}
 
 	public double captureMillis() {
 		return captureNanos / 1_000_000.0;
 	}
 
-	public int cells() {
-		return states.length;
+	/** Cells covered by the snapshot box. */
+	public long cells() {
+		return (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
 	}
 
 	private static int clamp(int value, int min, int max) {

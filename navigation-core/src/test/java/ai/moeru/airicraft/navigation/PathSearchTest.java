@@ -300,6 +300,21 @@ class PathSearchTest {
 	}
 
 	@Test
+	void neverPlansMorePlacementsThanTheBlocksCarried() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			###...###
+			y1
+			S.......G
+			""");
+
+		assertFalse(world.search(MovementPolicy.defaults().withPlaceableBlocks(2)) instanceof SearchResult.Found,
+			"three bridges need three blocks");
+		Path path = found(world.search(MovementPolicy.defaults().withPlaceableBlocks(3)));
+		assertEquals(3, path.places());
+	}
+
+	@Test
 	void pillarsOutOfAPit() {
 		AsciiTerrain world = AsciiTerrain.parse("""
 			y0

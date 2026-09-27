@@ -7,6 +7,7 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.DoorBlock;
 import net.minecraft.block.FallingBlock;
 import net.minecraft.block.FenceGateBlock;
+import net.minecraft.block.TrapdoorBlock;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.item.ItemStack;
@@ -90,6 +91,8 @@ public final class MinecraftCellClassifier {
 		Block block = state.getBlock();
 		if (block instanceof DoorBlock door && door.getBlockSetType().canOpenByHand()) return CellInfo.Openable.DOOR;
 		if (block instanceof FenceGateBlock) return CellInfo.Openable.FENCE_GATE;
+		// Iron trapdoors need redstone; every other trapdoor opens by hand.
+		if (block instanceof TrapdoorBlock && block != Blocks.IRON_TRAPDOOR) return CellInfo.Openable.TRAPDOOR;
 		return CellInfo.Openable.NONE;
 	}
 

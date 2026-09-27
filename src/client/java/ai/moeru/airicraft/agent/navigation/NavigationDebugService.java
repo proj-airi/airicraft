@@ -82,28 +82,22 @@ public final class NavigationDebugService {
 		return text.toString();
 	}
 
+	/** Highlights the path, its edits and doors, at most {@link #MAX_HIGHLIGHTS} in all. */
 	private static int highlight(Path path, HighlightManager highlights, int seconds) {
 		long duration = seconds * 1000L;
-		int count = 0;
+		List<Mark> marks = new ArrayList<>();
 		for (Step step : path.steps()) {
-			if (count >= MAX_HIGHLIGHTS) break;
-			for (GridPos cell : step.breaks()) {
-				highlights.addBlock(pos(cell), BREAK_COLOR, duration, "break");
-				count++;
-			}
-			if (step.place() != null) {
-				highlights.addBlock(pos(step.place()), PLACE_COLOR, duration, "place");
-				count++;
-			}
-			for (GridPos door : step.doors()) {
-				highlights.addBlock(pos(door), DOOR_COLOR, duration, "door");
-				count++;
-			}
-			highlights.addBlock(pos(step.to()).down(), PATH_COLOR, duration, null);
-			count++;
+			for (GridPos cell : step.breaks()) marks.add(new Mark(pos(cell), BREAK_COLOR, "break"));
+			if (step.place() != null) marks.add(new Mark(pos(step.place()), PLACE_COLOR, "place"));
+			for (GridPos door : step.doors()) marks.add(new Mark(pos(door), DOOR_COLOR, "door"));
+			marks.add(new Mark(pos(step.to()).down(), PATH_COLOR, null));
 		}
+		int count = Math.min(MAX_HIGHLIGHTS, marks.size());
+		for (Mark mark : marks.subList(0, count)) highlights.addBlock(mark.pos(), mark.color(), duration, mark.label());
 		return count;
 	}
+
+	private record Mark(BlockPos pos, int color, String label) { }
 
 	private static BlockPos pos(GridPos cell) {
 		return new BlockPos(cell.x(), cell.y(), cell.z());

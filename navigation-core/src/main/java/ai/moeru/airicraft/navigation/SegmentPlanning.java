@@ -6,7 +6,8 @@ import java.util.function.BooleanSupplier;
  * Long routes are planned in segments. A goal farther than {@link #SEGMENT_BLOCKS} is first
  * approached through a waypoint that far toward it; only when the waypoint cannot be reached does
  * the search aim at the goal itself and return its best partial path. Searching straight for a goal
- * beyond loaded terrain would explore the whole snapshot before giving up.
+ * beyond loaded terrain would explore the whole snapshot before giving up. Both searches together
+ * stay within one budget.
  */
 public final class SegmentPlanning {
 	public static final int SEGMENT_BLOCKS = 64;
@@ -40,7 +41,11 @@ public final class SegmentPlanning {
 			return new SearchResult.Partial(found.path(), SearchResult.Reason.SEGMENT, toward.stats());
 		}
 		if (toward instanceof SearchResult.Cancelled) return toward;
-		SearchResult direct = PathSearch.search(terrain, policy, start, goal, budget, cancelled);
+		// The fallback gets what the waypoint search left, so both together stay within the budget.
+		SearchResult.Stats spent = toward.stats();
+		SearchBudget remaining = new SearchBudget(Math.max(1, budget.maxExpanded() - spent.expanded()),
+			Math.max(1, budget.timeoutNanos() - spent.elapsedNanos()), budget.minPartialBlocks(), budget.heuristicWeight());
+		SearchResult direct = PathSearch.search(terrain, policy, start, goal, remaining, cancelled);
 		SearchResult.Stats first = toward.stats(), second = direct.stats();
 		SearchResult.Stats both = new SearchResult.Stats(first.expanded() + second.expanded(),
 			first.elapsedNanos() + second.elapsedNanos(), first.touchedUnloaded() || second.touchedUnloaded());

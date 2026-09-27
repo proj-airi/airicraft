@@ -440,22 +440,73 @@ public final class Moves {
 		return 1 << CellInfo.region(xBand, zBand);
 	}
 
-	/** Cells a planned move breaks or fills, as search should see them afterwards. */
+	/**
+	 * Cells the planned path so far breaks or fills, as search should see them afterwards. Each node
+	 * carries every edit on its path, newest first, up to {@link #MAX_CELLS}; a cell edited twice
+	 * shows its latest state.
+	 */
 	public static final class Overlay {
 		/** A placed throwaway block. */
 		public static final CellInfo PLACED = CellInfo.builder("placed").full().breakTicks(30).build();
-		private final long[] keys;
+		/** Edits further back than this many cells are forgotten; they are rarely near the frontier. */
+		static final int MAX_CELLS = 64;
+		private final int[] xs;
+		private final int[] ys;
+		private final int[] zs;
 		private final CellInfo[] cells;
+		private final int minX, minY, minZ, maxX, maxY, maxZ;
 
-		private Overlay(long[] keys, CellInfo[] cells) {
-			this.keys = keys;
+		private Overlay(int[] xs, int[] ys, int[] zs, CellInfo[] cells) {
+			this.xs = xs;
+			this.ys = ys;
+			this.zs = zs;
 			this.cells = cells;
+			int ax = Integer.MAX_VALUE, ay = Integer.MAX_VALUE, az = Integer.MAX_VALUE;
+			int bx = Integer.MIN_VALUE, by = Integer.MIN_VALUE, bz = Integer.MIN_VALUE;
+			for (int i = 0; i < xs.length; i++) {
+				ax = Math.min(ax, xs[i]); ay = Math.min(ay, ys[i]); az = Math.min(az, zs[i]);
+				bx = Math.max(bx, xs[i]); by = Math.max(by, ys[i]); bz = Math.max(bz, zs[i]);
+			}
+			minX = ax; minY = ay; minZ = az; maxX = bx; maxY = by; maxZ = bz;
+		}
+
+		int size() {
+			return cells.length;
 		}
 
 		CellInfo cell(int x, int y, int z) {
-			long key = GridPos.key(x, y, z);
-			for (int i = 0; i < keys.length; i++) if (keys[i] == key) return cells[i];
+			if (x < minX || x > maxX || y < minY || y > maxY || z < minZ || z > maxZ) return null;
+			for (int i = 0; i < cells.length; i++) if (xs[i] == x && ys[i] == y && zs[i] == z) return cells[i];
 			return null;
+		}
+
+		/** The newest edits first, then the parent's that they do not replace. */
+		static Overlay extend(Overlay parent, int[] newXs, int[] newYs, int[] newZs, CellInfo[] newCells, int count) {
+			int total = Math.min(MAX_CELLS, count + (parent == null ? 0 : parent.cells.length));
+			int[] xs = new int[total], ys = new int[total], zs = new int[total];
+			CellInfo[] cells = new CellInfo[total];
+			int n = 0;
+			for (int i = 0; i < count && n < total; i++, n++) {
+				xs[n] = newXs[i]; ys[n] = newYs[i]; zs[n] = newZs[i]; cells[n] = newCells[i];
+			}
+			if (parent != null) {
+				for (int i = 0; i < parent.cells.length && n < total; i++) {
+					boolean replaced = false;
+					for (int j = 0; j < count; j++) {
+						if (newXs[j] == parent.xs[i] && newYs[j] == parent.ys[i] && newZs[j] == parent.zs[i]) replaced = true;
+					}
+					if (replaced) continue;
+					xs[n] = parent.xs[i]; ys[n] = parent.ys[i]; zs[n] = parent.zs[i]; cells[n] = parent.cells[i];
+					n++;
+				}
+			}
+			if (n < total) {
+				xs = java.util.Arrays.copyOf(xs, n);
+				ys = java.util.Arrays.copyOf(ys, n);
+				zs = java.util.Arrays.copyOf(zs, n);
+				cells = java.util.Arrays.copyOf(cells, n);
+			}
+			return new Overlay(xs, ys, zs, cells);
 		}
 	}
 
@@ -488,21 +539,29 @@ public final class Moves {
 			return breakCount > 0 || place != null;
 		}
 
-		/** The edits as an overlay for the destination node, or null when the move edits nothing. */
-		public Overlay overlay() {
-			if (!edited()) return null;
+		/** Whether the move places a block. */
+		public boolean places() {
+			return place != null;
+		}
+
+		/**
+		 * The edits of the whole path up to the destination node: the parent's overlay extended with
+		 * this move's edits. A move that edits nothing passes the parent's overlay on unchanged.
+		 */
+		public Overlay overlay(Overlay parent) {
+			if (!edited()) return parent;
 			int count = breakCount + (place == null ? 0 : 1);
-			long[] keys = new long[count];
+			int[] xs = new int[count], ys = new int[count], zs = new int[count];
 			CellInfo[] cells = new CellInfo[count];
-			for (int i = 0; i < breakCount; i++) {
-				keys[i] = GridPos.key(breaks[i * 3], breaks[i * 3 + 1], breaks[i * 3 + 2]);
-				cells[i] = CellInfo.AIR;
-			}
+			int n = 0;
 			if (place != null) {
-				keys[breakCount] = GridPos.key(place[0], place[1], place[2]);
-				cells[breakCount] = Overlay.PLACED;
+				xs[n] = place[0]; ys[n] = place[1]; zs[n] = place[2]; cells[n] = Overlay.PLACED;
+				n++;
 			}
-			return new Overlay(keys, cells);
+			for (int i = 0; i < breakCount; i++, n++) {
+				xs[n] = breaks[i * 3]; ys[n] = breaks[i * 3 + 1]; zs[n] = breaks[i * 3 + 2]; cells[n] = CellInfo.AIR;
+			}
+			return Overlay.extend(parent, xs, ys, zs, cells, count);
 		}
 
 		void set(MoveType type, int x, int y, int z, double cost) {

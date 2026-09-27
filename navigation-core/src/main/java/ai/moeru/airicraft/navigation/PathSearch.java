@@ -32,8 +32,10 @@ public final class PathSearch {
 		int move = -1;
 		int heapIndex = -1;
 		boolean closed;
-		/** Edits of the move that reached this node, seen as done when expanding it. */
+		/** Edits of the path that reached this node, seen as done when expanding it. */
 		Moves.Overlay overlay;
+		/** Blocks the path to this node places; never more than the policy's placeable blocks. */
+		int places;
 
 		Node(int x, int y, int z, double h) {
 			this.x = x;
@@ -101,6 +103,8 @@ public final class PathSearch {
 				}
 				for (int move = 0; move < Moves.COUNT; move++) {
 					if (!moves.evaluate(move, current.x, current.y, current.z, kind, base, result)) continue;
+					int places = current.places + (result.places() ? 1 : 0);
+					if (places > moves.policy().placeableBlocks()) continue;
 					double g = current.g + result.cost;
 					Node next = node(result.x, result.y, result.z);
 					if (next.closed || g >= next.g - MIN_IMPROVEMENT) continue;
@@ -108,7 +112,8 @@ public final class PathSearch {
 					next.f = g + next.h * weight;
 					next.parent = current;
 					next.move = move;
-					next.overlay = result.overlay();
+					next.overlay = result.overlay(current.overlay);
+					next.places = places;
 					if (next.heapIndex >= 0) open.decreased(next);
 					else open.add(next);
 				}

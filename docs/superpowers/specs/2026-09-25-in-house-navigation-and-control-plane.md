@@ -312,8 +312,8 @@ Status (2026-09-25): done.
   and budgets. Search is weighted A* (weight 1.5: about 6% more path cost for roughly 50x
   fewer expansions on rough terrain). Goals farther than 64 blocks are approached through
   a waypoint first (`SegmentPlanning`).
-- The snapshotter copies block states from loaded chunks on the client thread; the
-  planner thread classifies them lazily. `airicraft agent debug navigation plan` and
+- The snapshotter copies each loaded chunk section's block-state container on the client
+  thread (an array copy per section); the planner thread reads and classifies cells lazily. `airicraft agent debug navigation plan` and
   `state` exist.
 - Shadow results go in the task's `task`/`terminal_diagnostics` timeline entry under
   `planner.shadow`, which the benchmark summarizes as `shadowFound`. They are not yet a
