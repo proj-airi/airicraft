@@ -14,7 +14,10 @@ import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Validates and appends events before synchronous, sequence-ordered subscriber delivery. */
+/**
+ * Validates and appends events before synchronous, sequence-ordered subscriber delivery. Delivery happens
+ * outside the bus lock, so a slow subscriber never blocks readers such as the dashboard or bridge.
+ */
 public final class AgentEventBus implements EventStream {
 	private static final Logger LOGGER = LoggerFactory.getLogger(AgentEventBus.class);
 	// After saturation all validation warnings are suppressed; violation counters still advance.
@@ -51,27 +54,37 @@ public final class AgentEventBus implements EventStream {
 		this.recorder = Objects.requireNonNull(recorder, "recorder");
 	}
 
+	/**
+	 * Validates, appends and queues under the bus lock, then delivers outside it. Subscribers run on the
+	 * publishing thread, or on the thread already delivering, and never hold the lock that readers take.
+	 */
 	@Override
-	public synchronized SemanticEvent publish(long tick, String type, Map<String, Object> payload, String source, EventCause cause) {
-		Objects.requireNonNull(type, "type");
-		if (ownerThread != null && ownerThread != Thread.currentThread()) {
-			offThread++;
-			if (strict) throw new IllegalStateException("Event published outside the owner thread: " + type);
+	public SemanticEvent publish(long tick, String type, Map<String, Object> payload, String source, EventCause cause) {
+		SemanticEvent event;
+		synchronized (this) {
+			Objects.requireNonNull(type, "type");
+			if (ownerThread != null && ownerThread != Thread.currentThread()) {
+				offThread++;
+				if (strict) throw new IllegalStateException("Event published outside the owner thread: " + type);
+			}
+			EventTypeSpec spec = catalog.find(type);
+			if (spec == null) {
+				undeclared++;
+				validationFailure(new WarningKey(type, null), "Undeclared event type: " + type);
+			} else if (source == null || !spec.producers().contains(source)) {
+				unknownSource++;
+				validationFailure(new WarningKey(type, source), "Undeclared producer for " + type + ": " + source);
+			}
+			if (pending.size() == MAX_PENDING_EVENTS) {
+				throw new IllegalStateException("Nested event delivery queue is full");
+			}
+			event = log.append(tick, wallClockMs.getAsLong(), type, payload, source, cause);
+			pending.addLast(event);
+			// The thread already delivering, including this one when nested, delivers this event in order.
+			if (dispatching) return event;
+			dispatching = true;
 		}
-		EventTypeSpec spec = catalog.find(type);
-		if (spec == null) {
-			undeclared++;
-			validationFailure(new WarningKey(type, null), "Undeclared event type: " + type);
-		} else if (source == null || !spec.producers().contains(source)) {
-			unknownSource++;
-			validationFailure(new WarningKey(type, source), "Undeclared producer for " + type + ": " + source);
-		}
-		if (pending.size() == MAX_PENDING_EVENTS) {
-			throw new IllegalStateException("Nested event delivery queue is full");
-		}
-		SemanticEvent event = log.append(tick, wallClockMs.getAsLong(), type, payload, source, cause);
-		pending.addLast(event);
-		if (!dispatching) dispatchPending();
+		dispatchPending();
 		return event;
 	}
 
@@ -87,23 +100,42 @@ public final class AgentEventBus implements EventStream {
 		LOGGER.warn(message);
 	}
 
+	/** Runs without the bus lock; the lock guards only the queue, the subscriber snapshot and counters. */
 	private void dispatchPending() {
-		dispatching = true;
+		boolean drained = false;
 		try {
-			while (!pending.isEmpty()) {
-				SemanticEvent event = pending.removeFirst();
-				// Subscription changes take effect on the next event, including queued nested events.
-				for (Subscriber subscriber : List.copyOf(subscribers)) {
+			while (true) {
+				SemanticEvent event;
+				List<Subscriber> snapshot;
+				synchronized (this) {
+					event = pending.pollFirst();
+					if (event == null) {
+						// Cleared together with the empty check, so a concurrent publish either sees
+						// dispatching and is delivered here, or starts its own delivery.
+						dispatching = false;
+						drained = true;
+						return;
+					}
+					// Subscription changes take effect on the next event, including queued nested events.
+					snapshot = List.copyOf(subscribers);
+				}
+				for (Subscriber subscriber : snapshot) {
 					try {
 						if (subscriber.types().test(event.type())) subscriber.consumer().accept(event);
 					} catch (RuntimeException failure) {
-						subscriberFailures++;
+						synchronized (this) {
+							subscriberFailures++;
+						}
 						recorder.recordEventBusSubscriberFailure(event, subscriber.id(), failure);
 					}
 				}
 			}
 		} finally {
-			dispatching = false;
+			if (!drained) {
+				synchronized (this) {
+					dispatching = false;
+				}
+			}
 		}
 	}
 
