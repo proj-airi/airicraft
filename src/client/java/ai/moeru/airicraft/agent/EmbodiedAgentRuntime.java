@@ -2602,6 +2602,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		eventBuffer.append(tickCount, type, payload);
 	}
 
+	void overrideActionGraphResolutionExecutorForTests(java.util.concurrent.Executor executor) {
+		actionGraphCoordinator.overrideResolutionExecutorForTests(executor);
+	}
+
 	DialogueRuntime dialogueRuntimeForTests() {
 		return dialogueRuntime;
 	}
