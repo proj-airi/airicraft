@@ -9,6 +9,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LifecycleDispatcherTest {
@@ -76,6 +77,45 @@ class LifecycleDispatcherTest {
 			(boundary, tick) -> calls.add("damage"));
 		dispatcher.dispatch(LifecycleBoundary.AWAITING_RESPAWN, 7);
 		assertEquals(List.of(), calls);
+	}
+
+	@Test void runtimeRegistersTheDocumentedParticipantTable() throws Exception {
+		try (var harness = new WakeScenarioHarness()) {
+			var field = EmbodiedAgentRuntime.class.getDeclaredField("lifecycleDispatcher");
+			field.setAccessible(true);
+			var table = ((LifecycleDispatcher) field.get(harness.runtime)).table();
+			var all = Set.copyOf(EnumSet.allOf(LifecycleBoundary.class));
+			var expected = new java.util.LinkedHashMap<String, Set<LifecycleBoundary>>();
+			expected.put("damage", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.WORLD_LOADED,
+				LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN));
+			expected.put("physical", all);
+			expected.put("item", all);
+			expected.put("slow", all);
+			expected.put("nearby", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			// Order matters: nearby publishes social.player_left_nearby and must stay last.
+			assertEquals(List.copyOf(expected.keySet()), List.copyOf(table.keySet()));
+			assertEquals(expected, table);
+		}
+	}
+
+	@Test void targetedDispatchRejectsUnknownOrNonHandlingTargets() {
+		var calls = new ArrayList<String>();
+		var dispatcher = new LifecycleDispatcher();
+		dispatcher.register("physical", EnumSet.allOf(LifecycleBoundary.class), (boundary, tick) -> calls.add("physical"));
+		dispatcher.register("nearby", EnumSet.of(LifecycleBoundary.WORLD_LEFT), (boundary, tick) -> calls.add("nearby"));
+		assertThrows(IllegalArgumentException.class,
+			() -> dispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, 1, Set.of("physical", "phyiscal")));
+		assertThrows(IllegalArgumentException.class,
+			() -> dispatcher.dispatch(LifecycleBoundary.SHUTDOWN, 1, Set.of("nearby")));
+		// Validation runs before any handler, so a rejected dispatch resets nothing.
+		assertEquals(List.of(), calls);
+	}
+
+	@Test void duplicateParticipantIdIsRejected() {
+		var dispatcher = new LifecycleDispatcher();
+		dispatcher.register("item", EnumSet.allOf(LifecycleBoundary.class), (boundary, tick) -> { });
+		assertThrows(IllegalArgumentException.class,
+			() -> dispatcher.register("item", EnumSet.allOf(LifecycleBoundary.class), (boundary, tick) -> { }));
 	}
 
 	private static void assertCalls(LifecycleDispatcher dispatcher, List<String> calls,
