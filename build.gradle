@@ -552,6 +552,7 @@ jar {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	systemProperty 'airicraft.events.strict', 'true'
 	inputs.file(tasks.named('remapJar').flatMap { it.archiveFile }).withPropertyName('releaseJar')
 	systemProperty 'airicraft.releaseJar', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath
 }
