@@ -842,6 +842,10 @@ and baseline validation are complete on PR #81; merging into `dev` remains pendi
 
 ### Phase 1: event catalog and a single log (behaviour-preserving)
 
+Task-level plan, including the scope decisions P1–P8 that keep this phase
+behaviour-preserving:
+[`plans/2026-09-27-planner-event-system-phase-1.md`](../plans/2026-09-27-planner-event-system-phase-1.md).
+
 - [ ] Add `EventCatalog`, `AgentEvent`, `AgentEventBus`, `AgentEventLog`
   (implementing the `SemanticEventBuffer` query API) and `EventIngressQueue`.
 - [ ] Route all ~70 `append` call sites and the drained producer queues
