@@ -164,11 +164,6 @@ public final class EventCatalog {
 		return specs;
 	}
 
-	/** Test injection may use any declared type without claiming a production producer. */
-	boolean acceptsProducer(EventTypeSpec spec, String source) {
-		return "test".equals(source) || spec.producers().contains(source);
-	}
-
 	public EventTypeSpec find(String type) {
 		var match = exact.get(type);
 		if (match != null) return match;

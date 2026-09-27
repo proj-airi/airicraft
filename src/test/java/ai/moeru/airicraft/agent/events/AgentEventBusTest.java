@@ -25,6 +25,12 @@ class AgentEventBusTest {
 		assertTrue(EventCatalog.defaults().specs().stream().noneMatch(spec -> spec.producers().contains("test")));
 	}
 
+	@Test void productionModeTreatsTestProducerAsUnknown() {
+		var bus = bus(false);
+		assertEquals("test", bus.from("test").publish(1, TYPE, Map.of()).source());
+		assertEquals(1, bus.stats().unknownSource());
+	}
+
 	@Test
 	void strictValidationRejectsBeforeAppendAndCountsEachViolation() {
 		var bus = bus(true);

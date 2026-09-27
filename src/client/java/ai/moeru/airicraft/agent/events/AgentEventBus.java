@@ -24,6 +24,7 @@ public final class AgentEventBus implements EventStream {
 	private static final int MAX_WARNING_KEYS = 256;
 	// Reject before append, so every accepted event retains its subscriber delivery.
 	private static final int MAX_PENDING_EVENTS = 512;
+	static final String TEST_SOURCE = "test";
 
 	private final EventCatalog catalog;
 	private final AgentEventLog log;
@@ -76,7 +77,7 @@ public final class AgentEventBus implements EventStream {
 			if (spec == null) {
 				undeclared++;
 				validationFailure(new WarningKey(type, null), "Undeclared event type: " + type);
-			} else if (source == null || !catalog.acceptsProducer(spec, source)) {
+			} else if (source == null || !acceptsProducer(spec, source)) {
 				unknownSource++;
 				validationFailure(new WarningKey(type, source), "Undeclared producer for " + type + ": " + source);
 			}
@@ -91,6 +92,15 @@ public final class AgentEventBus implements EventStream {
 		}
 		dispatchPending();
 		return event;
+	}
+
+	/**
+	 * Test injection ({@code appendEventForTests}) may publish any declared type as {@value #TEST_SOURCE}.
+	 * Only strict mode accepts it; strict mode is enabled solely by the Gradle test task, so a production
+	 * publish claiming the test source is counted and warned as an unknown producer.
+	 */
+	private boolean acceptsProducer(EventTypeSpec spec, String source) {
+		return spec.producers().contains(source) || strict && TEST_SOURCE.equals(source);
 	}
 
 	private void validationFailure(WarningKey key, String message) {

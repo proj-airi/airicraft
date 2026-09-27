@@ -7,6 +7,10 @@ import java.util.Objects;
  * Names the legacy planner-only write boundary (D1). Dialogue effects emitted while
  * processing W1 planner input stay in this feed, outside the raw log. Phase 3 will
  * remove this split; until then this wrapper preserves the existing cursor behavior.
+ *
+ * <p>The feed numbers its events in its own sequence space, but an {@link EventCause#event}
+ * reference on an event in this feed, whether written here or copied by the pipeline, names a
+ * raw-log sequence number. Resolve such causes against the raw log, never against this feed.
  */
 public final class PlannerFeedPublisher implements EventStream {
 	private final SemanticEventBuffer buffer;
