@@ -867,10 +867,15 @@ evaluator (`semanticEventContains`) unchanged.
 wake goldens, and normal-client provenance/bus smoke checks are recorded in the
 [Phase 1 check](../../experiments/2026-09-27-planner-event-system-phase-1-check.md).
 The lifecycle migration uses targeted dispatches at world leave and shutdown
-to retain the existing reset order. The evaluation parity exit gate remains
-open: two request rates exceed the fixed baseline intervals, and two of nine
-scenarios were manually interrupted after captured stalls rather than reaching
-their full budgets. No threshold or golden was changed to accommodate them.
+to retain the existing reset order. The completed
+[paired same-host follow-up](../../experiments/2026-09-27-planner-event-system-paired-ab.md)
+provides current rate evidence for three scenarios at `44acc6bc` versus
+`34184be7`, with wall-clock and per-tick rates reported together. Its 12 terminal
+trials supersede the older cross-session rate comparison; they establish neither
+general regression nor equivalence. Full nine-scenario parity remains unverified:
+the other six scenarios were not rerun in the paired session, and the two original
+interrupted scenarios still lack terminal outcomes. No threshold or golden was
+changed.
 
 ### Phase 2: attention policy and wake scheduler (behaviour-preserving)
 

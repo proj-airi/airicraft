@@ -52,14 +52,21 @@ producer for `task.notice`; it is separate from the unchanged goldens. See the
 [verification note](../../experiments/2026-09-27-planner-event-system-phase-1-check.md)
 for the artifact hashes, live limits, and evaluation evidence.
 
-The Phase 1 evaluation exit gate is **not met**. Seven scenarios reached terminal
-reports; `farm_easy` and `sea_grass` exceeded the unchanged request-rate bounds.
-Two long scenarios were manually interrupted after read-only stall captures,
-so neither supplies a full-budget outcome or comparable request ledger. No
-threshold was relaxed and no replacement run was selected. The source review
-found no Critical or Important Phase 1 defect; this does not override the
-runtime parity result. Implementation can be reviewed separately from the
-unmet evaluation acceptance criterion.
+The [paired same-host follow-up](../../experiments/2026-09-27-planner-event-system-paired-ab.md)
+is complete: 12 terminal trials at frozen heads `44acc6bc` (#81) and `34184be7`
+(#88), with wall-clock and server-tick rates reported over identical windows.
+It supersedes the original cross-session comparison as current rate evidence
+for `farm_easy`, `sea_grass`, and `bread-cooperative-watch`. Farming rates were
+higher on #88 in both pairs, bread rates lower, and seagrass differences mixed;
+no event/timeline gaps or unknown wake attribution occurred. This small sample
+does not establish general regression or equivalence.
+
+Full nine-scenario evaluation parity remains **unverified**: the other six
+scenarios were not rerun in the paired session, and the original two interrupted
+scenarios still lack terminal results. No threshold was relaxed. The source
+review found no Critical or Important Phase 1 defect; source/build/smoke evidence
+and the completed paired follow-up can be reviewed separately from the remaining
+full-suite acceptance evidence.
 
 ## Scope decisions
 

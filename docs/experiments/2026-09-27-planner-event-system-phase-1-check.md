@@ -1,8 +1,22 @@
 # Planner event system Phase 1 verification
 
-**Status:** Phase 1 source and smoke verification passed; evaluation parity did not. Seven scenarios reached terminal reports and two were manually interrupted after sustained, captured stalls. Two of the seven request rates exceed the unchanged baseline bounds. The full nine-scenario tolerance gate remains unmet.
+**Status (updated 2026-09-28):** Source/build and normal-client smoke checks passed at the revisions recorded below. The paired same-host evaluation follow-up is complete: 12 terminal trials across three scenarios, with no censored runs, event/timeline gaps, or unknown wake attribution. Its results supersede the older cross-session comparison as the current rate evidence for those scenarios. Full nine-scenario evaluation parity is **unverified**; the paired sample establishes neither general regression nor equivalence.
 
-**Paired follow-up:** A same-host, same-JVM A–B–B–A comparison of PR #81 and the updated PR #88 head is recorded in [the paired A/B report](2026-09-27-planner-event-system-paired-ab.md). It reports wall-clock rates alongside rates over identical server-tick windows. Use that matched experiment for these three scenarios rather than treating this older cross-session rate comparison as causal evidence. The complete nine-scenario gate remains open.
+## Current paired evaluation evidence
+
+The [paired A/B report](2026-09-27-planner-event-system-paired-ab.md) compares PR #81 at `44acc6bc` with PR #88 at `34184be7`, using one host, the same JVMs and inputs, and clean builds in A–B–B–A order for each scenario. These are frozen tested revisions, not a claim of verification for subsequent commits.
+
+Mean initial-request rates over identical first-to-last dispatch windows:
+
+| Scenario | #81 wall req/min | #81 req/1,200 ticks | #88 wall req/min | #88 req/1,200 ticks |
+| --- | ---: | ---: | ---: | ---: |
+| farm_easy | 26.75 | 26.69 | 33.69 | 33.69 |
+| sea_grass | 37.37 | 37.29 | 35.24 | 35.34 |
+| bread-cooperative-watch | 32.18 | 32.19 | 28.07 | 28.07 |
+
+Wall and tick rates agree at 19.916–20.090 observed TPS. Farming rates were higher on #88 in both pairs, bread rates lower in both, and seagrass differences mixed. Both heads passed farming, failed seagrass through the illumination/no-route path, and exhausted bread's 30-request budget. Seagrass LLM-record gaps occurred on both heads; token-rate inference remains excluded.
+
+The earlier blanket gate-failure conclusion based on cross-session rate breaches is superseded by this matched evidence. This is not a tolerance pass: two pairs per scenario are a small sample, the other six scenarios were not rerun, and the two original interrupted scenarios still lack terminal results. No acceptance threshold was changed. The original batch and its numerical bound comparisons are preserved below as historical observations.
 
 ## Build and characterization
 
@@ -23,7 +37,7 @@ A full-compatibility `runClient` joined a private copy of `farm_easy`. The read-
 
 The smoke export hit its 64 MiB recording retention cap and dropped four early semantic events and other observations. The separate raw event snapshot retains all 109 events. The chat check proves local controller injection, not an external player's chat path. Complete smoke files are retained locally under `eval-output/phase1-event-system-check/live-smoke/`; they may contain private runtime data and are not committed.
 
-## Evaluation method and current result
+## Original nine-scenario evaluation (historical)
 
 The same nine scenario worlds, manifests, private baseline-matched configs, model, and budgets as the [three-batch baseline](2026-09-27-planner-wake-baseline.md) were used. The launcher uses `--no-recorder --jobs 3 --stop-client-after-scenario`, one `--scenario` flag per baseline scenario, and the baseline `scripts/eval run --no-daemon` command with JDK 26 and `-x` exclusions for root/evaluator/compatibility packaging plus hot-swap preparation. This prevents client workers from overwriting the prebuilt shared artifacts. The output root is the ignored local `eval-output/phase1-event-system-check/evaluation/` directory. The original baseline ledgers and their three outcome/rate distributions remain under `/Volumes/wd_black_1tb/airicraft/eval-output/phase0-wake-baseline-frozen/`.
 
@@ -43,7 +57,7 @@ The table applies the baseline's unchanged Phase 2 intervals. Rates are initial 
 
 `farm_easy` made eight planner submissions over 130 server ticks and 14.24 wall seconds (9.13 ticks per wall second). The comparable seven-turn baseline run spanned 226 ticks and 13.74 seconds (16.44 ticks per wall second). Model-call median latency was 1.61 seconds, within the baseline medians of 1.45–2.05 seconds. A 3.198-second server overload warning occurred inside the new request window; baseline runs also had approximately two-second warnings in their windows. The new run first failed a farmland interaction with `target_material_mismatch`, then a seed interaction with `interaction_failed` and a raycast mismatch, before a third task led to success. It recorded 23 events versus 11 in each baseline farm-easy run, without truncation or event/timeline gaps. These measurements explain the high per-server-tick rate numerically but do not establish its cause or satisfy the fixed rate tolerance.
 
-`sea_grass` made five turns over 137 server ticks and reached the same `environment_changed/insufficient_illumination` then `no_route` action-graph failure as baseline batches 1–2. Its 43.80 request rate exceeds the fixed 40.00 upper bound. Its incomplete LLM evidence likewise occurred in those two baseline runs, so no token-rate conclusion is drawn. Both rate breaches remain failures of the Phase 1 parity gate; no threshold was changed and no scenario was rerun to select a favorable result.
+`sea_grass` made five turns over 137 server ticks and reached the same `environment_changed/insufficient_illumination` then `no_route` action-graph failure as baseline batches 1–2. Its 43.80 request rate exceeds the fixed 40.00 upper bound. Its incomplete LLM evidence likewise occurred in those two baseline runs, so no token-rate conclusion is drawn. These numerical breaches of the historical baseline bounds do not isolate a Phase 1 code effect. The matched follow-up above supersedes their use as the current regression conclusion; it does not retroactively change these measurements or establish full-suite parity.
 
 The `farm_from_scratch` worker paused a bucket-use job for a survival reflex after a `reflex.resolved` event. A read-only bridge probe twice observed planner/tool idle, the job blocked by reflex, and `PAUSED_BY_REFLEX` task execution. The reflex hold was `AWAITING_PLANNER`; the recorded W1 wake reached the planner, whose last tool was `say`. The explicit continue/resume contract and `resumeAfterReflex` call sites are unchanged from `44acc6bc`, so the evidence does not identify a Phase 1 source regression. At 56 turns and 25,710 elapsed ticks, the controller stopped only that worker's identified client PID after preserving its read-only state. This was a manual interruption, not the scenario's 80-turn or 120,000-tick budget result.
 
@@ -51,4 +65,4 @@ The iron worker advanced from navigation to `BREAK_BLOCKS`, then remained in `Bl
 
 `python3 scripts/wake_ledger.py summarize` completed for the seven terminal runs; `diff` produced 21 comparisons against each scenario's three retained baseline ledgers. Every terminal run has no event or timeline gap and no unknown wake attribution. `sea_grass` has an LLM record gap like baseline batches 1–2; this is not an event or timeline loss. The seven runs include four passes and three failures. The two interrupted runs have only partial ledgers: `planner-calls.jsonl` is emitted on normal finalization, so their snapshots cannot establish request rates, wake-path proportions, or completed outcomes. No zero-request or zero-rate inference is made from those files.
 
-Request-level diffs show changed evidence and wake paths in several trajectories. A notable distribution change is `bread-cooperative-watch`: W4/W9/W1 attribution counts are 14/16/3, versus 4/24/3 in baseline batch 2 at the same 30 turns. The new run's later W4 turns repeatedly chose `continue`, while baseline batch 2 repeatedly chose `observe` on W9 result reviews. This is an observed planner/tool trajectory difference, not a proven routing regression. The retained baseline artifacts were recorded before the inherited `5defe768` audit stamping correction; changes in recording-tick metadata must not be attributed to the Phase 1 event migration. The current request-level diffs do not override the concrete rate breaches or the missing terminal outcomes.
+Request-level diffs show changed evidence and wake paths in several trajectories. A notable distribution change is `bread-cooperative-watch`: W4/W9/W1 attribution counts are 14/16/3, versus 4/24/3 in baseline batch 2 at the same 30 turns. The new run's later W4 turns repeatedly chose `continue`, while baseline batch 2 repeatedly chose `observe` on W9 result reviews. This is an observed planner/tool trajectory difference, not a proven routing regression. The retained baseline artifacts were recorded before the inherited `5defe768` audit stamping correction; changes in recording-tick metadata must not be attributed to the Phase 1 event migration. These original request-level diffs do not establish causality for the historical rate breaches or supply the missing terminal outcomes.
