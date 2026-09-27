@@ -198,11 +198,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.time.Clock;
 import java.util.Locale;
@@ -242,6 +244,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AgentEventPipeline eventPipeline;
 	private final ChatIngestService chatIngestService = new ChatIngestService();
 	private final LocalDamageTracker localDamageTracker = new LocalDamageTracker();
+	private final LifecycleDispatcher lifecycleDispatcher = new LifecycleDispatcher();
 	private PhysicalEventObserver physicalEventObserver;
 	private ItemOfferObserver itemOfferObserver;
 	private net.minecraft.client.world.ClientWorld itemOfferWorld;
@@ -428,6 +431,20 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
 			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
+		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
+			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> {
+				if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) localDamageTracker.clear();
+				else localDamageTracker.onLifecycleReset(tick);
+			});
+		lifecycleDispatcher.register("physical", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> physicalObserver().reset());
+		lifecycleDispatcher.register("item", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> { if (itemOfferObserver != null) itemOfferObserver.reset(); });
+		lifecycleDispatcher.register("slow", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> { if (slowMiningObserver != null) slowMiningObserver.reset(); });
+		lifecycleDispatcher.register("nearby", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> nearbyPlayerTracker.clear(tick, eventBus));
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
 			config,
 				Objects.requireNonNull(screenshotService, "screenshotService"),
@@ -511,14 +528,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionRuntime.onWorldLeave(tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
-		localDamageTracker.clear();
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow"));
 		physicalObservationWorld = null;
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
-		nearbyPlayerTracker.clear(tickCount, eventBus);
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("nearby"));
 		primaryInteractionResolver.clear();
 		eventPolicyState.clear();
 		eventPipeline.clearPlannerFeed();
@@ -585,15 +599,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		enforcePlayerLifecycle(client);
 		if (!wasWorldLoaded && sessionSnapshot.worldLoaded()) {
 			worldLoadTick = tickCount;
-			localDamageTracker.onLifecycleReset(tickCount);
-			physicalObserver().reset();
-			if (itemOfferObserver != null) itemOfferObserver.reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LOADED, tickCount);
 		}
 		if (sessionSnapshot.requiresRespawn()) {
-			physicalObserver().reset();
-			if (itemOfferObserver != null) itemOfferObserver.reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.AWAITING_RESPAWN, tickCount);
 			behaviorTreeRuntime.tick(
 				client,
 				sessionSnapshot,
@@ -760,12 +769,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void observeItemOffers(MinecraftClient client) {
 		if (itemOfferObserver == null) itemOfferObserver = new ItemOfferObserver();
 		if (client == null || client.world == null || client.player == null || !client.player.isAlive()) {
-			itemOfferObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("item"));
 			itemOfferWorld = null;
 			return;
 		}
 		if (itemOfferWorld != client.world) {
-			itemOfferObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("item"));
 			itemOfferWorld = client.world;
 		}
 		var players = client.world.getPlayers().stream().filter(player -> player.isAlive() && !player.isSpectator())
@@ -869,14 +878,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void observePhysicalEvents(MinecraftClient client) {
 		if (client == null || client.player == null || client.world == null || !client.player.isAlive()) {
-			physicalObserver().reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("physical", "slow"));
 			physicalObservationWorld = null;
 			return;
 		}
 		if (physicalObservationWorld != client.world) {
-			physicalObserver().reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("physical", "slow"));
 			physicalObservationWorld = client.world;
 		}
 		var player = client.player;
@@ -1246,12 +1253,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		autoLanOpenState.clear();
-		localDamageTracker.clear();
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow"));
 		physicalObservationWorld = null;
-		nearbyPlayerTracker.clear(tickCount, eventBus);
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("nearby"));
 		eventPipeline.clearForShutdown();
 		primaryInteractionResolver.clear();
 		completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=runtime_shutdown");
@@ -2014,10 +2018,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public void onPlayerRespawned() {
-		localDamageTracker.onLifecycleReset(tickCount);
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.RESPAWNED, tickCount);
 		lastKnownPlayerHealth = null;
 		if (sessionSnapshotOverrideForTests != null && sessionSnapshot.requiresRespawn()) {
 			sessionSnapshotOverrideForTests = sessionSnapshotOverrideForTests.withPlayerLifecycleState(PlayerLifecycleState.ALIVE);
