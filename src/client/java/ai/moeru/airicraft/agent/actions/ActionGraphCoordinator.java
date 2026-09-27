@@ -19,6 +19,7 @@ public final class ActionGraphCoordinator {
 
 	private final Supplier<ActionGraphExecutionRuntime> runtimeFactory;
 	private final ExecutorService resolutionExecutor;
+	private volatile java.util.concurrent.Executor resolutionExecutorOverride;
 	private final Map<String, ManagedExecution> executions = new LinkedHashMap<>();
 	private final PriorityQueue<RunnableEntry> runnable = new PriorityQueue<>(Comparator
 		.comparingLong(RunnableEntry::fulfilledTick)
@@ -31,7 +32,16 @@ public final class ActionGraphCoordinator {
 		this.resolutionExecutor = Executors.newSingleThreadExecutor(
 			Thread.ofPlatform().name("airicraft-action-advisor").daemon(true).factory()
 		);
-		this.runtimeFactory = () -> new ActionGraphExecutionRuntime(dispatcher, resolutionExecutor);
+		this.runtimeFactory = () -> new ActionGraphExecutionRuntime(dispatcher,
+			resolutionExecutorOverride == null ? resolutionExecutor : resolutionExecutorOverride);
+	}
+
+	/**
+	 * Test seam: route resolutions of executions submitted afterwards run on {@code executor}, so a harness can
+	 * decide when they complete instead of racing the advisor thread. Production never calls this.
+	 */
+	public void overrideResolutionExecutorForTests(java.util.concurrent.Executor executor) {
+		resolutionExecutorOverride = Objects.requireNonNull(executor, "executor");
 	}
 
 	private ActionGraphCoordinator(Supplier<ActionGraphExecutionRuntime> runtimeFactory, ExecutorService resolutionExecutor) {
