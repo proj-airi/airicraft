@@ -194,7 +194,7 @@ Phase 0 probes preserve current behavior. `WakeDefectProbeTest`,
 | D3 | Confirmed | An `ignore` rule suppresses the pickup wake, but a later chat still observes its raw evidence. |
 | D4 | Confirmed paths; second request suppressed | One `reflex.resolved` attempts W1 and W2; `G5.incorporated` drops W2, leaving one backend request. |
 | D5 | Refuted for direct-navigation failure | Both W2 references identify the causal `task.failed` / `work.changed` event. Generic “Work changed.” prose still occurs because those events lack `task.notice` message prose. Other producers are not proven by this probe. |
-| D6 | Confirmed | A synthetic 512-event flood evicts `food.eaten`: EATING stays RUNNING, versus SUCCEEDED without the flood. This establishes the dependency, not its gameplay frequency. |
+| D6 | Fixed in Phase 1 | The Phase 0 probe showed EATING stayed RUNNING after a 512-event flood evicted `food.eaten`. With the bounded food-outcome subscriber, the same flood and the no-flood control both reach SUCCEEDED. This proves the state-channel fix in the probe, not its gameplay frequency. |
 | D7 | Confirmed | Five minutes of wall time with no ticks causes one idle-think wake on the first resumed tick; there is no catch-up burst. |
 | D8 | Confirmed | Offers and graph failures are absent from canonical observation; a second offer with the same player key replaces the first prose trigger. |
 
@@ -846,19 +846,31 @@ Task-level plan, including the scope decisions P1–P8 that keep this phase
 behaviour-preserving:
 [`plans/2026-09-27-planner-event-system-phase-1.md`](../plans/2026-09-27-planner-event-system-phase-1.md).
 
-- [ ] Add `EventCatalog`, `AgentEvent`, `AgentEventBus`, `AgentEventLog`
-  (implementing the `SemanticEventBuffer` query API) and `EventIngressQueue`.
-- [ ] Route all ~70 `append` call sites and the drained producer queues
+- [x] Add `EventCatalog`, `AgentEventBus`, `AgentEventLog` (implementing the
+  `SemanticEventBuffer` query API) and `EventIngressQueue`. Under P3,
+  `SemanticEvent` remains the concrete provenance-bearing event type;
+  `AgentEvent` remains the prose term until Phase 3.
+- [x] Route all ~70 `append` call sites and the drained producer queues
   (reflex, graph coordinator, interaction logbook) through `publish`, adding
   `source` and `cause`. Keep `plannerEventBuffer` as a derived subscriber for
   now so behaviour is identical.
-- [ ] Add a single `LifecycleBoundary` dispatch that replaces the duplicated
-  observer resets.
-- [ ] Replace ring scans used as state channels, starting with the `food.eaten`
+- [x] Route the duplicated observer resets through `LifecycleBoundary` and
+  `LifecycleDispatcher`, using targeted calls where original reset order
+  requires them.
+- [x] Replace ring scans used as state channels, starting with the `food.eaten`
   lookup, with subscribers (D6).
 
 Exit: no golden diffs; dashboard, recorder, CLI (`agent events recent`) and
 evaluator (`semanticEventContains`) unchanged.
+
+**Phase 1 status (2026-09-27):** The implementation, full build, 27 unchanged
+wake goldens, and normal-client provenance/bus smoke checks are recorded in the
+[Phase 1 check](../../experiments/2026-09-27-planner-event-system-phase-1-check.md).
+The lifecycle migration uses targeted dispatches at world leave and shutdown
+to retain the existing reset order. The evaluation parity exit gate remains
+open: two request rates exceed the fixed baseline intervals, and two of nine
+scenarios were manually interrupted after captured stalls rather than reaching
+their full budgets. No threshold or golden was changed to accommodate them.
 
 ### Phase 2: attention policy and wake scheduler (behaviour-preserving)
 

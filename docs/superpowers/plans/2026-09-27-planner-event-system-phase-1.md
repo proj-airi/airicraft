@@ -40,6 +40,27 @@ Terms such as W1–W9, G1–G11, E1–E3 and D1–D8 refer to that document.
 
 ---
 
+## Implementation status (2026-09-27)
+
+Tasks 1–10 are implemented on stacked Phase 1 slices. Task 11's full build
+passed with 1,770 root tests (3 skipped), 95 wrapper tests, 30 evaluator tests,
+and 20 JourneyMap compatibility tests; all had zero failures/errors. The 27
+wake goldens remain unchanged. The normal-client smoke retained sourced events
+and reported zero undeclared, unknown-source, off-thread, and subscriber-failure
+counters. The accepted inventory correction adds the existing `DialogueRuntime`
+producer for `task.notice`; it is separate from the unchanged goldens. See the
+[verification note](../../experiments/2026-09-27-planner-event-system-phase-1-check.md)
+for the artifact hashes, live limits, and evaluation evidence.
+
+The Phase 1 evaluation exit gate is **not met**. Seven scenarios reached terminal
+reports; `farm_easy` and `sea_grass` exceeded the unchanged request-rate bounds.
+Two long scenarios were manually interrupted after read-only stall captures,
+so neither supplies a full-budget outcome or comparable request ledger. No
+threshold was relaxed and no replacement run was selected. The source review
+found no Critical or Important Phase 1 defect; this does not override the
+runtime parity result. Implementation can be reviewed separately from the
+unmet evaluation acceptance criterion.
+
 ## Scope decisions
 
 The spec's Phase 1 bullets leave some choices open. The recommendations below
@@ -572,11 +593,11 @@ boundaries.
 - Modify: the spec (Phase 1 checklist, the D6 row in 2.6, a Phase 1 status note), this plan (implementation status), `AGENTS.md` (key files: `agent/events/AgentEventBus.java`, `EventCatalog.java`), and optionally `scripts/wake_ledger.py` (carry `source`/`cause` into `newEvents`)
 - Create: `docs/experiments/<date>-planner-event-system-phase-1-check.md`
 
-- [ ] **Step 1: Full build:** `./gradlew build`. Record the root, wrapper and
+- [x] **Step 1: Full build:** `./gradlew build`. Record the root, wrapper and
   compatibility test counts.
-- [ ] **Step 2: Golden check** (ground rule 1). Also run
+- [x] **Step 2: Golden check** (ground rule 1). Also run
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- [ ] **Step 3: Live smoke check.**
+- [x] **Step 3: Live smoke check.**
   1. Start `./gradlew runClient`.
   2. Join a world, then chat, take damage and pick something up.
   3. Run `airicraft agent events recent --verbose`. Every event has a
@@ -598,7 +619,7 @@ boundaries.
     turns and rates must stay within the tolerance interval, and there must
     be no new event or timeline gaps.
   - **Record** the result in the Phase 1 check note.
-- [ ] **Step 5: Docs.**
+- [x] **Step 5: Docs.**
   - tick the spec's Phase 1 checklist;
   - mark D6 fixed in 2.6;
   - add the implementation status to this plan;
@@ -608,18 +629,19 @@ boundaries.
 
 ## Exit criteria
 
-- [ ] `./gradlew build` is green; the characterization suite passes with no
+- [x] `./gradlew build` is green; the characterization suite passes with no
   golden diff.
-- [ ] Every published event type is declared in `EventCatalog`, with strict
+- [x] Every published event type is declared in `EventCatalog`, with strict
   mode on in tests. The G1 routing table is derived from the catalog.
-- [ ] Every event carries a `source`, and the Task 8 events carry a `cause`.
-- [ ] Off-thread producers go through `EventIngressQueue`; the bus reports
+- [x] Every event carries a `source`; Task 8 events carry a `cause` where the
+  producer already holds its reference, per P5.
+- [x] Off-thread producers go through `EventIngressQueue`; the bus reports
   zero off-thread publishes in the smoke run.
-- [ ] Observer resets happen only through `LifecycleDispatcher`.
-- [ ] D6 is fixed, and no production code scans the event ring for state.
+- [x] Observer resets happen only through `LifecycleDispatcher`.
+- [x] D6 is fixed, and no production code scans the event ring for state.
   The remaining scans are reads of evidence (`observe`, the wake prose
   lookup) and the P7 blocked-goal cursor, which Phase 2 moves.
-- [ ] The dashboard, recorder, CLI (`agent events recent`) and evaluator
+- [x] The dashboard, recorder, CLI (`agent events recent`) and evaluator
   (`recentEvents`, `semanticEventContains`) behave as before. JSON changes
   are additive only.
 - [ ] The evaluation batch is within the baseline tolerance.
