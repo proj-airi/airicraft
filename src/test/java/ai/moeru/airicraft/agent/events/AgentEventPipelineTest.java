@@ -11,6 +11,31 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentEventPipelineTest {
+	@Test void delayedInterventionRetainsSourceTimestamp() {
+		var clock = new java.util.concurrent.atomic.AtomicLong(1000L);
+		var raw = new AgentEventLog(16);
+		var bus = new AgentEventBus(EventCatalog.defaults(), raw, clock::get, true);
+		var pipeline = new AgentEventPipeline(raw, bus, new SemanticEventBuffer(16), new EventPolicyState(),
+			Map.of("task.notice", new EventRoutingProfile("task.notice", true, null, false)),
+			new ai.moeru.airicraft.agent.debug.AgentDebugRecorder(),
+			(event, profile) -> new EventPolicyDecision(EventPolicyEffect.IGNORE, "quiet", "test policy", false));
+		var source = bus.from("DialogueRuntime").publish(10, "task.notice", Map.of("message", "progress"));
+		clock.set(2500L);
+
+		pipeline.drain((event, profile) -> null);
+
+		var intervention = raw.query(source.seqNo()).events().getFirst();
+		assertEquals(1000L, intervention.timestampMs());
+		assertEquals(10L, intervention.tick());
+		assertEquals(2L, intervention.seqNo());
+		assertEquals("policy.event_intervened", intervention.type());
+		assertEquals("AgentEventPipeline", intervention.source());
+		assertEquals(EventCause.event(source.seqNo()), intervention.cause());
+		assertEquals(Map.of("sourceEventSeqNo", 1L, "sourceEventType", "task.notice", "effect", "IGNORE",
+			"matchedRuleId", "quiet", "reason", "test policy"), intervention.payload());
+		assertEquals(2500L, bus.from("DialogueRuntime").publish(11, "task.notice", Map.of()).timestampMs());
+	}
+
 	@Test void plannerCopyRetainsProvenance() {
 		var raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);

@@ -53,6 +53,11 @@ public final class AgentEventBus implements EventStream {
 
 	@Override
 	public synchronized SemanticEvent publish(long tick, String type, Map<String, Object> payload, String source, EventCause cause) {
+		return publish(tick, wallClockMs.getAsLong(), type, payload, source, cause);
+	}
+
+	/** Derived events retain their source's observation time through the same validated delivery path. */
+	synchronized SemanticEvent publish(long tick, long timestampMs, String type, Map<String, Object> payload, String source, EventCause cause) {
 		Objects.requireNonNull(type, "type");
 		if (ownerThread != null && ownerThread != Thread.currentThread()) {
 			offThread++;
@@ -69,7 +74,7 @@ public final class AgentEventBus implements EventStream {
 		if (pending.size() == MAX_PENDING_EVENTS) {
 			throw new IllegalStateException("Nested event delivery queue is full");
 		}
-		SemanticEvent event = log.append(tick, wallClockMs.getAsLong(), type, payload, source, cause);
+		SemanticEvent event = log.append(tick, timestampMs, type, payload, source, cause);
 		pending.addLast(event);
 		if (!dispatching) dispatchPending();
 		return event;

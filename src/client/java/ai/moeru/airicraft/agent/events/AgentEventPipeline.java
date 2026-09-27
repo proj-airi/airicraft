@@ -22,7 +22,7 @@ public final class AgentEventPipeline {
 
 	private final EventView rawEventBuffer;
 	private final AgentEventLog rawEventLog;
-	private final EventPublisher rawPublisher;
+	private final AgentEventBus rawPublisher;
 	private final SemanticEventBuffer plannerEventBuffer;
 	private final EventPolicyState policyState;
 	private final Map<String, EventRoutingProfile> routingProfiles;
@@ -33,7 +33,7 @@ public final class AgentEventPipeline {
 
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
-		EventPublisher rawPublisher,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles
@@ -43,7 +43,7 @@ public final class AgentEventPipeline {
 
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
-		EventPublisher rawPublisher,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
@@ -54,7 +54,7 @@ public final class AgentEventPipeline {
 
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
-		EventPublisher rawPublisher,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
@@ -163,7 +163,8 @@ public final class AgentEventPipeline {
 			if (decision.reason() != null) {
 				payload.put("reason", decision.reason());
 			}
-			rawPublisher.from("AgentEventPipeline").publish(event.tick(), "policy.event_intervened", payload, EventCause.event(event.seqNo()));
+			rawPublisher.publish(event.tick(), event.timestampMs(), "policy.event_intervened", payload,
+				"AgentEventPipeline", EventCause.event(event.seqNo()));
 		}
 
 		boolean emitSemantic = plannerEnabled && profile.semanticEligible();
