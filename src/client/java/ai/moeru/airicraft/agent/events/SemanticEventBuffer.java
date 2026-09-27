@@ -1,29 +1,19 @@
 package ai.moeru.airicraft.agent.events;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.LongSupplier;
 
-public final class SemanticEventBuffer {
-	private final int capacity;
+public final class SemanticEventBuffer implements EventStream {
 	private final LongSupplier clock;
-	private final List<SemanticEvent> events = new ArrayList<>();
-
-	private long nextSeqNo = 1L;
-	private long droppedCount;
+	private final AgentEventLog log;
 
 	public SemanticEventBuffer(int capacity) {
 		this(capacity, System::currentTimeMillis);
 	}
 
 	public SemanticEventBuffer(int capacity, LongSupplier clock) {
-		if (capacity <= 0) {
-			throw new IllegalArgumentException("capacity must be positive");
-		}
-		this.capacity = capacity;
+		this.log = new AgentEventLog(capacity);
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
@@ -40,108 +30,64 @@ public final class SemanticEventBuffer {
 	}
 
 	public SemanticEvent append(long tick, long timestampMs, String type, Map<String, Object> payload, String source, EventCause cause) {
-		Objects.requireNonNull(type, "type");
-		Map<String, Object> safePayload = payload == null ? Map.of() : new LinkedHashMap<>(payload);
-		SemanticEvent event = new SemanticEvent(nextSeqNo++, tick, timestampMs, type, Map.copyOf(safePayload), source, cause);
-		if (events.size() == capacity) {
-			events.remove(0);
-			droppedCount++;
-		}
-		events.add(event);
-		return event;
+		return log.append(tick, timestampMs, type, payload, source, cause);
 	}
 
+	@Override
+	public SemanticEvent publish(long tick, String type, Map<String, Object> payload, String source, EventCause cause) {
+		return append(tick, type, payload, source, cause);
+	}
+
+	@Override
 	public SemanticEventQueryResult query(Long sinceSeqNo) {
-		long oldestSeqNo = events.isEmpty() ? nextSeqNo : events.get(0).seqNo();
-		long latestSeqNo = events.isEmpty() ? nextSeqNo - 1L : events.get(events.size() - 1).seqNo();
-		long effectiveSince = sinceSeqNo == null ? 0L : sinceSeqNo.longValue();
-
-		List<SemanticEvent> matches = new ArrayList<>();
-		for (SemanticEvent event : events) {
-			if (event.seqNo() > effectiveSince) {
-				matches.add(event);
-			}
-		}
-
-		boolean truncated = sinceSeqNo != null && oldestSeqNo > 1L && sinceSeqNo < oldestSeqNo - 1L;
-		return new SemanticEventQueryResult(oldestSeqNo, latestSeqNo, truncated, List.copyOf(matches));
+		return log.query(sinceSeqNo);
 	}
 
+	@Override
 	public long latestSeqNo() {
-		return events.isEmpty() ? nextSeqNo - 1L : events.get(events.size() - 1).seqNo();
+		return log.latestSeqNo();
 	}
 
+	@Override
 	public boolean containsType(String type) {
-		for (SemanticEvent event : events) {
-			if (event.type().equals(type)) {
-				return true;
-			}
-		}
-		return false;
+		return log.containsType(type);
 	}
 
 	public boolean containsTypeSince(long sinceSeqNo, String type) {
-		return countTypeSince(sinceSeqNo, type) > 0;
+		return log.containsTypeSince(sinceSeqNo, type);
 	}
 
 	public boolean containsTypeForPlayer(String type, String playerName) {
-		for (SemanticEvent event : events) {
-			if (!event.type().equals(type)) {
-				continue;
-			}
-			Object player = event.payload().get("player");
-			if (playerName.equals(player)) {
-				return true;
-			}
-		}
-		return false;
+		return log.containsTypeForPlayer(type, playerName);
 	}
 
 	public boolean containsTypeForPlayerSince(long sinceSeqNo, String type, String playerName) {
-		return countTypeForPlayerSince(sinceSeqNo, type, playerName) > 0;
+		return log.containsTypeForPlayerSince(sinceSeqNo, type, playerName);
 	}
 
 	public int countTypeSince(long sinceSeqNo, String type) {
-		int count = 0;
-		for (SemanticEvent event : events) {
-			if (event.seqNo() > sinceSeqNo && event.type().equals(type)) {
-				count++;
-			}
-		}
-		return count;
+		return log.countTypeSince(sinceSeqNo, type);
 	}
 
 	public int countTypeForPlayerSince(long sinceSeqNo, String type, String playerName) {
-		int count = 0;
-		for (SemanticEvent event : events) {
-			if (event.seqNo() <= sinceSeqNo || !event.type().equals(type)) {
-				continue;
-			}
-			Object player = event.payload().get("player");
-			if (playerName.equals(player)) {
-				count++;
-			}
-		}
-		return count;
+		return log.countTypeForPlayerSince(sinceSeqNo, type, playerName);
 	}
 
 	public void clear() {
-		events.clear();
-		droppedCount = 0L;
-		nextSeqNo = 1L;
+		log.clear();
 	}
 
 	/** Clears retained payloads without reusing sequence numbers. */
 	public void clearPreservingSequence() {
-		events.clear();
-		droppedCount = 0L;
+		log.clearPreservingSequence();
 	}
 
 	public int size() {
-		return events.size();
+		return log.size();
 	}
 
+	@Override
 	public long droppedCount() {
-		return droppedCount;
+		return log.droppedCount();
 	}
 }
