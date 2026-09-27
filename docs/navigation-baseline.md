@@ -167,6 +167,14 @@ in-house run, p95 was 25.6 ms and the slowest 49.6 ms, a `far_xz` segment.
 The first in-house run, at `8a4c309` before the heuristic weight, waypoints and edge guard,
 passed 58 of 60: two `far_xz` runs walked off a ravine edge at the same place.
 
+After the review fixes at `b712c1c`, run
+[36297150035](https://github.com/proj-airi/airicraft/actions/runs/36297150035) passed 60 of 60
+again, with no stalls or replans. Terrain capture now copies each chunk section's block-state
+container instead of reading every block, so its client-thread cost fell from 3.08 ms to
+0.11 ms at p95 (10.5 ms to 0.14 ms at worst). Search reads cells through the copied
+palettes, so the same expansions take longer: across 85 plans, p95 was 44.6 ms and the
+slowest 85.7 ms, again a `far_xz` segment. Other courses are unchanged.
+
 ## Metrics
 
 Each follow or navigate task ends with a `task`/`terminal_diagnostics` timeline entry.
