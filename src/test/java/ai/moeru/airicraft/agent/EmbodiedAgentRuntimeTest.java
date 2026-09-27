@@ -17,6 +17,7 @@ import ai.moeru.airicraft.agent.dialogue.DialogueIntentType;
 import ai.moeru.airicraft.agent.dialogue.DialogueResponse;
 import ai.moeru.airicraft.agent.debug.AgentDebugTimelineEntry;
 import ai.moeru.airicraft.agent.events.EventPolicyEffect;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.job.ActiveJob;
@@ -3473,10 +3474,48 @@ class EmbodiedAgentRuntimeTest {
 		assertEquals(TaskState.CANCELLED, runtime.taskSnapshot().state());
 		assertEquals(1, executor.onWorldLeaveCalls);
 		assertTrue(runtime.recentEvents(null).events().stream().anyMatch(event -> "player.died".equals(event.type())));
+		SemanticEvent death = runtime.recentEvents(null).events().stream()
+			.filter(event -> "player.died".equals(event.type())).findFirst().orElseThrow();
+		SemanticEvent cancelled = runtime.recentEvents(null).events().stream()
+			.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.event(death.seqNo()), cancelled.cause());
 		assertThrows(
 			BridgeUnavailableException.class,
 			() -> runtime.submitTask(new TaskSpec(TaskType.COLLECT_RESOURCE, TaskResourceKind.WOOD_LOGS, 1), "test")
 		);
+	}
+
+	@Test
+	void workChangeCauseNamesItsOwnWork() {
+		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		runtime.overrideBlockAcquisitionsForTests(BlockAcquisitionTestFixtures.survival());
+		runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+		runtime.submitTask(new TaskSpec(TaskType.COLLECT_RESOURCE, TaskResourceKind.WOOD_LOGS, 2), "test");
+		runtime.onClientTick(null);
+		SemanticEvent changed = runtime.recentEvents(null).events().stream()
+			.filter(event -> "work.changed".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.work((String) changed.payload().get("workId")), changed.cause());
+	}
+
+	@Test
+	void sessionDeathPublicationCausesCancellationButDoesNotSurviveWorldLeave() {
+		try (var harness = new WakeScenarioHarness()) {
+			var death = harness.runtimeEvents().from("SessionRuntime").publish(1L, "player.died", Map.of(
+				"mode", "REMOTE_MULTIPLAYER", "dimensionId", "minecraft:overworld"));
+			harness.runtime.overrideSessionSnapshotForTests(deadRemoteSession());
+			harness.runtime.onClientTick(null);
+			var cancelled = harness.runtime.recentEvents(death.seqNo()).events().stream()
+				.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+			assertEquals(EventCause.event(death.seqNo()), cancelled.cause());
+
+			harness.runtime.onWorldLeave();
+			long afterLeave = harness.runtime.recentEvents(null).latestSeqNo();
+			harness.runtime.overrideSessionSnapshotForTests(deadRemoteSession());
+			harness.runtime.onClientTick(null);
+			var unrelated = harness.runtime.recentEvents(afterLeave).events().stream()
+				.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+			assertNull(unrelated.cause());
+		}
 	}
 
 

@@ -72,6 +72,7 @@ import ai.moeru.airicraft.agent.events.EventPolicyRuleUpsert;
 import ai.moeru.airicraft.agent.events.EventPolicyState;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.EventCatalog;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -323,6 +324,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private String lastSystemChatText;
 	private Float lastKnownPlayerHealth;
 	private boolean deathBoundaryApplied;
+	private long deathEventSequence;
 	private long lastRespawnRequestTick = -1L;
 	private long lastSmeltingOutputReadyPollTick = Long.MIN_VALUE;
 	private Object nearbyBlockSnapshotWorld;
@@ -423,6 +425,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		var eventLog = new AgentEventLog(512);
 		this.eventBus = new AgentEventBus(EventCatalog.defaults(), eventLog, this.clock::millis,
 			Boolean.getBoolean("airicraft.events.strict"), debugRecorder);
+		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
 			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
@@ -546,6 +549,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastSystemChatText = null;
 		lastKnownPlayerHealth = null;
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(MinecraftClient.getInstance());
 		playerItemUseController.reset(MinecraftClient.getInstance());
@@ -927,7 +931,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				"stalledActiveTicks", notice.stalledTicks(), "position", Map.of("x", player.getX(), "y", player.getY(), "z", player.getZ()),
 				"message", "No observed progress for " + notice.stalledTicks() + " active ticks on " + notice.workId()
 					+ " (" + notice.reason() + "). Work is still running. Inspect current world/work and choose recovery or continue trying. "
-					+ "Use continue to grant another observation window; this notice does not cancel or fail work."));
+					+ "Use continue to grant another observation window; this notice does not cancel or fail work."), EventCause.work(notice.workId()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
 	}
@@ -982,7 +986,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			+ "; elapsed " + slowMiningObserver.elapsedTicks(tickCount) + " ticks, estimated total " + estimatedTicks
 			+ " ticks (-1 means no progress predicted). Best carried tool by base speed: " + bestItem + " in slot " + bestSlot
 			+ ". Review current work and tool/conditions before continuing; this observation is not a task failure.");
-		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload);
+		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload,
+			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
@@ -1111,13 +1116,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				"requestHoldId", rejection.requestHoldId(),
 				"currentHoldId", rejection.currentHoldId(),
 				"phase", rejection.phase()
-			)
+			), EventCause.generation(rejection.generation())
 		));
 	}
 
 	private void enforcePlayerLifecycle(MinecraftClient client) {
 		if (!sessionSnapshot.requiresRespawn()) {
 			deathBoundaryApplied = false;
+			deathEventSequence = 0L;
 			lastRespawnRequestTick = -1L;
 			return;
 		}
@@ -1132,7 +1138,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					ai.moeru.airicraft.agent.memory.LocationMemoryBridge.forClient(client).remember(null, place);
 					ai.moeru.airicraft.agent.memory.WorldPlacePreservation.reload(client);
 					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_saved", Map.of(
-						"name", place.name(), "dimension", place.dimension(), "x", place.x(), "y", place.y(), "z", place.z()));
+						"name", place.name(), "dimension", place.dimension(), "x", place.x(), "y", place.y(), "z", place.z()), deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 				}
 				catch (java.io.IOException | IllegalArgumentException | IllegalStateException exception) {
 					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_save_failed", Map.of("message", exception.toString()));
@@ -1206,7 +1212,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			payload.put("jobId", activeJob.jobId());
 			payload.put("jobType", activeJob.type().name());
 		}
-		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.actions_cancelled", payload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.actions_cancelled", payload,
+			deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 	}
 
 	private void openLanIfSingleplayerLocal(MinecraftClient client) {
@@ -1274,6 +1281,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastSystemChatText = null;
 		lastKnownPlayerHealth = null;
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(MinecraftClient.getInstance());
 		playerItemUseController.reset(MinecraftClient.getInstance());
@@ -2023,6 +2031,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			sessionSnapshot = sessionRuntime.onPlayerRespawned(tickCount, eventBus);
 		}
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		drainEventPipeline();
 	}
@@ -2793,7 +2802,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		evidence.put("actorPosition", Map.of("x",pos.getX(),"y",pos.getY(),"z",pos.getZ()));
 		evidence.put("bounds", ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.snapshot());
 		evidence.put("cause", "Observed outside restriction; displacement cause is not inferred. No recovery movement started.");
-		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount,"work.travel_restriction_violated",evidence);
+		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount,"work.travel_restriction_violated",evidence,
+			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 		dialogueRuntime.queueTaskWakeup(null,tickCount,event.seqNo());
 	}
 
@@ -2832,7 +2842,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void recordWork(ai.moeru.airicraft.agent.work.WorkSnapshot work) {
 		if (workHistory.observe(work)) {
-			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "work.changed", work.payload());
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "work.changed", work.payload(), EventCause.work(work.handle().id()));
 			if (work.state().terminal() || work.state() == ai.moeru.airicraft.agent.work.WorkSnapshot.State.PAUSED || work.phase().equals("CHECK_OUTPUT"))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, event.seqNo());
 		}

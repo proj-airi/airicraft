@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.dialogue;
 
 import ai.moeru.airicraft.agent.events.EventStream;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.llm.CompactionExecutionResult;
 import ai.moeru.airicraft.agent.llm.ExternalPlannerToolResult;
@@ -986,7 +987,7 @@ public final class DialogueRuntime {
 			"currentGuidanceRevision", userGuidanceRevision,
 			"updateMissionId", pendingUpdate.missionId() == null ? "" : pendingUpdate.missionId(),
 			"currentMissionId", currentMissionId == null ? "" : currentMissionId
-		));
+		), pendingUpdate.eventSequence() <= 0L ? null : EventCause.event(pendingUpdate.eventSequence()));
 	}
 
 	private static String missionId(TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution) {

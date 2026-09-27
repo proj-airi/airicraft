@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.dialogue;
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -79,6 +80,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogueRuntimeTest {
@@ -1104,6 +1106,7 @@ class DialogueRuntimeTest {
 			MissionExecutionSnapshot.idle(),
 			eventBuffer
 		);
+		runtime.queueTaskWakeup(null, 11L, 0L);
 		runtime.onPlannerTrigger(
 			PlannerTrigger.pending(PlannerTriggerType.CHAT, "Alice", "@agent stop, come back", 12L, 1200L),
 			SessionSnapshot.initial(),
@@ -1115,6 +1118,14 @@ class DialogueRuntimeTest {
 		);
 
 		assertTrue(eventBuffer.containsType("planner.internal_task_update_superseded"));
+		var notice = eventBuffer.query(null).events().stream()
+			.filter(event -> "task.notice".equals(event.type())).findFirst().orElseThrow();
+		var superseded = eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.event(notice.seqNo()), superseded.cause());
+		assertNull(eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type()))
+			.skip(1).findFirst().orElseThrow().cause());
 		latestResponse.complete(new PlannerResponse("Coming back.", new PlannerIntent("reply_only", null, null)));
 		firstResponse.complete(new PlannerResponse("Gathering wood.", new PlannerIntent("reply_only", null, null)));
 
