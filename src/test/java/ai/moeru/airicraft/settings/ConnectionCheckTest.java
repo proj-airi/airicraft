@@ -31,6 +31,18 @@ class ConnectionCheckTest {
 			assertFalse(result.message().contains("test-secret"));
 			assertEquals(ConnectionCheck.Result.READY, ConnectionCheck.api(url(server), "test-secret", "vision-model", true, 2000));
 			assertTrue(request.get().contains("data:image/png;base64,"));
+			String image = JsonParser.parseString(request.get()).getAsJsonObject().getAsJsonArray("messages").get(0)
+				.getAsJsonObject().getAsJsonArray("content").get(1).getAsJsonObject().getAsJsonObject("image_url").get("url").getAsString();
+			var png = java.nio.ByteBuffer.wrap(java.util.Base64.getDecoder().decode(image.substring(image.indexOf(',') + 1)));
+			png.position(8);
+			while (png.hasRemaining()) {
+				int length = png.getInt();
+				byte[] chunk = new byte[length + 4];
+				png.get(chunk);
+				var crc = new java.util.zip.CRC32();
+				crc.update(chunk);
+				assertEquals(png.getInt(), (int) crc.getValue(), "Vision probe must be a valid PNG");
+			}
 		} finally { server.stop(0); }
 	}
 

@@ -11,6 +11,13 @@ class CodexConnectionCheckTest {
 	@TempDir Path directory;
 
 	@Test
+	@org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "AIRICRAFT_CODEX_LIVE", matches = "1")
+	void checksInstalledCodexWithRealInference() {
+		var executable = System.getenv().getOrDefault("AIRICRAFT_CODEX_EXECUTABLE", "codex");
+		assertEquals(ConnectionCheck.Result.READY, ConnectionCheck.codex(new AgentConfig.CodexAppServerConfig(executable, "", "", "", 10_000, 60_000)));
+	}
+
+	@Test
 	void verifiesInferenceAfterLoginAndUsesAnEphemeralReadOnlyThread() throws Exception {
 		var executable = server(true, true);
 		assertEquals(ConnectionCheck.Result.READY, ConnectionCheck.codex(config(executable)));
@@ -18,6 +25,12 @@ class CodexConnectionCheckTest {
 		assertTrue(requests.contains("\"ephemeral\":true"));
 		assertTrue(requests.contains("\"sandbox\":\"read-only\""));
 		assertTrue(requests.contains("\"model\":\"chosen-model\""));
+	}
+
+	@Test
+	void nativeVisionChecksIncludeAnImage() throws Exception {
+		assertEquals(ConnectionCheck.Result.READY, ConnectionCheck.codex(config(server(true, true)), true));
+		assertTrue(Files.readString(directory.resolve("requests.jsonl")).contains("data:image/png;base64,"));
 	}
 
 	@Test

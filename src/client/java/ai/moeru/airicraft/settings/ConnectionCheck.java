@@ -13,7 +13,9 @@ import java.time.Duration;
 
 /** Small user-requested inference probes. Never return provider text or exception messages. */
 final class ConnectionCheck {
-	static Result codex(ai.moeru.airicraft.agent.AgentConfig.CodexAppServerConfig config) {
+	private static final String TEST_IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR4nO3NsQ0AAAzCMP5/un0CNkuZ41wybXsHAAAAAAAAAAAAxR4yw/wuPL6QkAAAAABJRU5ErkJggg==";
+	static Result codex(ai.moeru.airicraft.agent.AgentConfig.CodexAppServerConfig config) { return codex(config, false); }
+	static Result codex(ai.moeru.airicraft.agent.AgentConfig.CodexAppServerConfig config, boolean vision) {
 		int startupTimeout = Math.min(config.startupTimeoutMillis(), 30_000);
 		try (var client = new ai.moeru.airicraft.agent.llm.codex.CodexAppServerClient(config.executable(), startupTimeout)) {
 			try { client.start(); }
@@ -35,6 +37,13 @@ final class ConnectionCheck {
 			var turnParams = new JsonObject();
 			turnParams.addProperty("threadId", thread.getAsJsonObject("thread").get("id").getAsString());
 			turnParams.add("input", JsonParser.parseString("[{\"type\":\"text\",\"text\":\"Connection test. Reply only with OK.\"}]"));
+			if (vision) {
+				var image = new JsonObject();
+				image.addProperty("type", "image");
+				image.addProperty("url", TEST_IMAGE);
+				image.addProperty("detail", "low");
+				turnParams.getAsJsonArray("input").add(image);
+			}
 			if (!config.reasoningEffort().isBlank()) turnParams.addProperty("effort", config.reasoningEffort());
 			var handle = client.startTurn(turnParams, startupTimeout);
 			var result = handle.completion().get(Math.min(config.turnTimeoutMillis(), 60_000), java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -46,7 +55,7 @@ final class ConnectionCheck {
 	}
 	enum Result {
 		READY("Connected: the model answered the test."),
-		NOT_CONFIGURED("Enter a provider URL, API key and model in Connection settings."),
+		NOT_CONFIGURED("Enter a provider URL, API key and model in settings, then retry."),
 		INVALID_URL("Use an http(s) provider URL without credentials, query parameters or fragments."),
 		AUTH_FAILED("Authentication failed. Check the API key and its permissions."),
 		MODEL_FAILED("Model unavailable. Check its name and your account's model access."),
@@ -88,7 +97,7 @@ final class ConnectionCheck {
 			var image = new JsonObject();
 			image.addProperty("type", "image_url");
 			var imageUrl = new JsonObject();
-			imageUrl.addProperty("url", "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=");
+			imageUrl.addProperty("url", TEST_IMAGE);
 			imageUrl.addProperty("detail", "low");
 			image.add("image_url", imageUrl);
 			content.add(image);
