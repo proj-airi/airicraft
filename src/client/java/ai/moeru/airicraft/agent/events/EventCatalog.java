@@ -74,8 +74,8 @@ public final class EventCatalog {
 			new EventTypeSpec("player.respawned", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "SessionRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("player.respawned", true, null, true)),
 
 			// policy
-			new EventTypeSpec("policy.event_intervened", false, EventFamily.INTERNAL, Set.of("AgentEventPipeline", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("policy.event_intervened", false, null, false)),
-			new EventTypeSpec("policy.rule_rejected", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("policy.rule_rejected", false, null, false)),
+			new EventTypeSpec("policy.event_intervened", false, EventFamily.INTERNAL, Set.of("AgentEventPipeline", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("policy.event_intervened")),
+			new EventTypeSpec("policy.rule_rejected", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("policy.rule_rejected")),
 			new EventTypeSpec("policy.travel_changed", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("policy.travel_changed")),
 
 			// reflex
@@ -164,11 +164,6 @@ public final class EventCatalog {
 		return specs;
 	}
 
-	/** Test injection may use any declared type without claiming a production producer. */
-	boolean acceptsProducer(EventTypeSpec spec, String source) {
-		return "test".equals(source) || spec.producers().contains(source);
-	}
-
 	public EventTypeSpec find(String type) {
 		var match = exact.get(type);
 		if (match != null) return match;
@@ -178,12 +173,11 @@ public final class EventCatalog {
 		return match;
 	}
 
-	/** Explicit G1 entries, including the two policy entries intentionally configured as raw-only. */
+	/** G1 entries. Raw-only types are omitted: the pipeline and the policy-bypass check both default to raw-only. */
 	public Map<String, EventRoutingProfile> routingProfiles() {
 		var profiles = new HashMap<String, EventRoutingProfile>();
 		for (var spec : specs) {
-			if (!spec.prefix() && (!spec.routing().equals(EventRoutingProfile.rawOnly(spec.id()))
-				|| spec.id().equals("policy.event_intervened") || spec.id().equals("policy.rule_rejected"))) {
+			if (!spec.prefix() && !spec.routing().equals(EventRoutingProfile.rawOnly(spec.id()))) {
 				profiles.put(spec.id(), spec.routing());
 			}
 		}
