@@ -104,9 +104,10 @@ public final class OnboardingScreen extends Screen {
 				codex = !codex; planner.changed(true); clearAndInit();
 			}).setTooltip(Tooltip.of(Text.literal("Switch between an API provider and your local Codex sign-in.")));
 			button(nativeVision ? "Image input: on" : "Image input: off", left + (span + 6) / 2, 56, (span - 6) / 2, () -> {
-				nativeVision = !nativeVision; planner.changed(false); clearAndInit();
+				nativeVision = !nativeVision; planner.changed(false); vision.changed(true); clearAndInit();
 			}).setTooltip(Tooltip.of(Text.literal("Enable if this planner model accepts images. The connection test will include a test image.")));
 		} else {
+			if (nativeVision) return;
 			button(visionEnabled ? "Separate vision: on" : "Separate vision: off", left, 56, span, () -> {
 				visionEnabled = !visionEnabled; vision.changed(false); clearAndInit();
 			});
@@ -167,13 +168,13 @@ public final class OnboardingScreen extends Screen {
 		}
 	}
 	private boolean ready() {
-		return draft != null && planner.ready() && (!visionEnabled || vision.ready()) && compatibility.stream().noneMatch(Compatibility::blocking);
+		return draft != null && planner.ready() && (nativeVision || !visionEnabled || vision.ready()) && compatibility.stream().noneMatch(Compatibility::blocking);
 	}
 	boolean checksFinished() { return current().check instanceof Checked; }
 	@Override public void tick() {
 		if (draft == null) return;
 		if (!codex) discover(planner);
-		if (visionEnabled) discover(vision);
+		if (visionEnabled && !nativeVision) discover(vision);
 		updateButtons();
 	}
 	private void discover(Provider provider) {
@@ -278,6 +279,9 @@ public final class OnboardingScreen extends Screen {
 				context.drawTextWithShadow(textRenderer, item.name(), left, y, 0xFF8CD8FF);
 				y = paragraph(context, item.detail(), left, y + 16, span, item.blocking() ? 0xFFFFB08A : 0xFFD6DFEA) + 18;
 			}
+		} else if (draft != null && tab == Tab.VISION && nativeVision) {
+			paragraph(context, "Your planner handles images. No separate endpoint needed.", left, 76, span, 0xFF99E7B1);
+			paragraph(context, "Test image input from the Planner tab.", left, 110, span, 0xFFBAC7D6);
 		} else if (draft != null && (tab == Tab.PLANNER || visionEnabled)) {
 			boolean local = tab == Tab.PLANNER && codex;
 			context.drawTextWithShadow(textRenderer, local ? "Executable" : "Provider URL", left, 88, 0xFFBAC7D6);

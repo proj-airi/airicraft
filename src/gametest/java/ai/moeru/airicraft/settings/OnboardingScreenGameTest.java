@@ -81,6 +81,24 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			context.clickScreenButton("Vision");
 			context.clickScreenButton("Separate vision: off");
 			assertFinish(context, false);
+			// Native image input supersedes even an enabled, unconfigured separate provider.
+			context.clickScreenButton("Planner");
+			context.clickScreenButton("Image input: off");
+			assertFinish(context, false);
+			testConnection(context);
+			assertFinish(context, true);
+			if (images.get() != 1) throw new AssertionError("Native vision did not test image input");
+			context.clickScreenButton("Vision");
+			context.runOnClient(client -> {
+				if (client.currentScreen.children().stream().anyMatch(child -> child instanceof TextFieldWidget))
+					throw new AssertionError("Native vision still asks for a dedicated endpoint");
+			});
+			context.takeScreenshot("airicraft-onboarding-native-vision");
+			context.clickScreenButton("Planner");
+			context.clickScreenButton("Image input: on");
+			testConnection(context);
+			assertFinish(context, false);
+			context.clickScreenButton("Vision");
 			context.runOnClient(client -> {
 				// Listing is unsupported at this URL; inference still works with a manual ID.
 				field(client.currentScreen, "Provider URL").setText(url + "/manual");
@@ -101,7 +119,7 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			context.takeScreenshot("airicraft-onboarding-vision-ready");
 			context.clickScreenButton("Planner");
 			context.takeScreenshot("airicraft-onboarding-ready");
-			if (images.get() != 1) throw new AssertionError("Separate vision was not checked with a test image");
+			if (images.get() != 2) throw new AssertionError("Separate vision was not checked with a test image");
 			context.clickScreenButton("Save & finish");
 			context.waitForScreen(AiricraftSettingsScreen.class);
 			var saved = SettingsDraft.open(directory);

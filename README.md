@@ -10,12 +10,14 @@ Available API models load automatically after you pause typing credentials;
 open the dropdown and type to filter or scroll to browse. You can always enter
 a model ID manually, including when a provider does not support model listing.
 Switch **API provider** to **Local Codex** to use an installed executable and
-its existing sign-in. The **Vision** tab adds an optional separate provider.
+its existing sign-in. With **Image input: on**, the planner handles vision and
+its connection test includes an image; no separate endpoint is needed. Otherwise,
+the **Vision** tab adds an optional separate provider.
 
 Connection tests send small inference requests and may consume provider credits.
 Image checks use a built-in test image. Editing credentials or the model clears
 the previous result. Settings remain unsaved until **Save & finish**, which is
-available after the configured connections pass. **Later** discards edits and
+available after the required connection checks pass. **Later** discards edits and
 leaves setup incomplete so it returns next launch.
 
 The **Mods** tab shows JourneyMap and REI versions, missing compatibility add-ons,
