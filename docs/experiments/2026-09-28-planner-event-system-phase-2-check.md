@@ -73,9 +73,9 @@ The first smoke client reported `maxStepMicros` 671,216: one synchronous step to
 
 `./gradlew build` passes: root 1,822 tests (4 skipped) and wrapper 95, with 0 failures and no golden changes. `airicraft agent debug state` now prints the engine as `[attentionRules]`, with decision and pending-wake counts; `--verbose` adds the latest decisions.
 
-## Found, not fixed here
+## Found and fixed after the check
 
-- **Syntax-error line numbers.** Load failures report positions in the wrapped module source (`Unnamed:4:0`), not the file's own lines.
-- **Dashboard row mix.** The Attention view lists raw-only decisions (`catalog.raw_only`) alongside the rest, which crowds the table in busy runs.
+- **Syntax-error line numbers.** Load failures reported positions in the wrapped module source (`Unnamed:4:0`). The module source is now named after its origin, and the wrapper opens on the module's first line, so errors read `config:rules/attention.js:<line>:<column>` with the file's own line numbers.
+- **Dashboard row mix.** The Attention view listed raw-only decisions (`catalog.raw_only`) among the routed ones. They are now hidden by default, with a count and a "show raw-only" toggle.
 
 Not a defect: after the clamp check's `airicraft reload`, run 2 recorded nothing more. This is by design. Reload calls `worldLeft("runtime_reloaded")`, which finishes an automatic playtest recording (one run per process); run 2's `summary.json` is `FINISHED` with reason `runtime_reloaded`. The hosted playtest's automatic reset is a dialogue reset inside the same runtime, so its recording continues.

@@ -82,6 +82,15 @@ class RuleEngineTest {
 		assertDoesNotThrow(() -> RuleEngine.validate(RuleModule.bundledAttention(), WARM));
 	}
 
+	@Test void loadErrorsNameTheModuleAndItsOwnLineNumbers() {
+		String source = "// line 1\n\n(lib => ({\n  step(input, state) { return {decisions: [], state} }\n  broken here\n}))\n";
+		var failure = assertThrows(RuleException.class,
+			() -> RuleEngine.validate(new RuleModule("config:rules/attention.js", source), WARM));
+		assertEquals("load_failed", failure.code());
+		assertTrue(failure.getMessage().contains("config:rules/attention.js:5:"), failure.getMessage());
+		assertFalse(failure.getMessage().contains("Unnamed"), failure.getMessage());
+	}
+
 	@Test void aReplacedOverrideIsClosed() throws Exception {
 		RuleEngine first = warm("(lib => ({ step(input, state) { return {decisions: [], state}; } }))");
 		assertTrue(first.ready());

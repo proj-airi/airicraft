@@ -349,9 +349,11 @@ function renderAttention(snapshot) {
   const scheduler = attention.scheduler || {};
   const pending = scheduler.pending || [];
   const override = rules.module && !String(rules.module).startsWith('bundled:');
-  const decisions = (attention.latest || [])
-    .filter(d => !state.search || [d.type, d.ruleId, d.stage, d.reason].join(' ').toLowerCase().includes(state.search))
-    .slice().reverse();
+  const searched = (attention.latest || [])
+    .filter(d => !state.search || [d.type, d.ruleId, d.stage, d.reason].join(' ').toLowerCase().includes(state.search));
+  // Raw-only events never reach the policy; hide them unless asked, so routed decisions stay readable.
+  const decisions = searched.filter(d => state.attentionShowRaw || d.ruleId !== 'catalog.raw_only').slice().reverse();
+  const hiddenRaw = searched.length - decisions.length;
   const counts = Object.entries(attention.countsByRule || {}).sort((a, b) => b[1] - a[1]);
   const decisionRow = d => `<tr data-key="decision-${d.seqNo}" class="${d.delivery === 'IMMEDIATE' ? 'wakes' : 'quiet'}">
       <td class="nowrap">${fmt.format(d.tick)}</td><td>${escapeHtml(d.type)}</td>
@@ -367,7 +369,7 @@ function renderAttention(snapshot) {
     </div>
     ${rules.lastFailure ? `<div class="warning" style="margin-top:12px">Last rule failure: ${escapeHtml(rules.lastFailure)}</div>` : ''}
     <section class="card" style="margin-top:12px">
-      <div class="card-head"><h2>Attention decisions</h2><small>${decisions.length} of ${fmt.format(attention.recorded || 0)} recorded · filter by event type, rule id or stage</small></div>
+      <div class="card-head"><h2>Attention decisions</h2><small>${decisions.length} of ${fmt.format(attention.recorded || 0)} recorded${hiddenRaw ? ` · ${hiddenRaw} raw-only hidden` : ''} · filter by event type, rule id or stage · <label class="inline-toggle" data-key="attention-raw-toggle"><input type="checkbox" id="attention-raw"${state.attentionShowRaw ? ' checked' : ''}> show raw-only</label></small></div>
       <div class="card-body table-wrap"><table class="attention-table">
         <thead><tr><th>tick</th><th>event</th><th>stage</th><th>wake</th><th>rule</th><th>reason</th><th>semantic</th></tr></thead>
         <tbody>${decisions.length ? decisions.map(decisionRow).join('') : '<tr><td colspan="7" class="muted">No matching decisions in this snapshot.</td></tr>'}</tbody>
@@ -379,6 +381,11 @@ function renderAttention(snapshot) {
       <section class="card"><div class="card-head"><h2>Decisions by rule</h2><small>${fmt.format(attention.dropped || 0)} evicted</small></div>
         <div class="card-body">${counts.length ? `<table class="attention-table"><thead><tr><th>rule</th><th>decisions</th></tr></thead><tbody>${counts.map(([rule, count]) => `<tr data-key="count-${escapeHtml(rule)}"><td>${escapeHtml(rule)}</td><td>${fmt.format(count)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No decisions recorded.</p>'}</div></section>
     </div>`);
+  const toggle = el('attention-raw');
+  if (toggle && !toggle.attentionBound) {
+    toggle.attentionBound = true;
+    toggle.addEventListener('change', event => { state.attentionShowRaw = event.target.checked; render(); });
+  }
 }
 
 function renderRuntime(snapshot) {

@@ -168,3 +168,26 @@ test('attention view explains wakes, pending wakes and the rule engine, filtered
   assert.match(result.filtered, /combat\.damage_taken/);
   assert.doesNotMatch(result.filtered, /pickup\.item_picked_up/);
 });
+test('attention view hides raw-only decisions until the toggle is checked', async t => {
+  const page = await dashboard(t);
+  const result = await page.evaluate(() => {
+    state.view = 'attention';
+    const decision = (seqNo, type, ruleId) => ({seqNo, tick: seqNo, type, emitSemantic: false, delivery: 'NONE', urgency: 'LOW',
+      stage: 'RULES', ruleId, reason: '', wakeProduced: false});
+    addObservations([{sequence:1,type:'runtime_snapshot',capturedAtMs:1000,payload:{attention:{recorded:2,dropped:0,countsByRule:{},
+      latest:[decision(1,'work.changed','catalog.raw_only'), decision(2,'pickup.item_picked_up','ownership.collect_resource_progress')],
+      rules:{module:'bundled:attention/default.js',ready:true},scheduler:{pending:[]}}}}]);
+    const hidden = el('content').textContent;
+    const toggle = el('attention-raw');
+    toggle.checked = true; toggle.dispatchEvent(new Event('change'));
+    const shown = el('content').textContent;
+    addObservations([{sequence:2,type:'visual_frame',capturedAtMs:1001,payload:{}}]);
+    return {hidden, shown, stillChecked: el('attention-raw').checked, afterLive: el('content').textContent};
+  });
+  assert.doesNotMatch(result.hidden, /work\.changed/);
+  assert.match(result.hidden, /1 raw-only hidden/);
+  assert.match(result.hidden, /pickup\.item_picked_up/);
+  assert.match(result.shown, /work\.changed/);
+  assert.equal(result.stillChecked, true);
+  assert.match(result.afterLive, /work\.changed/);
+});

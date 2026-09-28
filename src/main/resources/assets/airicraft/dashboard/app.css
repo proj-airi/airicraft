@@ -181,3 +181,5 @@ pre.json { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #b8
 .badge.stage-rules { color: #69dfca; background: rgba(85,214,190,.11); }
 .badge.stage-clamp { color: #d3a764; background: rgba(240,180,90,.1); }
 .badge.stage-fallback { color: #c8b2ff; background: rgba(184,148,255,.12); }
+.inline-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.inline-toggle input { margin: 0; }

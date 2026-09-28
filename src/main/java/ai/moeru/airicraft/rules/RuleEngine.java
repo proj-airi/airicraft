@@ -17,6 +17,7 @@ import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotAccess;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.ResourceLimits;
+import org.graalvm.polyglot.Source;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 
@@ -205,7 +206,7 @@ public final class RuleEngine implements AutoCloseable {
 			.resourceLimits(ResourceLimits.newBuilder().statementLimit(STATEMENT_LIMIT, ignored -> true).build()).build();
 		try {
 			Value loadedKernel = built.eval("js", RuleModule.resource("kernel.js"));
-			loadedKernel.invokeMember("load", built.eval("js", RuleModule.resource("lib.js")), built.eval("js", factoryExpression(module.source())));
+			loadedKernel.invokeMember("load", built.eval("js", RuleModule.resource("lib.js")), built.eval(moduleSource(module)));
 			synchronized (this) {
 				if (closed) {
 					built.close(true);
@@ -278,12 +279,18 @@ public final class RuleEngine implements AutoCloseable {
 
 	/**
 	 * A module is one JS expression that evaluates to a factory {@code lib => ({step(input, state, lib)})}, optionally
-	 * preceded by comments. It is evaluated in strict mode inside a function, so it cannot declare globals.
+	 * preceded by comments. It is evaluated in strict mode inside a function, so it cannot declare globals. The wrapper
+	 * opens on the module's first line, so guest error positions are the module file's own lines; the source is named
+	 * after the module's origin.
 	 */
 	static String factoryExpression(String source) {
-		String expression = source.strip();
-		while (expression.endsWith(";")) expression = expression.substring(0, expression.length() - 1).strip();
-		return "(function() { 'use strict';\nreturn (\n" + expression + "\n);\n})()";
+		String expression = source.stripTrailing();
+		while (expression.endsWith(";")) expression = expression.substring(0, expression.length() - 1).stripTrailing();
+		return "(function() { 'use strict'; return (" + expression + "\n); })()";
+	}
+
+	private static Source moduleSource(RuleModule module) {
+		return Source.newBuilder("js", factoryExpression(module.source()), module.origin()).buildLiteral();
 	}
 
 	@Override
