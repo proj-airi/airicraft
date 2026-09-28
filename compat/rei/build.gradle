@@ -2,7 +2,7 @@ plugins {
 	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 }
 
-version = project.mod_version
+version = rootProject.version
 group = project.maven_group
 
 base {

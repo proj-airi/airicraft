@@ -87,10 +87,20 @@ git tag v1.2.3-alpha.1
 git push origin v1.2.3-alpha.1
 ```
 
+The build version is derived from git state by axion-release-plugin: a `v`-prefixed
+tag on `HEAD` builds that exact version (`v1.2.3-rc.1` → `1.2.3-rc.1`), and any
+other commit builds `<initial>-SNAPSHOT`. `mod_version` in `gradle.properties` only
+seeds repositories with no matching tags and is the fallback when SCM resolution
+fails; check the resolved name with `./gradlew printModVersion`. There is no
+manual version override — a release version exists only as a git tag.
+
 Releases from `dev` are always alpha prereleases, never GitHub's latest release.
-Use `vX.Y.Z-alpha.N` tags; a plain `vX.Y.Z` tag on `dev` automatically builds
-version `X.Y.Z-alpha` and uses that version in the release title. The original
-Git tag is preserved. Jar filenames and mod metadata use the resolved version.
+Use `vX.Y.Z-alpha.N` tags; a plain `vX.Y.Z` tag on `dev` still builds version
+`X.Y.Z-alpha` (the channel is passed to Gradle via `AIRICRAFT_RELEASE_CHANNEL`)
+and uses that version in the release title. The original Git tag is preserved.
+Jar filenames and mod metadata use the resolved version. Tag-shape validation
+lives in the Gradle build, so `AIRICRAFT_RELEASE_CHANNEL=... ./gradlew build`
+rejects malformed or disallowed release tags locally exactly as CI does.
 
 Once release candidates are ready, move release work to `main`. On `main`,
 `vX.Y.Z-rc.N` publishes a prerelease and `vX.Y.Z` publishes a stable release.
