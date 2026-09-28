@@ -213,7 +213,7 @@ function render() {
     updateContent(`<div class="empty-state"><div class="loader"></div><h2>Waiting for the first runtime snapshot</h2><p>Transitions and transcripts will appear as soon as Airicraft emits them.</p></div>`);
     return;
   }
-  ({ overview: renderOverview, transcript: renderTranscript, compactions: renderCompactions, timeline: renderTimeline, runtime: renderRuntime, logs: renderLogs, raw: renderRaw })[state.view](snapshot);
+  ({ overview: renderOverview, transcript: renderTranscript, compactions: renderCompactions, timeline: renderTimeline, attention: renderAttention, runtime: renderRuntime, logs: renderLogs, raw: renderRaw })[state.view](snapshot);
 }
 
 function renderOverview(snapshot) {
@@ -342,9 +342,48 @@ function timelineRow(item) {
   return `<div class="timeline-row selectable ${state.selectedObservation?.sequence === item.sequence ? 'selected' : ''}" data-sequence="${item.sequence}"><time>${timeFmt.format(item.capturedAtMs)}</time><span class="badge ${item.type}">${escapeHtml(item.type.replaceAll('_',' '))}</span><p>${escapeHtml(summary)}</p><span class="sequence">#${item.sequence}</span></div>`;
 }
 
+// Why did or didn't the planner wake: recent attention decisions, pending wakes and the rule engine.
+function renderAttention(snapshot) {
+  const attention = snapshot.payload?.attention || {};
+  const rules = attention.rules || {};
+  const scheduler = attention.scheduler || {};
+  const pending = scheduler.pending || [];
+  const override = rules.module && !String(rules.module).startsWith('bundled:');
+  const decisions = (attention.latest || [])
+    .filter(d => !state.search || [d.type, d.ruleId, d.stage, d.reason].join(' ').toLowerCase().includes(state.search))
+    .slice().reverse();
+  const counts = Object.entries(attention.countsByRule || {}).sort((a, b) => b[1] - a[1]);
+  const decisionRow = d => `<tr data-key="decision-${d.seqNo}" class="${d.delivery === 'IMMEDIATE' ? 'wakes' : 'quiet'}">
+      <td class="nowrap">${fmt.format(d.tick)}</td><td>${escapeHtml(d.type)}</td>
+      <td class="nowrap"><span class="badge stage-${escapeHtml(String(d.stage).toLowerCase())}">${escapeHtml(d.stage)}</span></td>
+      <td class="nowrap">${d.delivery === 'IMMEDIATE' ? `wake · ${escapeHtml(d.urgency)}${d.wakeProduced ? '' : ' · no trigger'}` : 'no wake'}</td>
+      <td>${escapeHtml(d.ruleId)}</td><td>${escapeHtml(d.reason)}</td><td>${d.emitSemantic ? 'yes' : 'no'}</td></tr>`;
+  updateContent(`
+    <div class="grid summary-grid">
+      ${statCard('Rule module', override ? 'OVERRIDE' : 'BUNDLED', safe(rules.module), override ? 'amber' : 'cyan')}
+      ${statCard('Rule engine', rules.ready ? 'WARM' : 'COLD', `${fmt.format(rules.steps || 0)} steps · ${fmt.format(rules.fallbacks || 0)} fallbacks · max ${fmt.format(rules.maxStepMicros || 0)} µs`, 'blue')}
+      ${statCard('Failures', fmt.format(rules.failures || 0), `${fmt.format(rules.reverts || 0)} reverts · ${fmt.format(rules.clamps || 0)} clamps · ${fmt.format(rules.rebuilds || 0)} rebuilds · state ${fmt.format(rules.stateBytes || 0)} B`, rules.failures ? 'amber' : 'purple')}
+      ${statCard('Pending wakes', fmt.format(pending.length), scheduler.retainedBy ? `held by ${scheduler.retainedBy}` : 'not held', 'cyan')}
+    </div>
+    ${rules.lastFailure ? `<div class="warning" style="margin-top:12px">Last rule failure: ${escapeHtml(rules.lastFailure)}</div>` : ''}
+    <section class="card" style="margin-top:12px">
+      <div class="card-head"><h2>Attention decisions</h2><small>${decisions.length} of ${fmt.format(attention.recorded || 0)} recorded · filter by event type, rule id or stage</small></div>
+      <div class="card-body table-wrap"><table class="attention-table">
+        <thead><tr><th>tick</th><th>event</th><th>stage</th><th>wake</th><th>rule</th><th>reason</th><th>semantic</th></tr></thead>
+        <tbody>${decisions.length ? decisions.map(decisionRow).join('') : '<tr><td colspan="7" class="muted">No matching decisions in this snapshot.</td></tr>'}</tbody>
+      </table></div>
+    </section>
+    <div class="grid two-col" style="margin-top:12px">
+      <section class="card"><div class="card-head"><h2>Pending task wakes</h2><small>release order</small></div>
+        <div class="card-body">${pending.length ? `<table class="attention-table"><thead><tr><th>path</th><th>urgency</th><th>tick</th><th>events</th><th>mission</th></tr></thead><tbody>${pending.map((w, i) => `<tr data-key="pending-${i}-${w.tick}"><td>${escapeHtml(w.path)}</td><td>${escapeHtml(w.urgency)}</td><td>${fmt.format(w.tick)}</td><td>${escapeHtml((w.eventRefs || []).join(', '))}</td><td>${escapeHtml(safe(w.missionId))}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No pending task wakes.</p>'}</div></section>
+      <section class="card"><div class="card-head"><h2>Decisions by rule</h2><small>${fmt.format(attention.dropped || 0)} evicted</small></div>
+        <div class="card-body">${counts.length ? `<table class="attention-table"><thead><tr><th>rule</th><th>decisions</th></tr></thead><tbody>${counts.map(([rule, count]) => `<tr data-key="count-${escapeHtml(rule)}"><td>${escapeHtml(rule)}</td><td>${fmt.format(count)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">No decisions recorded.</p>'}</div></section>
+    </div>`);
+}
+
 function renderRuntime(snapshot) {
   const p = snapshot.payload || {};
-  const sections = ['agent','system2','planner','activeGoal','activeJob','task','taskExecution','missionExecution','reflex','actionGraph','behaviorTree','eventPipeline','dialogueState','conversationSources','world','observability'];
+  const sections = ['agent','system2','planner','activeGoal','activeJob','task','taskExecution','missionExecution','reflex','actionGraph','behaviorTree','eventPipeline','attention','dialogueState','conversationSources','world','observability'];
   updateContent(`<div class="grid two-col">${sections.map(key => `<section class="card"><div class="card-head"><h2>${escapeHtml(key.replace(/([A-Z])/g,' $1'))}</h2><small>snapshot #${snapshot.sequence}</small></div><div class="card-body"><pre class="json">${escapeHtml(pretty(p[key]))}</pre></div></section>`).join('')}</div>`);
 }
 

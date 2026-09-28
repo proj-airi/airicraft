@@ -75,6 +75,11 @@ class WakeSchedulerTest {
 		scheduler.outcomeRecorded();
 		assertFalse(scheduler.releaseTaskWake(host));
 		assertEquals(List.of("dropped:10:G5.run_policy", "dropped:10:G5.queued_tool_work", "dropped:10:G5.queued_tool_work"), host.log);
+		var debug = scheduler.debugState();
+		assertEquals("G5.queued_tool_work", debug.get("retainedBy"));
+		var pending = (List<?>) debug.get("pending");
+		assertEquals(1, pending.size());
+		assertEquals("W2", ((java.util.Map<?, ?>) pending.getFirst()).get("path"));
 		// Attention bypasses both holds.
 		scheduler.offerAttention(Wake.attention(2, 11, 0));
 		assertTrue(scheduler.releaseTaskWake(host));

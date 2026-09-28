@@ -2,12 +2,14 @@ package ai.moeru.airicraft.agent.attention;
 
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 /**
  * Owns pending wakes and decides when one is released to the planner. Facts about the planner and the
@@ -64,9 +66,10 @@ public final class WakeScheduler {
 	private static final Set<PlannerTriggerType> ROUTINE_PROGRESS =
 		Set.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK);
 
-	private final Deque<Wake> taskWakes = new ArrayDeque<>();
+	/** Concurrent so debug readers on other threads can copy it while the tick thread schedules. */
+	private final Deque<Wake> taskWakes = new ConcurrentLinkedDeque<>();
 	private Wake lastDeferredAudit;
-	private String lastDeferredAuditGate;
+	private volatile String lastDeferredAuditGate;
 
 	public void offerTask(Wake wake) {
 		taskWakes.addLast(Objects.requireNonNull(wake, "wake"));
@@ -152,6 +155,26 @@ public final class WakeScheduler {
 			return;
 		}
 		host.deliver(trigger);
+	}
+
+	/** Pending task wakes in release order and the gate retaining the head, for debug state and the dashboard. */
+	public Map<String, Object> debugState() {
+		var pending = new ArrayList<Map<String, Object>>();
+		for (Wake wake : taskWakes) {
+			var entry = new LinkedHashMap<String, Object>();
+			entry.put("path", wake.path());
+			entry.put("urgency", wake.urgency().name());
+			entry.put("tick", wake.tick());
+			entry.put("eventRefs", wake.eventRefs());
+			entry.put("guidanceRevision", wake.guidanceRevision());
+			entry.put("missionId", wake.missionId());
+			pending.add(entry);
+		}
+		var state = new LinkedHashMap<String, Object>();
+		state.put("pending", pending);
+		String gate = lastDeferredAuditGate;
+		state.put("retainedBy", pending.isEmpty() || gate == null ? null : gate);
+		return state;
 	}
 
 	/** The wake-audit path label of a trigger wake. */

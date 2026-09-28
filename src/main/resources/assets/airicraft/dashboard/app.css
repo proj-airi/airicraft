@@ -171,3 +171,13 @@ pre.json { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #b8
 #report-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 8px; font-size: 12px; }
 #report-evidence img { display: block; max-width: 100%; max-height: 500px; object-fit: contain; }
 #report-raw { font: 11px/1.5 ui-monospace, monospace; }
+.table-wrap { overflow-x: auto; }
+.attention-table { width: 100%; border-collapse: collapse; font: 10px ui-monospace, monospace; color: #c5d0d9; }
+.attention-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+.attention-table td { padding: 5px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: top; overflow-wrap: anywhere; }
+.attention-table tr.quiet td { color: #8595a3; }
+.attention-table td.nowrap { white-space: nowrap; }
+.badge.stage-constitution { color: #ff8d93; background: rgba(255,107,114,.11); }
+.badge.stage-rules { color: #69dfca; background: rgba(85,214,190,.11); }
+.badge.stage-clamp { color: #d3a764; background: rgba(240,180,90,.1); }
+.badge.stage-fallback { color: #c8b2ff; background: rgba(184,148,255,.12); }

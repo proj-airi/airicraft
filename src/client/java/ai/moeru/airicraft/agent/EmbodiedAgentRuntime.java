@@ -1680,6 +1680,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	public Map<String, Object> debugAttentionState() {
 		var state = new LinkedHashMap<String, Object>(attentionDecisionLog.debugState(32));
 		state.put("rules", attentionPolicy.debugState());
+		state.put("scheduler", dialogueRuntime.wakeSchedulerDebugState());
 		return state;
 	}
 

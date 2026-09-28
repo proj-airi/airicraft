@@ -227,6 +227,11 @@ public final class DialogueRuntime {
 
 	public boolean delegationWorkIdle() { return delegationWorkIdle && !reflexActive; }
 
+	/** Pending task wakes, for the attention debug state. */
+	public Map<String, Object> wakeSchedulerDebugState() {
+		return wakeScheduler.debugState();
+	}
+
 	public Map<String, Object> system2Snapshot() {
 		if (delegation == null) return Map.of("role", "planner", "delegationEnabled", false);
 		return Map.of("ownership", delegation.snapshot(),
