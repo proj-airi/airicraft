@@ -66,6 +66,17 @@
       "seqNo": 7,
       "tick": 4,
       "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "consecutiveFailureCount": 3,
+        "directChat": true,
+        "failureType": "TIMEOUT",
+        "speaker": "Alex"
+      },
+      "seqNo": 8,
+      "tick": 4,
+      "type": "planner.degraded_blocked"
     }
   ],
   "requests": [],

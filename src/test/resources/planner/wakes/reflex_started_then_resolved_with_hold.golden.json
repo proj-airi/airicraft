@@ -121,7 +121,6 @@
         ],
         "notices": [
           "<time>",
-          "Survival reflex resolved just now: safe.",
           "SURVIVAL UPDATE: reflex resolved cause=unknown reason=safe state=IDLE holdId=hold-1. Review the consolidated safety episode and use continue to retain and resume the plan, or clear_queue to abort and replace it. Automatic reflex policy=ReflexPolicy[combatEnabled=true, drowningEnabled=true, maxThreatDistance=16, requireLineOfSight=true]. Use configure_reflex to read or override it for a deliberate tactic; policy changes do not resume paused work."
         ],
         "serverTick": -1,

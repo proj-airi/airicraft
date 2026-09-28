@@ -164,7 +164,7 @@ class PlannerOrchestratorTest {
 			});
 			var orchestrator = new PlannerOrchestrator(new PlannerExecutor(backend),
 				new PlannerCompactionService(new OpenAiCompatibleChatClient(config, tools)),
-				new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), PlannerVisionMode.NATIVE_TOOL_IMAGE, tools),
+				new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), PlannerVisionMode.NATIVE_TOOL_IMAGE, tools),
 				vision, CurrentInventoryTool.disabled(), PlannerVisionMode.NATIVE_TOOL_IMAGE, "low", 1, 0, 0, 0,
 				clock, NoopObservability.INSTANCE, PlannerLifecycleListener.NO_OP, new AgentDebugRecorder(),
 				PlannerActionToolExecutor.DISABLED, PlannerChatSink.NO_OP, tools, PlannerToolExecutionObserver.NO_OP, maxImages, fallback);
@@ -389,7 +389,6 @@ class PlannerOrchestratorTest {
 			read.complete("Inspection complete");
 			orchestrator.poll(); // Dispatch observe, then accept clear_queue before collecting the observation.
 			tick.set(40);
-			orchestrator.recordEvents(events.query(null), 2000);
 			orchestrator.submit(requestAt(40, 2000, "Alice", "What happened?"));
 			backend.awaitCalls(3, Duration.ofSeconds(1));
 			var conversation = backend.conversation(2);
@@ -431,7 +430,6 @@ class PlannerOrchestratorTest {
 			assertFalse(orchestrator.hasIncorporatedDecisionEvent(1), "Executing observe does not deliver its evidence");
 			orchestrator.tickToolQueue();
 			assertFalse(orchestrator.hasIncorporatedDecisionEvent(1), "A buffered result is not yet in conversation history");
-			orchestrator.recordEvents(events.query(null), 1000);
 			orchestrator.submit(requestAt(20, 1000, "Alice", "What happened?"));
 			backend.awaitCalls(2, Duration.ofSeconds(1));
 			var conversation = backend.conversation(1);
@@ -614,7 +612,7 @@ class PlannerOrchestratorTest {
 		PlannerOrchestrator orchestrator = new PlannerOrchestrator(
 			new PlannerExecutor(backend, observability),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, observability, toolRegistry), observability),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), PlannerVisionMode.EXTERNAL_SUMMARY, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), PlannerVisionMode.EXTERNAL_SUMMARY, toolRegistry),
 			CurrentViewVisionTool.disabled(),
 			CurrentInventoryTool.disabled(),
 			PlannerVisionMode.EXTERNAL_SUMMARY,
@@ -2269,7 +2267,7 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
-	void conversationSnapshotKeepsOperationCardsWhenLaterPromptHasManyNotices() {
+	void conversationSnapshotKeepsOperationCardsForTheNextPrompt() {
 		RecordingBackend backend = new RecordingBackend();
 		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
 
@@ -2293,145 +2291,12 @@ class PlannerOrchestratorTest {
 		PlannerExecutionResult firstResult = awaitResult(orchestrator);
 		assertTrue(firstResult.succeeded());
 
-		List<SemanticEvent> noisyEvents = new ArrayList<>();
-		for (int index = 0; index < 64; index++) {
-			noisyEvents.add(new SemanticEvent(
-				index + 1L,
-				200L + index,
-				2_000L + index,
-				"pickup.item_picked_up",
-				Map.of("actor", "self", "itemId", "minecraft:item_" + index, "count", 1)
-			));
-		}
-		orchestrator.recordEvents(
-			new SemanticEventQueryResult(1L, 64L, false, noisyEvents),
-			new PlannerRequestSeed(20L, 2_100L, SessionMode.OUT_OF_WORLD, "Alice", null)
-		);
 		orchestrator.submit(requestAt(21L, 2_100L, "Alice", "status?"));
 		backend.awaitCalls(2, Duration.ofSeconds(1));
 
 		PlannerConversationDebugSnapshot submitted = orchestrator.projectedConversationDebugSnapshot();
 		assertNotNull(findConversationMessage(submitted, PlannerConversationDebugKind.TASK, "Event filter: upsert mute-system-server -> IGNORE on social.system_message [speaker=server]."));
 		assertNotNull(findConversationMessage(submitted, PlannerConversationDebugKind.USER_TURN, "[chat][Alice] status?"));
-	}
-
-	@Test
-	void conversationSnapshotShowsCoalescedSemanticNoticesInOutboundPrompt() {
-		RecordingBackend backend = new RecordingBackend();
-		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
-
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			1L,
-			3L,
-			false,
-			List.of(
-				new SemanticEvent(1L, 100L, 1_000L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1)),
-				new SemanticEvent(2L, 101L, 1_010L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1)),
-				new SemanticEvent(3L, 102L, 1_020L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1))
-			)
-		), 1_020L);
-		orchestrator.submit(requestAt(10L, 1_020L, "Alice", "A"));
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-
-		PlannerConversationDebugSnapshot submitted = orchestrator.conversationDebugSnapshot();
-		List<PlannerConversationDebugMessage> dirtNotices = submitted.messages().stream()
-			.filter(message -> message.kind() == PlannerConversationDebugKind.NOTICE)
-			.filter(message -> message.text().contains("minecraft:dirt"))
-			.toList();
-		assertEquals(1, dirtNotices.size());
-		assertTrue(dirtNotices.getFirst().text().contains("3x minecraft:dirt"));
-	}
-
-	@Test
-	void conversationSnapshotCoalescesRepeatedPickupNoticesAcrossMultipleRecordCalls() {
-		RecordingBackend backend = new RecordingBackend();
-		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
-
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			1L,
-			1L,
-			false,
-			List.of(new SemanticEvent(1L, 100L, 1_000L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1)))
-		), 1_000L);
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			2L,
-			2L,
-			false,
-			List.of(new SemanticEvent(2L, 101L, 1_010L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1)))
-		), 1_010L);
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			3L,
-			3L,
-			false,
-			List.of(new SemanticEvent(3L, 102L, 1_020L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:wheat_seeds", "count", 1)))
-		), 1_020L);
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			4L,
-			4L,
-			false,
-			List.of(new SemanticEvent(4L, 103L, 1_030L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1)))
-		), 1_030L);
-
-		orchestrator.submit(requestAt(10L, 1_030L, "Alice", "A"));
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-
-		PlannerConversationDebugSnapshot submitted = orchestrator.conversationDebugSnapshot();
-		List<PlannerConversationDebugMessage> pickupNotices = submitted.messages().stream()
-			.filter(message -> message.kind() == PlannerConversationDebugKind.NOTICE)
-			.filter(message -> message.text().contains("picked up"))
-			.toList();
-		assertEquals(2, pickupNotices.size());
-		assertTrue(pickupNotices.get(0).text().contains("3x minecraft:sunflower"));
-		assertTrue(pickupNotices.get(1).text().contains("1x minecraft:wheat_seeds"));
-	}
-
-	@Test
-	void pendingSemanticOverflowAutoSubmitsFlushWithoutPersistingSyntheticPrompt() {
-		RecordingBackend backend = new RecordingBackend();
-		PlannerOrchestrator orchestrator = newOrchestrator(
-			backend,
-			CurrentViewVisionTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY,
-			3,
-			10,
-			10,
-			100,
-			2,
-			Clock.systemDefaultZone()
-		);
-
-		PlannerRequestSeed seed = new PlannerRequestSeed(10L, 1_000L, SessionMode.OUT_OF_WORLD, "Alice", null);
-		orchestrator.recordEvents(new SemanticEventQueryResult(
-			1L,
-			2L,
-			false,
-			List.of(
-				new SemanticEvent(1L, 100L, 1_000L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1)),
-				new SemanticEvent(2L, 101L, 1_010L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1))
-			)
-		), seed);
-		backend.awaitCalls(1, Duration.ofSeconds(1));
-
-		PlannerConversationDebugSnapshot submitted = orchestrator.conversationDebugSnapshot();
-		assertEquals(PlannerConversationDebugKind.TASK, lastConversationMessage(submitted).kind());
-		assertTrue(lastConversationMessage(submitted).text().contains("Pending semantic context reached capacity"));
-		assertTrue(submitted.messages().stream().anyMatch(message ->
-			message.kind() == PlannerConversationDebugKind.NOTICE && message.text().contains("2x minecraft:dirt")
-		));
-
-		backend.succeed(0, replyOnly("noted"));
-		PlannerExecutionResult result = awaitResult(orchestrator);
-
-		assertEquals("noted", result.response().replyText());
-		assertNull(result.request().triggerBatch());
-
-		orchestrator.recordAssistantTurn(new DialogueTurn("agent", "noted", 11L, 1_100L));
-		orchestrator.onAcceptedReplyRecorded();
-		orchestrator.submit(requestAt(12L, 1_200L, "Alice", "status?"));
-		backend.awaitCalls(2, Duration.ofSeconds(1));
-
-		String secondPrompt = terminalPrompt(backend.conversation(1));
-		assertFalse(secondPrompt.contains("Pending semantic context reached capacity"));
 	}
 
 	@Test
@@ -3552,7 +3417,7 @@ class PlannerOrchestratorTest {
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), visionMode, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), visionMode, toolRegistry),
 			visionTool,
 			inventoryTool,
 			visionMode,
@@ -3585,7 +3450,7 @@ class PlannerOrchestratorTest {
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), visionMode, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), visionMode, toolRegistry),
 			visionTool,
 			inventoryTool,
 			visionMode,
@@ -3655,7 +3520,7 @@ class PlannerOrchestratorTest {
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), visionMode, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), visionMode, toolRegistry),
 			visionTool,
 			inventoryTool,
 			visionMode,
@@ -3688,7 +3553,7 @@ class PlannerOrchestratorTest {
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend, observability),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, observability, toolRegistry), observability),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), config.plannerPendingSemanticEventCap(), visionMode, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), visionMode, toolRegistry),
 			visionTool,
 			inventoryTool,
 			visionMode,
@@ -3820,7 +3685,7 @@ class PlannerOrchestratorTest {
 		return new PlannerOrchestrator(
 			new PlannerExecutor(backend),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(config, toolRegistry)),
-			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), plannerPendingSemanticEventCap, visionMode, toolRegistry),
+			new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), visionMode, toolRegistry),
 			visionTool,
 			inventoryTool,
 			visionMode,

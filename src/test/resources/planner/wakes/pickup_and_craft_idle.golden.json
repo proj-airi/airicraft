@@ -70,8 +70,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "You picked up 2x minecraft:oak_log just now."
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -124,9 +123,6 @@
             "tick": 11,
             "type": "crafting.item_crafted"
           }
-        ],
-        "notices": [
-          "You crafted 4x minecraft:oak_planks just now."
         ],
         "serverTick": -1,
         "throughEventSequence": 3,

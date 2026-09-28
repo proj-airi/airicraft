@@ -131,17 +131,17 @@ class DialogueWakeCharacterizationTest {
 			assertEquals(1, h.backend.requests().size());
 		}
 	}
-	@Test void d1_CONFIRMED_rawCursorSkipsPlannerBufferNotice() {
+	/** Fixed in Phase 3: one event log and one cursor, so a raw-cursor task wake cannot skip a later pickup. */
+	@Test void d1_FIXED_oneSequenceSpaceKeepsThePickupAfterARawCursorWake() {
 		try (var h = new Harness()) {
 			for (int i = 1; i <= 10; i++) h.events.append(i, "task.notice", Map.of("message", "raw " + i));
 			h.dialogue.queueTaskWakeup(null, 10, 10); h.poll(); h.advance(1);
-			var planner = new SemanticEventBuffer(512);
-			planner.append(11, "pickup.item_picked_up", Map.of("itemId", "minecraft:diamond", "count", 1));
+			h.events.append(11, "pickup.item_picked_up", Map.of("itemId", "minecraft:diamond", "count", 1));
 			h.dialogue.onPlannerTrigger(PlannerTrigger.pending(PlannerTriggerType.PICKUP, "self", "pickup", 11, h.clock.millis()),
-				h.session, null, Optional.empty(), null, null, planner);
+				h.session, null, Optional.empty(), null, null, h.events);
 			h.poll();
 			assertEquals(2, h.backend.requests().size());
-			assertFalse(h.backend.requests().getLast().request().conversation().messages().stream().anyMatch(m -> m.content().contains("minecraft:diamond")));
+			assertTrue(h.backend.requests().getLast().request().conversation().messages().stream().anyMatch(m -> m.content().contains("minecraft:diamond")));
 		}
 	}
 	@Test void task_wakeup_mission_changed() {

@@ -59,7 +59,6 @@ import ai.moeru.airicraft.agent.events.AgentEventPipeline;
 import ai.moeru.airicraft.agent.events.AgentEventBus;
 import ai.moeru.airicraft.agent.events.AgentEventLog;
 import ai.moeru.airicraft.agent.events.EventIngressQueue;
-import ai.moeru.airicraft.agent.events.PlannerFeedPublisher;
 import ai.moeru.airicraft.agent.events.PhysicalEventObserver;
 import ai.moeru.airicraft.agent.events.ItemOfferObserver;
 import ai.moeru.airicraft.agent.events.EventPolicyChanges;
@@ -250,7 +249,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AttentionDecisionLog attentionDecisionLog = new AttentionDecisionLog();
 	private final RuleAttentionPolicy attentionPolicy;
 	private final WakePresenter wakePresenter;
-	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
 	private final AgentEventPipeline eventPipeline;
@@ -446,7 +444,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			ai.moeru.airicraft.rules.RuleModule.bundledAttention());
 		this.wakePresenter = new WakePresenter(() -> this.survivalReflexRuntime.snapshot().state().name(),
 			() -> this.survivalReflexRuntime.policy());
-		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
+		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus,
 			eventPolicyState, eventRoutingProfiles, debugRecorder,
 			attentionPolicy, attentionDecisionLog);
 		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
@@ -1879,7 +1877,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				activeGoal,
 				taskSnapshot,
 				missionExecutionSnapshot,
-				PlannerFeedPublisher.wrap(plannerEventBuffer)
+				eventBus
 			);
 		});
 		return trigger;
@@ -4636,7 +4634,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				activeGoal,
 				taskSnapshot,
 				missionExecutionSnapshot,
-				PlannerFeedPublisher.wrap(plannerEventBuffer)
+				eventBus
 			);
 		}
 	}
@@ -4653,7 +4651,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			new IdleHook.Named("goal_continuation", tick -> dialogueRuntime.continuePlannerGoal(tick,
 				jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
 				primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
-				activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))),
+				activeGoal, taskSnapshot, missionExecutionSnapshot, eventBus)),
 			// W5: idle think.
 			new IdleHook.Named("idle_think", new IdleHook.Generator() {
 				@Override public boolean poll(long tick) {
@@ -4664,7 +4662,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 						activeGoal,
 						taskSnapshot,
 						missionExecutionSnapshot,
-						PlannerFeedPublisher.wrap(plannerEventBuffer)
+						eventBus
 					));
 					return false;
 				}
@@ -5416,7 +5414,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			activeGoal(),
 			taskSnapshot,
 			missionExecutionSnapshot,
-			PlannerFeedPublisher.wrap(plannerEventBuffer)
+			eventBus
 		);
 	}
 

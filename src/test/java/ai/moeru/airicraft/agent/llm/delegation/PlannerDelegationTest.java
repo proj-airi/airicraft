@@ -220,7 +220,7 @@ class PlannerDelegationTest {
 	private static PlannerOrchestrator orchestrator(LlmBackend backend, PlannerToolRegistry registry, PlannerLifecycleListener listener) {
 		var config = AgentConfig.LlmConfig.defaults();
 		return new PlannerOrchestrator(new PlannerExecutor(backend), new PlannerCompactionService(new OpenAiCompatibleChatClient(config, registry)),
-			new PlannerContextAggregator(Clock.systemUTC(), 65536, 128, PlannerVisionMode.EXTERNAL_SUMMARY, registry),
+			new PlannerContextAggregator(Clock.systemUTC(), 65536, PlannerVisionMode.EXTERNAL_SUMMARY, registry),
 			CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, "low", 1, 0, 0, 0,
 			Clock.systemUTC(), NoopObservability.INSTANCE, listener, new AgentDebugRecorder(), PlannerActionToolExecutor.DISABLED,
 			PlannerChatSink.NO_OP, registry, PlannerToolExecutionObserver.NO_OP);

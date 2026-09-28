@@ -83,7 +83,7 @@ class PlannerContextAggregatorTest {
 		var registry = PlannerToolRegistry.of(provider);
 		registry.freezeToolPrefix();
 		var tools = registry.openAiTools();
-		var aggregator = new PlannerContextAggregator(Clock.systemUTC(), 65_536, 128,
+		var aggregator = new PlannerContextAggregator(Clock.systemUTC(), 65_536,
 			PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 		var first = freezeSnapshot(aggregator, requestAt(1_000L, "Alice", "start"));
 		aggregator.commitAcceptedTriggerBatch(first);
@@ -146,13 +146,9 @@ class PlannerContextAggregatorTest {
 	}
 
 	@Test
-	void recordsAmbientContextAndSemanticEventsAsFrozenNotices() {
+	void recordsAmbientContextAsFrozenNotices() {
 		Clock clock = Clock.fixed(Instant.ofEpochMilli(10_000L), ZoneId.of("Asia/Taipei"));
 		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(1L, 100L, 8_000L, "follow.target_acquired", Map.of("player", "Alice")),
-			new SemanticEvent(2L, 101L, 9_000L, "planner.goal_set", Map.of("goalType", "FOLLOW_PLAYER", "targetPlayer", "Alice"))
-		));
 
 		PlannerContextSnapshot snapshot = freezeSnapshot(aggregator, new PlannerRequest(
 			200L,
@@ -170,98 +166,8 @@ class PlannerContextAggregatorTest {
 
 		assertTrue(conversation.messages().stream().anyMatch(message -> message.content().contains("Primary interaction player is Alice.")));
 		assertTrue(conversation.messages().stream().anyMatch(message -> message.content().contains("Direct action goal: Follow Alice.")));
-		assertTrue(conversation.messages().stream().anyMatch(message -> message.content().contains("Started following Alice")));
-		assertTrue(conversation.messages().stream().anyMatch(message -> message.content().contains("The planner set goal FOLLOW_PLAYER for Alice")));
-	}
-
-	@Test
-	void recordsProjectedMixedEventBatchAsCoalescedNoticesInFirstSeenOrder() {
-		Clock clock = Clock.fixed(Instant.ofEpochMilli(10_000L), ZoneId.of("Asia/Taipei"));
-		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(1L, 100L, 8_000L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 1)),
-			new SemanticEvent(2L, 101L, 8_100L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:cobblestone", "count", 1)),
-			new SemanticEvent(3L, 102L, 8_200L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:dirt", "count", 2)),
-			new SemanticEvent(4L, 103L, 8_300L, "follow.target_acquired", Map.of("player", "Alice"))
-		));
-
-		LlmConversation conversation = freezeSnapshot(aggregator, requestAt(10_000L, "Alice", "@agent hi")).plannerConversation();
-		List<LlmChatMessage> notices = conversation.messages().stream()
-			.filter(message -> message.kind() == LlmMessageKind.NOTICE)
-			.toList();
-
-		assertTrue(notices.stream().anyMatch(message -> message.content().contains("3x minecraft:dirt")));
-		assertTrue(notices.stream().anyMatch(message -> message.content().contains("1x minecraft:cobblestone")));
-		assertTrue(notices.stream().anyMatch(message -> message.content().contains("Started following Alice")));
-
-		int dirtIndex = indexContaining(notices, "3x minecraft:dirt");
-		int cobbleIndex = indexContaining(notices, "1x minecraft:cobblestone");
-		int followIndex = indexContaining(notices, "Started following Alice");
-		assertTrue(dirtIndex < cobbleIndex);
-		assertTrue(cobbleIndex < followIndex);
-	}
-
-	@Test
-	void coalescesMatchingSemanticUpdatesAcrossMultipleRecordBatchesBeforeFreeze() {
-		Clock clock = Clock.fixed(Instant.ofEpochMilli(10_000L), ZoneId.of("Asia/Taipei"));
-		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
-
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(1L, 100L, 8_000L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1))
-		));
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(2L, 101L, 8_100L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1))
-		));
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(3L, 102L, 8_200L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:wheat_seeds", "count", 1))
-		));
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(4L, 103L, 8_300L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:sunflower", "count", 1))
-		));
-
-		LlmConversation conversation = freezeSnapshot(aggregator, requestAt(10_000L, "Alice", "@agent hi")).plannerConversation();
-		List<LlmChatMessage> notices = conversation.messages().stream()
-			.filter(message -> message.kind() == LlmMessageKind.NOTICE)
-			.filter(message -> message.content().contains("picked up"))
-			.toList();
-
-		assertEquals(2, notices.size());
-		assertTrue(notices.get(0).content().contains("3x minecraft:sunflower"));
-		assertTrue(notices.get(1).content().contains("1x minecraft:wheat_seeds"));
-	}
-
-	@Test
-	void coalescesMatchingDamageUpdatesAcrossMultipleRecordBatchesBeforeFreeze() {
-		Clock clock = Clock.fixed(Instant.ofEpochMilli(10_000L), ZoneId.of("Asia/Taipei"));
-		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
-
-		recordEvents(aggregator, 10_000L, List.of(
-			damageEvent(1L, 100L, 8_000L, 2.0F, 18.0F)
-		));
-		recordEvents(aggregator, 10_000L, List.of(
-			damageEvent(2L, 101L, 8_100L, 1.5F, 16.5F)
-		));
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(3L, 102L, 8_200L, "combat.damage_taken", Map.of(
-				"actor", "self",
-				"amount", 1.0F,
-				"healthBefore", 16.5F,
-				"healthAfter", 15.5F,
-				"fatal", false,
-				"damageTypeId", "minecraft:fall"
-			))
-		));
-
-		LlmConversation conversation = freezeSnapshot(aggregator, requestAt(10_000L, "Alice", "@agent hi")).plannerConversation();
-		List<LlmChatMessage> notices = conversation.messages().stream()
-			.filter(message -> message.kind() == LlmMessageKind.NOTICE)
-			.filter(message -> message.content().contains("took"))
-			.toList();
-
-		assertEquals(2, notices.size());
-		assertTrue(notices.get(0).content().contains("3.5 damage from Zombie"));
-		assertTrue(notices.get(0).content().contains("16.5 health"));
-		assertTrue(notices.get(1).content().contains("1 damage from minecraft:fall"));
+		// Event facts are observe.events entries now; the legacy semantic notices are gone.
+		assertFalse(conversation.messages().stream().anyMatch(message -> message.content().contains("Started following Alice")));
 	}
 
 	@Test
@@ -383,17 +289,11 @@ class PlannerContextAggregatorTest {
 		PlannerContextAggregator aggregator = new PlannerContextAggregator(
 			clock,
 			10,
-			128,
 			PlannerVisionMode.NATIVE_TOOL_IMAGE,
 			PlannerToolRegistry.empty(),
 			true
 		);
-		recordEvents(aggregator, 10_000L, List.of(
-			new SemanticEvent(7L, 199L, 9_500L, "follow.target_acquired", Map.of("player", "Alice"))
-		));
-
 		PlannerContextSnapshot first = freezeSnapshot(aggregator, requestAt(10_000L, "Alice", "@agent hi"));
-		assertTrue(first.plannerConversation().messages().stream().anyMatch(message -> message.content().contains("Started following Alice")));
 		aggregator.commitAcceptedTriggerBatch(first);
 		aggregator.recordAgentTurn(new ai.moeru.airicraft.agent.dialogue.DialogueTurn("agent", "Hello.", 200L, 10_000L));
 		aggregator.recordAcceptedToolExchange(JsonParser.parseString("{\"tool\":\"ignored\"}"), "ignored", 200L, 10_000L);
@@ -401,9 +301,7 @@ class PlannerContextAggregatorTest {
 
 		PlannerContextDebugSnapshot debug = aggregator.debugSnapshot();
 		assertEquals(0, debug.acceptedTurnCount());
-		assertEquals(0, debug.pendingSemanticEventCount());
 		assertEquals(0, debug.queuedTriggerCount());
-		assertEquals(7L, debug.lastObservedEventSeqNo());
 		assertFalse(aggregator.compactionPending());
 
 		PlannerContextSnapshot second = freezeSnapshot(aggregator, requestAt(11_000L, "Alice", "@agent status"));
@@ -549,31 +447,6 @@ class PlannerContextAggregatorTest {
 			message,
 			null
 		);
-	}
-
-	private static void recordEvents(PlannerContextAggregator aggregator, long anchorTimeMs, List<SemanticEvent> events) {
-		aggregator.recordObservedEvents(
-			new SemanticEventQueryResult(
-				events.isEmpty() ? 0L : events.getFirst().seqNo(),
-				events.isEmpty() ? 0L : events.getLast().seqNo(),
-				false,
-				events
-			)
-		);
-	}
-
-	private static SemanticEvent damageEvent(long seqNo, long tick, long timestampMs, float amount, float healthAfter) {
-		return new SemanticEvent(seqNo, tick, timestampMs, "combat.damage_taken", Map.of(
-			"actor", "self",
-			"amount", amount,
-			"healthBefore", healthAfter + amount,
-			"healthAfter", healthAfter,
-			"fatal", false,
-			"damageTypeId", "minecraft:mob_attack",
-			"attackerName", "Zombie",
-			"attackerEntityTypeId", "minecraft:zombie",
-			"directSourceEntityTypeId", "minecraft:zombie"
-		));
 	}
 
 	private static PlannerContextSnapshot freezeSnapshot(PlannerContextAggregator aggregator, PlannerRequest request) {

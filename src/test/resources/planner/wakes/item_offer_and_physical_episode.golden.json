@@ -91,7 +91,6 @@
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
           "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "Alex possibly offered 1x minecraft:diamond toward you just now; inferred, pickup unconfirmed.",
           "Possible item offer: Alex dropped 1x minecraft:diamond toward me at {\"x\":1,\"y\":64,\"z\":1}. The player and intent are inferred from spawn position and motion; this is not confirmed pickup. Decide whether to collect or acknowledge the items using current world evidence."
         ],
         "serverTick": -1,

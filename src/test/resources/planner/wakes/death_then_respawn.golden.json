@@ -162,8 +162,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "Alex came nearby just now."
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -236,9 +235,6 @@
             "type": "player.actions_cancelled"
           }
         ],
-        "notices": [
-          "You took 20 damage and dropped to 0 health just now."
-        ],
         "serverTick": -1,
         "throughEventSequence": 7,
         "tick": 6,
@@ -288,9 +284,6 @@
             "tick": 16,
             "type": "player.respawned"
           }
-        ],
-        "notices": [
-          "You took 20 damage and dropped to 0 health just now."
         ],
         "serverTick": -1,
         "throughEventSequence": 11,

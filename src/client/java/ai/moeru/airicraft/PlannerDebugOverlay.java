@@ -346,14 +346,9 @@ final class PlannerDebugOverlay {
 
 		addStateSection(lines, "context counters");
 		addStateLine(lines, "queuedTriggerCount: " + contextInt(context, PlannerContextDebugSnapshot::queuedTriggerCount));
-		addStateLine(lines, "pendingSemanticEventCount: " + contextInt(context, PlannerContextDebugSnapshot::pendingSemanticEventCount));
-		addStateLine(lines, "projectedPendingNoticeCount: " + contextInt(context, PlannerContextDebugSnapshot::projectedPendingNoticeCount));
 		addStateLine(lines, "acceptedTurnCount: " + contextInt(context, PlannerContextDebugSnapshot::acceptedTurnCount));
 		addStateLine(lines, "frozenPlannerMessageCount: " + contextInt(context, PlannerContextDebugSnapshot::frozenPlannerMessageCount));
-		addStateLine(lines, "lastObservedEventSeqNo: " + contextLong(context, PlannerContextDebugSnapshot::lastObservedEventSeqNo));
 		addStateLine(lines, "lastAcceptedTimeContextAtMs: " + contextLong(context, PlannerContextDebugSnapshot::lastAcceptedTimeContextAtMs));
-		addStateLine(lines, "pendingSemanticGap: " + contextBool(context, PlannerContextDebugSnapshot::pendingSemanticGap));
-		addStateLine(lines, "overflowFlushPending: " + contextBool(context, PlannerContextDebugSnapshot::overflowFlushPending));
 
 		addStateSection(lines, "summaries");
 		addStateLine(lines, summarizeBaseRequest(plannerSnapshot == null ? null : plannerSnapshot.baseRequest()));
@@ -453,8 +448,6 @@ final class PlannerDebugOverlay {
 				? "capturing view"
 				: plannerSnapshot.toolInFlight()
 					? "waiting for tool follow-up"
-					: context != null && context.overflowFlushPending()
-						? "flushing pending semantic context"
 					: plannerSnapshot.coalescePending()
 						? "coalescing updates"
 						: plannerSnapshot.plannerInFlight()

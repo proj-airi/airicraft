@@ -14,7 +14,6 @@ import ai.moeru.airicraft.agent.llm.PlannerExecutionResult;
 import ai.moeru.airicraft.agent.llm.PlannerOrchestrator;
 import ai.moeru.airicraft.agent.llm.PlannerOrchestratorDebugSnapshot;
 import ai.moeru.airicraft.agent.llm.PlannerRequest;
-import ai.moeru.airicraft.agent.llm.PlannerRequestSeed;
 import ai.moeru.airicraft.agent.llm.PlannerResponse;
 import ai.moeru.airicraft.agent.llm.WakeRef;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
@@ -839,17 +838,6 @@ public final class DialogueRuntime {
 			);
 			return;
 		}
-		Long sinceSeqNo = activePlanner().lastObservedEventSeqNo();
-		activePlanner().recordEvents(
-			eventBuffer.query(sinceSeqNo <= 0L ? null : sinceSeqNo),
-			new PlannerRequestSeed(
-				request.tick(),
-				timestampMs,
-				request.sessionMode(),
-				request.primaryInteractionPlayer(),
-				request.activeGoal()
-			)
-		);
 		// Record before submit: the orchestrator writes its own submission entry synchronously, and the
 		// wake ledger attributes audits by timeline order. A disabled planner discards the request.
 		outcome.record(activePlanner().isEnabled() ? "submitted" : "dropped", activePlanner().isEnabled() ? null : "G8.planner_disabled");

@@ -7,14 +7,11 @@ public record PlannerContextSnapshot(
 	PlannerSnapshotMode mode,
 	PlannerTriggerBatch triggerBatch,
 	LlmConversation plannerConversation,
-	long includedSemanticEventSeqNoUpperBound,
-	long includedSemanticGapVersion,
 	PlannerAmbientContext renderedAmbientContext,
 	long renderedTimeContextAtMs
 ) {
 	public PlannerContextSnapshot withConversation(LlmConversation conversation) {
-		return new PlannerContextSnapshot(request, mode, triggerBatch, conversation,
-			includedSemanticEventSeqNoUpperBound, includedSemanticGapVersion, renderedAmbientContext, renderedTimeContextAtMs);
+		return new PlannerContextSnapshot(request, mode, triggerBatch, conversation, renderedAmbientContext, renderedTimeContextAtMs);
 	}
 
 	public PlannerContextSnapshot {

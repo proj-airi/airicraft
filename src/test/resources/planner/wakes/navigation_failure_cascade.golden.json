@@ -315,7 +315,6 @@
           "There is no primary interaction player right now.",
           "Direct action goal: Navigate to 12, 64, 8 with exact Y.",
           "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "The planner set goal NAVIGATE_TO just now.",
           "Work changed."
         ],
         "serverTick": -1,

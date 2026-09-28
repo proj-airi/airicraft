@@ -10,12 +10,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Pins defects without correcting production behavior. D1/D7/D8 also have dialogue/unit probes. */
 class WakeDefectProbeTest {
-	@Test void d2_CONFIRMED_pickupAppearsInBothNoticesAndObservedEvents() {
+	/** Fixed in Phase 3: the legacy notice channel is gone, so the pickup is evidence exactly once. */
+	@Test void d2_FIXED_pickupAppearsOnlyInObservedEvents() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerPickedUpItem("minecraft:diamond", 1); h.tick(5); h.chat("Alex", "@agent hello"); h.tick(5);
 			var observe = h.transcript("d2").data().getAsJsonArray("requests").get(0).getAsJsonObject().getAsJsonObject("observe");
 			assertTrue(observe.get("events").toString().contains("pickup.item_picked_up"));
-			assertTrue(observe.get("notices").toString().contains("minecraft:diamond"));
+			assertFalse(String.valueOf(observe.get("notices")).contains("minecraft:diamond"));
 		}
 	}
 	@Test void d3_CONFIRMED_ignoreSuppressesWakeButKeepsRawEvidence() {

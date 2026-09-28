@@ -127,14 +127,9 @@ class AiricraftCliMainTest {
 					"compactionTriggerTokens", 65536,
 					"compactionPending", true,
 					"acceptedTurnCount", 8,
-					"pendingSemanticEventCount", 3,
-					"projectedPendingNoticeCount", 2,
 					"frozenPlannerMessageCount", 0,
 					"queuedTriggerCount", 3,
-					"lastObservedEventSeqNo", 42,
-					"lastAcceptedTimeContextAtMs", 123456789L,
-					"pendingSemanticGap", false,
-					"overflowFlushPending", true
+					"lastAcceptedTimeContextAtMs", 123456789L
 				)
 			),
 			"conversationSources", linkedMap(
@@ -156,8 +151,7 @@ class AiricraftCliMainTest {
 		assertTrue(result.output().contains("coalesceWindowMs: 20\n"));
 		assertTrue(result.output().contains("queuedTriggerCount: 3\n"));
 		assertTrue(result.output().contains("acceptedTurnCount: 8\n"));
-		assertTrue(result.output().contains("projectedPendingNoticeCount: 2\n"));
-		assertTrue(result.output().contains("overflowFlushPending: true\n"));
+		assertTrue(result.output().contains("lastAcceptedTimeContextAtMs: 123456789\n"));
 		assertTrue(result.output().contains("canonicalMessageCount: 11\n"));
 		assertTrue(result.output().contains("projectedMessageCount: 14\n"));
 	}

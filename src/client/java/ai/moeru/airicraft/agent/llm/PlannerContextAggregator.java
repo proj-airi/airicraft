@@ -1,11 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.dialogue.DialogueTurn;
-import ai.moeru.airicraft.agent.events.SemanticEvent;
-import ai.moeru.airicraft.agent.events.SemanticEventQueryResult;
-import ai.moeru.airicraft.agent.semantic.SemanticContextProjectionResult;
-import ai.moeru.airicraft.agent.semantic.SemanticContextProjector;
-import ai.moeru.airicraft.agent.semantic.SemanticContextUpdate;
 import com.google.gson.JsonElement;
 
 import java.time.Clock;
@@ -15,19 +10,14 @@ import java.util.List;
 import java.util.Objects;
 
 public final class PlannerContextAggregator {
-	private static final int DEFAULT_PENDING_SEMANTIC_EVENT_CAP = 128;
-	private static final String OVERFLOW_FLUSH_NOTICE = "Pending events reached capacity and were delivered early.";
-	private static final String OVERFLOW_FLUSH_INSTRUCTION = "Pending semantic context reached capacity. Review the context updates above and respond once if any reply or action is needed.";
 
 	private final Clock clock;
 	private final ZoneId zoneId;
 	private final int compactionTriggerTokens;
-	private final int pendingSemanticEventCap;
 	private final PlannerVisionMode visionMode;
 	private final PlannerToolRegistry toolRegistry;
 	private final boolean backendManagedHistory;
 	private final String characterPrompt;
-	private final SemanticContextProjector semanticContextProjector = new SemanticContextProjector();
 
 	private String fixedSystemPrompt;
 	private boolean decisionContextEnabled;
@@ -36,43 +26,34 @@ public final class PlannerContextAggregator {
 
 	private PlannerContextState state = PlannerContextState.initial();
 	private PlannerContextSnapshot lastFrozenSnapshot;
-	private PlannerRequestSeed latestRequestSeed;
-	private boolean overflowFlushPending;
 
 	public PlannerContextAggregator(Clock clock, int compactionTriggerTokens, PlannerVisionMode visionMode) {
-		this(clock, compactionTriggerTokens, DEFAULT_PENDING_SEMANTIC_EVENT_CAP, visionMode);
-	}
-
-	public PlannerContextAggregator(Clock clock, int compactionTriggerTokens, int pendingSemanticEventCap, PlannerVisionMode visionMode) {
-		this(clock, compactionTriggerTokens, pendingSemanticEventCap, visionMode, PlannerToolRegistry.empty());
+		this(clock, compactionTriggerTokens, visionMode, PlannerToolRegistry.empty());
 	}
 
 	public PlannerContextAggregator(
 		Clock clock,
 		int compactionTriggerTokens,
-		int pendingSemanticEventCap,
 		PlannerVisionMode visionMode,
 		PlannerToolRegistry toolRegistry
 	) {
-		this(clock, compactionTriggerTokens, pendingSemanticEventCap, visionMode, toolRegistry, false);
+		this(clock, compactionTriggerTokens, visionMode, toolRegistry, false);
 	}
 
 	public PlannerContextAggregator(
 		Clock clock,
 		int compactionTriggerTokens,
-		int pendingSemanticEventCap,
 		PlannerVisionMode visionMode,
 		PlannerToolRegistry toolRegistry,
 		boolean backendManagedHistory
 	) {
-		this(clock, compactionTriggerTokens, pendingSemanticEventCap, visionMode, toolRegistry, backendManagedHistory, null);
+		this(clock, compactionTriggerTokens, visionMode, toolRegistry, backendManagedHistory, null);
 	}
 
 	/** A null character prompt uses the built-in character without an in-game name. */
 	public PlannerContextAggregator(
 		Clock clock,
 		int compactionTriggerTokens,
-		int pendingSemanticEventCap,
 		PlannerVisionMode visionMode,
 		PlannerToolRegistry toolRegistry,
 		boolean backendManagedHistory,
@@ -81,7 +62,6 @@ public final class PlannerContextAggregator {
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.zoneId = clock.getZone();
 		this.compactionTriggerTokens = compactionTriggerTokens;
-		this.pendingSemanticEventCap = Math.max(1, pendingSemanticEventCap);
 		this.visionMode = Objects.requireNonNull(visionMode, "visionMode");
 		this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry");
 		this.backendManagedHistory = backendManagedHistory;
@@ -100,56 +80,22 @@ public final class PlannerContextAggregator {
 		return state.queuedTriggers().size();
 	}
 
-	public boolean hasPendingOverflowFlush() {
-		return overflowFlushPending;
-	}
-
 	public LlmUsageSnapshot lastObservedUsage() {
 		return state.lastObservedUsage();
 	}
 
-	public long lastObservedEventSeqNo() {
-		return state.lastObservedEventSeqNo();
-	}
-
 	public PlannerContextDebugSnapshot debugSnapshot() {
-		SemanticContextProjectionResult projection = pendingSemanticProjection(clock.millis());
 		return new PlannerContextDebugSnapshot(
 			compactionTriggerTokens,
 			state.compactionPending(),
 			state.acceptedHistoryTape().size(),
-			state.pendingSemanticEvents().size(),
-			projection.updates().size(),
 			lastFrozenSnapshot == null ? 0 : lastFrozenSnapshot.plannerConversation().messages().size(),
 			state.queuedTriggers().size(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedTimeContextAtMs(),
-			state.pendingSemanticGapVersion() != 0L,
-			overflowFlushPending,
 			state.lastObservedUsage(),
 			state.lastAcceptedAmbientContext(),
 			state.activeCheckpoint()
 		);
-	}
-
-	public void recordObservedEvents(SemanticEventQueryResult queryResult, PlannerRequestSeed requestSeed) {
-		recordPlannerRequestSeed(requestSeed);
-		state = PlannerContextReducer.recordObservedEvents(state, queryResult);
-		recomputeOverflowFlushPending();
-	}
-
-	public void recordObservedEvents(SemanticEventQueryResult queryResult) {
-		recordObservedEvents(queryResult, null);
-	}
-
-	public void recordPlannerRequestSeed(PlannerRequestSeed requestSeed) {
-		if (requestSeed != null) {
-			latestRequestSeed = requestSeed;
-		}
-	}
-
-	public void cancelPendingOverflowFlush() {
-		overflowFlushPending = false;
 	}
 
 	public void enqueueTrigger(PlannerTrigger trigger) {
@@ -163,7 +109,6 @@ public final class PlannerContextAggregator {
 
 	public PlannerContextSnapshot freezePlannerSnapshot(PlannerRequest request) {
 		Objects.requireNonNull(request, "request");
-		recordPlannerRequestSeed(PlannerRequestSeed.fromRequest(request));
 		if (state.queuedTriggers().isEmpty()) {
 			return null;
 		}
@@ -183,41 +128,10 @@ public final class PlannerContextAggregator {
 			triggerBatch,
 			composeConversation(nowMs, snapshotNotices, decisionContextEnabled
 				? triggerBatch.toObservedMessages() : List.of(triggerBatch.toTerminalMessage())),
-			state.pendingSemanticEvents().isEmpty() ? 0L : state.pendingSemanticEvents().getLast().seqNo(),
-			state.pendingSemanticGapVersion(),
 			ambientContext,
 			renderedTimeContextAtMs
 		);
 		lastFrozenSnapshot = snapshot;
-		return snapshot;
-	}
-
-	public PlannerContextSnapshot freezeOverflowFlushSnapshot() {
-		if (!overflowFlushPending || latestRequestSeed == null || !state.queuedTriggers().isEmpty() || state.pendingSemanticEvents().isEmpty()) {
-			return null;
-		}
-
-		PlannerRequest request = latestRequestSeed.toPlannerRequest();
-		long nowMs = request.timestampMs();
-		PlannerAmbientContext ambientContext = PlannerAmbientContext.fromRequest(request);
-		long renderedTimeContextAtMs = PlannerContextPolicy.shouldInjectTimeBeacon(state.lastAcceptedTimeContextAtMs(), nowMs)
-			? nowMs
-			: -1L;
-		List<LlmChatMessage> snapshotNotices = renderSnapshotNotices(request, ambientContext, renderedTimeContextAtMs);
-		PlannerContextSnapshot snapshot = new PlannerContextSnapshot(
-			request,
-			PlannerSnapshotMode.OVERFLOW_FLUSH,
-			PlannerTriggerBatch.of(List.of()),
-			composeConversation(nowMs, snapshotNotices, List.of(decisionContextEnabled
-				? LlmChatMessage.user(OVERFLOW_FLUSH_NOTICE, LlmMessageKind.NOTICE)
-				: LlmChatMessage.user(OVERFLOW_FLUSH_INSTRUCTION, LlmMessageKind.TASK))),
-			state.pendingSemanticEvents().getLast().seqNo(),
-			state.pendingSemanticGapVersion(),
-			ambientContext,
-			renderedTimeContextAtMs
-		);
-		lastFrozenSnapshot = snapshot;
-		overflowFlushPending = false;
 		return snapshot;
 	}
 
@@ -231,7 +145,6 @@ public final class PlannerContextAggregator {
 			state = withoutAcceptedProviderHistory(state);
 		}
 		lastFrozenSnapshot = null;
-		recomputeOverflowFlushPending();
 	}
 
 	public void discardSnapshot(PlannerContextSnapshot snapshot) {
@@ -240,14 +153,11 @@ public final class PlannerContextAggregator {
 		}
 		state = PlannerContextReducer.discardSnapshot(state, snapshot);
 		lastFrozenSnapshot = null;
-		recomputeOverflowFlushPending();
 	}
 
 	public void discardPending() {
 		state = PlannerContextReducer.discardPending(state);
 		lastFrozenSnapshot = null;
-		latestRequestSeed = null;
-		overflowFlushPending = false;
 	}
 
 	public void dropSupersededGeneration(PlannerContextSnapshot snapshot) {
@@ -285,7 +195,6 @@ public final class PlannerContextAggregator {
 
 	public LlmConversation buildPlannerConversation(PlannerRequest request) {
 		Objects.requireNonNull(request, "request");
-		recordPlannerRequestSeed(PlannerRequestSeed.fromRequest(request));
 		if (request.triggerBatch() != null) {
 			for (PlannerTrigger trigger : request.triggerBatch().triggers()) {
 				enqueueTrigger(trigger);
@@ -502,24 +411,6 @@ public final class PlannerContextAggregator {
 		state = PlannerContextState.initial();
 		retainedConversation = null;
 		lastFrozenSnapshot = null;
-		latestRequestSeed = null;
-		overflowFlushPending = false;
-	}
-
-	private SemanticEventQueryResult pendingSemanticQueryResult() {
-		List<SemanticEvent> events = state.pendingSemanticEvents();
-		long oldestSeqNo = events.isEmpty() ? 0L : events.getFirst().seqNo();
-		long latestSeqNo = events.isEmpty() ? state.lastObservedEventSeqNo() : events.getLast().seqNo();
-		return new SemanticEventQueryResult(
-			oldestSeqNo,
-			latestSeqNo,
-			state.pendingSemanticGapVersion() != 0L,
-			List.copyOf(events)
-		);
-	}
-
-	private SemanticContextProjectionResult pendingSemanticProjection(long anchorTimeMs) {
-		return semanticContextProjector.project(pendingSemanticQueryResult(), anchorTimeMs);
 	}
 
 	/** Keep the actual accepted wire conversation, including frozen notices and raw tool envelopes. */
@@ -568,9 +459,6 @@ public final class PlannerContextAggregator {
 		)) {
 			messages.add(ContextMessageRenderer.renderEntry(entry, anchorTimeMs));
 		}
-		for (SemanticContextUpdate update : pendingSemanticProjection(anchorTimeMs).updates()) {
-			messages.add(ContextMessageRenderer.renderEntry(PlannerContextEntry.semanticNotice(update), anchorTimeMs));
-		}
 		return List.copyOf(messages);
 	}
 
@@ -609,10 +497,6 @@ public final class PlannerContextAggregator {
 		return new PlannerContextState(
 			List.of(),
 			null,
-			value.pendingSemanticEvents(),
-			value.pendingSemanticGapVersion(),
-			value.nextSemanticGapVersion(),
-			value.lastObservedEventSeqNo(),
 			value.lastAcceptedAmbientContext(),
 			value.lastAcceptedTimeContextAtMs(),
 			false,
@@ -665,7 +549,4 @@ public final class PlannerContextAggregator {
 		return toolResult;
 	}
 
-	private void recomputeOverflowFlushPending() {
-		overflowFlushPending = state.pendingSemanticEvents().size() >= pendingSemanticEventCap;
-	}
 }

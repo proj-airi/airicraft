@@ -1,6 +1,5 @@
 package ai.moeru.airicraft.agent.llm;
 
-import ai.moeru.airicraft.agent.semantic.SemanticContextUpdate;
 import com.google.gson.JsonElement;
 
 import java.util.List;
@@ -12,15 +11,14 @@ public record PlannerContextEntry(
 	String text,
 	long tick,
 	long timestampMs,
-	SemanticContextUpdate semanticUpdate,
 	JsonElement rawAssistantContent,
 	List<PlannerToolCall> toolCalls,
 	JsonElement fields
 ) {
 	public PlannerContextEntry(PlannerContextEntryType type, String speaker, String text, long tick,
-		long timestampMs, SemanticContextUpdate semanticUpdate, JsonElement rawAssistantContent,
+		long timestampMs, JsonElement rawAssistantContent,
 		List<PlannerToolCall> toolCalls) {
-		this(type, speaker, text, tick, timestampMs, semanticUpdate, rawAssistantContent, toolCalls, null);
+		this(type, speaker, text, tick, timestampMs, rawAssistantContent, toolCalls, null);
 	}
 	public PlannerContextEntry(
 		PlannerContextEntryType type,
@@ -29,7 +27,7 @@ public record PlannerContextEntry(
 		long tick,
 		long timestampMs
 	) {
-		this(type, speaker, text, tick, timestampMs, null, null, List.of());
+		this(type, speaker, text, tick, timestampMs, null, List.of());
 	}
 
 		public PlannerContextEntry(
@@ -38,11 +36,10 @@ public record PlannerContextEntry(
 			String text,
 			long tick,
 			long timestampMs,
-			SemanticContextUpdate semanticUpdate,
 			JsonElement rawAssistantContent,
 			PlannerToolCall toolCall
 		) {
-			this(type, speaker, text, tick, timestampMs, semanticUpdate, rawAssistantContent, toolCall == null ? List.of() : List.of(toolCall));
+			this(type, speaker, text, tick, timestampMs, rawAssistantContent, toolCall == null ? List.of() : List.of(toolCall));
 		}
 
 		public PlannerContextEntry {
@@ -63,20 +60,6 @@ public record PlannerContextEntry(
 			return toolCalls.isEmpty() ? null : toolCalls.getFirst();
 		}
 
-	public static PlannerContextEntry semanticNotice(SemanticContextUpdate update) {
-		Objects.requireNonNull(update, "update");
-		return new PlannerContextEntry(
-			PlannerContextEntryType.NOTICE,
-			null,
-			update.text(),
-			update.tick(),
-			update.timestampMs(),
-			update,
-			null,
-			List.of()
-		);
-	}
-
 	public static PlannerContextEntry toolRequest(JsonElement assistantRawContent, long tick, long timestampMs) {
 		Objects.requireNonNull(assistantRawContent, "assistantRawContent");
 		String visibleText = OpenAiCompatibleMessageContent.extractVisibleText(assistantRawContent);
@@ -86,7 +69,6 @@ public record PlannerContextEntry(
 			visibleText == null ? "" : visibleText,
 			tick,
 			timestampMs,
-			null,
 			assistantRawContent,
 			List.of()
 		);
@@ -106,7 +88,6 @@ public record PlannerContextEntry(
 			tick,
 			timestampMs,
 			null,
-			null,
 			List.copyOf(toolCalls)
 		);
 	}
@@ -123,7 +104,6 @@ public record PlannerContextEntry(
 			"Tool result: " + body,
 			tick,
 			timestampMs,
-			null,
 			null,
 			toolCall == null ? List.of() : List.of(toolCall),
 			PlannerFieldPresentation.fields(body)

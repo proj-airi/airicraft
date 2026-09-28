@@ -301,7 +301,7 @@ public final class PlannerShellFactory {
 		var orchestrator = new PlannerOrchestrator(new PlannerExecutor(backend, observability),
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(llm, observability, tools,
 				cacheKey == null ? null : cacheKey + ":compaction"), observability),
-			new PlannerContextAggregator(clock, llm.plannerCompactionTriggerTokens(), llm.plannerPendingSemanticEventCap(),
+			new PlannerContextAggregator(clock, llm.plannerCompactionTriggerTokens(),
 				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt), vision, inventory, llm.plannerVisionMode(),
 			llm.visionImageDetail(), 1, llm.plannerSessionCoalesceStepMillis(),
 			llm.plannerSessionCoalesceMinMillis(), llm.plannerSessionCoalesceMaxMillis(), clock, observability,

@@ -2696,7 +2696,7 @@ public final class AiricraftCliMain {
 			copy(view, conversationSources, "canonicalMessageCount", "projectedMessageCount", "canonicalUserTurnCount", "projectedUserTurnCount", "hiddenKinds");
 			copy(view, taskProgressProbe, "active", "resourceKind", "baselineResourceCount", "currentResourceCount", "inventoryDelta", "targetQuantity", "collected", "remaining", "activeJobStatus", "blockedReason", "completionReason");
 			copy(view, chatProbe, "lastAttemptTick", "lastAttemptSource", "lastAttemptReusedPriorResponse", "lastSendSucceeded", "lastEmissionTick", "lastEmissionSource");
-			copy(view, eventPipeline, "rawLatestSeqNo", "plannerLatestSeqNo", "lastProcessedRawSeqNo", "lastRawEventSeqNo", "lastPlannerEventSeqNo", "lastEventType", "lastDecisionEffect", "lastTriggerType", "lastEmitSemantic", "lastEmitTrigger");
+			copy(view, eventPipeline, "rawLatestSeqNo", "lastProcessedRawSeqNo", "lastRawEventSeqNo", "lastEventType", "lastDecisionEffect", "lastTriggerType", "lastEmitSemantic", "lastEmitTrigger");
 			view.put("plannerAttemptCount", plannerAttempts.size());
 			view.put("timelineEntryCount", timelineTail.size());
 			Map<String, Object> attention = map(payload.get("attention"));
@@ -2798,8 +2798,7 @@ public final class AiricraftCliMain {
 			copy(view, planner, "configured", "plannerVisionMode", "inFlight", "plannerInFlight", "compactionInFlight", "captureInFlight", "toolInFlight", "toolUsed");
 			copy(view, planner, "coalescePending", "coalesceReadyAtMs", "coalesceWindowMs");
 			copy(view, context, "compactionTriggerTokens", "compactionPending", "acceptedTurnCount",
-				"pendingSemanticEventCount", "projectedPendingNoticeCount", "frozenPlannerMessageCount", "queuedTriggerCount",
-				"lastObservedEventSeqNo", "lastAcceptedTimeContextAtMs", "pendingSemanticGap", "overflowFlushPending");
+				"frozenPlannerMessageCount", "queuedTriggerCount", "lastAcceptedTimeContextAtMs");
 			copy(view, conversationSources, "canonicalMessageCount", "projectedMessageCount", "canonicalUserTurnCount", "projectedUserTurnCount", "hiddenKinds");
 			copy(view, eventPolicy, "activeRuleCount", "recentInterventionCount", "lastMatchedRuleId", "lastMatchedEffect");
 			view.put("contextExcerptLineCount", contextExcerpt.size());

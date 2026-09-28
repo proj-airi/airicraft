@@ -9,7 +9,6 @@ import ai.moeru.airicraft.agent.dialogue.DialogueTurn;
 import ai.moeru.airicraft.agent.events.EventPolicyChanges;
 import ai.moeru.airicraft.agent.events.EventPolicyMatch;
 import ai.moeru.airicraft.agent.events.EventPolicyRuleUpsert;
-import ai.moeru.airicraft.agent.events.SemanticEventQueryResult;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -231,8 +230,7 @@ public final class PlannerOrchestrator {
 	}
 
 	public boolean hasInFlight() {
-		return enabled && (contextAggregator.hasPendingOverflowFlush()
-			|| coalescePending
+		return enabled && (coalescePending
 			|| sessionCoordinator.hasInFlight()
 			|| compactionService.hasInFlight()
 			|| pendingToolExecution != null);
@@ -478,10 +476,6 @@ public final class PlannerOrchestrator {
 		return notices;
 	}
 
-	public long lastObservedEventSeqNo() {
-		return contextAggregator.lastObservedEventSeqNo();
-	}
-
 	public void invalidateIdleThinkTriggers() {
 		contextAggregator.invalidateIdleThinkTriggers();
 	}
@@ -509,8 +503,6 @@ public final class PlannerOrchestrator {
 			return false;
 		}
 		lifecycleListener.onPlannerTurnSubmitted(request);
-		contextAggregator.recordPlannerRequestSeed(PlannerRequestSeed.fromRequest(request));
-		contextAggregator.cancelPendingOverflowFlush();
 		turnContext = observability.startTurnSpan(request, buildTurnId(request));
 		for (PlannerTrigger trigger : request.triggerBatch().triggers()) {
 			contextAggregator.enqueueTrigger(trigger);
@@ -1209,21 +1201,7 @@ public final class PlannerOrchestrator {
 	public void onAcceptedReplyRecorded() {
 		awaitingAcceptedReplyRecord = false;
 		clearCoalesceState();
-		if (
-			(pendingSubmitRequest != null && contextAggregator.hasQueuedTriggers())
-				|| contextAggregator.hasPendingOverflowFlush()
-		) {
-			startQueuedWorkIfPossible();
-		}
-	}
-
-	public void recordEvents(SemanticEventQueryResult queryResult, long anchorTimeMs) {
-		recordEvents(queryResult, new PlannerRequestSeed(anchorTimeMs / 50L, anchorTimeMs, SessionMode.OUT_OF_WORLD, null, null));
-	}
-
-	public void recordEvents(SemanticEventQueryResult queryResult, PlannerRequestSeed requestSeed) {
-		contextAggregator.recordObservedEvents(queryResult, requestSeed);
-		if (contextAggregator.hasPendingOverflowFlush()) {
+		if (pendingSubmitRequest != null && contextAggregator.hasQueuedTriggers()) {
 			startQueuedWorkIfPossible();
 		}
 	}
@@ -1296,23 +1274,15 @@ public final class PlannerOrchestrator {
 			return true;
 		}
 		boolean hasRealTrigger = pendingSubmitRequest != null && contextAggregator.hasQueuedTriggers();
-		boolean hasOverflowFlush = contextAggregator.hasPendingOverflowFlush();
-		if (!hasRealTrigger && !hasOverflowFlush) {
+		if (!hasRealTrigger) {
 			clearCoalesceState();
 			return true;
 		}
 		if (awaitingAcceptedReplyRecord) {
 			return true;
 		}
-		if (hasRealTrigger && hasOverflowFlush) {
-			contextAggregator.cancelPendingOverflowFlush();
-			hasOverflowFlush = false;
-		}
-		if (hasRealTrigger && contextAggregator.compactionPending()) {
+		if (contextAggregator.compactionPending()) {
 			return startCompactionIfIdle();
-		}
-		if (!hasRealTrigger && hasOverflowFlush) {
-			return startOverflowFlushIfIdle();
 		}
 
 		return startTriggeredPlannerTurn();
@@ -1383,30 +1353,6 @@ public final class PlannerOrchestrator {
 		return contextAggregator.microCompactionInFlight();
 	}
 
-	private boolean startOverflowFlushIfIdle() {
-		if (sessionCoordinator.hasInFlight() || pendingToolExecution != null || compactionService.hasInFlight()) {
-			return true;
-		}
-		PlannerContextSnapshot overflowSnapshot = contextAggregator.freezeOverflowFlushSnapshot();
-		if (overflowSnapshot == null) {
-			return true;
-		}
-		var wakeFields = new java.util.LinkedHashMap<String, Object>();
-		wakeFields.put("path", "W8");
-		wakeFields.put("triggerTypes", List.of());
-		wakeFields.put("origins", List.of("AUTONOMOUS"));
-		wakeFields.put("coalescingKeys", List.of());
-		wakeFields.put("speakers", List.of("runtime"));
-		var decision = decisionContextSource == null ? null : decisionContextSource.get();
-		wakeFields.put("owner", decision == null ? "controller" : decision.decisionOwner());
-		wakeFields.put("serverTick", decision == null ? -1L : decision.serverTick());
-		long wakeTick = decision == null ? overflowSnapshot.request().tick() : decision.tick();
-		wakeFields.put("wakeTick", wakeTick);
-		debugRecorder.recordPlannerWake(wakeTick, clock.millis(), "submitted", wakeFields);
-		sessionCoordinator.submit(overflowSnapshot.withConversation(appendDecisionContext(overflowSnapshot.plannerConversation())), currentTurnContext());
-		return true;
-	}
-
 	private boolean startTriggeredPlannerTurn() {
 		if (coalescePending && clock.millis() < coalesceReadyAtMs) {
 			return true;
@@ -1466,8 +1412,6 @@ public final class PlannerOrchestrator {
 			snapshot.mode(),
 			snapshot.triggerBatch(),
 			withInventoryBootstrap(snapshot.plannerConversation(), toolResult),
-			snapshot.includedSemanticEventSeqNoUpperBound(),
-			snapshot.includedSemanticGapVersion(),
 			snapshot.renderedAmbientContext(),
 			snapshot.renderedTimeContextAtMs()
 		);
@@ -1530,9 +1474,6 @@ public final class PlannerOrchestrator {
 			awaitingAcceptedReplyRecord = hasVisibleReply;
 			clearCoalesceState();
 			endTurnSpan();
-			if (!awaitingAcceptedReplyRecord && contextAggregator.hasPendingOverflowFlush()) {
-				startQueuedWorkIfPossible();
-			}
 		}
 		else if (!hasVisibleReply) {
 			awaitingAcceptedReplyRecord = false;
@@ -1945,8 +1886,6 @@ public final class PlannerOrchestrator {
 			snapshot.mode(),
 			snapshot.triggerBatch(),
 			conversationProjector.appendToolExchanges(snapshot.plannerConversation(), exchanges),
-			snapshot.includedSemanticEventSeqNoUpperBound(),
-			snapshot.includedSemanticGapVersion(),
 			snapshot.renderedAmbientContext(),
 			snapshot.renderedTimeContextAtMs()
 		);
