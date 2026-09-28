@@ -77,6 +77,7 @@ import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.attention.AttentionDecisionLog;
 import ai.moeru.airicraft.agent.attention.AttentionEvidence;
 import ai.moeru.airicraft.agent.attention.AttentionState;
+import ai.moeru.airicraft.agent.attention.IdleHook;
 import ai.moeru.airicraft.agent.attention.ReferenceAttentionPolicy;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
@@ -4622,33 +4623,37 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void maybeFireIdleIdeaTrigger(Optional<GoalSnapshot> activeGoal) {
 		boolean awaitingSafetyDecision = survivalReflexRuntime.snapshot().state() == SurvivalReflexState.AWAITING_PLANNER;
-		if (evaluationPlannerSuppressed
-			|| (actionGraphCoordinator.hasNonterminal() && !awaitingSafetyDecision)
-			|| !sessionSnapshot.companionActuationAllowed()
-			|| !config.llm().isConfigured()) {
-			idleIdeaScheduler.reset();
-			return;
-		}
+		boolean eligible = !evaluationPlannerSuppressed
+			&& (!actionGraphCoordinator.hasNonterminal() || awaitingSafetyDecision)
+			&& sessionSnapshot.companionActuationAllowed()
+			&& config.llm().isConfigured();
 		boolean jobIdle = isIdleForIdleIdeaScheduling(activeJobRuntime.current());
-		if (dialogueRuntime.continuePlannerGoal(tickCount, jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
-			primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
-			activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))) {
-			idleIdeaScheduler.reset();
-			return;
-		}
-		long nowMs = clock.millis();
-		idleIdeaScheduler.tick(jobIdle, tickCount, nowMs).ifPresent(trigger -> {
-			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
-			dialogueRuntime.onPlannerTrigger(
-				trigger,
-				sessionSnapshot,
-				primaryInteractionPlayer,
-				activeGoal,
-				taskSnapshot,
-				missionExecutionSnapshot,
-				PlannerFeedPublisher.wrap(plannerEventBuffer)
-			);
-		});
+		IdleHook.run(tickCount, eligible, List.of(
+			// W4: goal and delegation continuation, and the safety-hold reminder; holding also counts as handled.
+			new IdleHook.Named("goal_continuation", tick -> dialogueRuntime.continuePlannerGoal(tick,
+				jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
+				primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
+				activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))),
+			// W5: idle think.
+			new IdleHook.Named("idle_think", new IdleHook.Generator() {
+				@Override public boolean poll(long tick) {
+					idleIdeaScheduler.tick(jobIdle, tick, clock.millis()).ifPresent(trigger -> dialogueRuntime.onPlannerTrigger(
+						trigger,
+						sessionSnapshot,
+						primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
+						activeGoal,
+						taskSnapshot,
+						missionExecutionSnapshot,
+						PlannerFeedPublisher.wrap(plannerEventBuffer)
+					));
+					return false;
+				}
+
+				@Override public void reset() {
+					idleIdeaScheduler.reset();
+				}
+			})
+		));
 	}
 
 	static boolean isIdleForIdleIdeaScheduling(ActiveJob activeJob) {
