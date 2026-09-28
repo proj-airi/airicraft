@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.dialogue;
 
+import ai.moeru.airicraft.agent.attention.Wake;
+import ai.moeru.airicraft.agent.attention.WakeScheduler;
 import ai.moeru.airicraft.agent.events.EventStream;
 import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -45,7 +47,7 @@ public final class DialogueRuntime {
 	private final Clock clock;
 	private final int maxRecentTurns;
 	private final List<DialogueTurn> recentTurns = new ArrayList<>();
-	private final Deque<PendingTaskWakeup> pendingTaskWakeups = new ArrayDeque<>();
+	private final WakeScheduler wakeScheduler = new WakeScheduler();
 	private final Deque<PendingDialogueReply> pendingVisibleReplies = new ArrayDeque<>();
 
 	private DialogueState state = DialogueCore.initialState();
@@ -129,7 +131,7 @@ public final class DialogueRuntime {
 				// Resolve and admit on the same client thread as the fresh guard checks.
 				// The regular action executor still enforces policy, task and safety ownership.
 				continuationParent = null;
-				pendingTaskWakeups.clear();
+				wakeScheduler.clearTaskWakes();
 				admittedContinuation = candidate;
 				continuationAdmission = continuationExecutor.execute(candidate);
 				handled = true;
@@ -168,8 +170,6 @@ public final class DialogueRuntime {
 	}
 
 	private WakeAuditSink wakeAudit = WakeAuditSink.NO_OP;
-	private PendingTaskWakeup lastDeferredAudit;
-	private String lastDeferredAuditGate;
 
 	public void configureWakeAudit(WakeAuditSink sink) {
 		wakeAudit = Objects.requireNonNull(sink);
@@ -265,7 +265,7 @@ public final class DialogueRuntime {
 		if (awaitingSafetyDecision && Objects.equals(lastSupervisedHold, safetyHoldId + ":" + reflexActive)) return true;
 		if ((!workIdle && !awaitingSafetyDecision) || externalDriverActive || !plannerEnabled() || isDegraded() || !llmAvailable()
 			|| reflexActive || session == null || !session.companionActuationAllowed()
-			|| activePlanner().hasInFlight() || !pendingTaskWakeups.isEmpty()) {
+			|| activePlanner().hasInFlight() || wakeScheduler.hasTaskWakes()) {
 			nextGoalContinuationTick = tick + 20;
 			return true;
 		}
@@ -351,7 +351,7 @@ public final class DialogueRuntime {
 		}
 		queuedTimeoutInjections = 0;
 		pendingTimeoutVisibleReply = false;
-		pendingTaskWakeups.clear();
+		wakeScheduler.clearTaskWakes();
 		pendingVisibleReplies.clear();
 		state = state.withPendingReply(false, null);
 	}
@@ -360,7 +360,7 @@ public final class DialogueRuntime {
 		externalDriverActive = true;
 		queuedTimeoutInjections = 0;
 		pendingTimeoutVisibleReply = false;
-		pendingTaskWakeups.clear();
+		wakeScheduler.clearTaskWakes();
 		resetPlanners("runtime reset");
 	}
 
@@ -745,7 +745,7 @@ public final class DialogueRuntime {
 		planners().forEach(p -> p.updateSafetyContext(safetyEpoch, safetyHoldId, reflexActive));
 		queuedTimeoutInjections = 0;
 		pendingTimeoutVisibleReply = false;
-		pendingTaskWakeups.clear();
+		wakeScheduler.clearTaskWakes();
 		pendingVisibleReplies.clear();
 		userGuidanceRevision = 0L;
 		if (state.degraded()) {
@@ -758,7 +758,7 @@ public final class DialogueRuntime {
 		state = DialogueCore.initialState();
 		queuedTimeoutInjections = 0;
 		pendingTimeoutVisibleReply = false;
-		pendingTaskWakeups.clear();
+		wakeScheduler.clearTaskWakes();
 		pendingVisibleReplies.clear();
 		recentTurns.clear();
 		userGuidanceRevision = 0L;
@@ -771,7 +771,7 @@ public final class DialogueRuntime {
 		state = DialogueCore.initialState();
 		queuedTimeoutInjections = 0;
 		pendingTimeoutVisibleReply = false;
-		pendingTaskWakeups.clear();
+		wakeScheduler.clearTaskWakes();
 		pendingVisibleReplies.clear();
 		recentTurns.clear();
 		userGuidanceRevision = 0L;
@@ -854,50 +854,61 @@ public final class DialogueRuntime {
 		if (externalDriverActive) return;
 		if (policyContinuation != null) policyContinuation.discard("execution_attention");
 		continuationParent = null;
-		pendingTaskWakeups.addFirst(new PendingTaskWakeup(tick, userGuidanceRevision, null, eventSequence, true));
+		wakeScheduler.offerAttention(Wake.attention(tick, eventSequence, userGuidanceRevision));
 	}
 
 	public void queueTaskWakeup(String missionId, long tick, long eventSequence) {
-		if (!externalDriverActive) pendingTaskWakeups.addLast(new PendingTaskWakeup(tick, userGuidanceRevision, missionId, eventSequence, false));
+		if (!externalDriverActive) wakeScheduler.offerTask(Wake.task(tick, eventSequence, userGuidanceRevision, missionId));
 	}
 
 	private boolean submitNextPendingInternalTaskUpdate(
 		EventStream eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution
 	) {
-		if (externalDriverActive || pendingTaskWakeups.isEmpty() || activePlanner().hasInFlight()) return false;
-		if ((state.degraded() && activePlanner().isEnabled()) || !activePlanner().isConfigured()) {
-			pendingTaskWakeups.clear();
-			return false;
+		return wakeScheduler.releaseTaskWake(new TaskWakeHost(eventBuffer, sessionSnapshot, activeGoal, activeTask, missionExecution));
+	}
+
+	/** Planner and dialogue facts for one task-wake release, and the delivery of a released wake. */
+	private final class TaskWakeHost implements WakeScheduler.TaskWakeHost {
+		private final EventStream eventBuffer;
+		private final SessionSnapshot sessionSnapshot;
+		private final Optional<GoalSnapshot> activeGoal;
+		private final TaskSnapshot activeTask;
+		private final MissionExecutionSnapshot missionExecution;
+
+		private TaskWakeHost(EventStream eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
+			TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution) {
+			this.eventBuffer = eventBuffer;
+			this.sessionSnapshot = sessionSnapshot;
+			this.activeGoal = activeGoal;
+			this.activeTask = activeTask;
+			this.missionExecution = missionExecution;
 		}
-		while (!pendingTaskWakeups.isEmpty()) {
-			if (acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive
-				&& !pendingTaskWakeups.peekFirst().attention()) {
-				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.run_policy");
-				return false;
-			}
-			if (activePlanner().hasQueuedToolWork() && !pendingTaskWakeups.peekFirst().attention()) {
-				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.queued_tool_work");
-				return false;
-			}
-			PendingTaskWakeup wake = pendingTaskWakeups.removeFirst();
-			if (activePlanner().hasIncorporatedDecisionEvent(wake.eventSequence())) {
-				auditTask(wake, "dropped", "G5.incorporated");
-				continue;
-			}
-			if (!wake.attention() && plannerGoal != null && plannerGoal.blocked() && !eventBuffer.query(wake.eventSequence()-1).events().stream()
+
+		@Override public boolean externalDriverActive() { return externalDriverActive; }
+		@Override public boolean plannerInFlight() { return activePlanner().hasInFlight(); }
+		@Override public boolean plannerUnavailable() {
+			return (state.degraded() && activePlanner().isEnabled()) || !activePlanner().isConfigured();
+		}
+		@Override public boolean runPolicyHold() {
+			return acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive;
+		}
+		@Override public boolean queuedToolWork() { return activePlanner().hasQueuedToolWork(); }
+		@Override public boolean satisfied(Wake wake) {
+			return wake.eventRefs().stream().allMatch(activePlanner()::hasIncorporatedDecisionEvent);
+		}
+		@Override public boolean irrelevantToBlockedGoal(Wake wake) {
+			return plannerGoal != null && plannerGoal.blocked() && !eventBuffer.query(wake.eventSequence() - 1).events().stream()
 				.anyMatch(event -> event.seqNo() == wake.eventSequence() && (plannerGoal.relevantToBlock(event.type())
-					|| isSupervisoryEvent(event.type())))) {
-				auditTask(wake, "dropped", "G5.blocked_irrelevant");
-				continue;
-			}
-			String currentMissionId = missionId(activeTask, missionExecution);
-			String superseded = wake.userGuidanceRevision() != userGuidanceRevision ? "new_user_guidance"
-				: wake.missionId() != null && currentMissionId != null && !Objects.equals(wake.missionId(), currentMissionId) ? "mission_changed" : null;
-			if (superseded != null) {
-				recordSupersededInternalTaskUpdate(wake, superseded, currentMissionId, wake.tick(), eventBuffer);
-				continue;
-			}
+					|| isSupervisoryEvent(event.type())));
+		}
+		@Override public long guidanceRevision() { return userGuidanceRevision; }
+		@Override public String currentMissionId() { return missionId(activeTask, missionExecution); }
+		@Override public void audit(Wake wake, String kind, String gate) { recordTaskAudit(wake, kind, gate); }
+		@Override public void superseded(Wake wake, String reason, String currentMissionId) {
+			recordSupersededInternalTaskUpdate(wake, reason, currentMissionId, wake.tick(), eventBuffer);
+		}
+		@Override public void deliver(Wake wake) {
 			// A wake contains no historical state. Evidence remains in the shared event buffer.
 			String message = eventBuffer.query(wake.eventSequence() - 1).events().stream()
 				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
@@ -909,9 +920,7 @@ public final class DialogueRuntime {
 				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis()))), null
 			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false,
 				(kind, gate) -> auditTask(wake, kind, gate));
-			return true;
 		}
-		return false;
 	}
 
 	private void auditTrigger(PlannerTrigger trigger, String kind, String gate) {
@@ -927,12 +936,13 @@ public final class DialogueRuntime {
 		wakeAudit.record(trigger.tick(), kind, fields);
 	}
 
-	private void auditTask(PendingTaskWakeup wake, String kind, String gate) {
-		// These gates retain the head wake. Audit its transition once, not every poll.
-		boolean deferred = "G5.run_policy".equals(gate) || "G5.queued_tool_work".equals(gate);
-		if (deferred && wake == lastDeferredAudit && Objects.equals(gate, lastDeferredAuditGate)) return;
-		lastDeferredAudit = deferred ? wake : null;
-		lastDeferredAuditGate = deferred ? gate : null;
+	/** Task-wake audits go through the scheduler so its retained-gate de-duplication resets on every outcome. */
+	private void auditTask(Wake wake, String kind, String gate) {
+		wakeScheduler.outcomeRecorded();
+		recordTaskAudit(wake, kind, gate);
+	}
+
+	private void recordTaskAudit(Wake wake, String kind, String gate) {
 		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate, wake.tick());
 		fields.put("eventSequence", wake.eventSequence());
 		fields.put("triggerTypes", List.of("SYSTEM"));
@@ -963,13 +973,13 @@ public final class DialogueRuntime {
 		continuationParent = null;
 		acceptedWork = null;
 		userGuidanceRevision++;
-		while (!pendingTaskWakeups.isEmpty()) {
-			recordSupersededInternalTaskUpdate(pendingTaskWakeups.removeFirst(), reason, null, tick, eventBuffer);
+		for (Wake wake : wakeScheduler.takeTaskWakes()) {
+			recordSupersededInternalTaskUpdate(wake, reason, null, tick, eventBuffer);
 		}
 	}
 
 	private void recordSupersededInternalTaskUpdate(
-		PendingTaskWakeup pendingUpdate,
+		Wake pendingUpdate,
 		String reason,
 		String currentMissionId,
 		long supersededAtTick,
@@ -983,7 +993,7 @@ public final class DialogueRuntime {
 			"reason", reason,
 			"updateTick", pendingUpdate.tick(),
 			"supersededAtTick", supersededAtTick,
-			"updateGuidanceRevision", pendingUpdate.userGuidanceRevision(),
+			"updateGuidanceRevision", pendingUpdate.guidanceRevision(),
 			"currentGuidanceRevision", userGuidanceRevision,
 			"updateMissionId", pendingUpdate.missionId() == null ? "" : pendingUpdate.missionId(),
 			"currentMissionId", currentMissionId == null ? "" : currentMissionId
@@ -1060,6 +1070,5 @@ public final class DialogueRuntime {
 		);
 	}
 
-	private record PendingTaskWakeup(long tick, long userGuidanceRevision, String missionId, long eventSequence, boolean attention) { }
 
 }
