@@ -87,6 +87,22 @@ These were settled on 2026-09-28, before implementation.
   while the reflex owns actuation, and non-failed graph terminals. So the
   clamp rule is: *a protected type may not be set to `NONE` by rules when the
   Java reference would wake it*. Delays remain allowed.
+- **Q2 is revised: the rules run on the tick thread once warm, not on a
+  worker thread.** The engine is built off-thread. Once it is warm, steps run
+  synchronously on the routing thread, and each step is bounded by the
+  statement limit (well under 1 ms for the bundled module). While the engine
+  is cold, or when a step fails, the Java reference decides. That fallback is
+  audited as stage `FALLBACK`. The bundled module decides identically to the
+  reference: `RuleDifferentialTest` checks 5,000 generated cases. So routing
+  through the rules changes no wake, and Task 14 needs neither the one-tick
+  delay nor a golden diff. A worker thread would have added a tick of
+  latency to every autonomous wake without gaining any isolation that the
+  sandbox and the statement limit do not already provide.
+- **Task 15: startup does not validate an override.** Validating would block
+  client start for the engine warm-up. Instead, a broken override fails on
+  the first routed event, and the policy reverts to the bundled module with
+  `rules.reverted` (reason `load_failed`) and a log warning. Reload validates
+  strictly.
 
 ## Ground rules
 

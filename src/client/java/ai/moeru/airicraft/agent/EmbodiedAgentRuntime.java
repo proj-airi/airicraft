@@ -1668,6 +1668,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	public AgentEventBus.AgentEventBusStats debugEventBusState() { return eventBus.stats(); }
 
 	/** Attention decision totals and the latest decisions, for the bridge debug state and the dashboard. */
+	/** Selects the attention rule module; the controller passes the config override or the bundled module. */
+	public void useAttentionRules(ai.moeru.airicraft.rules.RuleModule module) {
+		attentionPolicy.useModule(module);
+	}
+
 	public Map<String, Object> debugAttentionState() {
 		var state = new LinkedHashMap<String, Object>(attentionDecisionLog.debugState(32));
 		state.put("rules", attentionPolicy.debugState());

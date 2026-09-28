@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.attention;
 
+import ai.moeru.airicraft.Airicraft;
 import ai.moeru.airicraft.agent.events.EventPolicyDecision;
 import ai.moeru.airicraft.agent.events.EventPolicyEffect;
 import ai.moeru.airicraft.agent.events.EventPolicyRule;
@@ -104,6 +105,13 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 		return engine.module();
 	}
 
+	/** Switches to {@code module} (an override or the bundled module) with fresh rule state. */
+	public synchronized void useModule(RuleModule module) {
+		engine = RuleEngine.shared(Objects.requireNonNull(module, "module"));
+		ruleState = "{}";
+		consecutiveFailures = 0;
+	}
+
 	private synchronized AttentionOutcome runRules(SemanticEvent event, EventRoutingProfile profile, EventPolicyState rules,
 		boolean plannerEnabled, AttentionState snapshot, AttentionEvidence facts) {
 		RuleException loadFailure = engine.loadFailure();
@@ -153,6 +161,7 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 			ruleState = "{}";
 			consecutiveFailures = 0;
 			reverts++;
+			Airicraft.LOGGER.warn("Attention rules {} failed ({}); reverted to {}", failedModule, lastFailure, engine.module().origin());
 			diagnostics.publish(event.tick(), "rules.reverted", Map.of(
 				"from", failedModule,
 				"to", engine.module().origin(),

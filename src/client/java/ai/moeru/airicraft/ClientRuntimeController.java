@@ -4,6 +4,8 @@ import ai.moeru.airicraft.agent.tasks.TargetAcquisitionTaskExecutor;
 
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.AgentConfigLoader;
+import ai.moeru.airicraft.agent.attention.AttentionRuleSource;
+import ai.moeru.airicraft.rules.RuleModule;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.baritone.LiveBaritoneFacade;
@@ -72,7 +74,8 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
-		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()));
+		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()),
+			AttentionRuleSource.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
 		this.dashboardObservationCollector = new DashboardObservationCollector(
@@ -396,10 +399,12 @@ public final class ClientRuntimeController {
 		AiricraftConfig nextConfig;
 		AgentConfig nextAgentConfig;
 		IdleIdeasConfig nextIdleIdeasConfig;
+		RuleModule nextAttentionRules;
 		try {
 			nextConfig = AiricraftConfigLoader.loadStrict();
 			nextAgentConfig = AgentConfigLoader.loadStrict().withCharacter(CharacterCardLoader.loadStrict());
 			nextIdleIdeasConfig = IdleIdeasLoader.loadStrict();
+			nextAttentionRules = AttentionRuleSource.loadStrict();
 		}
 		catch (ConfigLoadException exception) {
 			throw new BridgeUnavailableException("invalid_config", exception.getMessage());
@@ -411,7 +416,7 @@ public final class ClientRuntimeController {
 		cameraController.clear();
 		cameraController.updateDefaultLerpTicks(nextConfig.cameraLerpDefaultTicks());
 		EmbodiedAgentRuntime previousRuntime = currentAgentRuntime();
-		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig);
+		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig, nextAttentionRules);
 		nextRuntime.updateIdleIdeasConfig(nextIdleIdeasConfig);
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client != null) {
@@ -450,7 +455,7 @@ public final class ClientRuntimeController {
 		return agentRuntime;
 	}
 
-	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig) {
+	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig, RuleModule attentionRules) {
 		var miningOpportunityPolicy = new ai.moeru.airicraft.agent.tasks.MiningOpportunityPolicyState();
 		var miningOpportunityJournal = new ai.moeru.airicraft.agent.tasks.MiningOpportunityJournal();
 		SmeltingProcessManager smeltingProcessManager = new SmeltingProcessManager();
@@ -489,6 +494,7 @@ public final class ClientRuntimeController {
 			miningOpportunityJournal
 		);
 		runtime.setPlannerEnabled(plannerEnabled);
+		runtime.useAttentionRules(attentionRules);
 		return runtime;
 	}
 
