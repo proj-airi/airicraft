@@ -238,6 +238,11 @@ public final class PlannerOrchestrator {
 			|| pendingToolExecution != null);
 	}
 
+	/** True while a provider call or tool future is still running. Read-only; results are applied by {@link #poll()}. */
+	public boolean hasRunningWork() {
+		return plannerExecutor.hasRunningCall() || pendingToolExecution != null && !pendingToolExecution.future().isDone();
+	}
+
 	public PlannerOrchestratorDebugSnapshot debugSnapshot() {
 		PlannerSessionSnapshot activeSession = sessionCoordinator.activeSnapshot();
 		PlannerSessionPhase currentPhase = activeSession == null ? null : activeSession.phase();
@@ -1040,6 +1045,19 @@ public final class PlannerOrchestrator {
 		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
 		long now = clock.millis();
 		PlannerRequest seed = toolQueue.seed;
+		var wakeFields = new java.util.LinkedHashMap<String, Object>();
+		wakeFields.put("path", "W9");
+		wakeFields.put("triggerTypes", List.of("SYSTEM"));
+		wakeFields.put("origins", List.of("AUTONOMOUS"));
+		wakeFields.put("coalescingKeys", List.of());
+		wakeFields.put("speakers", List.of("tool_queue"));
+		wakeFields.put("owner", context == null ? "controller" : context.decisionOwner());
+		wakeFields.put("serverTick", context == null ? -1L : context.serverTick());
+		wakeFields.put("review", toolQueue.checkpoints.isEmpty() ? "fifo_empty" : "checkpoint");
+		wakeFields.put("wakeTick", toolQueue.observationTick);
+		// submit() discards the request when the planner is disabled; record that outcome, not an attempt.
+		if (!enabled) wakeFields.put("gate", "G8.planner_disabled");
+		debugRecorder.recordPlannerWake(toolQueue.observationTick, now, enabled ? "submitted" : "dropped", wakeFields);
 		submit(PlannerRequest.ofTrigger(toolQueue.observationTick, now, seed.sessionMode(), seed.primaryInteractionPlayer(), seed.activeGoal(),
 			PlannerTriggerType.SYSTEM, "tool_queue", toolQueue.checkpoints.isEmpty() ? "FIFO empty. Review completed results and plan the next batch." : "report_to_me reached. Review the requested results; the remaining FIFO continues independently.", null)
 			.withSafetyContext(minimumSafetyEpoch, currentSafetyHoldId));
@@ -1365,6 +1383,18 @@ public final class PlannerOrchestrator {
 		if (overflowSnapshot == null) {
 			return true;
 		}
+		var wakeFields = new java.util.LinkedHashMap<String, Object>();
+		wakeFields.put("path", "W8");
+		wakeFields.put("triggerTypes", List.of());
+		wakeFields.put("origins", List.of("AUTONOMOUS"));
+		wakeFields.put("coalescingKeys", List.of());
+		wakeFields.put("speakers", List.of("runtime"));
+		var decision = decisionContextSource == null ? null : decisionContextSource.get();
+		wakeFields.put("owner", decision == null ? "controller" : decision.decisionOwner());
+		wakeFields.put("serverTick", decision == null ? -1L : decision.serverTick());
+		long wakeTick = decision == null ? overflowSnapshot.request().tick() : decision.tick();
+		wakeFields.put("wakeTick", wakeTick);
+		debugRecorder.recordPlannerWake(wakeTick, clock.millis(), "submitted", wakeFields);
 		sessionCoordinator.submit(overflowSnapshot.withConversation(appendDecisionContext(overflowSnapshot.plannerConversation())), currentTurnContext());
 		return true;
 	}

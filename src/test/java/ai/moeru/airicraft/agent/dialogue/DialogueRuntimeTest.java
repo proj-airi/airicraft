@@ -82,6 +82,39 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogueRuntimeTest {
+	@Test void wakeAuditRecordsRoutedAndAttentionSubmissionsAndIncorporatedDrops() {
+		var backend = new BlockingLlmBackend();
+		var runtime = newDialogueRuntime(backend);
+		var events = new SemanticEventBuffer(32);
+		var audit = new java.util.ArrayList<java.util.Map<String, Object>>();
+		runtime.configureWakeAudit((tick, kind, fields) -> {
+			var entry = new java.util.LinkedHashMap<String, Object>(fields);
+			entry.put("kind", kind);
+			audit.add(entry);
+		});
+		try {
+			var event = events.append(1, "work.changed", java.util.Map.of());
+			runtime.configureDecisionContext(() -> new ai.moeru.airicraft.agent.llm.PlannerDecisionContext(
+				"world", 2, 20, "controller", "idle", java.util.Map.of(), events.query(null)));
+			backend.injectMockResponse(new PlannerResponse("Hello", new PlannerIntent("none", null, null)));
+			runtime.onPlannerTrigger(PlannerTrigger.direct(PlannerTriggerType.CHAT, "Alex", "hello", 2, 100),
+				SessionSnapshot.initial(), "Alex", Optional.empty(), null, null, events);
+			awaitResponse(runtime, events, Duration.ofSeconds(1));
+			runtime.queueTaskWakeup(null, 3, event.seqNo());
+			runtime.poll(3, events);
+			runtime.observeAcceptedWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(
+				new ai.moeru.airicraft.agent.work.WorkHandle("OPERATION:test"), "",
+				ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING, "run_policy", "POLICY", true, 4, java.util.Map.of()));
+			runtime.queueTaskAttention(4, events.append(4, "task.notice", java.util.Map.of("message", "stalled")).seqNo());
+			runtime.poll(4, events);
+			assertEquals(List.of("W1", "W2", "W3"), audit.stream().map(e -> e.get("path")).toList());
+			assertEquals(List.of("submitted", "dropped", "submitted"), audit.stream().map(e -> e.get("kind")).toList());
+			assertEquals("G5.incorporated", audit.get(1).get("gate"));
+			assertEquals(event.seqNo(), audit.get(1).get("eventSequence"));
+			assertEquals(List.of("DIRECT_GUIDANCE"), audit.getFirst().get("origins"));
+		} finally { runtime.shutdown(); }
+	}
+
 	@org.junit.jupiter.params.ParameterizedTest
 	@org.junit.jupiter.params.provider.ValueSource(strings = {"run_policy", "mine_blocks"})
 	void routineProgressDoesNotWakeAcceptedWorkButDamageStillDoes(String label) {
@@ -1453,35 +1486,7 @@ class DialogueRuntimeTest {
 
 	private static DialogueRuntime newDialogueRuntime(LlmBackend backend, CurrentViewVisionTool visionTool,
 		PlannerVisionMode visionMode, ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore goal) {
-		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
-		Clock clock = Clock.systemDefaultZone();
-		PlannerOrchestrator orchestrator = new PlannerOrchestrator(
-			new PlannerExecutor(backend),
-			new PlannerCompactionService(new OpenAiCompatibleChatClient(config)),
-			new PlannerContextAggregator(
-				clock,
-				config.plannerCompactionTriggerTokens(),
-				config.plannerPendingSemanticEventCap(),
-				visionMode
-			),
-			visionTool,
-			CurrentInventoryTool.disabled(),
-			visionMode,
-			config.visionImageDetail(),
-			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
-			clock,
-			NoopObservability.INSTANCE,
-			PlannerLifecycleListener.NO_OP,
-			new AgentDebugRecorder(),
-			PlannerActionToolExecutor.DISABLED,
-			PlannerChatSink.NO_OP,
-			PlannerToolRegistry.empty(),
-			PlannerToolExecutionObserver.NO_OP
-		);
-		return new DialogueRuntime(orchestrator, 8, clock, goal);
+		return DialogueWakeFixture.create(backend, visionTool, visionMode, goal, Clock.systemDefaultZone());
 	}
 
 	private static TaskSnapshot activeTask(

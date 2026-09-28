@@ -157,6 +157,24 @@ public final class PlannerShellFactory {
 		CameraController cameraController,
 		LongSupplier serverTickSupplier
 	) {
+		return create(config, screenshotService, observability, clock, debugRecorder, actionToolExecutor,
+			chatSink, toolExecutionObserver, worldReadObserver, cameraController, serverTickSupplier, null);
+	}
+
+	public static PlannerShellComponents create(
+		AgentConfig config,
+		FirstPersonScreenshotService screenshotService,
+		AgentObservability observability,
+		Clock clock,
+		AgentDebugRecorder debugRecorder,
+		PlannerActionToolExecutor actionToolExecutor,
+		PlannerChatSink chatSink,
+		PlannerToolExecutionObserver toolExecutionObserver,
+		Consumer<List<BlockPos>> worldReadObserver,
+		CameraController cameraController,
+		LongSupplier serverTickSupplier,
+		java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory
+	) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(screenshotService, "screenshotService");
 		Objects.requireNonNull(observability, "observability");
@@ -233,7 +251,7 @@ public final class PlannerShellFactory {
 		PlannerOrchestrator orchestrator = createOrchestrator(controllerConfig, toolRegistry, visionService, inventoryService,
 			effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 			effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, plannerCallJournal),
-			dual ? cacheSession + ":controller" : null, characterPrompt);
+			dual ? cacheSession + ":controller" : null, characterPrompt, backendFactory);
 		controllerRef.set(orchestrator);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
 		dialogue.configureMessages(DialogueMessages.DEFAULTS.withOverrides(config.character().messages()));
@@ -262,7 +280,7 @@ public final class PlannerShellFactory {
 			var thinker = createOrchestrator(thinkingConfig, thinkingRegistry, visionService, inventoryService,
 				effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 				effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, thinkingCalls, handoffEvidence), cacheSession + ":thinking",
-				characterPrompt);
+				characterPrompt, backendFactory);
 			var generations = new java.util.concurrent.atomic.AtomicLong(1L);
 			orchestrator.shareGenerationSequence(generations);
 			thinker.shareGenerationSequence(generations);
@@ -275,8 +293,8 @@ public final class PlannerShellFactory {
 		CurrentViewVisionService vision, CurrentInventoryService inventory, Clock clock, AgentObservability observability,
 		AgentDebugRecorder debug, PlannerActionToolExecutor actions, PlannerChatSink chat,
 		PlannerToolExecutionObserver toolObserver, ai.moeru.airicraft.agent.llm.PlannerLifecycleListener listener, String cacheKey,
-		String characterPrompt) {
-		LlmBackend backend = switch (llm.plannerBackend()) {
+		String characterPrompt, java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory) {
+		LlmBackend backend = backendFactory != null ? backendFactory.apply(llm) : switch (llm.plannerBackend()) {
 			case OPENAI_COMPATIBLE -> new OpenAiCompatibleLlmBackend(llm, observability, tools, cacheKey);
 			case CODEX_APP_SERVER -> new CodexAppServerLlmBackend(llm, observability, tools);
 		};

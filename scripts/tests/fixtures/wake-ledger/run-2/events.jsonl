@@ -1,0 +1,3 @@
+{"collectedAt":"fixture","event":{"seqNo":1,"tick":40,"type":"social.system_message","payload":{}}}
+{"collectedAt":"fixture","event":{"seqNo":2,"tick":50,"type":"social.player_addressed_agent","payload":{"player":"Alex","message":"please help me"}}}
+{"collectedAt":"fixture","event":{"seqNo":3,"tick":52,"type":"work.changed","payload":{"state":"SUCCEEDED","workId":"w"}}}
