@@ -79,6 +79,7 @@ import ai.moeru.airicraft.agent.attention.AttentionEvidence;
 import ai.moeru.airicraft.agent.attention.AttentionState;
 import ai.moeru.airicraft.agent.attention.IdleHook;
 import ai.moeru.airicraft.agent.attention.ReferenceAttentionPolicy;
+import ai.moeru.airicraft.agent.attention.RuleAttentionPolicy;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -246,6 +247,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AgentEventBus eventBus;
 	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
 	private final AttentionDecisionLog attentionDecisionLog = new AttentionDecisionLog();
+	private final RuleAttentionPolicy attentionPolicy;
 	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
@@ -438,9 +440,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			Boolean.getBoolean("airicraft.events.strict"), debugRecorder);
 		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
 		this.eventBus.subscribe(type -> type.equals("food.eaten") || type.equals("food.eat_failed"), foodOutcomes);
+		this.attentionPolicy = new RuleAttentionPolicy(this::attentionState, this::attentionEvidence, eventBus,
+			ai.moeru.airicraft.rules.RuleModule.bundledAttention());
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
 			eventPolicyState, eventRoutingProfiles, debugRecorder,
-			new ReferenceAttentionPolicy(this::attentionState, this::attentionEvidence), attentionDecisionLog);
+			attentionPolicy, attentionDecisionLog);
 		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
 			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
 			(boundary, tick) -> {
@@ -1664,7 +1668,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	public AgentEventBus.AgentEventBusStats debugEventBusState() { return eventBus.stats(); }
 
 	/** Attention decision totals and the latest decisions, for the bridge debug state and the dashboard. */
-	public Map<String, Object> debugAttentionState() { return attentionDecisionLog.debugState(32); }
+	public Map<String, Object> debugAttentionState() {
+		var state = new LinkedHashMap<String, Object>(attentionDecisionLog.debugState(32));
+		state.put("rules", attentionPolicy.debugState());
+		return state;
+	}
 
 	public AttentionDecisionLog attentionDecisionLog() { return attentionDecisionLog; }
 

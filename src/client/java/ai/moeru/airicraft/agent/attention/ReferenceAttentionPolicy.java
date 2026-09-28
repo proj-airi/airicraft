@@ -36,11 +36,20 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 
 	@Override
 	public AttentionOutcome decide(SemanticEvent event, EventRoutingProfile profile, EventPolicyState rules, boolean plannerEnabled) {
-		AttentionState snapshot = state.get();
-		AttentionOutcome routed = AttentionPolicy.route(event, profile, rules, plannerEnabled, defaultRule(event, snapshot));
-		if (!routed.wake().wakes()) return routed;
-		return routed.withWake(gate(event, snapshot, evidence.apply(event)));
+		return decide(state.get(), evidence.apply(event), event, profile, rules, plannerEnabled);
 	}
+
+	/** The reference decision for one event with an explicit state snapshot and evidence. */
+	public static AttentionOutcome decide(AttentionState state, AttentionEvidence evidence, SemanticEvent event,
+		EventRoutingProfile profile, EventPolicyState rules, boolean plannerEnabled) {
+		AttentionOutcome routed = AttentionPolicy.route(event, profile, rules, plannerEnabled, defaultRule(event, state));
+		if (!routed.wake().wakes()) return routed;
+		return routed.withWake(gate(event, state, evidence));
+	}
+
+	/** Types the constitution decides entirely; rule modules never see them. */
+	public static final Set<String> CONSTITUTION_TYPES = Set.of(
+		"social.player_addressed_agent", "social.local_controller_spoke", "reflex.resolved");
 
 	/** The bundled default planner rule: pickups are progress owned by an active mining job. */
 	public static EventPolicyDecision defaultRule(SemanticEvent event, AttentionState state) {

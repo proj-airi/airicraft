@@ -100,6 +100,10 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.task_resumed", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.task_resumed")),
 			new EventTypeSpec("reflex.threat_detected", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.threat_detected", true, null, true)),
 
+			// rules
+			new EventTypeSpec("rules.reverted", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.reverted")),
+			new EventTypeSpec("rules.step_failed", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.step_failed")),
+
 			// session
 			new EventTypeSpec("session.connection_lost", false, EventFamily.INTERNAL, Set.of("SessionRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("session.connection_lost", true, null, false)),
 			new EventTypeSpec("session.lan_open_failed", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("session.lan_open_failed")),

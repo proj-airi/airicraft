@@ -706,6 +706,24 @@
       "extraWake": "W2"
     },
     {
+      "type": "rules.reverted",
+      "producers": [
+        "RuleAttentionPolicy"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "rules.step_failed",
+      "producers": [
+        "RuleAttentionPolicy"
+      ],
+      "profile": null,
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
       "type": "session.connection_lost",
       "producers": [
         "SessionRuntime"
