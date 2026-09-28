@@ -7,20 +7,34 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerDecisionContextTest {
-	@Test void d8_CONFIRMED_itemOfferAndGraphFailureAreAbsentFromObserve() {
+	@Test void d8_FIXED_itemOfferAndGraphFailureAreObserved() {
 		var events = new SemanticEventBuffer(4);
 		events.append(1, "social.item_offered", Map.of("itemId", "minecraft:diamond"));
 		events.append(2, "action_graph.goal_terminal", Map.of("state", "FAILED"));
 		var context = new PlannerDecisionContext("world", 2, 2, "controller", "idle", Map.of(), events.query(null));
-		assertTrue(((java.util.List<?>) context.observation(0).get("events")).isEmpty());
+		var observed = ((java.util.List<?>) context.observation(0).get("events")).stream()
+			.map(event -> ((Map<?, ?>) event).get("type")).toList();
+		assertEquals(java.util.List.of("social.item_offered", "action_graph.goal_terminal"), observed);
 		assertEquals(2L, context.observation(0).get("throughEventSequence"));
 	}
-	@Test void d8_CONFIRMED_samePlayerOfferCoalescingReplacesFirstText() {
+	@Test void d8_FIXED_coalescedOfferTriggersNoLongerLoseTheFirstOffer() {
 		var state = PlannerContextState.initial();
 		state = PlannerContextReducer.enqueueTrigger(state, PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "Alex", "diamond", 1, 50, "item_offer:alex"));
 		state = PlannerContextReducer.enqueueTrigger(state, PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "Alex", "bread", 2, 100, "item_offer:alex"));
-		assertEquals(1, state.queuedTriggers().size());
-		assertEquals("bread", state.queuedTriggers().getFirst().text());
+		assertEquals(1, state.queuedTriggers().size(), "same-key wakes still coalesce into one");
+		var events = new SemanticEventBuffer(4);
+		events.append(1, "social.item_offered", Map.of("player", "Alex", "itemId", "minecraft:diamond"));
+		events.append(2, "social.item_offered", Map.of("player", "Alex", "itemId", "minecraft:bread"));
+		var context = new PlannerDecisionContext("world", 2, 2, "controller", "idle", Map.of(), events.query(null));
+		assertEquals(2, ((java.util.List<?>) context.observation(0).get("events")).size(), "both offers are evidence");
+	}
+	@Test void chatStaysOutOfObserveBecauseItArrivesAsUserTurns() {
+		var events = new SemanticEventBuffer(4);
+		events.append(1, "social.player_spoke", Map.of("player", "Alex", "message", "hi"));
+		events.append(2, "social.player_addressed_agent", Map.of("player", "Alex", "message", "@agent hi"));
+		events.append(3, "social.local_controller_spoke", Map.of("message", "hi"));
+		var context = new PlannerDecisionContext("world", 3, 3, "controller", "idle", Map.of(), events.query(null));
+		assertTrue(((java.util.List<?>) context.observation(0).get("events")).isEmpty());
 	}
 
 	@Test void sendsTerminalOutcomeOnceAndRefreshesAfterCompactionWithoutLosingHoldOrFailure() {

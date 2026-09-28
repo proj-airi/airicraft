@@ -221,6 +221,15 @@
         "events": [
           {
             "payload": {
+              "goalType": "NAVIGATE_TO",
+              "source": "planner_tool"
+            },
+            "seqNo": 2,
+            "tick": 1,
+            "type": "planner.goal_set"
+          },
+          {
+            "payload": {
               "collected": 0,
               "label": "NAVIGATE_TO",
               "phase": "IDLE",

@@ -64,6 +64,17 @@
         "events": [
           {
             "payload": {
+              "player": "Alex",
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "social.player_joined_nearby"
+          },
+          {
+            "payload": {
               "objective": {}
             },
             "seqNo": 4,

@@ -64,7 +64,7 @@ class PlannerStateTextTest {
 
 	@Test void decisionProjectionChangesOnlyPresentationAndRetainsEventEvidence() {
 		var events = new SemanticEventBuffer(8);
-		events.append(4, "inventory.changed", Map.of("itemId", "minecraft:dirt", "count", 4));
+		events.append(4, "pickup.item_picked_up", Map.of("itemId", "minecraft:dirt", "count", 4));
 		var inventory = Map.of("minecraft:dirt", 4);
 		var vitals = Map.of("health", 20, "maxHealth", 20, "food", 20);
 		var context = new PlannerDecisionContext("world", 4, 4, "controller", "idle", Map.of("inventory", inventory, "vitals", vitals), events.query(null));

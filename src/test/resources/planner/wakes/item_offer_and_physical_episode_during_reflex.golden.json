@@ -47,6 +47,17 @@
         "events": [
           {
             "payload": {
+              "count": 1,
+              "itemId": "minecraft:diamond",
+              "player": "Alex",
+              "playerUuid": "alex"
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "social.item_offered"
+          },
+          {
+            "payload": {
               "kind": "pushed"
             },
             "seqNo": 2,

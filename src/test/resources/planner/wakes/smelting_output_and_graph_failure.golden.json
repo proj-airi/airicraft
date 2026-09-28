@@ -105,7 +105,18 @@
         "actuatorOwner": "idle",
         "afterEventSequence": 2,
         "decisionOwner": "controller",
-        "events": [],
+        "events": [
+          {
+            "payload": {
+              "executionId": "graph-1",
+              "message": "no path",
+              "state": "FAILED"
+            },
+            "seqNo": 3,
+            "tick": 11,
+            "type": "action_graph.goal_terminal"
+          }
+        ],
         "notices": [
           "ACTION GRAPH FAILED: executionId=graph-1 goal= failedPrimitive= failedTarget= failedArgs={} failureCode=failed message=no path. Explain the terminal failure accurately. Do not claim completion. Assess the identified failure and choose a supported next attempt toward the objective."
         ],
