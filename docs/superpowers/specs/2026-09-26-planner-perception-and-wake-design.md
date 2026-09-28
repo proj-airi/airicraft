@@ -949,6 +949,9 @@ factories and the suppression helpers.
 
 ### Phase 3: wakes that reference evidence (changes what the model sees)
 
+Task-level plan, with the decisions R1–R10 taken on 2026-09-28:
+[`plans/2026-09-28-planner-event-system-phase-3.md`](../plans/2026-09-28-planner-event-system-phase-3.md).
+
 - [ ] Add the `observe.wake` field. Remove trigger prose; move static guidance
   into the prompt and tool descriptions and situation coaching into
   `DecisionHints`.
