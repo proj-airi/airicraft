@@ -68,6 +68,10 @@
 
 ## Key Mod-Side Files
 
+- `src/client/java/ai/moeru/airicraft/agent/events/EventCatalog.java`
+  - declared event types, producers, routing profiles, and observe visibility
+- `src/client/java/ai/moeru/airicraft/agent/events/AgentEventBus.java`
+  - event publication, provenance, subscriber delivery, and diagnostic counters
 - `src/client/java/ai/moeru/airicraft/ModBridgeServer.java`
   - localhost bridge entrypoint
   - bridge auth, routing, error mapping

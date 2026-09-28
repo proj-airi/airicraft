@@ -91,6 +91,7 @@ class LifecycleDispatcherTest {
 			expected.put("physical", all);
 			expected.put("item", all);
 			expected.put("slow", all);
+			expected.put("food", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			expected.put("nearby", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			// Order matters: nearby publishes social.player_left_nearby and must stay last.
 			assertEquals(List.copyOf(expected.keySet()), List.copyOf(table.keySet()));

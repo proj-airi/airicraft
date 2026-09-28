@@ -40,6 +40,34 @@ Terms such as W1–W9, G1–G11, E1–E3 and D1–D8 refer to that document.
 
 ---
 
+## Implementation status (2026-09-27)
+
+Tasks 1–10 are implemented on stacked Phase 1 slices. Task 11's full build
+passed with 1,770 root tests (3 skipped), 95 wrapper tests, 30 evaluator tests,
+and 20 JourneyMap compatibility tests; all had zero failures/errors. The 27
+wake goldens remain unchanged. The normal-client smoke retained sourced events
+and reported zero undeclared, unknown-source, off-thread, and subscriber-failure
+counters. The accepted inventory correction adds the existing `DialogueRuntime`
+producer for `task.notice`; it is separate from the unchanged goldens. See the
+[verification note](../../experiments/2026-09-27-planner-event-system-phase-1-check.md)
+for the artifact hashes, live limits, and evaluation evidence.
+
+The [paired same-host follow-up](../../experiments/2026-09-27-planner-event-system-paired-ab.md)
+is complete: 12 terminal trials at frozen heads `44acc6bc` (#81) and `34184be7`
+(#88), with wall-clock and server-tick rates reported over identical windows.
+It supersedes the original cross-session comparison as current rate evidence
+for `farm_easy`, `sea_grass`, and `bread-cooperative-watch`. Farming rates were
+higher on #88 in both pairs, bread rates lower, and seagrass differences mixed;
+no event/timeline gaps or unknown wake attribution occurred. This small sample
+does not establish general regression or equivalence.
+
+Full nine-scenario evaluation parity remains **unverified**: the other six
+scenarios were not rerun in the paired session, and the original two interrupted
+scenarios still lack terminal results. No threshold was relaxed. The source
+review found no Critical or Important Phase 1 defect; source/build/smoke evidence
+and the completed paired follow-up can be reviewed separately from the remaining
+full-suite acceptance evidence.
+
 ## Scope decisions
 
 The spec's Phase 1 bullets leave some choices open. The recommendations below
@@ -572,11 +600,11 @@ boundaries.
 - Modify: the spec (Phase 1 checklist, the D6 row in 2.6, a Phase 1 status note), this plan (implementation status), `AGENTS.md` (key files: `agent/events/AgentEventBus.java`, `EventCatalog.java`), and optionally `scripts/wake_ledger.py` (carry `source`/`cause` into `newEvents`)
 - Create: `docs/experiments/<date>-planner-event-system-phase-1-check.md`
 
-- [ ] **Step 1: Full build:** `./gradlew build`. Record the root, wrapper and
+- [x] **Step 1: Full build:** `./gradlew build`. Record the root, wrapper and
   compatibility test counts.
-- [ ] **Step 2: Golden check** (ground rule 1). Also run
+- [x] **Step 2: Golden check** (ground rule 1). Also run
   `python3 -m unittest discover -s scripts/tests -p 'test_*.py'`.
-- [ ] **Step 3: Live smoke check.**
+- [x] **Step 3: Live smoke check.**
   1. Start `./gradlew runClient`.
   2. Join a world, then chat, take damage and pick something up.
   3. Run `airicraft agent events recent --verbose`. Every event has a
@@ -598,7 +626,7 @@ boundaries.
     turns and rates must stay within the tolerance interval, and there must
     be no new event or timeline gaps.
   - **Record** the result in the Phase 1 check note.
-- [ ] **Step 5: Docs.**
+- [x] **Step 5: Docs.**
   - tick the spec's Phase 1 checklist;
   - mark D6 fixed in 2.6;
   - add the implementation status to this plan;
@@ -608,18 +636,19 @@ boundaries.
 
 ## Exit criteria
 
-- [ ] `./gradlew build` is green; the characterization suite passes with no
+- [x] `./gradlew build` is green; the characterization suite passes with no
   golden diff.
-- [ ] Every published event type is declared in `EventCatalog`, with strict
+- [x] Every published event type is declared in `EventCatalog`, with strict
   mode on in tests. The G1 routing table is derived from the catalog.
-- [ ] Every event carries a `source`, and the Task 8 events carry a `cause`.
-- [ ] Off-thread producers go through `EventIngressQueue`; the bus reports
+- [x] Every event carries a `source`; Task 8 events carry a `cause` where the
+  producer already holds its reference, per P5.
+- [x] Off-thread producers go through `EventIngressQueue`; the bus reports
   zero off-thread publishes in the smoke run.
-- [ ] Observer resets happen only through `LifecycleDispatcher`.
-- [ ] D6 is fixed, and no production code scans the event ring for state.
+- [x] Observer resets happen only through `LifecycleDispatcher`.
+- [x] D6 is fixed, and no production code scans the event ring for state.
   The remaining scans are reads of evidence (`observe`, the wake prose
   lookup) and the P7 blocked-goal cursor, which Phase 2 moves.
-- [ ] The dashboard, recorder, CLI (`agent events recent`) and evaluator
+- [x] The dashboard, recorder, CLI (`agent events recent`) and evaluator
   (`recentEvents`, `semanticEventContains`) behave as before. JSON changes
   are additive only.
 - [ ] The evaluation batch is within the baseline tolerance.
