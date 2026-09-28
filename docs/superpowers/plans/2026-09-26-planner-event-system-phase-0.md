@@ -49,7 +49,7 @@ explicitly qualified. The branch has not been merged into `dev`; merge-dependent
 exit criteria remain pending.
 
 Phase 1 builds on this frozen baseline. Its implementation, smoke evidence,
-and the unmet nine-scenario evaluation gate are recorded in the
+and current evaluation status are recorded in the
 [Phase 1 verification note](../../experiments/2026-09-27-planner-event-system-phase-1-check.md).
 
 Implementation adjustments: FIFO/checkpoint reviews are W9; retained W2 gate
