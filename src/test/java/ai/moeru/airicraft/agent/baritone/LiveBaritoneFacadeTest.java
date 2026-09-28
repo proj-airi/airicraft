@@ -1,7 +1,6 @@
 package ai.moeru.airicraft.agent.baritone;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
-import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import baritone.api.IBaritone;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.BetterBlockPos;
@@ -15,7 +14,6 @@ import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.process.ICustomGoalProcess;
 import baritone.api.process.IFollowProcess;
-import baritone.api.process.IMineProcess;
 import baritone.api.process.IBaritoneProcess;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +27,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -102,37 +99,19 @@ class LiveBaritoneFacadeTest {
 	}
 
 	@Test
-	void startFollowMineAndCancelDelegateToTheInjectedBaritoneProcesses() {
+	void startFollowAndCancelDelegateToTheInjectedBaritoneProcesses() {
 		RecordingBaritoneHarness harness = new RecordingBaritoneHarness();
 		LiveBaritoneFacade facade = new LiveBaritoneFacade(harness.baritone(), () -> {
 		});
-		GoalMineSpec mineSpec = new GoalMineSpec(List.of("minecraft:oak_log"), 8);
 
 		facade.startFollow("Alice");
-		facade.startMine(mineSpec);
+		assertTrue(facade.processActive());
 		facade.cancel();
 
 		assertNotNull(harness.followPredicate.get());
-		assertEquals(Optional.of("mine"), facade.activeProcessName());
-		assertEquals(1, harness.mineCalls.size());
-		assertEquals(8, harness.mineCalls.get(0)[0]);
-		assertArrayEquals(new String[] {"minecraft:oak_log"}, (String[]) harness.mineCalls.get(0)[1]);
+		assertEquals(Optional.of("follow"), facade.activeProcessName());
 		assertTrue(harness.cancelEverythingCalled.get());
-	}
-
-	@Test
-	void mineProcessLivenessDelegatesToInjectedBaritoneProcess() {
-		RecordingBaritoneHarness harness = new RecordingBaritoneHarness();
-		LiveBaritoneFacade facade = new LiveBaritoneFacade(harness.baritone(), () -> {
-		});
-
-		assertFalse(facade.mineProcessActive());
-
-		facade.startMine(new GoalMineSpec(List.of("minecraft:short_grass"), 64));
-
-		assertTrue(facade.mineProcessActive());
-		harness.mineProcessActive.set(false);
-		assertFalse(facade.mineProcessActive());
+		assertFalse(facade.processActive());
 	}
 
 	@Test
@@ -157,7 +136,7 @@ class LiveBaritoneFacadeTest {
 		LiveBaritoneFacade facade = new LiveBaritoneFacade(harness.baritone(), () -> {
 		});
 
-		facade.startMine(new GoalMineSpec(List.of("minecraft:clay"), 1));
+		facade.startNavigate(new GoalPosition(8, 62, 3, true));
 		facade.cancel();
 		assertTrue(facade.cancellationPending());
 		assertFalse(facade.processActive());
@@ -180,7 +159,7 @@ class LiveBaritoneFacadeTest {
 		});
 		harness.cancelImmediatelySafe.set(false);
 
-		facade.startMine(new GoalMineSpec(List.of("minecraft:clay"), 1));
+		facade.startNavigate(new GoalPosition(8, 62, 3, true));
 
 		assertFalse(facade.cancel());
 		assertFalse(facade.cancellationPending());
@@ -203,7 +182,7 @@ class LiveBaritoneFacadeTest {
 		LiveBaritoneFacade facade = new LiveBaritoneFacade(harness.baritone(), () -> {
 		});
 		harness.cancelImmediatelySafe.set(false);
-		facade.startMine(new GoalMineSpec(List.of("minecraft:sand"), 1));
+		facade.startNavigate(new GoalPosition(8, 62, 3, true));
 		assertFalse(facade.cancel());
 		harness.pathingActive.set(false);
 
@@ -220,19 +199,16 @@ class LiveBaritoneFacadeTest {
 		private final AtomicReference<Boolean> cancelEverythingCalled = new AtomicReference<>(false);
 		private final AtomicInteger cancelEverythingCalls = new AtomicInteger();
 		private final AtomicReference<Boolean> cancelImmediatelySafe = new AtomicReference<>(true);
-		private final AtomicReference<Boolean> mineProcessActive = new AtomicReference<>(false);
 		private final AtomicReference<Boolean> customGoalProcessActive = new AtomicReference<>(false);
 		private final AtomicReference<Boolean> followProcessActive = new AtomicReference<>(false);
 		private final AtomicReference<Boolean> pathingActive = new AtomicReference<>(false);
 		private final AtomicReference<Double> estimatedTicksToGoal = new AtomicReference<>(37.5D);
 		private final List<Object> navigateCalls = new ArrayList<>();
-		private final List<Object[]> mineCalls = new ArrayList<>();
 		private final IPathingBehavior pathingBehavior = proxy(IPathingBehavior.class, (proxy, method, args) -> switch (method.getName()) {
 			case "estimatedTicksToGoal" -> Optional.ofNullable(estimatedTicksToGoal.get());
 			case "cancelEverything" -> {
 				cancelEverythingCalled.set(true);
 				cancelEverythingCalls.incrementAndGet();
-				mineProcessActive.set(false);
 				customGoalProcessActive.set(false);
 				followProcessActive.set(false);
 				if (cancelImmediatelySafe.get()) {
@@ -281,27 +257,9 @@ class LiveBaritoneFacadeTest {
 			case "displayName0" -> "custom_goal";
 			default -> defaultValue(method);
 		});
-		private final IMineProcess mineProcess = proxy(IMineProcess.class, (proxy, method, args) -> switch (method.getName()) {
-			case "mineByName" -> {
-				mineCalls.add(args.clone());
-				activeProcessName.set("mine");
-				mineProcessActive.set(true);
-				pathingActive.set(true);
-				yield null;
-			}
-			case "mine", "cancel", "onLostControl" -> {
-				mineProcessActive.set(false);
-				yield null;
-			}
-			case "isActive" -> mineProcessActive.get();
-			case "onTick" -> null;
-			case "isTemporary" -> false;
-			case "displayName0" -> "mine";
-			default -> defaultValue(method);
-		});
 		private final IBaritoneProcess activeProcess = proxy(IBaritoneProcess.class, (proxy, method, args) -> switch (method.getName()) {
 			case "displayName0" -> activeProcessName.get();
-			case "isActive" -> mineProcessActive.get() || customGoalProcessActive.get() || followProcessActive.get();
+			case "isActive" -> customGoalProcessActive.get() || followProcessActive.get();
 			case "onTick" -> null;
 			case "isTemporary" -> false;
 			case "onLostControl" -> null;
@@ -326,11 +284,10 @@ class LiveBaritoneFacadeTest {
 			case "getPathingBehavior" -> pathingBehavior;
 			case "getPlayerContext" -> playerContext;
 			case "getFollowProcess" -> followProcess;
-			case "getMineProcess" -> mineProcess;
 			case "getCustomGoalProcess" -> customGoalProcess;
 			case "getPathingControlManager" -> pathingControlManager;
 			case "getGameEventHandler" -> eventBus;
-			case "getBuilderProcess", "getExploreProcess", "getFarmProcess", "getGetToBlockProcess", "getElytraProcess", "getWorldProvider", "getInputOverrideHandler", "getSelectionManager", "getCommandManager" -> null;
+			case "getMineProcess", "getBuilderProcess", "getExploreProcess", "getFarmProcess", "getGetToBlockProcess", "getElytraProcess", "getWorldProvider", "getInputOverrideHandler", "getSelectionManager", "getCommandManager" -> null;
 			case "openClick" -> null;
 			default -> defaultValue(method);
 		});

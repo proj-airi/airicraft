@@ -42,10 +42,12 @@ jobs:
           script: |
             const { default: selectModVersion } = require('./.github/scripts/select-mod-version.mjs');
             await selectModVersion({ core, exec });
+      # The root suite has wall-clock planning guards that time out when it runs in parallel
+      # with other projects' compile and test tasks, so it runs alone in the run tests step.
       - name: build
         env:
           AIRICRAFT_RELEASE_CHANNEL: ${{ steps.version.outputs.channel }}
-        run: ./gradlew build
+        run: ./gradlew build -x :test
       - name: collect release jars
         env:
           MOD_VERSION: ${{ steps.version.outputs.value }}
@@ -54,6 +56,11 @@ jobs:
           cp "build/libs/airicraft-$MOD_VERSION.jar" build/release/
           cp "compat/journeymap/build/libs/airicraft-journeymap-compat-$MOD_VERSION.jar" build/release/
           cp "compat/rei/build/libs/airicraft-rei-compat-$MOD_VERSION.jar" build/release/
+      - name: run tests
+        run: ./gradlew :test :wrapper:test
+      # Separate step: running it alongside :test starves the root suite's wall-clock planning guards.
+      - name: build and test evaluator addon
+        run: ./gradlew :addons:evaluator:build -Pairicraft.includeEvaluator=true
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
