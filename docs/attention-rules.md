@@ -23,12 +23,14 @@ starting point.
   that fails, the command returns `invalid_config` naming the file, the error code (`load_failed`, `guest_error`,
   `source_limit`, ...) and the guest message, and the old runtime keeps running. Deleting the file and reloading
   restores the bundled module.
-- **At startup** the override is not validated, so a broken file never blocks the client. The first routed event
-  reports `rules.step_failed`, then the policy reverts to the bundled module, publishes `rules.reverted` with reason
-  `load_failed`, and logs a warning.
-- **At run time** an override is also reverted after 3 consecutive failed steps (`consecutive_step_failures`).
+- **At startup** the override is not validated, so a broken file never blocks the client. A module that fails to
+  load is reverted at the first routed event (`rules.step_failed`, then `rules.reverted` with reason `load_failed`).
+  A module that loads but fails its steps is reverted after 3 consecutive failures. Either way the client logs a
+  warning and the bundled module takes over.
+- **At run time** any override is reverted after 3 consecutive failed steps (`consecutive_step_failures`).
 
-Whenever the rules have not decided (the engine is still warming, or a step failed), the Java reference decides
+The engine is interpreter-only. Before it reports ready, it runs 600 synthetic steps off-thread, so the first real
+steps are not slow. Whenever the rules have not decided (the engine is still warming, or a step failed), the Java reference decides
 instead. Those wakes are audited with stage `FALLBACK`.
 
 ## Contract
@@ -102,8 +104,9 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 
 ## Observing
 
-- `airicraft agent debug state` shows the engine under `attention.rules`, and the dashboard runtime snapshot has
-  the same data. Fields:
+- `airicraft agent debug state` shows the engine as `[attentionRules]`, with decision and pending-wake counts;
+  `--verbose` adds the latest decisions and counts by rule. The bridge JSON (`attention`) and the dashboard's
+  Attention view carry the same data. Engine fields:
   - `module`, `ready`
   - `steps`, `fallbacks`, `failures`, `consecutiveFailures`
   - `clamps`, `reverts`, `rebuilds`

@@ -61,11 +61,12 @@ the 20 golden scenarios (4,000 runs) is stable.
   - Task 10 is folded into Task 14 (see the revisions).
   - Task 9 Step 3 is not done: `DialogueRuntime.onPlannerTrigger` remains as
     the entry point, but it only calls `WakeScheduler.offerTrigger`.
-- **Waiting on the user.**
-  - The live smoke (Task 19 Step 2).
-  - The paired A/B (Q3).
-  - Replay of at least two recorded playtests. Only runs recorded from this
-    branch on carry `attention-decisions.jsonl`.
+- **Live smoke and replay (2026-09-28).** Both were done without a planner
+  model: a dev client ran under Xvfb and was driven through `agent tools call`.
+  See the [Phase 2 check](../../experiments/2026-09-28-planner-event-system-phase-2-check.md).
+  Replay of two recorded runs (11 and 48 replayed decisions) found 0
+  differences.
+- **Waiting on the user.** The paired A/B (Q3) needs a planner model.
 
 ---
 
@@ -114,7 +115,13 @@ These were settled on 2026-09-28, before implementation.
 - **Q2 is revised: the rules run on the tick thread once warm, not on a
   worker thread.** The engine is built off-thread. Once it is warm, steps run
   synchronously on the routing thread, and each step is bounded by the
-  statement limit (well under 1 ms for the bundled module). While the engine
+  statement limit. The engine is interpreter-only, so "warm" must include
+  running steps, not just loading. The live smoke measured a 671 ms first
+  step, and a microbenchmark measured a 167 ms first step and 2.5 ms early
+  steps. `RuleEngine` therefore runs 600 synthetic steps off-thread before it
+  reports ready. After that, benchmark steps have a median of 0.27–0.46 ms, a
+  p99 of about 4 ms and a first step of 6 ms. The live client, on software
+  rendering, peaked at 17–19 ms. While the engine
   is cold, or when a step fails, the Java reference decides. That fallback is
   audited as stage `FALLBACK`. The bundled module decides identically to the
   reference: `RuleDifferentialTest` checks 5,000 generated cases. So routing
@@ -579,7 +586,7 @@ Tasks 5–9 are "no behaviour change" commits.
 - [x] **Step 1: Build and characterization.** `./gradlew build`, the wake
   goldens (changed only in the named commits), the defect probes, the Python
   suite, and a 200× repeat of the golden scenarios (ground rule 2).
-- [ ] **Step 2: Live smoke.** Run `runClient`, then check:
+- [x] **Step 2: Live smoke.** Run `runClient`, then check:
   - the dashboard panel shows decisions;
   - an override rule loaded through `airicraft reload` takes effect;
   - a deliberately broken override is rejected with `invalid_config`;

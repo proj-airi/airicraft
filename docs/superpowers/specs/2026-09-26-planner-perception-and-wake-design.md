@@ -938,10 +938,12 @@ factories and the suppression helpers.
     `AttentionState`.
 - **Deferred.** D4 goes to Phase 3. W9 and the orchestrator's coalesce window
   go to Phase 5, with the supersede budget.
-- **Still open.** Three exit checks need live runs:
-  - the paired A/B;
-  - replay of two recorded playtests;
-  - the live smoke.
+- **Live check.** The live smoke and replay of two recorded runs passed
+  without a planner model, driven through the wrapper: 0 differences between
+  the recording, the reference and the rules. The check found an interpreter
+  cold-step cost, now paid by an off-thread warm-up. See the
+  [Phase 2 check](../../experiments/2026-09-28-planner-event-system-phase-2-check.md).
+- **Still open.** The paired A/B needs a planner model.
 
 ### Phase 3: wakes that reference evidence (changes what the model sees)
 
