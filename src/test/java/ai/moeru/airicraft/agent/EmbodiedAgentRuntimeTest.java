@@ -633,7 +633,7 @@ class EmbodiedAgentRuntimeTest {
 	void awaitingSafetyHoldIsAPendingDecisionInTheObservation() throws Exception {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		assertNull(runtime.currentPlannerDecisionContext().current().get("pendingDecision"));
-		assertNotNull(runtime.currentPlannerDecisionContext().current().get("reflexPolicy"));
+		org.junit.jupiter.api.Assertions.assertNotNull(runtime.currentPlannerDecisionContext().current().get("reflexPolicy"));
 		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, "hold-7", null, null));
 		assertEquals(Map.of("holdId", "hold-7", "options", List.of("continue", "clear_queue")),
 			runtime.currentPlannerDecisionContext().current().get("pendingDecision"));

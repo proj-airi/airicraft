@@ -18,6 +18,42 @@ attributed to one slice.
 sections 2.4–2.6, 4.4, 4.8 and 6 (Phase 3). **Previous phase:**
 [`plans/2026-09-28-planner-event-system-phase-2.md`](2026-09-28-planner-event-system-phase-2.md).
 
+## Status (2026-09-28)
+
+Slices 3a–3d are implemented on `claude/hopeful-gauss-1gjr8v`, each with its
+own reviewed golden diff; wake audits did not change in any of them.
+
+- **Prompt size (R10)**, over the 29 golden requests:
+  - `observe` characters, excluding `current`: 24,488 → 23,486 (−4%).
+  - `observe.notices` characters: 14,115 → 7,756 (−45%).
+  - System prompt: 12,878 → 14,246 characters (+1,368, one new paragraph in
+    the cached prefix).
+- **Defects:**
+  - D1, D2, D4 and D8 probes flipped to FIXED.
+  - D3 is settled by O8: `ignore` stops the wake, and the evidence stays
+    visible by design.
+
+## Revisions during implementation (2026-09-28)
+
+- **`WakePresenter` keeps its prose for the path without a decision
+  context.** Production always configures one, so the model no longer sees
+  this prose. Keeping it retains a working prompt for that path and for
+  debugging.
+- **The prose filter works by wake reason.** With a decision context, a
+  trigger's text reaches the model only when its reason is a task statement:
+  `delegation`, `evaluation`, `tool_queue_review`, or an unclassified
+  `runtime` trigger. A delegated role's continuation is tagged with the
+  `delegation` reason, so its assignment text survives while its audit label
+  stays W4.
+- **The tool-queue review keeps its short prose** ("FIFO empty. Review
+  completed results…"). It is a queue protocol statement, not event prose
+  (R8).
+- **`agent.yml` keeps accepting `plannerPendingSemanticEventCap`**, but
+  nothing reads it any more, so existing configs still load under strict
+  reload.
+- **Debug views drop the planner-feed and pending-semantic counters.**
+  `agent context` and `agent debug state` print fewer lines.
+
 ---
 
 ## Decisions
@@ -74,14 +110,14 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 1: catalog visibility
 
-- [ ] Set the R2 types to `EventVisibility.PLANNER`; keep chat, raw-only
+- [x] Set the R2 types to `EventVisibility.PLANNER`; keep chat, raw-only
   internals and graph lifecycle steps `DIAGNOSTIC`. Update
   `event-inventory.json`.
-- [ ] `PlannerDecisionContext.relevant` reads the catalog
+- [x] `PlannerDecisionContext.relevant` reads the catalog
   (`EventCatalog.defaults().visibility(type) == PLANNER`) instead of the prefix
   list. A test pins that every G10 prefix type is still visible and every R2
   type is newly visible.
-- [ ] Goldens: new `observe.events` entries for the R2 types (graph terminal,
+- [x] Goldens: new `observe.events` entries for the R2 types (graph terminal,
   item offer, social, follow, planner goal events). Flip the D8 probe.
   Commit: `feat(observe): take event visibility from the catalog (fixes D8)`.
 
@@ -89,15 +125,15 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 2: wake references on triggers and task wakes
 
-- [ ] `PlannerTrigger` gains an optional `WakeRef(reason, seqNo, type, urgency)`.
+- [x] `PlannerTrigger` gains an optional `WakeRef(reason, seqNo, type, urgency)`.
   The pipeline sets it for W1 (event, from the attention decision); the idle
   hook sets `goal_continuation` / `idle_think`; delegation sets `delegation`;
   task wakes (W2/W3) set `event` from `Wake.eventSequence()` and the event's
   type; the tool queue review sets `tool_queue_review`.
-- [ ] `PlannerRequest` / `PlannerTriggerBatch` carry the batch's refs, and the
+- [x] `PlannerRequest` / `PlannerTriggerBatch` carry the batch's refs, and the
   orchestrator renders them into the observation as `wake` (deduplicated by
   `seqNo`, first urgency wins by rank). Additive: prose is still present.
-- [ ] Goldens: every request gains `observe.wake`. Flip the D4 probe to
+- [x] Goldens: every request gains `observe.wake`. Flip the D4 probe to
   "one wake entry for the fact".
   Commit: `feat(observe): say why the planner woke (observe.wake)`.
 
@@ -105,14 +141,14 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 3: remove the semantic notice channel
 
-- [ ] Remove `pendingSemanticEvents` from `PlannerContextState` and the
+- [x] Remove `pendingSemanticEvents` from `PlannerContextState` and the
   reducer, `SemanticContextProjector` and its formatter/coalescer, the E2 part
   of `renderSnapshotNotices`, the W8 overflow flush, and `plannerEventBuffer`
   with `PlannerFeedPublisher`. The role cursor (`lastObservedEventSeqNo`)
   reads the one event log.
-- [ ] The pipeline keeps routing and attention decisions; `emitSemantic` has no
+- [x] The pipeline keeps routing and attention decisions; `emitSemantic` has no
   consumer (R7).
-- [ ] Goldens: E2 notices disappear from `observe.notices` (pickup/craft sums,
+- [x] Goldens: E2 notices disappear from `observe.notices` (pickup/craft sums,
   social, follow, planner goal lines). Their facts are in `observe.events`
   since 3a. Flip D1 and D2 probes.
   Commit: `refactor(observe): retire the legacy semantic notice channel (fixes D1, D2)`.
@@ -121,26 +157,26 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 4: `DecisionHints` and payload facts
 
-- [ ] `DecisionHints` renders `observe.hints` from the batch's event refs,
+- [x] `DecisionHints` renders `observe.hints` from the batch's event refs,
   keyed by event type, using the coaching column of the disposition table.
-- [ ] Add the payload facts: `reflex.resolved` gets `pendingDecision`,
+- [x] Add the payload facts: `reflex.resolved` gets `pendingDecision`,
   `reflexPolicy` and `recoveryWindowTicks`; `current.pendingDecision` while a
   safety hold waits.
 
 ### Task 5: static guidance
 
-- [ ] Move the standing rules into `PlannerPromptPolicy` (one "Wakes" section
+- [x] Move the standing rules into `PlannerPromptPolicy` (one "Wakes" section
   keyed by `observe.wake` reasons and event types) and the
   `collect_smelted_items` and `update_event_policy` descriptions (R7).
 
 ### Task 6: remove the prose
 
-- [ ] `WakePresenter` returns triggers without prose for event wakes; the
+- [x] `WakePresenter` returns triggers without prose for event wakes; the
   orchestrator no longer turns runtime triggers into NOTICE messages.
   Goal continuation, safety-hold reminders, idle think and task wakes stop
   sending text. Chat, delegation and evaluation seeds are unchanged (R8).
-- [ ] The coalescing keys stay, so W1 coalescing (Phase 5) is unaffected.
-- [ ] Goldens: prose notices disappear, `observe.hints` appears where the
+- [x] The coalescing keys stay, so W1 coalescing (Phase 5) is unaffected.
+- [x] Goldens: prose notices disappear, `observe.hints` appears where the
   table says, the system prompt sha changes once.
   Commit: `feat(observe): wakes reference evidence instead of carrying prose`.
 

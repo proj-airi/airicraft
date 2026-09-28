@@ -174,6 +174,7 @@
 ## Behavior Notes
 
 - Every routed event gets one attention decision (stage, rule id, reason), summarized by `airicraft agent debug state` (decisions with `--verbose`) and shown in the dashboard Attention view. Recorded runs write `attention-decisions.jsonl`; replay with `./gradlew attentionReplay -Pairicraft.replayRun=<dir>` and `python3 scripts/wake_ledger.py replay-summary <dir>`.
+- Each observe says why the planner woke (`observe.wake`: an event `seqNo`/type, or `goal_continuation`, `idle_think`, `delegation`, `evaluation`, `tool_queue_review`); the evidence is `observe.events` (types the catalog marks `PLANNER`) and `current`; per-event advice is `observe.hints` (`provenance: runtime_hint`). Event wakes, goal continuation, idle think and task wakes carry no prose; standing rules live in `prompts/planner-system.md` and tool descriptions.
 - Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.

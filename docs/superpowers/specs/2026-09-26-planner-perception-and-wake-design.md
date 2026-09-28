@@ -189,14 +189,14 @@ Phase 0 probes preserve current behavior. `WakeDefectProbeTest`,
 
 | Probe | Verdict | Pinned evidence |
 | --- | --- | --- |
-| D1 | Confirmed | A W2 raw-buffer cursor of 10 skips a later planner-buffer pickup at sequence 1 in the legacy notice channel. |
-| D2 | Confirmed | A pickup appears in both `observe.events` and `observe.notices`. |
-| D3 | Confirmed | An `ignore` rule suppresses the pickup wake, but a later chat still observes its raw evidence. |
-| D4 | Confirmed paths; second request suppressed | One `reflex.resolved` attempts W1 and W2; `G5.incorporated` drops W2, leaving one backend request. |
+| D1 | Fixed in Phase 3 | The Phase 0 probe showed a W2 raw-buffer cursor of 10 skipping a later planner-buffer pickup at sequence 1. `plannerEventBuffer` is gone: one event log, one sequence space, and dialogue writes land in it. The probe now shows the pickup observed after a raw-cursor wake. |
+| D2 | Fixed in Phase 3 | The Phase 0 probe showed a pickup in both `observe.events` and `observe.notices`. The legacy notice channel (E2) is retired; the pickup is evidence once. |
+| D3 | Settled by O8 in Phase 3 | An `ignore` rule suppresses the pickup wake while its evidence stays observable. After E2's retirement this is the documented semantics: `ignore` stops wakes, and events stay visible in `observe`. |
+| D4 | Fixed in Phase 3 | One `reflex.resolved` still attempts W1 and W2, and `G5.incorporated` drops W2, leaving one backend request. The request's `observe.wake` names the fact once. |
 | D5 | Refuted for direct-navigation failure | Both W2 references identify the causal `task.failed` / `work.changed` event. Generic “Work changed.” prose still occurs because those events lack `task.notice` message prose. Other producers are not proven by this probe. |
 | D6 | Fixed in Phase 1 | The Phase 0 probe showed EATING stayed RUNNING after a 512-event flood evicted `food.eaten`. With the bounded food-outcome subscriber, the same flood and the no-flood control both reach SUCCEEDED. This proves the state-channel fix in the probe, not its gameplay frequency. |
 | D7 | Fixed in Phase 2 | The Phase 0 probe showed five minutes of wall time with no ticks causing one idle-think wake on the first resumed tick. `IdleIdeaScheduler` now counts agent ticks, so a pause adds no idle time; the idle-think goldens moved from tick 2 to tick 601 accordingly. |
-| D8 | Confirmed | Offers and graph failures are absent from canonical observation; a second offer with the same player key replaces the first prose trigger. |
+| D8 | Fixed in Phase 3 | The Phase 0 probe showed offers and graph failures absent from canonical observation, and a second same-player offer replacing the first prose trigger. Visibility now comes from the catalog, so both offers and the graph failure are `observe.events` entries even when their wakes coalesce. |
 
 Fatal damage currently wakes before respawn; the death golden pins this
 rather than adopting the original plan's no-wake expectation. W9, discovered
@@ -952,18 +952,31 @@ factories and the suppression helpers.
 Task-level plan, with the decisions R1–R10 taken on 2026-09-28:
 [`plans/2026-09-28-planner-event-system-phase-3.md`](../plans/2026-09-28-planner-event-system-phase-3.md).
 
-- [ ] Add the `observe.wake` field. Remove trigger prose; move static guidance
+- [x] Add the `observe.wake` field. Remove trigger prose; move static guidance
   into the prompt and tool descriptions and situation coaching into
   `DecisionHints`.
-- [ ] Take visibility from the catalog and bring `social.*` and
-  `action_graph.*` into `observe`.
-- [ ] Retire E2: `pendingSemanticEvents`, `SemanticContextProjector` notices,
+- [x] Take visibility from the catalog and bring `social.*` and
+  `action_graph.*` into `observe`. Chat stays a user turn (plan R2).
+- [x] Retire E2: `pendingSemanticEvents`, `SemanticContextProjector` notices,
   overflow flush (W8) and `plannerEventBuffer`.
 - [ ] A/B test: a live playtest plus an evaluation batch against the Phase 2
   build.
 
 Exit: fewer empty wakes; outcome latency and chat latency no worse; tokens per
 hour no worse; no new failure classes in playtest review.
+
+**Phase 3 status (2026-09-28):** Slices 3a–3d are implemented.
+
+- **Goldens:** each slice has a reviewed golden diff, and wake audits are
+  unchanged throughout.
+- **Defects:** D1, D2, D4 and D8 are fixed; D3 is settled by O8.
+- **Prompt size**, over the golden requests:
+  - `observe` characters, excluding `current`: −4%.
+  - notice characters: −45%.
+  - The system prompt gained one paragraph.
+- **Still open:** the live exit metrics (empty wakes, latency, tokens per
+  hour) need a model run. See the
+  [plan](../plans/2026-09-28-planner-event-system-phase-3.md).
 
 ### Phase 4: perception layer and salience sensors
 

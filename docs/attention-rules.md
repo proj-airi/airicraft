@@ -74,7 +74,9 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 - `ruleMatch` is the planner rule that matched. The host records it for `update_event_policy` bookkeeping.
 - `policy` is the rule that applies. For the bundled module this is the default mining-pickup rule when no named
   planner rule matched.
-- Effects are `ALLOW`, `IGNORE`, `SEMANTIC_ONLY` and `TRIGGER_ONLY`.
+- Effects are `ALLOW`, `IGNORE`, `SEMANTIC_ONLY` and `TRIGGER_ONLY`. Since Phase 3, every planner-visible event is observed whatever the rules decide, so an
+  effect only decides the wake: `IGNORE` and `SEMANTIC_ONLY` stop it, and `ALLOW` and `TRIGGER_ONLY` let it through.
+  `emitSemantic` is still recorded on each decision, but nothing consumes it.
 - `ruleIndex` is `-1` or the index of the planner rule named by `ruleId`. Any other value makes the step fail with
   `malformed_decision`.
 - `wake.ruleId` must be 1–128 characters and `reason` at most 256.
