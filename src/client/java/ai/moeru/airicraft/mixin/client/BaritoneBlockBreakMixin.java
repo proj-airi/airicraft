@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
 
-/** Covers mining and path clearance, after Baritone's hotbar-only selection. */
+/** Covers path clearance, after Baritone's hotbar-only selection. */
 @Mixin(value = BlockBreakHelper.class, remap = false)
 public abstract class BaritoneBlockBreakMixin {
 	@Shadow @Final private IPlayerContext ctx;
@@ -28,12 +28,7 @@ public abstract class BaritoneBlockBreakMixin {
 		// This invocation is reached only for a requested attack with a block hit.
 		BlockHitResult hit = (BlockHitResult) ctx.objectMouseOver();
 		var state = ctx.world().getBlockState(hit.getBlockPos());
-		var mine = BaritoneAPI.getProvider().getBaritoneForPlayer(ctx.player()).getMineProcess();
-		var filter = ((BaritoneMineProcessAccessor) mine).airicraft$miningFilter();
-		boolean harvesting = mine.isActive() && filter != null && filter.has(state);
-		var result = harvesting
-			? MiningToolPreparation.ensureSelected(ctx.minecraft(), ctx.player(), List.of(state))
-			: MiningToolPreparation.ensureSelectedForClearance(ctx.minecraft(), ctx.player(), List.of(state));
+		var result = MiningToolPreparation.ensureSelectedForClearance(ctx.minecraft(), ctx.player(), List.of(state));
 		if (!result.ok()) {
 			stopBreakingBlock();
 			BaritoneAPI.getProvider().getBaritoneForPlayer(ctx.player()).getPathingBehavior().cancelEverything();

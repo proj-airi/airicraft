@@ -77,6 +77,24 @@ public final class WorldTravelPolicy {
 			&& (s.user() == null || s.user().permitsMovement(x,y,z,tx,ty,tz,jumping))
 			&& (s.strategy() == null || s.strategy().permitsMovement(x,y,z,tx,ty,tz,jumping));
 	}
+	/**
+	 * The bounds a navigation policy must respect in this world: the intersection of user and strategy
+	 * bounds, or null for none. {@code closed} means travel is not permitted at all.
+	 */
+	public record Limit(TravelBounds bounds, boolean closed) { }
+
+	public static Limit limit(Object world) {
+		State s = state;
+		if (s.world() != world) return new Limit(null, false);
+		if (!s.error().isEmpty()) return new Limit(null, true);
+		if (s.user() == null || s.strategy() == null) return new Limit(s.user() == null ? s.strategy() : s.user(), false);
+		try {
+			return new Limit(s.user().intersect(s.strategy()), false);
+		}
+		catch (IllegalArgumentException disjoint) {
+			return new Limit(null, true);
+		}
+	}
 	public static boolean blocksEdit(BlockPos pos) {
 		var c = MinecraftClient.getInstance();
 		return workActive && c != null && !allows(c.world, pos.getX(),pos.getY(),pos.getZ());

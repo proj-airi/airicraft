@@ -13,6 +13,7 @@
 ## Build And Run
 
 - Full build: `./gradlew build`
+- Mod version comes from axion-release: a `v*` tag on HEAD builds that exact version, other commits build a `-SNAPSHOT`. `mod_version` in `gradle.properties` only seeds tagless repos / SCM failure; `./gradlew printModVersion` prints the resolved version; there is no manual override — release versions exist only as git tags. `AIRICRAFT_RELEASE_CHANNEL=dev` turns a plain release tag into `-alpha` (CI release flow); channel builds fail when HEAD lacks a parseable `v*` tag or the tag shape is disallowed (`-SNAPSHOT` means axion silently skipped the tag). Do NOT run `./gradlew release`/`publish` — axion provides those tasks but this repo releases by pushing `v*` tags for CI; the plugin tasks bypass the dev/main channel checks.
 - Requires git submodules: `git submodule update --init --recursive` (build fails on `action-plan-advisor` if absent).
 - `ffmpeg` must be on PATH or `PlaytestVideoRecorder`-related tests fail with `IOException` (playtest screen recording spawns it). Install: `brew install ffmpeg`.
 - Normal Minecraft launches (`./gradlew runClient`, `scripts/codex-driver`, `scripts/arthas kickstart`) enable all supported mod integrations by default.
@@ -38,6 +39,7 @@
   - Passed worker directories are deleted. Failed, review, stalled, and interrupted directories remain under `run/evaluator-workers/`.
   - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
+- Navigation baseline: run `scripts/navigation-baseline` against `scripts/codex-driver-evaluator` in a disposable world. It builds deterministic courses and drives `navigate_to` without a model. See `docs/navigation-baseline.md`.
 - Arthas CLI live-debug:
   - Cold-start path: `scripts/arthas kickstart` starts `runClient`, waits for the bridge, joins the first saved world, opens LAN, and attaches Arthas for later probes. It is cold-only and fails fast if a client is already running.
   - Manual start: `./gradlew runClient`
@@ -114,6 +116,8 @@
 - `airicraft agent debug idle-trigger`
 - `airicraft agent debug state`
 - `airicraft agent debug timeline [--since <entry-id>]`
+- `airicraft agent debug navigation plan --x <x> --y <y> --z <z> [--no-exact-y] [--highlight-seconds <0-600>]`
+- `airicraft agent debug navigation state`
 - `airicraft agent debug ticks state`
 - `airicraft agent debug ticks pause [--player-actions] [--output-image <path>]`
 - `airicraft agent debug ticks step --debug-session-id <id> --pause-epoch <epoch> [--output-image <path>]`

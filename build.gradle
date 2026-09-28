@@ -1,5 +1,6 @@
 plugins {
 	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'pl.allegro.tech.build.axion-release' version '1.21.4'
 	id 'com.gradleup.shadow' version '9.6.+' apply false
 	id 'maven-publish'
 }
@@ -18,7 +19,57 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.jar.JarFile
 
-version = project.mod_version
+// The build version comes from git state via axion-release-plugin:
+//   on a v-prefixed release tag        -> the tag's version (v1.2.3 -> 1.2.3)
+//   on commits without a matching tag  -> initial/latest version + -SNAPSHOT
+//   AIRICRAFT_RELEASE_CHANNEL=dev with a plain release tag -> -alpha appended
+// Release-channel builds fail on unparseable or disallowed tags; there is no
+// manual version override. gradle.properties mod_version only seeds repositories
+// without any tags and is the fallback when SCM resolution fails.
+scmVersion {
+	tag {
+		prefix.set('v')
+		initialVersion({ config, position -> project.mod_version.toString() })
+	}
+	// Keep artifact names independent of which branch happens to be checked out.
+	versionCreator('simple')
+}
+
+def releaseChannel = System.getenv("AIRICRAFT_RELEASE_CHANNEL") ?: ""
+def resolvedVersion
+try {
+	resolvedVersion = scmVersion.version
+}
+catch (Exception e) {
+	if (releaseChannel) {
+		throw new GradleException("SCM version resolution failed on a release-channel build: ${e.message}")
+	}
+	logger.warn("airicraft: SCM version resolution failed (${e.message}); falling back to mod_version")
+	resolvedVersion = project.mod_version.toString()
+}
+if (releaseChannel) {
+	// A release-channel build runs on a pushed v* tag. axion-release silently
+	// ignores tags it cannot parse as versions, so a still-snapshot version here
+	// means the tag was malformed rather than an ordinary development commit.
+	if (resolvedVersion.endsWith("-SNAPSHOT")) {
+		throw new GradleException(
+			"Release channel '$releaseChannel' expects a v-prefixed release tag on HEAD, " +
+			"but the resolved version is $resolvedVersion. Expected a tag such as v1.2.3 or v1.2.3-rc.1."
+		)
+	}
+	if (releaseChannel == "dev") {
+		if (resolvedVersion ==~ /\d+\.\d+\.\d+/) {
+			resolvedVersion = "${resolvedVersion}-alpha"
+		}
+		else if (!(resolvedVersion ==~ /\d+\.\d+\.\d+-alpha(\.\d+)?/)) {
+			throw new GradleException(
+				"Dev releases must use vX.Y.Z or vX.Y.Z-alpha.N tags; RCs require main (resolved: $resolvedVersion)"
+			)
+		}
+	}
+}
+version = resolvedVersion
+
 group = project.maven_group
 
 def runClientJdwpPort = providers.gradleProperty("airicraft.jdwp.port").orElse("5005")
@@ -31,6 +82,8 @@ def automaticPlaytestMode = providers.gradleProperty("airicraft.automaticPlaytes
 def hostedPlaytestAutoReset = providers.gradleProperty("airicraft.hostedPlaytestAutoReset").orElse("false")
 def lanPort = providers.gradleProperty("airicraft.lanPort")
 def codexDriverEnabled = providers.gradleProperty("airicraft.codexDriver").orElse("false")
+// Overrides navigation.backend (baritone or airicraft) for launched clients; blank keeps the config value.
+def navigationBackend = providers.gradleProperty("airicraft.navigationBackend").orElse("")
 def arthasVersion = providers.gradleProperty("airicraft.arthas.version").orElse("4.1.8")
 def arthasBootUrl = providers.gradleProperty("airicraft.arthas.bootUrl").orElse("https://arthas.aliyun.com/arthas-boot.jar")
 def arthasSelect = providers.gradleProperty("airicraft.arthas.select").filter { !it.isBlank() }
@@ -320,6 +373,7 @@ tasks.named("runClient").configure {
 		*hotswapJvmArgs(hotswapDevConfig)
 	)
 	systemProperty("airicraft.codexDriver", codexDriverEnabled.get())
+	if (!navigationBackend.get().isBlank()) systemProperty("airicraft.navigation.backend", navigationBackend.get())
 	systemProperty("airicraft.automaticPlaytest", automaticPlaytestEnabled.get())
 	if (automaticPlaytestId.isPresent()) systemProperty("airicraft.automaticPlaytestId", automaticPlaytestId.get())
 	systemProperty("airicraft.automaticPlaytestDir", automaticPlaytestDir.get())
@@ -351,6 +405,7 @@ allprojects {
 		dependsOn rootProject.tasks.named("prepareHotswapProductionConfigs")
 		jvmArgs.addAll(hotswapJvmArgs(taskHotswapConfig))
 		jvmArgs.add("-Dairicraft.codexDriver=${codexDriverEnabled.get()}")
+		if (!navigationBackend.get().isBlank()) jvmArgs.add("-Dairicraft.navigation.backend=${navigationBackend.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytest=${automaticPlaytestEnabled.get()}")
 		if (automaticPlaytestId.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestId=${automaticPlaytestId.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytestDir=${automaticPlaytestDir.get()}")
@@ -497,6 +552,8 @@ dependencies {
 	modImplementation files("libs/nether-pathfinder-1.4.1.jar")
 	implementation "ai.moeru:action-plan-advisor:0.1.0"
 	include "ai.moeru:action-plan-advisor:0.1.0"
+	implementation project(":navigation-core")
+	include project(":navigation-core")
 	bundledLibraries "org.yaml:snakeyaml:2.4"
 	// Use concrete JARs: the js-community aggregate adds POM files that Fabric cannot load.
 	// Keep language/provider descriptors in separate nested jars (include is non-transitive).
@@ -571,6 +628,14 @@ tasks.named('test') {
 	systemProperty 'airicraft.events.strict', 'true'
 	inputs.file(tasks.named('remapJar').flatMap { it.archiveFile }).withPropertyName('releaseJar')
 	systemProperty 'airicraft.releaseJar', tasks.named('remapJar').get().archiveFile.get().asFile.absolutePath
+}
+
+tasks.register("printModVersion") {
+	group = "airicraft"
+	description = "Prints the resolved mod version so CI can name release artifacts."
+	doLast {
+		println project.version
+	}
 }
 
 // configure the maven publication

@@ -28,6 +28,7 @@ dependencyResolutionManagement {
 }
 
 include("wrapper")
+include("navigation-core")
 
 def actionPlanAdvisorDir = file("vendor/action-plan-advisor")
 if (!new File(actionPlanAdvisorDir, "settings.gradle").isFile()) {

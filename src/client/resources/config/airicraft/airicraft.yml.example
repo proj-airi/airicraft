@@ -31,3 +31,9 @@ debugDashboard:
   visualCaptureEnabled: true
   # Completed server ticks between samples. 20 = at most 1 fps, 40 = 0.5 fps.
   visualCaptureIntervalTicks: 20
+
+# Navigation backend while the in-house pathfinder is being brought to parity with Baritone:
+# baritone (default) or airicraft. The system property airicraft.navigation.backend overrides it.
+# Reloadable with `airicraft reload`.
+navigation:
+  backend: baritone

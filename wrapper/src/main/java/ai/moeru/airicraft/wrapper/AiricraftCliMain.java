@@ -96,6 +96,10 @@ public final class AiricraftCliMain {
 		agentDebug.addSubcommand(new AgentDebugIdleTriggerCommand(context));
 		agentDebug.addSubcommand(new AgentDebugStateCommand(context));
 		agentDebug.addSubcommand(new AgentDebugTimelineCommand(context));
+		agentDebug.addSubcommand("navigation", new UsageCommand(out, "airicraft agent debug navigation", "In-house navigation dry runs and state"));
+		CommandLine navigation = agentDebug.getSubcommands().get("navigation");
+		navigation.addSubcommand(new AgentDebugNavigationPlanCommand(context));
+		navigation.addSubcommand(new AgentDebugNavigationStateCommand(context));
 		agentDebug.addSubcommand("recording", new UsageCommand(out, "airicraft agent debug recording", "Rolling live-playtest evidence"));
 		CommandLine recording = agentDebug.getSubcommands().get("recording");
 		recording.addSubcommand(new AgentDebugRecordingStatusCommand(context));
@@ -718,6 +722,53 @@ public final class AiricraftCliMain {
 		Map<String, Object> runCommand() {
 			String path = since == null ? "/v1/agent/debug/timeline" : "/v1/agent/debug/timeline?since=" + since;
 			return PayloadViews.agentDebugTimeline(transport().get(path), verbose());
+		}
+	}
+
+	@Command(name = "plan", mixinStandardHelpOptions = true,
+		description = "Plan a path from the player with the in-house planner without moving, and highlight it in the world.")
+	private static final class AgentDebugNavigationPlanCommand extends BaseCommand {
+		@Option(names = "--x", required = true, description = "Goal x.")
+		private int x;
+
+		@Option(names = "--y", required = true, description = "Goal y (feet cell).")
+		private int y;
+
+		@Option(names = "--z", required = true, description = "Goal z.")
+		private int z;
+
+		@Option(names = "--exact-y", negatable = true, defaultValue = "true", fallbackValue = "true",
+			description = "Require the goal's y; --no-exact-y accepts any height in the column.")
+		private boolean exactY;
+
+		@Option(names = "--highlight-seconds", defaultValue = "30", description = "How long to highlight the path; 0 disables it.")
+		private int highlightSeconds;
+
+		private AgentDebugNavigationPlanCommand(CliContext context) {
+			super(context, "agent debug navigation plan");
+		}
+
+		@Override
+		Map<String, Object> runCommand() {
+			Map<String, Object> request = new LinkedHashMap<>();
+			request.put("x", x);
+			request.put("y", y);
+			request.put("z", z);
+			request.put("exactY", exactY);
+			request.put("highlightSeconds", highlightSeconds);
+			return transport().post("/v1/agent/debug/navigation/plan", request);
+		}
+	}
+
+	@Command(name = "state", mixinStandardHelpOptions = true, description = "Inspect the active navigation backend and its latest plans.")
+	private static final class AgentDebugNavigationStateCommand extends BaseCommand {
+		private AgentDebugNavigationStateCommand(CliContext context) {
+			super(context, "agent debug navigation state");
+		}
+
+		@Override
+		Map<String, Object> runCommand() {
+			return transport().get("/v1/agent/debug/navigation/state");
 		}
 	}
 
