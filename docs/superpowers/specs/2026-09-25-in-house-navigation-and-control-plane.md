@@ -1,7 +1,7 @@
 # In-house Navigation and Unified Control Plane
 
 Status: accepted (2026-09-25), recorded as
-[ADR-0003](../../adr/0003-in-house-navigation-and-control-plane.md). Not yet
+[ADR-0004](../../adr/0004-in-house-navigation-and-control-plane.md). Not yet
 implemented.
 
 ## Goal
@@ -444,7 +444,7 @@ release-barrier and pending-cancel code.
   - `BaritoneReleaseBarrier` and `BaritoneTaskExecutor`.
 - **Update docs:** the reflex README ("Baritone owns combat approach…"),
   `camera-control.md`, `combat-positioning.md` and the cave docs. Historical
-  logs and experiment records stay as written. Mark ADR-0003 implemented.
+  logs and experiment records stay as written. Mark ADR-0004 implemented.
 - **Release note.** Airicraft no longer configures Baritone, so users should
   remove any Baritone jar from their mods folder.
 
@@ -500,4 +500,4 @@ They are the merge criterion for the Phase 6 change.
 - ADR-0002 also says "do not add a continuous position controller". That rule
   governs System 2 decisions. The motor replaces Baritone's existing System 1
   executor; it does not give System 2 a continuous controller.
-- Neither is a conflict. ADR-0003 records both points.
+- Neither is a conflict. ADR-0004 records both points.
