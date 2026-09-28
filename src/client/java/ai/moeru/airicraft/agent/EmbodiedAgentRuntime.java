@@ -268,6 +268,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final FollowCapability followCapability = new FollowCapability();
 	private final BehaviorTreeRuntime behaviorTreeRuntime;
 	private final ChatService chatService = new ChatService();
+	private final ai.moeru.airicraft.agent.chat.AiriSpeechForwarder airiSpeech;
 	private final CurrentViewVisionService visionService;
 	private final DialogueRuntime dialogueRuntime;
 	private final PlannerShellJournal plannerJournal;
@@ -417,6 +418,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		Clock clock
 	) {
 		this.airicraftConfig = Objects.requireNonNull(airicraftConfig, "airicraftConfig");
+		this.airiSpeech = new ai.moeru.airicraft.agent.chat.AiriSpeechForwarder(airicraftConfig.airiSpeech());
 		this.config = Objects.requireNonNull(config, "config");
 		this.miningOpportunityPolicy = Objects.requireNonNull(miningOpportunityPolicy, "miningOpportunityPolicy");
 		this.miningOpportunityJournal = Objects.requireNonNull(miningOpportunityJournal, "miningOpportunityJournal");
@@ -1337,6 +1339,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.RUNTIME_SHUTDOWN);
 		dialogueRuntime.shutdown();
 		observability.shutdown();
+		airiSpeech.close();
 		visionService.shutdown();
 		worldTaskExecutor.shutdown();
 		blockAcquisitionKnowledgeService.shutdown();
@@ -3778,7 +3781,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (text == null || text.isBlank()) {
 			return;
 		}
-		chatService.send(Minecraft.getInstance(), text, tickCount);
+		if (chatService.send(Minecraft.getInstance(), text, tickCount)) {
+			airiSpeech.say(chatService.lastChatText());
+		}
 	}
 
 	private void beforePlannerToolExecution(PlannerToolCall toolCall) {

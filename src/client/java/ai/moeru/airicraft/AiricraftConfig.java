@@ -1,6 +1,7 @@
 package ai.moeru.airicraft;
 
 import ai.moeru.airicraft.dashboard.DebugDashboardConfig;
+import ai.moeru.airicraft.agent.chat.AiriSpeechConfig;
 
 public record AiricraftConfig(
 	int socialChatMaxDistanceBlocks,
@@ -10,7 +11,8 @@ public record AiricraftConfig(
 	int blockInteractionDelayTicks,
 	int cameraLerpDefaultTicks,
 	DebugDashboardConfig debugDashboard,
-	String navigationBackend
+	String navigationBackend,
+	AiriSpeechConfig airiSpeech
 ) {
 	public static final int DEFAULT_BLOCK_INTERACTION_DELAY_TICKS = 2;
 	public static final int DEFAULT_CAMERA_LERP_DEFAULT_TICKS = 0;
@@ -32,6 +34,7 @@ public record AiricraftConfig(
 	}
 
 	public AiricraftConfig {
+		airiSpeech = airiSpeech == null ? AiriSpeechConfig.defaults() : airiSpeech;
 		blockInteractionDelayTicks = Math.max(0, blockInteractionDelayTicks);
 		cameraLerpDefaultTicks = Math.max(0, cameraLerpDefaultTicks);
 		debugDashboard = debugDashboard == null ? DebugDashboardConfig.defaults() : debugDashboard;
@@ -40,6 +43,14 @@ public record AiricraftConfig(
 		if (!navigationBackend.equals(NAVIGATION_BARITONE) && !navigationBackend.equals(NAVIGATION_AIRICRAFT)) {
 			throw new IllegalArgumentException("navigation.backend must be baritone or airicraft, got " + navigationBackend);
 		}
+	}
+
+	public AiricraftConfig(int socialChatMaxDistanceBlocks, boolean readSystemChatMessages,
+		boolean enableProactiveSocialMode, boolean suppressAutoPauseOnFocusLost,
+		int blockInteractionDelayTicks, int cameraLerpDefaultTicks, DebugDashboardConfig debugDashboard,
+		String navigationBackend) {
+		this(socialChatMaxDistanceBlocks, readSystemChatMessages, enableProactiveSocialMode, suppressAutoPauseOnFocusLost,
+			blockInteractionDelayTicks, cameraLerpDefaultTicks, debugDashboard, navigationBackend, AiriSpeechConfig.defaults());
 	}
 
 	public AiricraftConfig(

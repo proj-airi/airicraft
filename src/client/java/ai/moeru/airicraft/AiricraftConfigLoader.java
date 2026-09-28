@@ -1,6 +1,7 @@
 package ai.moeru.airicraft;
 
 import ai.moeru.airicraft.dashboard.DebugDashboardConfig;
+import ai.moeru.airicraft.agent.chat.AiriSpeechConfig;
 import net.fabricmc.loader.api.FabricLoader;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -82,7 +83,17 @@ public final class AiricraftConfigLoader {
 			readInt(root, "blockInteractionDelayTicks", defaults.blockInteractionDelayTicks()),
 			readInt(root, "cameraLerpDefaultTicks", defaults.cameraLerpDefaultTicks()),
 			readDebugDashboardConfig(root, defaults.debugDashboard()),
-			readNavigationBackend(root, defaults.navigationBackend(), strict)
+			readNavigationBackend(root, defaults.navigationBackend(), strict),
+			readAiriSpeechConfig(root, defaults.airiSpeech(), strict)
+		);
+	}
+
+	private static AiriSpeechConfig readAiriSpeechConfig(Map<String, Object> root, AiriSpeechConfig defaults, boolean strict) {
+		Map<String, Object> speech = childMap(root, "airiSpeech");
+		return new AiriSpeechConfig(
+			readBoolean(speech, "enabled", defaults.enabled(), strict),
+			String.valueOf(speech.getOrDefault("websocketUrl", defaults.websocketUrl())),
+			String.valueOf(speech.getOrDefault("token", defaults.token()))
 		);
 	}
 

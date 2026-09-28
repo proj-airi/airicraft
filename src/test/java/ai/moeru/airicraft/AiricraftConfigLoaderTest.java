@@ -11,6 +11,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AiricraftConfigLoaderTest {
 	@Test
+	void airiSpeechIsOptInAndReadsItsConnectionSettings() {
+		assertFalse(AiricraftConfig.defaults().airiSpeech().enabled());
+		var parsed = AiricraftConfigLoader.fromMapStrict(Map.of("airiSpeech", Map.of(
+			"enabled", true, "websocketUrl", "ws://127.0.0.1:6121/ws", "token", "test-token"
+		)), AiricraftConfig.defaults());
+		assertTrue(parsed.airiSpeech().enabled());
+		assertEquals("ws://127.0.0.1:6121/ws", parsed.airiSpeech().websocketUrl());
+		assertEquals("test-token", parsed.airiSpeech().token());
+		assertThrows(IllegalArgumentException.class, () -> AiricraftConfigLoader.fromMapStrict(
+			Map.of("airiSpeech", Map.of("enabled", true, "websocketUrl", "http://localhost")), AiricraftConfig.defaults()));
+	}
+
+	@Test
 	void fromMapReadsChatRuntimeSettings() {
 		AiricraftConfig defaults = AiricraftConfig.defaults();
 

@@ -37,3 +37,9 @@ debugDashboard:
 # Reloadable with `airicraft reload`.
 navigation:
   backend: baritone
+# Copy the existing say output to AIRI's TTS and stage. Requires AIRI with output:speech support.
+# Copy the token from AIRI Settings > Connection. Keep it in your local config only.
+airiSpeech:
+  enabled: false
+  websocketUrl: "ws://localhost:6121/ws"
+  token: ""
