@@ -147,7 +147,7 @@ public final class EvaluationFlightRecorder {
 	}
 
 	private static boolean terminal(EvaluationStatus status) {
-		return status == EvaluationStatus.PASSED || status == EvaluationStatus.FAILED || status == EvaluationStatus.NEEDS_REVIEW;
+		return status.terminal();
 	}
 
 	private static void appendJsonl(Path path, Object value) throws IOException {

@@ -479,6 +479,22 @@ def arthasBootArgs = { boolean attachOnly ->
 	return args
 }
 
+def attentionReplayRun = providers.gradleProperty("airicraft.replayRun")
+def attentionReplayModule = providers.gradleProperty("airicraft.replayModule")
+tasks.register("attentionReplay", JavaExec) {
+	group = "airicraft debug"
+	description = "Re-decides a recorded run's attention decisions: -Pairicraft.replayRun=<run-dir> [-Pairicraft.replayModule=<attention.js>]."
+	dependsOn tasks.named("classes")
+	classpath = sourceSets.client.runtimeClasspath
+	mainClass.set("ai.moeru.airicraft.agent.attention.AttentionReplay")
+	doFirst {
+		if (!attentionReplayRun.isPresent()) throw new GradleException("Set -Pairicraft.replayRun=<run-dir>")
+		def replayArgs = [file(attentionReplayRun.get()).absolutePath]
+		if (attentionReplayModule.isPresent()) replayArgs.addAll(["--module", file(attentionReplayModule.get()).absolutePath])
+		args(replayArgs)
+	}
+}
+
 tasks.register("downloadArthasBoot") {
 	group = "airicraft debug"
 	description = "Downloads the pinned Arthas boot jar for dev-client diagnostics."

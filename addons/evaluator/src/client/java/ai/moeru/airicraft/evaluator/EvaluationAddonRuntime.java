@@ -485,6 +485,11 @@ public final class EvaluationAddonRuntime {
 		}
 
 		@Override
+		public long latestEventSeqNo() {
+			return runtime.latestEventSeqNo();
+		}
+
+		@Override
 		public long gameplayDecisionCount() { return runtime.plannerGameplayDecisionCount(); }
 
 		@Override

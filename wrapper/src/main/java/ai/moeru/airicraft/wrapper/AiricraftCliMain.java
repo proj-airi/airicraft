@@ -2699,7 +2699,19 @@ public final class AiricraftCliMain {
 			copy(view, eventPipeline, "rawLatestSeqNo", "plannerLatestSeqNo", "lastProcessedRawSeqNo", "lastRawEventSeqNo", "lastPlannerEventSeqNo", "lastEventType", "lastDecisionEffect", "lastTriggerType", "lastEmitSemantic", "lastEmitTrigger");
 			view.put("plannerAttemptCount", plannerAttempts.size());
 			view.put("timelineEntryCount", timelineTail.size());
+			Map<String, Object> attention = map(payload.get("attention"));
+			if (!attention.isEmpty()) {
+				view.put("attentionDecisionsRecorded", attention.get("recorded"));
+				view.put("attentionPendingWakes", maps(map(attention.get("scheduler")).get("pending")).size());
+				Object retainedBy = map(attention.get("scheduler")).get("retainedBy");
+				if (retainedBy != null) view.put("attentionRetainedBy", retainedBy);
+				view.put("attentionRules", map(attention.get("rules")));
+			}
 			if (verbose) {
+				if (!attention.isEmpty()) {
+					view.put("attentionCountsByRule", map(attention.get("countsByRule")));
+					view.put("attentionLatest", maps(attention.get("latest")));
+				}
 				copy(view, dialogueState, "lastResponse");
 				copy(view, chatProbe, "lastAttemptText", "lastEmissionText");
 				copy(view, payload, "task", "missionExecution");

@@ -74,6 +74,13 @@ import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.EventCatalog;
 import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
+import ai.moeru.airicraft.agent.attention.AttentionDecisionLog;
+import ai.moeru.airicraft.agent.attention.AttentionEvidence;
+import ai.moeru.airicraft.agent.attention.AttentionState;
+import ai.moeru.airicraft.agent.attention.IdleHook;
+import ai.moeru.airicraft.agent.attention.ReferenceAttentionPolicy;
+import ai.moeru.airicraft.agent.attention.RuleAttentionPolicy;
+import ai.moeru.airicraft.agent.attention.WakePresenter;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -240,6 +247,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AgentDebugRecorder debugRecorder = new AgentDebugRecorder();
 	private final AgentEventBus eventBus;
 	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
+	private final AttentionDecisionLog attentionDecisionLog = new AttentionDecisionLog();
+	private final RuleAttentionPolicy attentionPolicy;
+	private final WakePresenter wakePresenter;
 	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
@@ -432,8 +442,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			Boolean.getBoolean("airicraft.events.strict"), debugRecorder);
 		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
 		this.eventBus.subscribe(type -> type.equals("food.eaten") || type.equals("food.eat_failed"), foodOutcomes);
+		this.attentionPolicy = new RuleAttentionPolicy(this::attentionState, this::attentionEvidence, eventBus,
+			ai.moeru.airicraft.rules.RuleModule.bundledAttention());
+		this.wakePresenter = new WakePresenter(() -> this.survivalReflexRuntime.snapshot().state().name(),
+			() -> this.survivalReflexRuntime.policy());
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
-			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
+			eventPolicyState, eventRoutingProfiles, debugRecorder,
+			attentionPolicy, attentionDecisionLog);
 		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
 			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
 			(boundary, tick) -> {
@@ -1657,6 +1672,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public AgentEventBus.AgentEventBusStats debugEventBusState() { return eventBus.stats(); }
+
+	/** Attention decision totals and the latest decisions, for the bridge debug state and the dashboard. */
+	/** Selects the attention rule module; the controller passes the config override or the bundled module. */
+	public void useAttentionRules(ai.moeru.airicraft.rules.RuleModule module) {
+		attentionPolicy.useModule(module);
+	}
+
+	public Map<String, Object> debugAttentionState() {
+		var state = new LinkedHashMap<String, Object>(attentionDecisionLog.debugState(32));
+		state.put("rules", attentionPolicy.debugState());
+		state.put("scheduler", dialogueRuntime.wakeSchedulerDebugState());
+		return state;
+	}
+
+	public AttentionDecisionLog attentionDecisionLog() { return attentionDecisionLog; }
 
 	public Map<String, Object> debugSystem2() { return dialogueRuntime.system2Snapshot(); }
 
@@ -4591,7 +4621,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void drainEventPipeline() {
-		List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers = eventPipeline.drain(this::createPlannerTrigger);
+		List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers = eventPipeline.drain((event, profile) -> wakePresenter.present(event));
 		if (triggers.isEmpty()) {
 			return;
 		}
@@ -4613,33 +4643,37 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void maybeFireIdleIdeaTrigger(Optional<GoalSnapshot> activeGoal) {
 		boolean awaitingSafetyDecision = survivalReflexRuntime.snapshot().state() == SurvivalReflexState.AWAITING_PLANNER;
-		if (evaluationPlannerSuppressed
-			|| (actionGraphCoordinator.hasNonterminal() && !awaitingSafetyDecision)
-			|| !sessionSnapshot.companionActuationAllowed()
-			|| !config.llm().isConfigured()) {
-			idleIdeaScheduler.reset();
-			return;
-		}
+		boolean eligible = !evaluationPlannerSuppressed
+			&& (!actionGraphCoordinator.hasNonterminal() || awaitingSafetyDecision)
+			&& sessionSnapshot.companionActuationAllowed()
+			&& config.llm().isConfigured();
 		boolean jobIdle = isIdleForIdleIdeaScheduling(activeJobRuntime.current());
-		if (dialogueRuntime.continuePlannerGoal(tickCount, jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
-			primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
-			activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))) {
-			idleIdeaScheduler.reset();
-			return;
-		}
-		long nowMs = clock.millis();
-		idleIdeaScheduler.tick(jobIdle, tickCount, nowMs).ifPresent(trigger -> {
-			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
-			dialogueRuntime.onPlannerTrigger(
-				trigger,
-				sessionSnapshot,
-				primaryInteractionPlayer,
-				activeGoal,
-				taskSnapshot,
-				missionExecutionSnapshot,
-				PlannerFeedPublisher.wrap(plannerEventBuffer)
-			);
-		});
+		IdleHook.run(tickCount, eligible, List.of(
+			// W4: goal and delegation continuation, and the safety-hold reminder; holding also counts as handled.
+			new IdleHook.Named("goal_continuation", tick -> dialogueRuntime.continuePlannerGoal(tick,
+				jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
+				primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
+				activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))),
+			// W5: idle think.
+			new IdleHook.Named("idle_think", new IdleHook.Generator() {
+				@Override public boolean poll(long tick) {
+					idleIdeaScheduler.tick(jobIdle, tick, clock.millis()).ifPresent(trigger -> dialogueRuntime.onPlannerTrigger(
+						trigger,
+						sessionSnapshot,
+						primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
+						activeGoal,
+						taskSnapshot,
+						missionExecutionSnapshot,
+						PlannerFeedPublisher.wrap(plannerEventBuffer)
+					));
+					return false;
+				}
+
+				@Override public void reset() {
+					idleIdeaScheduler.reset();
+				}
+			})
+		));
 	}
 
 	static boolean isIdleForIdleIdeaScheduling(ActiveJob activeJob) {
@@ -4657,382 +4691,43 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		);
 	}
 
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createPlannerTrigger(SemanticEvent event, EventRoutingProfile profile) {
-		String eventType = event.type();
-		if (eventType == null) {
-			return null;
-		}
-		if (evaluationPlannerSuppressed && suppressAutonomousPlannerTriggerAfterEvaluation(eventType)) {
-			return null;
-		}
-		return switch (eventType) {
-			case "social.player_spoke" -> createPlayerSpokeTrigger(event);
-			case "social.player_addressed_agent" -> createAddressedChatTrigger(event);
-			case "social.local_controller_spoke" -> createLocalControllerTrigger(event);
-			case "social.system_message" -> createSystemTrigger(event);
-			case "pickup.item_picked_up" -> createPickupTrigger(event);
-			case "social.item_offered" -> createItemOfferTrigger(event);
-			case "crafting.item_crafted" -> createCraftTrigger(event);
-			case "combat.damage_taken" -> createDamageTrigger(event);
-			case "player.physical" -> createPhysicalTrigger(event);
-			case "reflex.resolved" -> createReflexResolvedTrigger(event);
-			case "smelting.output_ready" -> createSmeltingOutputReadyTrigger(event);
-			case "task.blocked" -> createTaskBlockedTrigger(event);
-			case "action_graph.goal_suspended" -> createActionGraphSuspendedTrigger(event);
-			case "action_graph.goal_terminal" -> createActionGraphTerminalTrigger(event);
-			default -> null;
-		};
-	}
 
-	private static boolean suppressAutonomousPlannerTriggerAfterEvaluation(String eventType) {
-		return switch (eventType) {
-			case "social.player_spoke",
-				"social.system_message",
-				"pickup.item_picked_up",
-				"social.item_offered",
-				"crafting.item_crafted",
-				"combat.damage_taken",
-				"player.physical",
-				"smelting.output_ready",
-				"task.blocked",
-				"action_graph.goal_suspended",
-				"action_graph.goal_terminal" -> true;
-			default -> false;
-		};
-	}
-
+	/** The attention gate followed by the trigger factory, as the pipeline applies them to a routed event. */
 	PlannerTrigger createPlannerTriggerForTests(SemanticEvent event, EventRoutingProfile profile) {
-		return createPlannerTrigger(event, profile);
+		return ReferenceAttentionPolicy.gate(event, attentionState(), attentionEvidence(event)).wakes()
+			? wakePresenter.present(event) : null;
 	}
 
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createPlayerSpokeTrigger(SemanticEvent event) {
+	/** Runtime facts for one attention decision. */
+	private AttentionState attentionState() {
+		ActiveJob job = activeJobRuntime.current();
+		return new AttentionState(
+			evaluationPlannerSuppressed,
+			proactiveSocialModeEnabled(),
+			survivalReflexRuntime.snapshot().ownsActuation(),
+			job == null ? null : job.type().name(),
+			job == null || job.isIdle(),
+			job != null && job.status().terminal(),
+			suppressPlannerTriggersForPendingCraftToolResult()
+		);
+	}
+
+	/** Chat facts the policy cannot compute from the payload alone; other events carry none. */
+	private AttentionEvidence attentionEvidence(SemanticEvent event) {
+		String type = event.type();
+		if (!"social.player_spoke".equals(type) && !"social.player_addressed_agent".equals(type)
+			&& !"social.local_controller_spoke".equals(type)) {
+			return AttentionEvidence.NONE;
+		}
 		String player = stringPayloadValue(event.payload(), "player");
 		String message = stringPayloadValue(event.payload(), "message");
-		if (player == null || message == null) {
-			return null;
-		}
-		if (ChatIngestService.isAddressedToAgent(message)) {
-			return null;
-		}
-		if (!proactiveSocialModeEnabled() || !playerChatWithinConfiguredDistance(player)) {
-			return null;
-		}
-		return PlannerTrigger.autonomous(PlannerTriggerType.CHAT, player, message, event.tick(), event.timestampMs(), "ambient_player_chat");
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createAddressedChatTrigger(SemanticEvent event) {
-		String player = stringPayloadValue(event.payload(), "player");
-		String message = stringPayloadValue(event.payload(), "message");
-		if (player == null || message == null) {
-			return null;
-		}
-		if (DialogueRuntime.isResetCommand(message) || !playerChatWithinConfiguredDistance(player)) {
-			return null;
-		}
-		return PlannerTrigger.direct(PlannerTriggerType.CHAT, player, message, event.tick(), event.timestampMs());
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createLocalControllerTrigger(SemanticEvent event) {
-		String message = stringPayloadValue(event.payload(), "message");
-		if (message == null || DialogueRuntime.isResetCommand(message)) {
-			return null;
-		}
-		return PlannerTrigger.direct(
-			PlannerTriggerType.CHAT,
-			DialogueSpeakerLabels.SAME_CLIENT_ADMIN,
-			message,
-			event.tick(),
-			event.timestampMs()
+		return new AttentionEvidence(
+			message != null && ChatIngestService.isAddressedToAgent(message),
+			message != null && DialogueRuntime.isResetCommand(message),
+			player != null && playerChatWithinConfiguredDistance(player)
 		);
 	}
 
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createSystemTrigger(SemanticEvent event) {
-		String message = stringPayloadValue(event.payload(), "message");
-		if (message == null || !proactiveSocialModeEnabled()) {
-			return null;
-		}
-		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "server", message, event.tick(), event.timestampMs(), "system_message");
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createActionGraphSuspendedTrigger(SemanticEvent event) {
-		String executionId = stringPayloadValue(event.payload(), "executionId");
-		String pendingWatch = stringPayloadValue(event.payload(), "pendingWatch");
-		if (executionId == null) {
-			return null;
-		}
-		String message = "ACTION GRAPH SUSPENDED: executionId=" + executionId
-			+ " pendingWatch=" + (pendingWatch == null ? "" : pendingWatch)
-			+ ". The goal released foreground actuation while it waits for a world condition. "
-			+ "You may send one short chat message explaining the wait, start at most one useful new high-level goal with start_action_goal, or simply acknowledge without taking action. "
-			+ "Do not invent filler work. The suspended goal will resume automatically after its condition is fulfilled and current foreground work finishes.";
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.SYSTEM,
-			"action_graph",
-			message,
-			event.tick(),
-			event.timestampMs(),
-			"action_graph_suspended:" + executionId
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createActionGraphTerminalTrigger(SemanticEvent event) {
-		String executionId = stringPayloadValue(event.payload(), "executionId");
-		String state = stringPayloadValue(event.payload(), "state");
-		if (executionId == null || !"FAILED".equals(state)) {
-			return null;
-		}
-		String goal = stringPayloadValue(event.payload(), "goal");
-		String failureCode = stringPayloadValue(event.payload(), "failureCode");
-		String failureMessage = stringPayloadValue(event.payload(), "message");
-		String failedPrimitive = stringPayloadValue(event.payload(), "failedPrimitive");
-		String failedTarget = stringPayloadValue(event.payload(), "failedTarget");
-		Object failedArgs = event.payload().get("failedArgs");
-		String normalizedCode = failureCode == null ? "failed" : failureCode;
-		String message = "ACTION GRAPH FAILED: executionId=" + executionId
-			+ " goal=" + (goal == null ? "" : goal)
-			+ " failedPrimitive=" + (failedPrimitive == null ? "" : failedPrimitive)
-			+ " failedTarget=" + (failedTarget == null ? "" : failedTarget)
-			+ " failedArgs=" + (failedArgs == null ? "{}" : failedArgs)
-			+ " failureCode=" + normalizedCode
-			+ " message=" + (failureMessage == null ? "" : failureMessage)
-			+ ". Explain the terminal failure accurately. ";
-		if ("unknown_acquisition_method".equals(normalizedCode) || "unsupported_resource_kind".equals(normalizedCode)) {
-			message += "Airicraft has no registered acquisition method for this request. This requested capability is unsupported; do not retry it unchanged or invent an acquisition method. Another observed supported action may still serve the objective.";
-		}
-		else {
-			message += "Do not claim completion. Assess the identified failure and choose a supported next attempt toward the objective.";
-		}
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.SYSTEM,
-			"action_graph",
-			message,
-			event.tick(),
-			event.timestampMs(),
-			"action_graph_terminal:" + executionId
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createPickupTrigger(SemanticEvent event) {
-		if (suppressPlannerTriggersForCollectResourceProgress()) {
-			return null;
-		}
-		String itemId = stringPayloadValue(event.payload(), "itemId");
-		Float count = floatPayloadValue(event.payload(), "count");
-		if (itemId == null || count == null) {
-			return null;
-		}
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.PICKUP,
-			"self",
-			"Picked up " + formatDecimal(count) + "x " + itemId + ".",
-			event.tick(),
-			event.timestampMs(),
-			"pickup:" + itemId
-		);
-	}
-
-	private EventPolicyDecision resolveDefaultEventPolicy(SemanticEvent event, EventRoutingProfile profile) {
-		if (event == null || !"pickup.item_picked_up".equals(event.type())) {
-			return EventPolicyDecision.allow();
-		}
-		ActiveJob current = activeJobRuntime.current();
-		if (current == null || current.isIdle() || current.status().terminal()) {
-			return EventPolicyDecision.allow();
-		}
-		if (current.type() != ActiveJobType.MINE_BLOCKS && current.type() != ActiveJobType.ENSURE_BLOCKS_IN_INVENTORY) {
-			return EventPolicyDecision.allow();
-		}
-		return new EventPolicyDecision(
-			EventPolicyEffect.SEMANTIC_ONLY,
-			"default-mining-pickup-semantic-only",
-			"pickup progress is owned by the active mining job",
-			false
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createCraftTrigger(SemanticEvent event) {
-		if (suppressPlannerTriggersForCollectResourceProgress() || suppressPlannerTriggersForPendingCraftToolResult()) {
-			return null;
-		}
-		String itemId = stringPayloadValue(event.payload(), "itemId");
-		Float count = floatPayloadValue(event.payload(), "count");
-		if (itemId == null || count == null) {
-			return null;
-		}
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.CRAFT,
-			"self",
-			"I crafted " + formatDecimal(count) + "x " + itemId + ".",
-			event.tick(),
-			event.timestampMs(),
-			"craft:" + itemId
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createDamageTrigger(SemanticEvent event) {
-		if (survivalReflexRuntime.snapshot().ownsActuation()) {
-			return null;
-		}
-		Map<String, Object> payload = event.payload();
-		String damageTypeId = stringPayloadValue(payload, "damageTypeId");
-		String attackerName = stringPayloadValue(payload, "attackerName");
-		Float amount = floatPayloadValue(payload, "amount");
-		Float resultingHealth = floatPayloadValue(payload, "healthAfter");
-		if (amount == null && resultingHealth == null) {
-			return null;
-		}
-
-		StringBuilder message = new StringBuilder("I took ")
-			.append(formatDecimal(amount == null ? 0.0F : amount))
-			.append(" damage");
-		if (attackerName != null) {
-			message.append(" from ").append(attackerName);
-		}
-		else if (damageTypeId != null) {
-			message.append(" from ").append(damageTypeId);
-		}
-		if (resultingHealth != null) {
-			message.append(" and dropped to ").append(formatDecimal(resultingHealth)).append(" health");
-		}
-		message.append('.');
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.DAMAGE,
-			"self",
-			message.toString(),
-			event.tick(),
-			event.timestampMs(),
-			"damage"
-		);
-	}
-
-	private PlannerTrigger createItemOfferTrigger(SemanticEvent event) {
-		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
-			"Possible item offer: " + event.payload().get("player") + " dropped " + event.payload().get("count")
-				+ "x " + event.payload().get("itemId") + " toward me at " + event.payload().get("position")
-				+ ". The player and intent are inferred from spawn position and motion; this is not confirmed pickup."
-				+ " Decide whether to collect or acknowledge the items using current world evidence.",
-			event.tick(), event.timestampMs(), "item_offer:" + event.payload().get("playerUuid"),
-			new com.google.gson.Gson().toJsonTree(event.payload()));
-	}
-
-	private PlannerTrigger createPhysicalTrigger(SemanticEvent event) {
-		// Reflex observations still reach the semantic feed; its existing resolution event wakes the planner.
-		if (survivalReflexRuntime.snapshot().ownsActuation()) return null;
-		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
-			"Physical observation: " + new com.google.gson.Gson().toJson(event.payload())
-				+ ". These are observed changes, not proof of an involuntary cause. Use the actual position and task context to decide whether recovery is needed.",
-			event.tick(), event.timestampMs(), "physical:" + event.payload().get("kind"));
-	}
-
-	private PlannerTrigger createReflexResolvedTrigger(SemanticEvent event) {
-		String holdId = stringPayloadValue(event.payload(), "holdId");
-		String cause = stringPayloadValue(event.payload(), "cause");
-		String reason = stringPayloadValue(event.payload(), "reason");
-		String nextState = stringPayloadValue(event.payload(), "nextState");
-		String message = "SURVIVAL UPDATE: reflex resolved cause=" + (cause == null ? "unknown" : cause)
-			+ " reason=" + (reason == null ? "safe" : reason)
-			+ " state=" + (nextState == null ? survivalReflexRuntime.snapshot().state().name() : nextState)
-			+ " holdId=" + (holdId == null ? "none" : holdId)
-			+ (holdId == null
-				? ". Review the consolidated safety episode; no interrupted task requires resumption."
-				: ". Review the consolidated safety episode and use continue to retain and resume the plan, or clear_queue to abort and replace it.");
-		if (event.payload().get("combatSummary") instanceof Map<?, ?> combatSummary) {
-			message += " " + combatSummary.get("text") + " Resolution position=" + event.payload().get("position")
-				+ ". Use these recorded outcomes directly; re-observe only facts that remain unknown or may have changed.";
-		}
-		if ("combat_stalemate".equals(reason)) {
-			message += " Combat is still unresolved and made no target-health or closing progress for "
-				+ event.payload().get("noProgressTicks") + " ticks. Position=" + event.payload().get("position")
-				+ "; remainingThreats=" + event.payload().get("remainingThreats")
-				+ ". Inspect local geometry and inventory, then execute a concrete escape or cover plan. Do not resume the same stalled pursuit."
-				+ " You have a bounded recovery window: ordinary mob pressure will not preempt your action for 600 ticks after releasing the hold."
-				+ " Critical health, an imminent creeper, or drowning can interrupt. Mining steps or towering may be needed to escape a pit.";
-		}
-		if ("combat_approach_stalled".equals(reason)) {
-			message += " Combat is unresolved: pursuit made no closer approach to the distant threats for "
-				+ event.payload().get("noProgressTicks") + " ticks. Position=" + event.payload().get("position")
-				+ "; remainingThreats=" + event.payload().get("remainingThreats")
-				+ ". Choose a tactical next step from fresh geometry and inventory; repeated pursuit has made no progress."
-				+ " These distant attackers are deferred while you act; close danger, incoming projectiles, damage or a new attacker reactivate defense.";
-		}
-		message += " Automatic reflex policy=" + survivalReflexRuntime.policy()
-			+ ". Use configure_reflex to read or override it for a deliberate tactic; policy changes do not resume paused work.";
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.SYSTEM,
-			"survival_runtime",
-			message,
-			event.tick(),
-			event.timestampMs(),
-			"survival_reflex_resolved",
-			new com.google.gson.Gson().toJsonTree(event.payload())
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createSmeltingOutputReadyTrigger(SemanticEvent event) {
-		Map<String, Object> payload = event.payload();
-		String processId = stringPayloadValue(payload, "processId");
-		String outputItemId = stringPayloadValue(payload, "outputItemId");
-		Float outputCount = floatPayloadValue(payload, "outputCount");
-		String station = stringPayloadValue(payload, "station");
-		boolean estimated = booleanPayloadValue(payload, "estimated");
-		if (processId == null || outputItemId == null || outputCount == null) {
-			return null;
-		}
-		StringBuilder message = new StringBuilder("Smelting output ready: processId=")
-			.append(processId)
-			.append(" output=")
-			.append(outputItemId)
-			.append("x")
-			.append(formatDecimal(outputCount));
-		if (estimated) {
-			message.append(" estimated=true");
-		}
-		if (station != null) {
-			message.append(" station=").append(station);
-		}
-		message.append(". Output still needs collection: call collect_smelted_items with this processId, then verify inventory.");
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.SYSTEM,
-			"runtime",
-			message.toString(),
-			event.tick(),
-			event.timestampMs(),
-			"smelting_output:" + processId
-		);
-	}
-
-	private ai.moeru.airicraft.agent.llm.PlannerTrigger createTaskBlockedTrigger(SemanticEvent event) {
-		Map<String, Object> payload = event.payload();
-		String taskType = stringPayloadValue(payload, "taskType");
-		String resourceKind = stringPayloadValue(payload, "resourceKind");
-		String blockedReason = stringPayloadValue(payload, "blockedReason");
-		Float collected = floatPayloadValue(payload, "collected");
-		Float remaining = floatPayloadValue(payload, "remaining");
-		if (taskType == null || blockedReason == null) {
-			return null;
-		}
-
-		StringBuilder message = new StringBuilder("Task blocked: taskType=").append(taskType);
-		if (resourceKind != null) {
-			message.append(" resourceKind=").append(resourceKind);
-		}
-		message.append(" reason=").append(blockedReason);
-		if (collected != null) {
-			message.append(" collected=").append(formatDecimal(collected));
-		}
-		if (remaining != null) {
-			message.append(" remaining=").append(formatDecimal(remaining));
-		}
-		message.append('.');
-		return PlannerTrigger.autonomous(
-			PlannerTriggerType.SYSTEM,
-			"runtime",
-			message.toString(),
-			event.tick(),
-			event.timestampMs(),
-			"task_blocked"
-		);
-	}
 
 	private void recordSmeltingOutputReadyEvents(MinecraftClient client) {
 		if (!sessionSnapshot.worldLoaded() || !smeltingProcessManager.hasTrackedProcesses()) {
@@ -5137,11 +4832,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
 		return EventCatalog.defaults().routingProfiles();
-	}
-
-	private boolean suppressPlannerTriggersForCollectResourceProgress() {
-		ActiveJob current = activeJobRuntime.current();
-		return current.type() == ActiveJobType.COLLECT_RESOURCE && !current.status().terminal();
 	}
 
 	private boolean suppressPlannerTriggersForPendingCraftToolResult() {
@@ -5674,25 +5364,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return text.isBlank() ? null : text;
 	}
 
-	private static Float floatPayloadValue(Map<String, Object> payload, String key) {
-		if (payload == null) {
-			return null;
-		}
-		Object value = payload.get(key);
-		if (value instanceof Number number) {
-			return number.floatValue();
-		}
-		if (value == null) {
-			return null;
-		}
-		try {
-			return Float.parseFloat(String.valueOf(value));
-		}
-		catch (NumberFormatException ignored) {
-			return null;
-		}
-	}
-
 	private static boolean booleanPayloadValue(Map<String, Object> payload, String key) {
 		if (payload == null) {
 			return false;
@@ -5702,21 +5373,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return booleanValue;
 		}
 		return value != null && Boolean.parseBoolean(String.valueOf(value));
-	}
-
-	private static String formatDecimal(float value) {
-		if (Math.abs(value - Math.round(value)) < 0.001F) {
-			return Integer.toString(Math.round(value));
-		}
-		String text = String.format(java.util.Locale.ROOT, "%.2f", value);
-		int trimIndex = text.length();
-		while (trimIndex > 0 && text.charAt(trimIndex - 1) == '0') {
-			trimIndex--;
-		}
-		if (trimIndex > 0 && text.charAt(trimIndex - 1) == '.') {
-			trimIndex--;
-		}
-		return text.substring(0, trimIndex);
 	}
 
 	private static Map<String, Object> mapOfNullable(Object... pairs) {

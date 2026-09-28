@@ -411,6 +411,60 @@ def summary_table(ledgers):
     return "\n".join(rows)
 
 
+REPLAY_SCHEMA = "airicraft.attention-replay.v1"
+
+
+def replay_summary(run_dir, examples=10):
+    """Summarize attention-replay.json written by `./gradlew attentionReplay -Pairicraft.replayRun=<run>`."""
+    path = run_dir / "attention-replay.json"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found; run ./gradlew attentionReplay -Pairicraft.replayRun={run_dir} first")
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if report.get("schema") != REPLAY_SCHEMA:
+        raise ValueError(f"{path} has schema {report.get('schema')!r}, expected {REPLAY_SCHEMA}")
+    entries = report.get("entries", [])
+    by_type = defaultdict(lambda: [0, 0, 0])
+    transitions = Counter()
+    for entry in entries:
+        row = by_type[entry["type"]]
+        row[0] += 1
+        if entry["recordedDiffersFromReference"]:
+            row[1] += 1
+            transitions[("recorded→reference", entry["type"], entry["recorded"]["ruleId"], entry["reference"]["ruleId"])] += 1
+        if entry["rulesDifferFromReference"]:
+            row[2] += 1
+            transitions[("reference→rules", entry["type"], entry["reference"]["ruleId"], entry["rules"]["ruleId"])] += 1
+    engine = report.get("ruleEngine") or {}
+    lines = [
+        f"run: {report.get('runDir')}",
+        f"module: {report.get('module')} ({report.get('moduleSha')})",
+        f"decisions: {report.get('decisions')}  replayed: {report.get('replayed')}  "
+        f"skipped without inputs: {report.get('skippedWithoutInputs')}  missing events: {report.get('missingEvents')}",
+        f"recorded differs from reference: {report.get('recordedVsReference')}",
+        f"rules differ from reference: {report.get('referenceVsRules')}",
+        f"rule engine: steps {engine.get('steps', 0)}, fallbacks {engine.get('fallbacks', 0)}, failures {engine.get('failures', 0)}, "
+        f"clamps {engine.get('clamps', 0)}, reverts {engine.get('reverts', 0)}",
+        "",
+        "| Event type | Replayed | Recorded≠reference | Reference≠rules |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for event_type in sorted(by_type):
+        replayed, recorded, rules = by_type[event_type]
+        lines.append(f"| {event_type} | {replayed} | {recorded} | {rules} |")
+    if transitions:
+        lines += ["", "| Comparison | Event type | From rule | To rule | Count |", "| --- | --- | --- | --- | ---: |"]
+        for (comparison, event_type, before, after), count in sorted(transitions.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"| {comparison} | {event_type} | {before} | {after} | {count} |")
+    differing = [e for e in entries if e["recordedDiffersFromReference"] or e["rulesDifferFromReference"]]
+    if differing:
+        lines += ["", f"first {min(examples, len(differing))} of {len(differing)} differing decisions:"]
+        for entry in differing[:examples]:
+            view = lambda d: f"{d['delivery']}/{d['urgency']}/{'semantic' if d['emitSemantic'] else 'no-semantic'}/{d['ruleId']}"
+            lines.append(f"  #{entry['seqNo']} tick {entry['tick']} {entry['type']}: recorded {view(entry['recorded'])}, "
+                         f"reference {view(entry['reference'])}, rules {view(entry['rules'])}")
+    return "\n".join(lines)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -422,6 +476,9 @@ def main(argv=None):
     diff = commands.add_parser("diff")
     diff.add_argument("before", type=Path)
     diff.add_argument("after", type=Path)
+    replay = commands.add_parser("replay-summary", help="summarize attention-replay.json from ./gradlew attentionReplay")
+    replay.add_argument("run_dir", type=Path)
+    replay.add_argument("--examples", type=int, default=10)
     args = parser.parse_args(argv)
     if args.command == "ledger":
         result = json.dumps(build_ledger(args.run_dir), indent=2, ensure_ascii=False) + "\n"
@@ -431,6 +488,12 @@ def main(argv=None):
             sys.stdout.write(result)
     elif args.command == "summarize":
         print(summary_table([build_ledger(path) for path in args.run_dirs]))
+    elif args.command == "replay-summary":
+        try:
+            print(replay_summary(args.run_dir, args.examples))
+        except (FileNotFoundError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
     else:
         print(json.dumps(diff_ledgers(json.loads(args.before.read_text()), json.loads(args.after.read_text())), indent=2))
     return 0

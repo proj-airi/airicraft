@@ -52,6 +52,7 @@ class EvaluationScenarioLoaderTest {
 			  maxElapsedTicks: 1200
 			  maxElapsedMillis: 60000
 			  heartbeatIntervalTicks: 40
+			  maxStallTicks: 900
 			checks:
 			  - type: inventory_contains
 			    itemId: minecraft:iron_ingot
@@ -84,6 +85,9 @@ class EvaluationScenarioLoaderTest {
 		assertEquals(1200L, scenario.budget().maxElapsedTicks());
 		assertEquals(60000L, scenario.budget().maxElapsedMillis());
 		assertEquals(40L, scenario.budget().heartbeatIntervalTicks());
+		assertEquals(900L, scenario.budget().maxStallTicks());
+		assertEquals(EvaluationBudget.DEFAULT_MAX_STALL_TICKS,
+			EvaluationScenarioLoader.fromMap(java.util.Map.of("budget", java.util.Map.of("maxPlannerTurns", 3)), null).budget().maxStallTicks());
 		assertEquals(1, scenario.checks().size());
 		assertEquals("inventory_contains", scenario.checks().getFirst().type());
 		assertEquals("minecraft:iron_ingot", scenario.checks().getFirst().string("itemId"));

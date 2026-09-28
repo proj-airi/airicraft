@@ -30,6 +30,9 @@ final class WakeScenarioHarness implements AutoCloseable {
 			ignored -> backend, clock);
 		runtime.overrideSessionSnapshotForTests(new SessionSnapshot(SessionMode.REMOTE_MULTIPLAYER, true, true, "minecraft:overworld", false, 0, 0));
 		runtime.overrideActionGraphResolutionExecutorForTests(pendingResolutions::add);
+		// Decide through the bundled GraalJS rules, not the cold-engine fallback; both decide identically.
+		try { ai.moeru.airicraft.rules.RuleEngine.shared(ai.moeru.airicraft.rules.RuleModule.bundledAttention()).awaitReady(Duration.ofSeconds(60)); }
+		catch (ai.moeru.airicraft.rules.RuleException exception) { throw new AssertionError(exception); }
 		backend.closeGate();
 	}
 	void tick(int count) {

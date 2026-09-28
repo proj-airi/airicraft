@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.recording;
 
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
+import ai.moeru.airicraft.agent.attention.AttentionDecisionLog;
 import ai.moeru.airicraft.agent.debug.LlmFlightRecordQueryResult;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -22,9 +23,11 @@ public final class RuntimeFlightRecorder {
 	private Long latestEventSeqNo;
 	private Long latestTimelineEntryId;
 	private Long latestLlmSequenceId;
+	private Long latestAttentionSeqNo;
 	private boolean eventsTruncated;
 	private boolean timelineTruncated;
 	private boolean llmCallsTruncated;
+	private boolean attentionDecisionsTruncated;
 	private final TreeSet<Long> pendingLlmCalls = new TreeSet<>();
 
 	public RuntimeFlightRecorder(Path outputDir) throws IOException {
@@ -37,6 +40,7 @@ public final class RuntimeFlightRecorder {
 		drainEvents(runtime, collectedAt);
 		drainTimeline(runtime, collectedAt);
 		drainLlmCalls(runtime::llmFlightRecords, collectedAt);
+		drainAttentionDecisions(runtime.attentionDecisionLog(), collectedAt);
 	}
 
 	public Map<String, Object> statusPayload() {
@@ -47,6 +51,8 @@ public final class RuntimeFlightRecorder {
 		status.put("eventsTruncated", eventsTruncated);
 		status.put("debugTimelineTruncated", timelineTruncated);
 		status.put("llmCallsTruncated", llmCallsTruncated);
+		status.put("attentionDecisionsLatestSeqNo", latestAttentionSeqNo);
+		status.put("attentionDecisionsTruncated", attentionDecisionsTruncated);
 		return status;
 	}
 
@@ -83,6 +89,16 @@ public final class RuntimeFlightRecorder {
 		timelineTruncated = timelineTruncated || result.truncated();
 		for (var entry : result.entries()) {
 			appendJsonl(outputDir.resolve("debug-timeline.jsonl"), Map.of("collectedAt", collectedAt, "entry", entry));
+		}
+	}
+
+	/** Decisions with their inputs, so {@code AttentionReplay} can re-decide the run. */
+	void drainAttentionDecisions(AttentionDecisionLog log, String collectedAt) throws IOException {
+		var result = log.query(latestAttentionSeqNo);
+		attentionDecisionsTruncated = attentionDecisionsTruncated || result.truncated();
+		for (var decision : result.decisions()) {
+			appendJsonl(outputDir.resolve("attention-decisions.jsonl"), Map.of("collectedAt", collectedAt, "decision", decision));
+			latestAttentionSeqNo = decision.seqNo();
 		}
 	}
 

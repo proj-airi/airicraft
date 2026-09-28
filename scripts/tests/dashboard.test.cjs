@@ -144,3 +144,50 @@ test('a preview without inspectable attachments cannot enable save', async t => 
   await page.waitForFunction(() => !document.getElementById('report-preview').disabled);
   assert.equal(await page.isDisabled('#report-save'), true);
 });
+test('attention view explains wakes, pending wakes and the rule engine, filtered by search', async t => {
+  const page = await dashboard(t);
+  const result = await page.evaluate(() => {
+    state.view = 'attention';
+    const decision = (seqNo, type, delivery, stage, ruleId) => ({seqNo, tick: seqNo * 10, type, emitSemantic: true, delivery,
+      urgency: 'LOW', stage, ruleId, reason: ruleId + ' reason', wakeProduced: delivery === 'IMMEDIATE'});
+    addObservations([{sequence:1,type:'runtime_snapshot',capturedAtMs:1000,payload:{attention:{recorded:2,dropped:0,
+      countsByRule:{'catalog.trigger':1,'ownership.reflex_actuation':1},
+      latest:[decision(1,'pickup.item_picked_up','IMMEDIATE','RULES','catalog.trigger'),
+        decision(2,'combat.damage_taken','NONE','FALLBACK','ownership.reflex_actuation')],
+      rules:{module:'config:rules/attention.js',ready:true,steps:5,fallbacks:1,failures:1,clamps:2,reverts:0,rebuilds:0,stateBytes:2,lastFailure:'guest_error: bad'},
+      scheduler:{pending:[{path:'W2',urgency:'HIGH',tick:30,eventRefs:[7],guidanceRevision:0}],retainedBy:'G5.run_policy'}}}}]);
+    const all = el('content').textContent;
+    state.search = 'reflex'; render();
+    return {all, filtered: el('content').textContent};
+  });
+  assert.match(result.all, /OVERRIDE/);
+  assert.match(result.all, /guest_error: bad/);
+  assert.match(result.all, /held by G5\.run_policy/);
+  assert.match(result.all, /pickup\.item_picked_up/);
+  assert.match(result.all, /wake · LOW/);
+  assert.match(result.filtered, /combat\.damage_taken/);
+  assert.doesNotMatch(result.filtered, /pickup\.item_picked_up/);
+});
+test('attention view hides raw-only decisions until the toggle is checked', async t => {
+  const page = await dashboard(t);
+  const result = await page.evaluate(() => {
+    state.view = 'attention';
+    const decision = (seqNo, type, ruleId) => ({seqNo, tick: seqNo, type, emitSemantic: false, delivery: 'NONE', urgency: 'LOW',
+      stage: 'RULES', ruleId, reason: '', wakeProduced: false});
+    addObservations([{sequence:1,type:'runtime_snapshot',capturedAtMs:1000,payload:{attention:{recorded:2,dropped:0,countsByRule:{},
+      latest:[decision(1,'work.changed','catalog.raw_only'), decision(2,'pickup.item_picked_up','ownership.collect_resource_progress')],
+      rules:{module:'bundled:attention/default.js',ready:true},scheduler:{pending:[]}}}}]);
+    const hidden = el('content').textContent;
+    const toggle = el('attention-raw');
+    toggle.checked = true; toggle.dispatchEvent(new Event('change'));
+    const shown = el('content').textContent;
+    addObservations([{sequence:2,type:'visual_frame',capturedAtMs:1001,payload:{}}]);
+    return {hidden, shown, stillChecked: el('attention-raw').checked, afterLive: el('content').textContent};
+  });
+  assert.doesNotMatch(result.hidden, /work\.changed/);
+  assert.match(result.hidden, /1 raw-only hidden/);
+  assert.match(result.hidden, /pickup\.item_picked_up/);
+  assert.match(result.shown, /work\.changed/);
+  assert.equal(result.stillChecked, true);
+  assert.match(result.afterLive, /work\.changed/);
+});

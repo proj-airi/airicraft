@@ -195,7 +195,7 @@ Phase 0 probes preserve current behavior. `WakeDefectProbeTest`,
 | D4 | Confirmed paths; second request suppressed | One `reflex.resolved` attempts W1 and W2; `G5.incorporated` drops W2, leaving one backend request. |
 | D5 | Refuted for direct-navigation failure | Both W2 references identify the causal `task.failed` / `work.changed` event. Generic “Work changed.” prose still occurs because those events lack `task.notice` message prose. Other producers are not proven by this probe. |
 | D6 | Fixed in Phase 1 | The Phase 0 probe showed EATING stayed RUNNING after a 512-event flood evicted `food.eaten`. With the bounded food-outcome subscriber, the same flood and the no-flood control both reach SUCCEEDED. This proves the state-channel fix in the probe, not its gameplay frequency. |
-| D7 | Confirmed | Five minutes of wall time with no ticks causes one idle-think wake on the first resumed tick; there is no catch-up burst. |
+| D7 | Fixed in Phase 2 | The Phase 0 probe showed five minutes of wall time with no ticks causing one idle-think wake on the first resumed tick. `IdleIdeaScheduler` now counts agent ticks, so a pause adds no idle time; the idle-think goldens moved from tick 2 to tick 601 accordingly. |
 | D8 | Confirmed | Offers and graph failures are absent from canonical observation; a second offer with the same player key replaces the first prose trigger. |
 
 Fatal damage currently wakes before respawn; the death golden pins this
@@ -879,26 +879,35 @@ changed.
 
 ### Phase 2: attention policy and wake scheduler (behaviour-preserving)
 
-- [ ] Add `AttentionState`, the Stage A constitution and Stage C clamp in
+Task-level plan, with the decisions Q1–Q9 taken on 2026-09-28 and the
+revisions made during implementation (slices 0 and 2a–2d, Stage-B rules run
+synchronously once warm with the Java reference policy as fallback, a paired
+same-session A/B gate, D7 fixed here, D4 deferred to Phase 3):
+[`plans/2026-09-28-planner-event-system-phase-2.md`](../plans/2026-09-28-planner-event-system-phase-2.md).
+
+- [x] Add `AttentionState`, the Stage A constitution and Stage C clamp in
   Java, and `AttentionDecisionLog`.
-- [ ] Add the GraalJS rule engine (4.12): a worker thread, the per-step JSON
-  contract, host-owned state, the deterministic clock and seed, failure
-  fallback and revert, `rules/lib.js`, and loading overrides from
-  `config/airicraft/rules/` on `airicraft reload`.
-- [ ] Write the bundled `attention/default.js` so that it reproduces G1–G7
+- [x] Add the GraalJS rule engine (4.12): the per-step JSON contract,
+  host-owned state, the deterministic clock and seed, failure fallback and
+  revert, `rules/lib.js`, and loading overrides from
+  `config/airicraft/rules/` on `airicraft reload`. Revised: the engine warms
+  off-thread and then steps synchronously on the routing thread, not on a
+  worker thread (see the plan's revisions).
+- [x] Write the bundled `attention/default.js` so that it reproduces G1–G7
   and G9. Planner-authored `update_event_policy` rules become a table this
   module reads. The golden suite runs through the real engine.
-- [ ] Add `WakeScheduler` with the pending set, satisfaction, supersession and
+- [x] Add `WakeScheduler` with the pending set, satisfaction, supersession and
   idle hook. Retire the W2/W3 deque, `continuePlannerGoal` scheduling,
-  `IdleIdeaScheduler` timing (it becomes the idle-think generator), the
-  delegation start wake, evaluation seed wakes, and FIFO/checkpoint result
-  review (W9) as separate scheduling paths. Preserve their characterized
-  evidence and tool-result delivery.
-- [ ] Move trigger prose out of `EmbodiedAgentRuntime` into a presenter keyed
-  by event type, producing the same strings in this phase. Move the orchestrator's
-  coalesce window into the scheduler. If tick timing changes delivery, record
-  the difference.
-- [ ] Add the dashboard panel for wake decisions.
+  `IdleIdeaScheduler` timing (it becomes the idle-think generator), and
+  evaluation seed wakes as separate scheduling paths. Preserve their
+  characterized evidence and tool-result delivery. Revised: the delegation
+  start wake (W6) is admitted through the scheduler but still raised in
+  `DialogueRuntime.poll`; FIFO/checkpoint result review (W9) moves with the
+  supersede budget in Phase 5.
+- [x] Move trigger prose out of `EmbodiedAgentRuntime` into a presenter keyed
+  by event type, producing the same strings in this phase. Revised: the
+  orchestrator's coalesce window moves in Phase 5 with the supersede budget.
+- [x] Add the dashboard panel for wake decisions.
 
 Exit: golden prompts unchanged (except documented timing); wake replay of at
 least two recorded playtests shows no unexplained decision diffs; the
@@ -914,6 +923,29 @@ changes require an explained, characterized defect fix;
 new failure classes and recording gaps are not excused by baseline failures.
 `EmbodiedAgentRuntime` loses the routing table, the trigger
 factories and the suppression helpers.
+
+**Phase 2 status (2026-09-28):** Slices 0 and 2a–2d are implemented.
+
+- **Verification.** The full build passes: 1,821 tests, 0 failures. A 200×
+  repeat of the golden scenarios is stable.
+- **Goldens.** Only the D7 fix changed goldens. Its idle-think wakes moved
+  from tick 2 to tick 601. The bundled rules match the Java reference on
+  5,000 generated cases, so routing Stage B through GraalJS changed no wake.
+- **What moved out of `EmbodiedAgentRuntime`.**
+  - Moved: the trigger prose (now in `WakePresenter`), the attention checks
+    in the trigger factories, and the idle wake scheduling.
+  - Still there: the routing profiles, and the fact helpers that feed
+    `AttentionState`.
+- **Deferred.** D4 goes to Phase 3. W9 and the orchestrator's coalesce window
+  go to Phase 5, with the supersede budget.
+- **Live check.** The live smoke and replay of two recorded runs passed
+  without a planner model, driven through the wrapper: 0 differences between
+  the recording, the reference and the rules. The check found an interpreter
+  cold-step cost, now paid by an off-thread warm-up. See the
+  [Phase 2 check](../../experiments/2026-09-28-planner-event-system-phase-2-check.md).
+- **A/B skipped.** The paired A/B was skipped by decision: the bundled rules decide
+  identically to the reference, and the only intended wake change is the D7
+  fix. Stage-B steps stay synchronous.
 
 ### Phase 3: wakes that reference evidence (changes what the model sees)
 

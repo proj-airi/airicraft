@@ -36,7 +36,8 @@
   - Use `scripts/run-evaluation-scenarios --scenario <id>` for a serial run.
   - Add repeated `--scenario` options and `--jobs <count>` for isolated parallel clients.
   - Parallel clients use separate game directories and bridge files.
-  - Passed worker directories are deleted. Failed, review, and interrupted directories remain under `run/evaluator-workers/`.
+  - Passed worker directories are deleted. Failed, review, stalled, and interrupted directories remain under `run/evaluator-workers/`.
+  - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
 - Navigation baseline: run `scripts/navigation-baseline` against `scripts/codex-driver-evaluator` in a disposable world. It builds deterministic courses and drives `navigate_to` without a model. See `docs/navigation-baseline.md`.
 - Arthas CLI live-debug:
@@ -85,6 +86,14 @@
   - list and join saved singleplayer worlds
 - `src/client/java/ai/moeru/airicraft/SavedServerService.java`
   - list and join saved multiplayer servers
+- `src/client/java/ai/moeru/airicraft/agent/attention/`
+  - `ReferenceAttentionPolicy`: Java constitution (Stage A) and reference Stage B decisions
+  - `RuleAttentionPolicy`: Stage B from the GraalJS rules, Stage C clamp, fallback and revert
+  - `WakeScheduler`: pending task wakes, G4 admission and G5 release; `IdleHook`: goal continuation and idle think
+  - `WakePresenter`: planner-trigger prose per event type
+  - `AttentionDecisionLog`, `AttentionReplay`: decision history and recorded-run replay
+- `src/main/java/ai/moeru/airicraft/rules/` and `src/main/resources/airicraft/rules/`
+  - sandboxed GraalJS rule engine, kernel, `lib.js` and the bundled `attention/default.js`
 
 ## Key Wrapper Files
 
@@ -164,6 +173,7 @@
 
 ## Behavior Notes
 
+- Every routed event gets one attention decision (stage, rule id, reason), summarized by `airicraft agent debug state` (decisions with `--verbose`) and shown in the dashboard Attention view. Recorded runs write `attention-decisions.jsonl`; replay with `./gradlew attentionReplay -Pairicraft.replayRun=<dir>` and `python3 scripts/wake_ledger.py replay-summary <dir>`.
 - Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.
@@ -171,6 +181,7 @@
 - New location-memory consumers use `LocationMemoryService`/`LocationMemoryBridge`; only the fallback provider accesses the local file store. Protection follows the selected backend and fails closed when its data is unavailable.
 - Each client automatically owns a read-only LAN debug dashboard. It scans upward from configured port `8765`, uses a viewer token distinct from the control bridge token, and prints the clickable URL in logs, `airicraft status`, and in-game chat.
 - The companion plays a character from `config/airicraft/character.json` (Character Card V3, as AIRI exports, plus `extensions.airicraft`), or the built-in generic Minecraft player. It opens both planner prompts, drives idle free time, and voices fixed failure/reset lines. `airicraft reload` applies edits. See `docs/character-card.md`.
+- Attention rules (Stage B: which events reach the planner and which wake it) run as sandboxed GraalJS. `config/airicraft/rules/attention.js` overrides the bundled module; `airicraft reload` rejects an invalid override with `invalid_config`, startup reverts to the bundled module. The Java constitution and clamp cannot be overridden. See `docs/attention-rules.md`.
 - Hosted playtests: `scripts/hosted-playtest --world <template> --recorder-jar <profile>` hosts a fresh world copy on one fixed LAN port for human testers and records it like an automatic playtest, plus `players.jsonl` and tester Recorder Plays. The planner has no `something_wrong` there; a degraded planner gets at most one automatic operator reset per session instead of ending the run. See `docs/hosted-playtest.md`.
 - Live playtest diagnosis: pause server ticks, query the rolling decision history, and export the incident before rebuilding. See `docs/live-playtest-recording.md` for CLI queries, selective frames, playback, and loss checks.
 - Dashboard observations include full LLM envelopes, runtime snapshots, decision states, events, and sparse client RGB. The default window is 12,000 completed server ticks, capped at 64 MiB; tick-debug pause freezes it. Pixel-identical frames are skipped before encoding.

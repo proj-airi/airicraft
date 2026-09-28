@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 
-TERMINAL_STATUSES = {"PASSED", "FAILED", "NEEDS_REVIEW"}
+TERMINAL_STATUSES = {"PASSED", "FAILED", "NEEDS_REVIEW", "STALLED"}
 BRIDGE_STATE_ENVIRONMENT_VARIABLE = "AIRICRAFT_BRIDGE_STATE_FILE"
 EVALUATOR_GAME_DIR_ENVIRONMENT_VARIABLE = "AIRICRAFT_EVALUATOR_GAME_DIR"
 EVALUATOR_JDWP_ENVIRONMENT_VARIABLE = "AIRICRAFT_EVALUATOR_JDWP_ENABLED"
@@ -1510,7 +1510,7 @@ def main(argv: list[str]) -> int:
 
     failed = [
         result for result in manifest["results"]
-        if result.get("harnessStatus") != "OK" or result.get("reportStatus") == "FAILED"
+        if result.get("harnessStatus") != "OK" or result.get("reportStatus") in {"FAILED", "STALLED"}
     ]
     print(f"output: {run_dir}")
     if manifest.get("harnessStatus") == "INTERRUPTED":
