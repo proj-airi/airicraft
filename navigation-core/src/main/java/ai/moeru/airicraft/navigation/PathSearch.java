@@ -36,6 +36,8 @@ public final class PathSearch {
 		Moves.Overlay overlay;
 		/** Blocks the path to this node places; never more than the policy's placeable blocks. */
 		int places;
+		/** Another state at the same cell, reached by a path placing a different number of blocks. */
+		Node sibling;
 
 		Node(int x, int y, int z, double h) {
 			this.x = x;
@@ -106,8 +108,8 @@ public final class PathSearch {
 					int places = current.places + (result.places() ? 1 : 0);
 					if (places > moves.policy().placeableBlocks()) continue;
 					double g = current.g + result.cost;
-					Node next = node(result.x, result.y, result.z);
-					if (next.closed || g >= next.g - MIN_IMPROVEMENT) continue;
+					Node next = state(result.x, result.y, result.z, places, g);
+					if (next == null) continue;
 					next.g = g;
 					next.f = g + next.h * weight;
 					next.parent = current;
@@ -152,6 +154,38 @@ public final class PathSearch {
 				cost += step.cost();
 			}
 			return new Path(start, steps, cost);
+		}
+
+		/**
+		 * The state to update for a path reaching a cell at cost {@code g} after placing {@code places}
+		 * blocks, or null when a state there already does as well with no more blocks placed. States
+		 * at one cell differ by blocks placed, so a costlier path that saved blocks is kept for gaps
+		 * further on.
+		 */
+		private Node state(int x, int y, int z, int places, double g) {
+			long key = GridPos.key(x, y, z);
+			Node head = nodes.get(key);
+			if (head == null) {
+				Node node = new Node(x, y, z, goal.heuristic(x, y, z));
+				node.places = places;
+				nodes.put(key, node);
+				return node;
+			}
+			Node same = null;
+			for (Node state = head; state != null; state = state.sibling) {
+				if (state.places > places) continue;
+				if (g >= state.g - MIN_IMPROVEMENT) return null;
+				if (state.places == places) {
+					if (state.closed) return null;
+					same = state;
+				}
+			}
+			if (same != null) return same;
+			Node node = new Node(x, y, z, head.h);
+			node.places = places;
+			node.sibling = head.sibling;
+			head.sibling = node;
+			return node;
 		}
 
 		private Node node(int x, int y, int z) {
