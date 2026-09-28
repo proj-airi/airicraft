@@ -422,6 +422,12 @@ public final class PlannerOrchestrator {
 	/** Capture evidence without acknowledging delivery: a queued result can still be cancelled. */
 	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices, List<PlannerTrigger> wakes) {
 		long sinceSequence = context.worldSessionId().equals(decisionWorldSessionId) ? incorporatedDecisionEventSequence : 0;
+		// A trigger that outlived a superseded request cites an event already delivered in a retained observation.
+		// Citing it again would read as a new cause, so only events after the cursor are named (with their hints).
+		wakes = wakes.stream().filter(trigger -> {
+			WakeRef ref = WakeRef.of(trigger);
+			return ref == null || !WakeRef.EVENT.equals(ref.reason()) || ref.seqNo() > sinceSequence;
+		}).toList();
 		var payload = new java.util.LinkedHashMap<String, Object>();
 		var wake = WakeRef.render(wakes);
 		if (!wake.isEmpty()) payload.put("wake", wake);

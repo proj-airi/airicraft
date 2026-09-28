@@ -245,7 +245,13 @@ class WakeCharacterizationTest {
 			h.runtime.onPlayerRespawned(); h.chat("Alex", "@agent hello again"); h.tick(5);
 			assertTrue(h.backend.requests().getLast().request().conversation().messages().stream()
 				.anyMatch(m -> m.content().contains("remember this conversation")));
-			h.transcript("death_then_respawn").assertMatchesGolden("death_then_respawn");
+			var transcript = h.transcript("death_then_respawn");
+			// The chat supersedes the damage request; its observation (events 5-7) stays in history, so the chat
+			// request must not cite damage event 5 again as a new wake.
+			var last = transcript.data().getAsJsonArray("requests").get(2).getAsJsonObject().getAsJsonObject("observe");
+			assertEquals(7, last.get("afterEventSequence").getAsLong());
+			assertFalse(last.has("wake"), last.toString());
+			transcript.assertMatchesGolden("death_then_respawn");
 		}
 	}
 
