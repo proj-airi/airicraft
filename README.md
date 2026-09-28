@@ -79,8 +79,12 @@ Prerequisites:
 ### Releases
 
 CI builds and tests every branch push and pull request, and saves the installable
-mod jars as the `mod-jars` workflow artifact. Push a version tag to also publish
-those jars to GitHub Releases:
+mod jars as the `mod-jars` workflow artifact. Every `dev` push additionally
+updates a rolling `dev-snapshot` prerelease on the Releases page — the tag is
+recreated on the new commit and the snapshot jars replace the previous assets,
+so `releases/tag/dev-snapshot` always offers the latest tested dev build. The
+`dev-snapshot` tag has no `v` prefix and does not affect version derivation.
+Push a version tag to also publish those jars to GitHub Releases:
 
 ```shell
 git tag v1.2.3-alpha.1
