@@ -231,6 +231,7 @@ public final class ClientRuntimeController {
 	public void onClientTick(MinecraftClient client) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(client);
 		if (!automaticPlaytest.freezing()) {
+			airicraftBackend.releaseIfIdle(client);
 			currentAgentRuntime().onClientTick(client);
 			airicraftBackend.tick(client);
 		}

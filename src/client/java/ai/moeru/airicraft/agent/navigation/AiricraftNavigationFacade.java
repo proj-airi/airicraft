@@ -208,6 +208,14 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		return diagnostics;
 	}
 
+	/**
+	 * Lets go of keys still held from a navigation that stopped outside this backend's tick. Runs
+	 * before other actuators write this tick's input, so the release never overwrites theirs.
+	 */
+	public void releaseIfIdle(MinecraftClient client) {
+		if (mode == Mode.IDLE) motor.release(client);
+	}
+
 	public void tick(MinecraftClient client) {
 		ticks++;
 		ClientPlayerEntity player = client.player;
@@ -216,10 +224,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 			liveWorld = null;
 			return;
 		}
-		if (mode == Mode.IDLE) {
-			motor.release(client);
-			return;
-		}
+		if (mode == Mode.IDLE) return;
 		BodyState body = body(player);
 		if (mode == Mode.FOLLOW && !retarget(client)) {
 			motor.apply(client, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
@@ -259,6 +264,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 			}
 			case FAILED -> finish("CALC_FAILED", next.detail());
 		}
+		if (mode == Mode.IDLE) motor.release(client);
 	}
 
 	/** Starts or polls a plan. Returns true once a follower is ready this tick. */
