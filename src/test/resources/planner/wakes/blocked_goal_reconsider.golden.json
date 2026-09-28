@@ -80,7 +80,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 2,
+            "type": "work.changed",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

@@ -80,7 +80,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "smelting.output_ready",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -126,7 +134,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 3,
+            "type": "action_graph.goal_terminal",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

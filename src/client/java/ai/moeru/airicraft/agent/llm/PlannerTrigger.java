@@ -12,11 +12,17 @@ public record PlannerTrigger(
 	long timestampMs,
 	PlannerTriggerOrigin origin,
 	String coalescingKey,
-	JsonElement fields
+	JsonElement fields,
+	WakeRef wake
 ) {
 	public PlannerTrigger(long seqNo, PlannerTriggerType type, String speaker, String text, long tick,
 		long timestampMs, PlannerTriggerOrigin origin, String coalescingKey) {
-		this(seqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, null);
+		this(seqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, null, null);
+	}
+
+	public PlannerTrigger(long seqNo, PlannerTriggerType type, String speaker, String text, long tick,
+		long timestampMs, PlannerTriggerOrigin origin, String coalescingKey, JsonElement fields) {
+		this(seqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, fields, null);
 	}
 
 	public PlannerTrigger {
@@ -59,7 +65,12 @@ public record PlannerTrigger(
 	}
 
 	public PlannerTrigger withSeqNo(long replacementSeqNo) {
-		return new PlannerTrigger(replacementSeqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, fields);
+		return new PlannerTrigger(replacementSeqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, fields, wake);
+	}
+
+	/** The evidence this wake refers to, rendered in {@code observe.wake}. */
+	public PlannerTrigger withWake(WakeRef reference) {
+		return new PlannerTrigger(seqNo, type, speaker, text, tick, timestampMs, origin, coalescingKey, fields, reference);
 	}
 
 	@Override public JsonElement fields() { return fields == null ? null : fields.deepCopy(); }

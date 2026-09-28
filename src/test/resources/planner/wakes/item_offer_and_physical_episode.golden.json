@@ -101,7 +101,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "social.item_offered",
+            "urgency": "normal"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

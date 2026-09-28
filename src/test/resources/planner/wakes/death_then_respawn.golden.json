@@ -245,7 +245,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 5,
+            "type": "combat.damage_taken",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -290,7 +298,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 5,
+            "type": "combat.damage_taken",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

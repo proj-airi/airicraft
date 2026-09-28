@@ -31,7 +31,12 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "goal_continuation"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

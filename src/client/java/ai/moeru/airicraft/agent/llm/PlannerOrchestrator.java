@@ -371,6 +371,11 @@ public final class PlannerOrchestrator {
 	}
 
 	private LlmConversation appendDecisionContext(LlmConversation conversation) {
+		return appendDecisionContext(conversation, List.of());
+	}
+
+	/** {@code wakes} are the submitted batch's triggers; they become {@code observe.wake}. */
+	private LlmConversation appendDecisionContext(LlmConversation conversation, List<PlannerTrigger> wakes) {
 		conversation = appendQueueContext(conversation);
 		if (decisionContextSource == null) {
 			LlmConversation delivered = deferredWorkReceipts.deliver(conversation, Map.of());
@@ -382,7 +387,7 @@ public final class PlannerOrchestrator {
 		if (endsWithObservation(conversation)) return contextAggregator.retainConversation(conversation);
 		var messages = new ArrayList<>(conversation.messages());
 		var notices = takeTrailingNotices(messages);
-		messages.addAll(PlannerObservation.exchange(observation(context, notices)));
+		messages.addAll(PlannerObservation.exchange(observation(context, notices, wakes)));
 		// Commit to the role's history, not to a provider response. Retries reuse this conversation.
 		LlmConversation retained = contextAggregator.retainConversation(LlmConversation.of(messages));
 		decisionWorldSessionId = context.worldSessionId();
@@ -417,9 +422,12 @@ public final class PlannerOrchestrator {
 	}
 
 	/** Capture evidence without acknowledging delivery: a queued result can still be cancelled. */
-	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices) {
+	private Map<String, Object> observation(PlannerDecisionContext context, List<String> notices, List<PlannerTrigger> wakes) {
 		long sinceSequence = context.worldSessionId().equals(decisionWorldSessionId) ? incorporatedDecisionEventSequence : 0;
-		var payload = new java.util.LinkedHashMap<>(context.observation(sinceSequence, decisionRefreshPending));
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		var wake = WakeRef.render(wakes);
+		if (!wake.isEmpty()) payload.put("wake", wake);
+		payload.putAll(context.observation(sinceSequence, decisionRefreshPending));
 		if (usesToolQueue()) payload.put("toolQueue", queueState());
 		if (!notices.isEmpty()) payload.put("notices", notices);
 		return payload;
@@ -438,7 +446,7 @@ public final class PlannerOrchestrator {
 
 	private String observeToolResult() {
 		if (decisionContextSource == null) return "observation_unavailable";
-		return PlannerObservation.render(observation(decisionContextSource.get(), List.of()));
+		return PlannerObservation.render(observation(decisionContextSource.get(), List.of(), List.of()));
 	}
 
 	/** A trailing observe result already delivered current state. */
@@ -1412,7 +1420,8 @@ public final class PlannerOrchestrator {
 			return true;
 		}
 		snapshot = withInventoryBootstrapIfAvailable(snapshot);
-		sessionCoordinator.submit(snapshot.withConversation(appendDecisionContext(snapshot.plannerConversation())), currentTurnContext());
+		sessionCoordinator.submit(snapshot.withConversation(appendDecisionContext(snapshot.plannerConversation(),
+			snapshot.triggerBatch() == null ? List.of() : snapshot.triggerBatch().triggers())), currentTurnContext());
 		return true;
 	}
 

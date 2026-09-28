@@ -5,6 +5,7 @@ import ai.moeru.airicraft.agent.attention.WakeScheduler;
 import ai.moeru.airicraft.agent.events.EventStream;
 import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
+import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.llm.CompactionExecutionResult;
 import ai.moeru.airicraft.agent.llm.ExternalPlannerToolResult;
 import ai.moeru.airicraft.agent.llm.LlmFailureType;
@@ -15,6 +16,7 @@ import ai.moeru.airicraft.agent.llm.PlannerOrchestratorDebugSnapshot;
 import ai.moeru.airicraft.agent.llm.PlannerRequest;
 import ai.moeru.airicraft.agent.llm.PlannerRequestSeed;
 import ai.moeru.airicraft.agent.llm.PlannerResponse;
+import ai.moeru.airicraft.agent.llm.WakeRef;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerBatch;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
@@ -916,14 +918,17 @@ public final class DialogueRuntime {
 		}
 		@Override public void deliver(Wake wake) {
 			// A wake contains no historical state. Evidence remains in the shared event buffer.
-			String message = eventBuffer.query(wake.eventSequence() - 1).events().stream()
-				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
-				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
+			var cause = eventBuffer.query(wake.eventSequence() - 1).events().stream()
+				.filter(event -> event.seqNo() == wake.eventSequence()).findFirst();
+			String message = cause.filter(event -> event.type().equals("task.notice"))
+				.map(event -> Objects.toString(event.payload().get("message")))
 				.orElse("Work changed.");
+			WakeRef reference = WakeRef.event(wake.eventSequence(), cause.map(SemanticEvent::type).orElse(null), wake.urgency().name());
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
-				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis()))), null
+				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis())
+					.withWake(reference))), null
 			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false,
 				(kind, gate) -> auditTask(wake, kind, gate));
 		}

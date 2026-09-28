@@ -31,7 +31,12 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "delegation"
+          }
+        ]
       },
       "owner": "thinking",
       "phase": "PLANNER_REQUEST",

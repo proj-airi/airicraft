@@ -80,7 +80,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -126,7 +134,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 3,
+            "type": "crafting.item_crafted",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

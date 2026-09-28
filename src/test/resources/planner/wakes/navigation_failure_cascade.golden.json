@@ -325,7 +325,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 6,
+            "type": "task.failed",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -376,7 +384,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 9,
+            "type": "work.changed",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

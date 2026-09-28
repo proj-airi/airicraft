@@ -75,7 +75,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "reflex.started",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -122,7 +130,15 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 3,
+            "type": "reflex.resolved",
+            "urgency": "critical"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",

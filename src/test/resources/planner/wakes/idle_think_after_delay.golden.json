@@ -50,7 +50,12 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "idle_think"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
