@@ -59,6 +59,40 @@ jobs:
           path: build/release/*.jar
           if-no-files-found: error
 
+  dev-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: dev-snapshot-release
+      cancel-in-progress: false
+    steps:
+      - name: download tested jars
+        uses: actions/download-artifact@v8
+        with:
+          name: mod-jars
+          path: release
+      - name: publish rolling dev snapshot prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          # Remove the previous snapshot release and tag, then recreate both on
+          # this commit. The tag name has no 'v' prefix, so axion-release ignores
+          # it for version derivation.
+          gh release delete dev-snapshot --yes --cleanup-tag || true
+          gh api -X DELETE "repos/$GH_REPO/git/refs/tags/dev-snapshot" || true
+          gh release create dev-snapshot release/*.jar \
+            --target "$RELEASE_SHA" \
+            --prerelease --latest=false --clobber \
+            --title "dev-snapshot (${RELEASE_SHA:0:8})" \
+            --notes "Rolling snapshot of the \`dev\` branch @ $RELEASE_SHA (run: $RUN_URL). Latest jars replace the previous snapshot on every dev push; tagged releases remain on the releases page."
+
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: build
