@@ -43,6 +43,30 @@ sections 4.6, 4.7, 4.9, 4.10, 4.11, 4.12 and 6. Terms such as W1–W9,
 G1–G11, D1–D8, Stage A/B/C and O1–O13 refer to that document. **Previous
 phase:** [`plans/2026-09-27-planner-event-system-phase-1.md`](2026-09-27-planner-event-system-phase-1.md).
 
+## Status (2026-09-28)
+
+Implemented on `claude/hopeful-gauss-1gjr8v`: slice 0 and Tasks 2–9 and 12–18,
+with the revisions recorded below. `./gradlew build` passes (1,821 tests,
+0 failures). The evaluator, Python and dashboard suites pass. A 200× repeat of
+the 20 golden scenarios (4,000 runs) is stable.
+
+- **Golden diffs.** Only the D7 commit changed goldens. The idle-think wake in
+  `idle_think_after_delay` and `tick_debug_pause_then_resume` moved from tick 2
+  to tick 601. Stage B through the rule engine changed none, because the rules
+  run synchronously once warm and decide exactly like the reference
+  (Q2 revision).
+- **Not done here.**
+  - Task 6 Step 2 (D4) moves to Phase 3.
+  - Task 9 Step 2 (W9) and Task 11 (coalescing) move to Phase 5.
+  - Task 10 is folded into Task 14 (see the revisions).
+  - Task 9 Step 3 is not done: `DialogueRuntime.onPlannerTrigger` remains as
+    the entry point, but it only calls `WakeScheduler.offerTrigger`.
+- **Waiting on the user.**
+  - The live smoke (Task 19 Step 2).
+  - The paired A/B (Q3).
+  - Replay of at least two recorded playtests. Only runs recorded from this
+    branch on carry `attention-decisions.jsonl`.
+
 ---
 
 ## Decisions
@@ -198,16 +222,16 @@ These were settled on 2026-09-28, before implementation.
 
 **Files:** `EvaluationBudget.java`, `EvaluationStatus.java`, `ScenarioEvaluationRunner.java`, the scenario loader, `scripts/run-evaluation-scenarios`, and the evaluator tests.
 
-- [ ] **Step 1: The budget field.** Add `maxStallTicks` to `EvaluationBudget`.
+- [x] **Step 1: The budget field.** Add `maxStallTicks` to `EvaluationBudget`.
   The default is 6,000 ticks (five minutes of game time); `0` disables it.
   The loader reads the optional field from `scenario.yml`.
-- [ ] **Step 2: The stall rule.** A scenario stalls when no planner turn has
+- [x] **Step 2: The stall rule.** A scenario stalls when no planner turn has
   completed, no planner call is in flight, and no new agent event has been
   published for `maxStallTicks`. It then finishes as the new terminal status
   `STALLED`, with the stalled tick span in its message.
-- [ ] **Step 3:** The launcher and `wake_ledger.py` treat `STALLED` as a
+- [x] **Step 3:** The launcher and `wake_ledger.py` treat `STALLED` as a
   terminal non-pass. The batch summary counts it separately from `FAILED`.
-- [ ] **Step 4: Tests.**
+- [x] **Step 4: Tests.**
   - the loader parses and defaults the new field;
   - the runner stalls with a fake context at exactly `maxStallTicks`;
   - an in-flight planner call or a new event resets the stall clock.
@@ -218,12 +242,12 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 2: Attention types and the decision log
 
-- [ ] **Step 1: The types.**
+- [x] **Step 1: The types.**
   - `Urgency {CRITICAL, DIRECT, HIGH, NORMAL, LOW, SELF}` (ordered)
   - `Delivery {PREEMPT, IMMEDIATE, DEBOUNCE, NONE}`
   - `AttentionStage {CONSTITUTION, RULES, CLAMP, FALLBACK}`
   - `WakeDecision(Delivery delivery, Urgency urgency, AttentionStage stage, String ruleId, String reason, boolean emitSemantic)`
-- [ ] **Step 2: The log.** `AttentionDecision(long seqNo, long tick, String type, WakeDecision decision, String triggerType)`.
+- [x] **Step 2: The log.** `AttentionDecision(long seqNo, long tick, String type, WakeDecision decision, String triggerType)`.
   - `AttentionDecisionLog` is a ring of 512 decisions with a `query(sinceSeqNo)`
     that has the same truncation semantics as the event log. It counts
     decisions by `ruleId`.
@@ -231,12 +255,12 @@ These were settled on 2026-09-28, before implementation.
     the bridge `agent debug state` response and in the dashboard
     `decision_state`.
   - This is additive JSON only.
-- [ ] **Step 3: Tests.** Ring eviction, the truncation flag, and counts.
+- [x] **Step 3: Tests.** Ring eviction, the truncation flag, and counts.
   Commit: `feat(attention): add wake decision types and a bounded decision log`.
 
 ### Task 3: `AttentionState` and `AttentionEvidence`
 
-- [ ] **Step 1: The state record.** `AttentionState` holds everything G1–G4
+- [x] **Step 1: The state record.** `AttentionState` holds everything G1–G4
   read today, taken once per decision:
   - actuator owner: `reflex`, `safety_hold`, `policy`, `work` or `idle`
   - `reflexOwnsActuation`
@@ -245,7 +269,7 @@ These were settled on 2026-09-28, before implementation.
   - `proactiveSocialMode`
   - `evaluationSuppressed`
   - `plannerRules`: an immutable copy of `EventPolicyState`'s rules
-- [ ] **Step 2: The per-event evidence.** `AttentionEvidence` carries facts
+- [x] **Step 2: The per-event evidence.** `AttentionEvidence` carries facts
   that depend on live world or chat parsing:
   - `senderWithinChatDistance` (today's `playerChatWithinConfiguredDistance`)
   - `resetCommand` (`DialogueRuntime.isResetCommand`)
@@ -253,12 +277,12 @@ These were settled on 2026-09-28, before implementation.
 
   The runtime computes it with the state. The rules (2c) receive it as data
   and never touch the world.
-- [ ] **Step 3: Tests.** A builder test with a fake runtime seam for each
+- [x] **Step 3: Tests.** A builder test with a fake runtime seam for each
   field. Commit: `feat(attention): snapshot attention state and per-event evidence`.
 
 ### Task 4: `ReferenceAttentionPolicy`
 
-- [ ] **Step 1: The decision function.**
+- [x] **Step 1: The decision function.**
   `decide(SemanticEvent, EventRoutingProfile, AttentionState, AttentionEvidence) → WakeDecision`.
   It reproduces today's decisions exactly:
   - **Stage A** (constitution):
@@ -278,7 +302,7 @@ These were settled on 2026-09-28, before implementation.
   - **Stage C** (clamp): a policy-protected type can't get `NONE` from Stage B.
     Today no bundled rule does this. The clamp exists for authored rules
     (2c), and its unit test proves it.
-- [ ] **Step 2: Wire it in without changing timing.**
+- [x] **Step 2: Wire it in without changing timing.**
   - `AgentEventPipeline.route` asks the policy once per event, in place of
     today's G1/G2 blocks. The policy's `emitSemantic` and delivery decide
     what the pipeline does: whether to feed the planner buffer, whether to
@@ -289,7 +313,7 @@ These were settled on 2026-09-28, before implementation.
     reflex ownership. They keep payload validation and prose.
   - Each decision goes to the `AttentionDecisionLog`. `recordEventRouting`
     timeline entries stay, as additive diagnostics.
-- [ ] **Step 3: A table-driven `ReferenceAttentionPolicyTest`.** One row per
+- [x] **Step 3: A table-driven `ReferenceAttentionPolicyTest`.** One row per
   gate branch removed from the factories. Each row is the event, state and
   evidence, with the expected delivery and rule id. Each row names the old
   factory branch it replaces. `AgentEventPipelineTest` and `EmbodiedAgentRuntimeTest`
@@ -303,7 +327,7 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 5: `Wake` and the scheduler skeleton
 
-- [ ] **Step 1: `Wake`.** It carries:
+- [x] **Step 1: `Wake`.** It carries:
   - the path label (W1–W9);
   - urgency and delivery;
   - event references (sequence numbers in the raw log);
@@ -311,17 +335,17 @@ Tasks 5–9 are "no behaviour change" commits.
   - the `PlannerTrigger` it carries until Phase 3 removes prose;
   - an `attention` flag (W3 is placed ahead of the deque and bypasses the
     accepted-work hold).
-- [ ] **Step 2: `WakeScheduler`.** It is owned by `EmbodiedAgentRuntime` and
+- [x] **Step 2: `WakeScheduler`.** It is owned by `EmbodiedAgentRuntime` and
   delivers to `DialogueRuntime.deliver(WakeBatch)`. `deliver` replaces the
   public `onPlannerTrigger` path, which stays as a thin adapter until
   Task 9. Its pending set is bounded (64); on overflow it drops the lowest
   urgency and records the drop.
-- [ ] **Step 3: Tests.** Offer and drain order, the bound, and the drop
+- [x] **Step 3: Tests.** Offer and drain order, the bound, and the drop
   record. Commit: `feat(attention): add the wake scheduler skeleton`.
 
 ### Task 6: Move W2/W3 into the scheduler
 
-- [ ] **Step 1: The move.**
+- [x] **Step 1: The move.**
   - `queueTaskWakeup`/`queueTaskAttention` become `scheduler.offer(Wake)`.
   - The G5 loop moves from `submitNextPendingInternalTaskUpdate` into
     `WakeScheduler.releaseTaskWakes`, called at the same two points in
@@ -333,13 +357,13 @@ Tasks 5–9 are "no behaviour change" commits.
   active role's incorporated cursor has passed every event reference of this
   wake". This is equivalent for today's single-reference wakes. Flip
   `d4_…` to document the absorbed double path, keeping the single request.
-- [ ] **Step 3:** Run the goldens (identical) and the defect probes.
+- [x] **Step 3:** Run the goldens (identical) and the defect probes.
   Commits: `refactor(attention): schedule task wakeups (no behaviour change)`
   and `test(wakes): d4 satisfied by the incorporated cursor`.
 
 ### Task 7: The idle hook (W4, W5, W6)
 
-- [ ] **Step 1: The generators.** `IdleHook` runs ordered generators when
+- [x] **Step 1: The generators.** `IdleHook` runs ordered generators when
   nothing wakeable is pending:
   1. delegation continuation or start;
   2. the safety-hold reminder (inside goal continuation today);
@@ -351,18 +375,18 @@ Tasks 5–9 are "no behaviour change" commits.
   `invalidateIdleThinkTriggers` becomes "any non-`SELF` offer drops pending
   `SELF` wakes"; the reducer call stays until Task 11. The goldens stay
   identical.
-- [ ] **Step 2 [golden diff]: D7.** Idle think counts idle **ticks** (an
+- [x] **Step 2 [golden diff]: D7.** Idle think counts idle **ticks** (an
   initial delay and cooldown of seconds × 20). Paused ticks don't count.
   - **Goldens:** only `idle_think_after_delay` and
     `tick_debug_pause_then_resume` may change. Paused wall-clock time no
     longer counts as idle.
   - **Probe:** flip `d7_CONFIRMED_…` to `d7_FIXED_…`.
-- [ ] Commits: `refactor(attention): run goal continuation, idle think and delegation start from the idle hook (no behaviour change)`
+- [x] Commits: `refactor(attention): run goal continuation, idle think and delegation start from the idle hook (no behaviour change)`
   and `fix(attention): measure idle time in agent ticks (fixes D7)`.
 
 ### Task 8: W1 and W7 through the scheduler
 
-- [ ] **Step 1:** `drainEventPipeline` offers routed triggers as W1 wakes,
+- [x] **Step 1:** `drainEventPipeline` offers routed triggers as W1 wakes,
   and `emitEvaluationTrigger` offers W7. With `IMMEDIATE` delivery, the
   scheduler dispatches inside `offer`, so the dispatch points don't change
   yet and the goldens stay identical.
@@ -370,7 +394,7 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 9: G4 in scheduler admission, and W9
 
-- [ ] **Step 1: G4.** With every path now going through the scheduler, G4
+- [x] **Step 1: G4.** With every path now going through the scheduler, G4
   (the blocked goal, accepted work and queued tool work versus craft, pickup
   and idle think) moves from `DialogueRuntime.onPlannerTrigger` into the
   scheduler's admission step. The audit gate ids stay the same.
@@ -420,13 +444,13 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 12: `RuleEngine`
 
-- [ ] **Step 1: The engine.** Package `ai.moeru.airicraft.rules` in `src/main`,
+- [x] **Step 1: The engine.** Package `ai.moeru.airicraft.rules` in `src/main`,
   reusing `GraalPolicyInvocation`'s sandbox options.
   - **Kernel:** one context per module, built on a daemon worker thread.
     The kernel is taken from the spike, with `Date` and `Math.random` fixed
     to the input tick and seed.
   - **Step contract:** `step(inputJson, stateJson) → {decisions, state}`.
-- [ ] **Step 2: Limits and failures.**
+- [x] **Step 2: Limits and failures.**
   - Each step gets 50,000 statements.
   - Input carries at most 20 Stage-B events per step. Events beyond that
     are decided by the fallback, marked `stage=FALLBACK, reason=input_cap`.
@@ -438,13 +462,13 @@ Tasks 5–9 are "no behaviour change" commits.
     publishes `rules.reverted`. Both are new `INTERNAL`, `DIAGNOSTIC`
     catalog entries.
   - The hard cancellation ceiling is one second, as in the existing sandbox.
-- [ ] **Step 3: The async API.**
+- [x] **Step 3: The async API.**
   - `submit(tick, input, state)` returns a handle.
   - `collect(handle)` returns the result if it is done; otherwise it returns
     `LATE`.
   - Pre-warm: `warm()` builds the context off-thread when the runtime is
     constructed. Until it is ready, `collect` reports `COLD`.
-- [ ] **Step 4: `RuleEngineTest`.**
+- [x] **Step 4: `RuleEngineTest`.**
   - determinism (same input and state give identical output);
   - the frozen clock and seed;
   - each failure path;
@@ -455,14 +479,14 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 13: `lib.js` and `attention/default.js`
 
-- [ ] **Step 1: The modules.**
+- [x] **Step 1: The modules.**
   - `lib.js`: `leakyBucket`, `slidingWindow`, `tumblingWindow`, `cooldown`,
     `hourlyCap`, `cluster`, `seededRandom`, taken from the spike.
   - `attention/default.js`: a port of `ReferenceAttentionPolicy`'s Stage B,
     reading `input.attention`, each event's evidence and `input.plannerRules`.
     No leaky bucket yet (that is Phase 5). Output decisions carry `ruleId`
     and `reason` values equal to the Java reference's.
-- [ ] **Step 2: `RuleDifferentialTest`.**
+- [x] **Step 2: `RuleDifferentialTest`.**
   - **Inputs:** the (event, state, evidence) inputs recorded by a policy
     decorator while every wake golden scenario runs, plus 5,000
     seeded-random states over every catalog type.
@@ -470,11 +494,11 @@ Tasks 5–9 are "no behaviour change" commits.
     equal the Java reference's on every input.
   - **Replay:** replaying recorded input and state twice gives identical
     output.
-- [ ] Commit: `feat(rules): bundle the default attention rules`.
+- [x] Commit: `feat(rules): bundle the default attention rules`.
 
 ### Task 14 [golden diff]: Stage B from the engine, applied a tick later
 
-- [ ] **Step 1: The runtime wiring.**
+- [x] **Step 1: The runtime wiring.**
   - **Stage A** stays synchronous in the pipeline.
   - **Stage-B events** each tick are collected into one step input. The
     input is submitted at the rules phase (spec 4.9 step 6), and the result
@@ -485,10 +509,10 @@ Tasks 5–9 are "no behaviour change" commits.
     marked `stage=FALLBACK`.
   - **Rule matches:** the host records `EventPolicyState` rule matches from
     the returned `ruleId` values (Q9).
-- [ ] **Step 2: Harness.** `WakeScenarioHarness` warms the engine in its
+- [x] **Step 2: Harness.** `WakeScenarioHarness` warms the engine in its
   constructor and releases submitted steps in `settle()` (ground rule 2), so
   every decision lands exactly one tick later.
-- [ ] **Step 3: Review the goldens.**
+- [x] **Step 3: Review the goldens.**
   - **Expected:** Stage-B W1 triggers move one tick later: pickup, craft,
     damage, item offer, physical, smelting, `task.blocked` and graph
     outcomes.
@@ -498,16 +522,16 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 15: Overrides and reload
 
-- [ ] **Step 1: The override file.** `config/airicraft/rules/attention.js`, if
+- [x] **Step 1: The override file.** `config/airicraft/rules/attention.js`, if
   present, replaces the bundled module.
   - **Reload:** `airicraft reload` compiles it and runs one step against an
     empty input before accepting it. On failure it throws `invalid_config`
     naming the file and the guest error, and the old runtime keeps running.
   - **Startup:** a failure logs a warning and uses the bundled module.
-- [ ] **Step 2: Docs.** `docs/attention-rules.md` covers the step contract,
+- [x] **Step 2: Docs.** `docs/attention-rules.md` covers the step contract,
   input fields, `lib`, the constitution and clamp (what rules can't do), and
   the failure and revert behaviour. Link it from `AGENTS.md`.
-- [ ] **Step 3: Tests.**
+- [x] **Step 3: Tests.**
   - a valid override takes effect;
   - an invalid one fails a strict load but falls back at startup;
   - a protected type set to `NONE` by an override is clamped and the clamp
@@ -519,7 +543,7 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 16: `WakePresenter`
 
-- [ ] **Step 1:** The trigger prose moves out of `EmbodiedAgentRuntime` into
+- [x] **Step 1:** The trigger prose moves out of `EmbodiedAgentRuntime` into
   `WakePresenter`, keyed by event type. This covers the pickup, craft,
   damage, item offer, physical, reflex resolved, smelting, task blocked,
   graph suspended/terminal, and ambient and system chat texts. The strings
@@ -528,7 +552,7 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ### Task 17: The dashboard attention panel
 
-- [ ] **Step 1: The panel.** "Why did / didn't the planner wake" shows:
+- [x] **Step 1: The panel.** "Why did / didn't the planner wake" shows:
   - the latest decisions, filterable by event type and rule id;
   - the scheduler's pending wakes;
   - the rule engine's status: module source (bundled or override), state
@@ -536,23 +560,23 @@ Tasks 5–9 are "no behaviour change" commits.
 
   It uses only the existing read-only observation stream (4.10). There are
   no new mutation routes.
-- [ ] Commit: `feat(dashboard): show attention decisions and wake scheduling`.
+- [x] Commit: `feat(dashboard): show attention decisions and wake scheduling`.
 
 ### Task 18: The wake replay harness
 
-- [ ] **Step 1: `AttentionReplay`.** It reads a recorder run directory: the
+- [x] **Step 1: `AttentionReplay`.** It reads a recorder run directory: the
   events, the debug timeline, and the attention state recorded with each
   decision (additive in Task 2). It re-decides every event with both the
   Java reference and the JS engine, and writes
   `attention-replay.json`: per event, the recorded, reference and rule
   decisions and whether they differ.
-- [ ] **Step 2: The CLI.** `python3 scripts/wake_ledger.py replay-summary <run>` summarizes the diffs.
-- [ ] **Step 3:** A test on a synthetic fixture run.
+- [x] **Step 2: The CLI.** `python3 scripts/wake_ledger.py replay-summary <run>` summarizes the diffs.
+- [x] **Step 3:** A test on a synthetic fixture run.
   Commit: `feat(attention): replay recorded runs through the attention policy`.
 
 ### Task 19: Verification and docs
 
-- [ ] **Step 1: Build and characterization.** `./gradlew build`, the wake
+- [x] **Step 1: Build and characterization.** `./gradlew build`, the wake
   goldens (changed only in the named commits), the defect probes, the Python
   suite, and a 200× repeat of the golden scenarios (ground rule 2).
 - [ ] **Step 2: Live smoke.** Run `runClient`, then check:
@@ -563,7 +587,7 @@ Tasks 5–9 are "no behaviour change" commits.
 - [ ] **Step 3: Paired A/B and replay.** The user runs the final paired A/B
   (Q3). The replay harness runs on at least two recorded playtests, with
   zero unexplained reference-versus-rule differences.
-- [ ] **Step 4: Docs.**
+- [x] **Step 4: Docs.**
   - the spec: the Phase 2 checklist and the D4/D7 rows;
   - this plan's status;
   - `AGENTS.md` (key files, behaviour notes on rules and reload);

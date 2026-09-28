@@ -84,6 +84,14 @@
   - list and join saved singleplayer worlds
 - `src/client/java/ai/moeru/airicraft/SavedServerService.java`
   - list and join saved multiplayer servers
+- `src/client/java/ai/moeru/airicraft/agent/attention/`
+  - `ReferenceAttentionPolicy`: Java constitution (Stage A) and reference Stage B decisions
+  - `RuleAttentionPolicy`: Stage B from the GraalJS rules, Stage C clamp, fallback and revert
+  - `WakeScheduler`: pending task wakes, G4 admission and G5 release; `IdleHook`: goal continuation and idle think
+  - `WakePresenter`: planner-trigger prose per event type
+  - `AttentionDecisionLog`, `AttentionReplay`: decision history and recorded-run replay
+- `src/main/java/ai/moeru/airicraft/rules/` and `src/main/resources/airicraft/rules/`
+  - sandboxed GraalJS rule engine, kernel, `lib.js` and the bundled `attention/default.js`
 
 ## Key Wrapper Files
 
@@ -161,6 +169,7 @@
 
 ## Behavior Notes
 
+- Every routed event gets one attention decision (stage, rule id, reason), shown in `airicraft agent debug state` under `attention` and in the dashboard Attention view. Recorded runs write `attention-decisions.jsonl`; replay with `./gradlew attentionReplay -Pairicraft.replayRun=<dir>` and `python3 scripts/wake_ledger.py replay-summary <dir>`.
 - Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.
