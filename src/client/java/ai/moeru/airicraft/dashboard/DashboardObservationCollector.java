@@ -86,6 +86,7 @@ public final class DashboardObservationCollector {
 		decision.put("task", runtime.taskExecutionSnapshot());
 		decision.put("reflex", runtime.survivalReflexDecisionEvidence());
 		decision.put("eventPipeline", runtime.debugEventPipelineState());
+		decision.put("eventBus", runtime.debugEventBusState());
 		String decisionJson = GSON.toJson(decision);
 		if (!decisionJson.equals(lastDecisionJson)) {
 			store.appendJson("decision_state", runtime.tickCount(), System.currentTimeMillis(), decisionJson);
@@ -214,6 +215,7 @@ public final class DashboardObservationCollector {
 		payload.put("actionGraph", actionGraph);
 		payload.put("behaviorTree", runtime.behaviorTreeSnapshot());
 		payload.put("eventPipeline", runtime.debugEventPipelineState());
+		payload.put("eventBus", runtime.debugEventBusState());
 		payload.put("taskProgressProbe", runtime.debugCollectResourceState());
 		payload.put("chatProbe", runtime.debugChatState());
 		payload.put("observability", runtime.observabilityDebugSnapshot());

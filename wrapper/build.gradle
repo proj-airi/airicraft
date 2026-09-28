@@ -4,7 +4,7 @@ plugins {
 }
 
 group = project.maven_group
-version = project.mod_version
+version = rootProject.version
 
 java {
 	toolchain {

@@ -1,0 +1,2 @@
+{"collectedAt":"fixture","event":{"seqNo":1,"tick":45,"type":"social.player_addressed_agent","payload":{"speaker":"Alex"}}}
+{"collectedAt":"fixture","event":{"seqNo":2,"tick":55,"type":"work.changed","payload":{"state":"SUCCEEDED","workId":"w1"}}}

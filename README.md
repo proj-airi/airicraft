@@ -4,6 +4,27 @@ Airicraft is a Fabric mod that exposes an in-game agent bridge and a CLI for aut
 
 ## Settings
 
+On first launch, Airicraft opens setup before the main menu. The **Planner**
+tab keeps provider URL, masked API key, model and **Test connection** together.
+Available API models load automatically after you pause typing credentials;
+open the dropdown and type to filter or scroll to browse. You can always enter
+a model ID manually, including when a provider does not support model listing.
+Switch **API provider** to **Local Codex** to use an installed executable and
+its existing sign-in. With **Image input: on**, the planner handles vision and
+its connection test includes an image; no separate endpoint is needed. Otherwise,
+the **Vision** tab adds an optional separate provider.
+
+Connection tests send small inference requests and may consume provider credits.
+Image checks use a built-in test image. Editing credentials or the model clears
+the previous result. Settings remain unsaved until **Save & finish**, which is
+available after the required connection checks pass. **Later** discards edits and
+leaves setup incomplete so it returns next launch.
+
+The **Mods** tab shows JourneyMap and REI versions, missing compatibility add-ons,
+and integration state. World-dependent features still need a loaded world.
+After completion, reopen setup through **Airicraft Settings → Setup & checks**.
+Save or cancel any pending settings edits before opening setup.
+
 Click **Airicraft** on the title or pause screen, press **F8** in-game (rebindable
 under Controls), or run `/airicraft config`. With Mod Menu installed, use
 **Mods → Airicraft → Configure**. Cloth Config is bundled; Mod Menu is optional.
@@ -58,18 +79,32 @@ Prerequisites:
 ### Releases
 
 CI builds and tests every branch push and pull request, and saves the installable
-mod jars as the `mod-jars` workflow artifact. Push a version tag to also publish
-those jars to GitHub Releases:
+mod jars as the `mod-jars` workflow artifact. Every `dev` push additionally
+updates a rolling `dev-snapshot` prerelease on the Releases page — the tag is
+recreated on the new commit and the snapshot jars replace the previous assets,
+so `releases/tag/dev-snapshot` always offers the latest tested dev build. The
+`dev-snapshot` tag has no `v` prefix and does not affect version derivation.
+Push a version tag to also publish those jars to GitHub Releases:
 
 ```shell
 git tag v1.2.3-alpha.1
 git push origin v1.2.3-alpha.1
 ```
 
+The build version is derived from git state by axion-release-plugin: a `v`-prefixed
+tag on `HEAD` builds that exact version (`v1.2.3-rc.1` → `1.2.3-rc.1`), and any
+other commit builds `<initial>-SNAPSHOT`. `mod_version` in `gradle.properties` only
+seeds repositories with no matching tags and is the fallback when SCM resolution
+fails; check the resolved name with `./gradlew printModVersion`. There is no
+manual version override — a release version exists only as a git tag.
+
 Releases from `dev` are always alpha prereleases, never GitHub's latest release.
-Use `vX.Y.Z-alpha.N` tags; a plain `vX.Y.Z` tag on `dev` automatically builds
-version `X.Y.Z-alpha` and uses that version in the release title. The original
-Git tag is preserved. Jar filenames and mod metadata use the resolved version.
+Use `vX.Y.Z-alpha.N` tags; a plain `vX.Y.Z` tag on `dev` still builds version
+`X.Y.Z-alpha` (the channel is passed to Gradle via `AIRICRAFT_RELEASE_CHANNEL`)
+and uses that version in the release title. The original Git tag is preserved.
+Jar filenames and mod metadata use the resolved version. Tag-shape validation
+lives in the Gradle build, so `AIRICRAFT_RELEASE_CHANNEL=... ./gradlew build`
+rejects malformed or disallowed release tags locally exactly as CI does.
 
 Once release candidates are ready, move release work to `main`. On `main`,
 `vX.Y.Z-rc.N` publishes a prerelease and `vX.Y.Z` publishes a stable release.

@@ -26,6 +26,7 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	private final SettingsProfiles profiles;
 	private ButtonWidget saveButton;
 	private ButtonWidget profilesButton;
+	private ButtonWidget onboardingButton;
 
 	private AiricraftSettingsScreen(Screen parent, Form form) {
 		this(parent, form, new SettingsProfiles(form.draft));
@@ -65,6 +66,11 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 				client.setScreen(new AiricraftSettingsScreen(parent, new Form(draft), profiles))));
 		}).dimensions(width - 104, 4, 100, 20).build());
 		profilesButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Active profile: " + profiles.active())));
+		if (!(parent instanceof OnboardingScreen)) {
+			onboardingButton = addDrawableChild(ButtonWidget.builder(Text.literal("Setup & checks"), ignored -> client.setScreen(OnboardingScreen.create(this)))
+				.dimensions(width / 2 - 51, 4, 102, 20).build());
+			onboardingButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Save or cancel pending edits before checking saved connections.")));
+		}
 		// Cloth recreates the bottom-right save button with a dynamic label on each init.
 		for (var child : java.util.List.copyOf(children())) {
 			if (child instanceof ButtonWidget button && button.getY() == height - 26 && button.getX() > width / 2) {
@@ -80,11 +86,14 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 		boolean valid = !hasErrors();
 		saveButton.active = isEdited() && valid;
 		profilesButton.active = valid;
+		if (onboardingButton != null) onboardingButton.active = valid && !isEdited();
 		super.render(context, mouseX, mouseY, delta);
 	}
 
 	@Override
 	public boolean isEdited() { return draft.isDirty() || super.isEdited(); }
+
+	Screen reopen() { return create(parent); }
 
 	private boolean hasErrors() {
 		return getCategorizedEntries().values().stream().flatMap(java.util.Collection::stream)

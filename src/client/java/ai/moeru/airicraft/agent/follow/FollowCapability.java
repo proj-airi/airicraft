@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.follow;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventPublisher;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public final class FollowCapability {
+	private static final String SOURCE = "FollowCapability";
 	private FollowState state = FollowState.idle();
 	private String acquiredTargetPlayer;
 
@@ -23,7 +24,7 @@ public final class FollowCapability {
 		Optional<GoalSnapshot> activeGoal,
 		NearbyPlayerTracker nearbyPlayerTracker,
 		long tick,
-		SemanticEventBuffer eventBuffer
+		EventPublisher eventBuffer
 	) {
 		Objects.requireNonNull(sessionSnapshot, "sessionSnapshot");
 		Objects.requireNonNull(activeGoal, "activeGoal");
@@ -47,7 +48,7 @@ public final class FollowCapability {
 		NearbyPlayerSnapshot target = targetSnapshot.get();
 		if (!targetPlayer.equals(acquiredTargetPlayer)) {
 			acquiredTargetPlayer = targetPlayer;
-			eventBuffer.append(tick, "follow.target_acquired", Map.of(
+			eventBuffer.from(SOURCE).publish(tick, "follow.target_acquired", Map.of(
 				"player", targetPlayer
 			));
 		}
@@ -75,13 +76,13 @@ public final class FollowCapability {
 		state = FollowState.idle();
 	}
 
-	private void emitTargetLostIfNeeded(long tick, SemanticEventBuffer eventBuffer) {
+	private void emitTargetLostIfNeeded(long tick, EventPublisher eventBuffer) {
 		if (acquiredTargetPlayer == null) {
 			acquiredTargetPlayer = null;
 			return;
 		}
 
-		eventBuffer.append(tick, "follow.target_lost", Map.of(
+		eventBuffer.from(SOURCE).publish(tick, "follow.target_lost", Map.of(
 			"player", acquiredTargetPlayer
 		));
 		acquiredTargetPlayer = null;

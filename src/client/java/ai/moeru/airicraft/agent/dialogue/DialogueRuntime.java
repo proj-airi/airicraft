@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.dialogue;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventStream;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.llm.CompactionExecutionResult;
 import ai.moeru.airicraft.agent.llm.ExternalPlannerToolResult;
@@ -99,7 +100,7 @@ public final class DialogueRuntime {
 	private CompletableFuture<String> continuationAdmission;
 	private ai.moeru.airicraft.agent.llm.PlannerToolCall admittedContinuation;
 
-	private boolean pollPolicyContinuation(long tick, SemanticEventBuffer events) {
+	private boolean pollPolicyContinuation(long tick, EventStream events) {
 		if (policyContinuation == null || decisionContextSource == null) return false;
 		boolean handled = false;
 		if (continuationAdmission != null) {
@@ -108,7 +109,7 @@ public final class DialogueRuntime {
 			try { receipt = continuationAdmission.join(); }
 			catch (RuntimeException error) { receipt = "TOOL_ERROR: continuation admission failed"; }
 			boolean accepted = !receipt.startsWith("TOOL_ERROR:") && !receipt.startsWith("TOOL_UNAVAILABLE:");
-			events.append(tick, "policy.continuation." + (accepted ? "accepted" : "rejected"),
+			events.from("DialogueRuntime").publish(tick, "policy.continuation." + (accepted ? "accepted" : "rejected"),
 				Map.of("source", admittedContinuation.arguments().get("source").getAsString(),
 					"input", admittedContinuation.arguments().get("input"), "receipt", receipt));
 			continuationAdmission = null;
@@ -134,7 +135,7 @@ public final class DialogueRuntime {
 				handled = true;
 			}
 		}
-		for (var event : policyContinuation.drainEvents()) events.append(tick, "policy.continuation." + event.get("state"), event);
+		for (var event : policyContinuation.drainEvents()) events.from("DialogueRuntime").publish(tick, "policy.continuation." + event.get("state"), event);
 		return handled;
 	}
 
@@ -155,6 +156,23 @@ public final class DialogueRuntime {
 		if (thinkingOrchestrator != null) thinkingOrchestrator.configureDecisionAuthority(() -> delegation != null && delegation.active());
 		plannerOrchestrator.configureDecisionContext(() -> source.get().forOwner("controller"));
 		if (thinkingOrchestrator != null) thinkingOrchestrator.configureDecisionContext(() -> source.get().forOwner("thinking"));
+	}
+
+	/**
+	 * Receives wake audit records. {@code tick} and the {@code wakeTick} field are when the wake was created;
+	 * sinks that know the current tick should stamp the record with it so the entry matches its server tick.
+	 */
+	public interface WakeAuditSink {
+		WakeAuditSink NO_OP = (tick, kind, fields) -> { };
+		void record(long tick, String kind, Map<String, Object> fields);
+	}
+
+	private WakeAuditSink wakeAudit = WakeAuditSink.NO_OP;
+	private PendingTaskWakeup lastDeferredAudit;
+	private String lastDeferredAuditGate;
+
+	public void configureWakeAudit(WakeAuditSink sink) {
+		wakeAudit = Objects.requireNonNull(sink);
 	}
 
 	public String decisionOwner() { return delegation != null && delegation.active() ? "thinking" : "controller"; }
@@ -236,7 +254,7 @@ public final class DialogueRuntime {
 	/** Called after action/reflex updates. Returning true reserves initiative for the current goal. */
 	public boolean continuePlannerGoal(long tick, boolean workIdle, SessionSnapshot session,
 		String primaryPlayer, Optional<GoalSnapshot> actionGoal, TaskSnapshot task,
-		MissionExecutionSnapshot mission, SemanticEventBuffer events) {
+		MissionExecutionSnapshot mission, EventStream events) {
 		delegationWorkIdle = workIdle;
 		boolean delegated = delegation != null && delegation.active();
 		if (delegated && (delegation.starting() || delegation.returning())) return true;
@@ -306,6 +324,11 @@ public final class DialogueRuntime {
 		recordAgentTurn(pendingReply.response().text(), pendingReply.response().tick());
 		state = state.withPendingReply(!pendingVisibleReplies.isEmpty(), pendingReplyReason());
 		return true;
+	}
+
+	/** True while any planner role still waits on a provider call or tool future. */
+	public boolean plannerWorkRunning() {
+		return planners().stream().anyMatch(PlannerOrchestrator::hasRunningWork);
 	}
 
 	public boolean isDegraded() {
@@ -443,7 +466,7 @@ public final class DialogueRuntime {
 		}
 	}
 
-	public boolean handleResetCommand(String senderName, String plainTextMessage, long tick, SemanticEventBuffer eventBuffer) {
+	public boolean handleResetCommand(String senderName, String plainTextMessage, long tick, EventStream eventBuffer) {
 		if (!DialogueCore.isResetCommand(plainTextMessage)) {
 			return false;
 		}
@@ -467,7 +490,7 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		appendTurn(new DialogueTurn(senderName, plainTextMessage, tick, timestampMs));
@@ -498,7 +521,7 @@ public final class DialogueRuntime {
 		SessionSnapshot sessionSnapshot,
 		String primaryInteractionPlayer,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		submitPlannerTrigger(
@@ -526,9 +549,12 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer plannerEventBuffer
+		EventStream plannerEventBuffer
 	) {
-		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) return;
+		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) {
+			auditTrigger(trigger, "dropped", "G4.blocked_goal");
+			return;
+		}
 		if (trigger == null) {
 			return;
 		}
@@ -536,7 +562,10 @@ public final class DialogueRuntime {
 		// event buffer, but do not launch a competing turn for ordinary progress.
 		if ((acceptedWork != null || activePlanner().hasQueuedToolWork())
 			&& !trigger.maySupersedeLaunchedTurn() && safetyHoldId == null && !reflexActive
-			&& List.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK).contains(trigger.type())) return;
+			&& List.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK).contains(trigger.type())) {
+			auditTrigger(trigger, "dropped", "G4.accepted_work");
+			return;
+		}
 		submitPlannerTrigger(
 			new PlannerRequest(
 				trigger.tick(),
@@ -551,7 +580,8 @@ public final class DialogueRuntime {
 			),
 			plannerEventBuffer,
 			trigger.timestampMs(),
-			trigger.maySupersedeLaunchedTurn()
+			trigger.maySupersedeLaunchedTurn(),
+			(kind, gate) -> auditTrigger(trigger, kind, gate)
 		);
 	}
 
@@ -562,7 +592,7 @@ public final class DialogueRuntime {
 		SessionSnapshot sessionSnapshot,
 		String primaryInteractionPlayer,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		onPlayerChat(senderName, plainTextMessage, tick, sessionSnapshot, primaryInteractionPlayer, activeGoal, null, null, eventBuffer);
 	}
@@ -574,11 +604,11 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		appendTurn(new DialogueTurn("system", updateMessage, tick, timestampMs));
-		var event = eventBuffer.append(tick, "task.notice", Map.of("message", updateMessage));
+		var event = eventBuffer.from("DialogueRuntime").publish(tick, "task.notice", Map.of("message", updateMessage));
 		if (externalDriverActive || (state.degraded() && activePlanner().isEnabled()) || !activePlanner().isConfigured()) {
 			return;
 		}
@@ -591,18 +621,18 @@ public final class DialogueRuntime {
 		long tick,
 		SessionSnapshot sessionSnapshot,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		onInternalTaskUpdate(updateMessage, tick, sessionSnapshot, activeGoal, null, null, eventBuffer);
 	}
 
-	public DialogueResponse poll(long tick, SemanticEventBuffer eventBuffer) {
+	public DialogueResponse poll(long tick, EventStream eventBuffer) {
 		return poll(tick, eventBuffer, null, Optional.empty(), null, null);
 	}
 
 	public DialogueResponse poll(
 		long tick,
-		SemanticEventBuffer eventBuffer,
+		EventStream eventBuffer,
 		SessionSnapshot sessionSnapshot,
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
@@ -710,7 +740,7 @@ public final class DialogueRuntime {
 		return facts;
 	}
 
-	public void resetLlmState(long tick, SemanticEventBuffer eventBuffer) {
+	public void resetLlmState(long tick, EventStream eventBuffer) {
 		resetPlanners("runtime reset");
 		planners().forEach(p -> p.updateSafetyContext(safetyEpoch, safetyHoldId, reflexActive));
 		queuedTimeoutInjections = 0;
@@ -753,24 +783,46 @@ public final class DialogueRuntime {
 		return DialogueCore.isResetCommand(plainTextMessage);
 	}
 
+	/** Receives the final outcome of one wake attempt: {@code submitted}, or {@code dropped} with its gate. */
+	@FunctionalInterface
+	private interface WakeOutcome {
+		WakeOutcome NONE = (kind, gate) -> { };
+		void record(String kind, String gate);
+	}
+
 	private void submitPlannerTrigger(
 		PlannerRequest request,
-		SemanticEventBuffer eventBuffer,
+		EventStream eventBuffer,
 		long timestampMs,
 		boolean directUserGuidance
 	) {
+		submitPlannerTrigger(request, eventBuffer, timestampMs, directUserGuidance, WakeOutcome.NONE);
+	}
+
+	private void submitPlannerTrigger(
+		PlannerRequest request,
+		EventStream eventBuffer,
+		long timestampMs,
+		boolean directUserGuidance,
+		WakeOutcome outcome
+	) {
 		if (externalDriverActive) {
+			outcome.record("dropped", "G8.external_driver");
 			return;
 		}
 		request = request.withSafetyContext(safetyEpoch, safetyHoldId);
 		if (directUserGuidance) {
 			if (delegation != null && delegation.active()) {
 				delegation.recordGuidance(request.senderName(), request.message());
-				if (delegation.starting() || delegation.returning()) return;
+				if (delegation.starting() || delegation.returning()) {
+					outcome.record("dropped", "G8.delegation_transition");
+					return;
+				}
 			}
 			supersedePendingInternalTaskUpdates("new_user_guidance", request.tick(), eventBuffer);
 		}
 		if (state.degraded() && activePlanner().isEnabled()) {
+			outcome.record("dropped", "G8.degraded");
 			applyTransition(
 				DialogueCore.onPlannerDegradedBlocked(state, request.senderName(), directUserGuidance,
 					request.tick(), resetGuidance(), messages),
@@ -790,6 +842,9 @@ public final class DialogueRuntime {
 				request.activeGoal()
 			)
 		);
+		// Record before submit: the orchestrator writes its own submission entry synchronously, and the
+		// wake ledger attributes audits by timeline order. A disabled planner discards the request.
+		outcome.record(activePlanner().isEnabled() ? "submitted" : "dropped", activePlanner().isEnabled() ? null : "G8.planner_disabled");
 		boolean submitted = activePlanner().submit(request);
 		if (submitted && safetyHoldId != null) lastSupervisedHold = safetyHoldId + ":" + reflexActive;
 		pendingTimeoutVisibleReply = directUserGuidance && submitted;
@@ -807,7 +862,7 @@ public final class DialogueRuntime {
 	}
 
 	private boolean submitNextPendingInternalTaskUpdate(
-		SemanticEventBuffer eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
+		EventStream eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution
 	) {
 		if (externalDriverActive || pendingTaskWakeups.isEmpty() || activePlanner().hasInFlight()) return false;
@@ -817,13 +872,25 @@ public final class DialogueRuntime {
 		}
 		while (!pendingTaskWakeups.isEmpty()) {
 			if (acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive
-				&& !pendingTaskWakeups.peekFirst().attention()) return false;
-			if (activePlanner().hasQueuedToolWork() && !pendingTaskWakeups.peekFirst().attention()) return false;
+				&& !pendingTaskWakeups.peekFirst().attention()) {
+				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.run_policy");
+				return false;
+			}
+			if (activePlanner().hasQueuedToolWork() && !pendingTaskWakeups.peekFirst().attention()) {
+				auditTask(pendingTaskWakeups.peekFirst(), "dropped", "G5.queued_tool_work");
+				return false;
+			}
 			PendingTaskWakeup wake = pendingTaskWakeups.removeFirst();
-			if (activePlanner().hasIncorporatedDecisionEvent(wake.eventSequence())) continue;
+			if (activePlanner().hasIncorporatedDecisionEvent(wake.eventSequence())) {
+				auditTask(wake, "dropped", "G5.incorporated");
+				continue;
+			}
 			if (!wake.attention() && plannerGoal != null && plannerGoal.blocked() && !eventBuffer.query(wake.eventSequence()-1).events().stream()
 				.anyMatch(event -> event.seqNo() == wake.eventSequence() && (plannerGoal.relevantToBlock(event.type())
-					|| isSupervisoryEvent(event.type())))) continue;
+					|| isSupervisoryEvent(event.type())))) {
+				auditTask(wake, "dropped", "G5.blocked_irrelevant");
+				continue;
+			}
 			String currentMissionId = missionId(activeTask, missionExecution);
 			String superseded = wake.userGuidanceRevision() != userGuidanceRevision ? "new_user_guidance"
 				: wake.missionId() != null && currentMissionId != null && !Objects.equals(wake.missionId(), currentMissionId) ? "mission_changed" : null;
@@ -840,10 +907,48 @@ public final class DialogueRuntime {
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
 				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis()))), null
-			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false);
+			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false,
+				(kind, gate) -> auditTask(wake, kind, gate));
 			return true;
 		}
 		return false;
+	}
+
+	private void auditTrigger(PlannerTrigger trigger, String kind, String gate) {
+		String path = trigger.type() == PlannerTriggerType.IDLE_THINK ? "W5"
+			: "planner_goal".equals(trigger.coalescingKey()) ? "W4"
+			: "delegation".equals(trigger.coalescingKey()) ? "W6"
+			: "evaluation".equals(trigger.speaker()) ? "W7" : "W1";
+		var fields = wakeFields(path, gate, trigger.tick());
+		fields.put("triggerTypes", List.of(trigger.type().name()));
+		fields.put("origins", List.of(trigger.origin().name()));
+		fields.put("coalescingKeys", trigger.coalescingKey() == null ? List.of() : List.of(trigger.coalescingKey()));
+		fields.put("speakers", List.of(trigger.speaker()));
+		wakeAudit.record(trigger.tick(), kind, fields);
+	}
+
+	private void auditTask(PendingTaskWakeup wake, String kind, String gate) {
+		// These gates retain the head wake. Audit its transition once, not every poll.
+		boolean deferred = "G5.run_policy".equals(gate) || "G5.queued_tool_work".equals(gate);
+		if (deferred && wake == lastDeferredAudit && Objects.equals(gate, lastDeferredAuditGate)) return;
+		lastDeferredAudit = deferred ? wake : null;
+		lastDeferredAuditGate = deferred ? gate : null;
+		var fields = wakeFields(wake.attention() ? "W3" : "W2", gate, wake.tick());
+		fields.put("eventSequence", wake.eventSequence());
+		fields.put("triggerTypes", List.of("SYSTEM"));
+		fields.put("origins", List.of("AUTONOMOUS"));
+		fields.put("coalescingKeys", List.of("system"));
+		fields.put("speakers", List.of("runtime"));
+		wakeAudit.record(wake.tick(), kind, fields);
+	}
+
+	private java.util.LinkedHashMap<String, Object> wakeFields(String path, String gate, long wakeTick) {
+		var fields = new java.util.LinkedHashMap<String, Object>();
+		fields.put("path", path);
+		fields.put("wakeTick", wakeTick);
+		fields.put("owner", decisionOwner());
+		if (gate != null) fields.put("gate", gate);
+		return fields;
 	}
 
 	private static boolean isSupervisoryEvent(String type) {
@@ -853,7 +958,7 @@ public final class DialogueRuntime {
 		};
 	}
 
-	private void supersedePendingInternalTaskUpdates(String reason, long tick, SemanticEventBuffer eventBuffer) {
+	private void supersedePendingInternalTaskUpdates(String reason, long tick, EventStream eventBuffer) {
 		if (policyContinuation != null) policyContinuation.discard(reason);
 		continuationParent = null;
 		acceptedWork = null;
@@ -868,12 +973,13 @@ public final class DialogueRuntime {
 		String reason,
 		String currentMissionId,
 		long supersededAtTick,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		if (pendingUpdate == null || eventBuffer == null) {
 			return;
 		}
-		eventBuffer.append(supersededAtTick, "planner.internal_task_update_superseded", Map.of(
+		auditTask(pendingUpdate, "dropped", "G5.superseded");
+		eventBuffer.from("DialogueRuntime").publish(supersededAtTick, "planner.internal_task_update_superseded", Map.of(
 			"reason", reason,
 			"updateTick", pendingUpdate.tick(),
 			"supersededAtTick", supersededAtTick,
@@ -881,7 +987,7 @@ public final class DialogueRuntime {
 			"currentGuidanceRevision", userGuidanceRevision,
 			"updateMissionId", pendingUpdate.missionId() == null ? "" : pendingUpdate.missionId(),
 			"currentMissionId", currentMissionId == null ? "" : currentMissionId
-		));
+		), pendingUpdate.eventSequence() <= 0L ? null : EventCause.event(pendingUpdate.eventSequence()));
 	}
 
 	private static String missionId(TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution) {
@@ -918,7 +1024,7 @@ public final class DialogueRuntime {
 		}
 	}
 
-	private void applyTransition(DialogueTransition transition, long tick, SemanticEventBuffer eventBuffer) {
+	private void applyTransition(DialogueTransition transition, long tick, EventStream eventBuffer) {
 		visibleReplyOwner = activePlanner();
 		state = transition.state();
 		applyEffects(transition.effects(), tick, eventBuffer);
@@ -934,10 +1040,10 @@ public final class DialogueRuntime {
 		state = state.withPendingReply(!pendingVisibleReplies.isEmpty(), pendingReplyReason());
 	}
 
-	private static void applyEffects(List<DialogueEffect> effects, long tick, SemanticEventBuffer eventBuffer) {
+	private static void applyEffects(List<DialogueEffect> effects, long tick, EventStream eventBuffer) {
 		for (DialogueEffect effect : effects) {
 			if (effect instanceof DialogueEffect.AppendSemanticEvent appendSemanticEvent) {
-				eventBuffer.append(tick, appendSemanticEvent.type(), appendSemanticEvent.payload());
+				eventBuffer.from("DialogueCore").publish(tick, appendSemanticEvent.type(), appendSemanticEvent.payload());
 			}
 		}
 	}

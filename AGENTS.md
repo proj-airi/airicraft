@@ -13,6 +13,7 @@
 ## Build And Run
 
 - Full build: `./gradlew build`
+- Mod version comes from axion-release: a `v*` tag on HEAD builds that exact version, other commits build a `-SNAPSHOT`. `mod_version` in `gradle.properties` only seeds tagless repos / SCM failure; `./gradlew printModVersion` prints the resolved version; there is no manual override — release versions exist only as git tags. `AIRICRAFT_RELEASE_CHANNEL=dev` turns a plain release tag into `-alpha` (CI release flow); channel builds fail when HEAD lacks a parseable `v*` tag or the tag shape is disallowed (`-SNAPSHOT` means axion silently skipped the tag). Do NOT run `./gradlew release`/`publish` — axion provides those tasks but this repo releases by pushing `v*` tags for CI; the plugin tasks bypass the dev/main channel checks.
 - Requires git submodules: `git submodule update --init --recursive` (build fails on `action-plan-advisor` if absent).
 - `ffmpeg` must be on PATH or `PlaytestVideoRecorder`-related tests fail with `IOException` (playtest screen recording spawns it). Install: `brew install ffmpeg`.
 - Normal Minecraft launches (`./gradlew runClient`, `scripts/codex-driver`, `scripts/arthas kickstart`) enable all supported mod integrations by default.
@@ -69,6 +70,10 @@
 
 ## Key Mod-Side Files
 
+- `src/client/java/ai/moeru/airicraft/agent/events/EventCatalog.java`
+  - declared event types, producers, routing profiles, and observe visibility
+- `src/client/java/ai/moeru/airicraft/agent/events/AgentEventBus.java`
+  - event publication, provenance, subscriber delivery, and diagnostic counters
 - `src/client/java/ai/moeru/airicraft/ModBridgeServer.java`
   - localhost bridge entrypoint
   - bridge auth, routing, error mapping
@@ -158,6 +163,8 @@
 - `GET|POST|DELETE /v1/highlights`
 
 ## Behavior Notes
+
+- Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.
 - Recall/forget accept exact name or stable ID; duplicate names require IDs. JourneyMap native and death waypoints are ordinary entries. Notes and preserved areas live in waypoint custom data.

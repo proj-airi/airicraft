@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.debug;
 
 import ai.moeru.airicraft.agent.dialogue.DialogueSnapshot;
+import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.llm.LlmConversation;
 import ai.moeru.airicraft.agent.llm.PlannerConversationDebugKind;
 import ai.moeru.airicraft.agent.llm.PlannerConversationDebugMessage;
@@ -252,6 +253,19 @@ public final class AgentDebugRecorder {
 			Map.of("jobId", safeSnapshot.jobId() == null ? "" : safeSnapshot.jobId()),
 			collectResourcePayload(safeSnapshot)
 		);
+	}
+
+	public synchronized void recordEventBusSubscriberFailure(SemanticEvent event, long subscriberId, RuntimeException failure) {
+		appendTimeline(event.tick(), event.timestampMs(), "event_bus", "subscriber_failed",
+			"Event subscriber failed for " + event.type(),
+			Map.of("eventSeqNo", event.seqNo(), "subscriberId", subscriberId),
+			Map.of("eventType", event.type(), "exception", failure.getClass().getName(),
+				"message", Objects.toString(failure.getMessage(), "")));
+	}
+
+	public synchronized void recordPlannerWake(long tick, long timestampMs, String kind, Map<String, Object> fields) {
+		appendTimeline(tick, timestampMs, "planner_wake", kind,
+			"Planner wake " + kind + " " + fields.getOrDefault("path", "-"), Map.of(), fields);
 	}
 
 	public synchronized void recordEventRouting(
