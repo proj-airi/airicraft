@@ -1,10 +1,13 @@
 package ai.moeru.airicraft.agent.attention;
 
+import ai.moeru.airicraft.agent.llm.PlannerTrigger;
+import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Owns pending wakes and decides when one is released to the planner. Facts about the planner and the
@@ -42,6 +45,24 @@ public final class WakeScheduler {
 		/** Submits the wake to the planner; the host records its final audit outcome. */
 		void deliver(Wake wake);
 	}
+
+	/** Facts and delivery for trigger wakes (W1, W4-W7), which carry their prompt text until Phase 3. */
+	public interface TriggerHost {
+		/** An active planner goal is blocked: only direct guidance wakes it outside the task-wake path. */
+		boolean blockedGoal();
+
+		/** Accepted or queued tool work consumes routine progress while no safety hold or reflex is active. */
+		boolean workHoldsRoutineWakes();
+
+		void audit(PlannerTrigger trigger, String kind, String gate);
+
+		/** Submits the trigger to the planner; the host records its final audit outcome. */
+		void deliver(PlannerTrigger trigger);
+	}
+
+	/** Routine progress that accepted or queued work already consumes (G4). */
+	private static final Set<PlannerTriggerType> ROUTINE_PROGRESS =
+		Set.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK);
 
 	private final Deque<Wake> taskWakes = new ArrayDeque<>();
 	private Wake lastDeferredAudit;
@@ -111,6 +132,34 @@ public final class WakeScheduler {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Admits a trigger wake (G4) and delivers it at once. Direct guidance is never held back here; a blocked goal
+	 * holds every other trigger, and accepted or queued work holds routine progress and idle think.
+	 */
+	public void offerTrigger(PlannerTrigger trigger, TriggerHost host) {
+		if (trigger == null) return;
+		boolean direct = trigger.maySupersedeLaunchedTurn();
+		if (!direct && host.blockedGoal()) {
+			host.audit(trigger, "dropped", "G4.blocked_goal");
+			return;
+		}
+		// Accepted work already consumes these observations. Retain the evidence in the
+		// event buffer, but do not launch a competing turn for ordinary progress.
+		if (!direct && ROUTINE_PROGRESS.contains(trigger.type()) && host.workHoldsRoutineWakes()) {
+			host.audit(trigger, "dropped", "G4.accepted_work");
+			return;
+		}
+		host.deliver(trigger);
+	}
+
+	/** The wake-audit path label of a trigger wake. */
+	public static String triggerPath(PlannerTrigger trigger) {
+		return trigger.type() == PlannerTriggerType.IDLE_THINK ? "W5"
+			: "planner_goal".equals(trigger.coalescingKey()) ? "W4"
+			: "delegation".equals(trigger.coalescingKey()) ? "W6"
+			: "evaluation".equals(trigger.speaker()) ? "W7" : "W1";
 	}
 
 	/**

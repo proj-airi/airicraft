@@ -551,38 +551,39 @@ public final class DialogueRuntime {
 		MissionExecutionSnapshot missionExecution,
 		EventStream plannerEventBuffer
 	) {
-		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) {
-			auditTrigger(trigger, "dropped", "G4.blocked_goal");
-			return;
-		}
-		if (trigger == null) {
-			return;
-		}
-		// Accepted work already consumes these observations. Retain the evidence in the
-		// event buffer, but do not launch a competing turn for ordinary progress.
-		if ((acceptedWork != null || activePlanner().hasQueuedToolWork())
-			&& !trigger.maySupersedeLaunchedTurn() && safetyHoldId == null && !reflexActive
-			&& List.of(PlannerTriggerType.CRAFT, PlannerTriggerType.PICKUP, PlannerTriggerType.IDLE_THINK).contains(trigger.type())) {
-			auditTrigger(trigger, "dropped", "G4.accepted_work");
-			return;
-		}
-		submitPlannerTrigger(
-			new PlannerRequest(
-				trigger.tick(),
-				trigger.timestampMs(),
-				sessionSnapshot.mode(),
-				primaryInteractionPlayer,
-				activeGoal.orElse(null),
-				activeTask,
-				missionExecution,
-				PlannerTriggerBatch.of(List.of(trigger)),
-				null
-			),
-			plannerEventBuffer,
-			trigger.timestampMs(),
-			trigger.maySupersedeLaunchedTurn(),
-			(kind, gate) -> auditTrigger(trigger, kind, gate)
-		);
+		wakeScheduler.offerTrigger(trigger, new WakeScheduler.TriggerHost() {
+			@Override public boolean blockedGoal() {
+				return plannerGoal != null && plannerGoal.blocked();
+			}
+
+			@Override public boolean workHoldsRoutineWakes() {
+				return (acceptedWork != null || activePlanner().hasQueuedToolWork()) && safetyHoldId == null && !reflexActive;
+			}
+
+			@Override public void audit(PlannerTrigger audited, String kind, String gate) {
+				auditTrigger(audited, kind, gate);
+			}
+
+			@Override public void deliver(PlannerTrigger delivered) {
+				submitPlannerTrigger(
+					new PlannerRequest(
+						delivered.tick(),
+						delivered.timestampMs(),
+						sessionSnapshot.mode(),
+						primaryInteractionPlayer,
+						activeGoal.orElse(null),
+						activeTask,
+						missionExecution,
+						PlannerTriggerBatch.of(List.of(delivered)),
+						null
+					),
+					plannerEventBuffer,
+					delivered.timestampMs(),
+					delivered.maySupersedeLaunchedTurn(),
+					(kind, gate) -> auditTrigger(delivered, kind, gate)
+				);
+			}
+		});
 	}
 
 	public void onPlayerChat(
@@ -924,11 +925,7 @@ public final class DialogueRuntime {
 	}
 
 	private void auditTrigger(PlannerTrigger trigger, String kind, String gate) {
-		String path = trigger.type() == PlannerTriggerType.IDLE_THINK ? "W5"
-			: "planner_goal".equals(trigger.coalescingKey()) ? "W4"
-			: "delegation".equals(trigger.coalescingKey()) ? "W6"
-			: "evaluation".equals(trigger.speaker()) ? "W7" : "W1";
-		var fields = wakeFields(path, gate, trigger.tick());
+		var fields = wakeFields(WakeScheduler.triggerPath(trigger), gate, trigger.tick());
 		fields.put("triggerTypes", List.of(trigger.type().name()));
 		fields.put("origins", List.of(trigger.origin().name()));
 		fields.put("coalescingKeys", trigger.coalescingKey() == null ? List.of() : List.of(trigger.coalescingKey()));

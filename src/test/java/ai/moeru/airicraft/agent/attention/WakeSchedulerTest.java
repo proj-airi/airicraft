@@ -98,6 +98,52 @@ class WakeSchedulerTest {
 			"superseded:12:new_user_guidance", "superseded:13:mission_changed", "deliver:14"), host.log);
 	}
 
+	private static final class Triggers implements WakeScheduler.TriggerHost {
+		boolean blocked, workHolds;
+		final List<String> log = new ArrayList<>();
+		@Override public boolean blockedGoal() { return blocked; }
+		@Override public boolean workHoldsRoutineWakes() { return workHolds; }
+		@Override public void audit(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger, String kind, String gate) { log.add(kind + ":" + gate); }
+		@Override public void deliver(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger) { log.add("deliver:" + trigger.type()); }
+	}
+
+	private static ai.moeru.airicraft.agent.llm.PlannerTrigger autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType type, String key) {
+		return ai.moeru.airicraft.agent.llm.PlannerTrigger.autonomous(type, "self", "text", 1, 1, key);
+	}
+
+	@Test void blockedGoalHoldsEveryTriggerButDirectGuidance() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		host.blocked = true;
+		scheduler.offerTrigger(autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.SYSTEM, "smelting"), host);
+		scheduler.offerTrigger(ai.moeru.airicraft.agent.llm.PlannerTrigger.direct(ai.moeru.airicraft.agent.llm.PlannerTriggerType.CHAT, "Alex", "hi", 1, 1), host);
+		scheduler.offerTrigger(null, host);
+		assertEquals(List.of("dropped:G4.blocked_goal", "deliver:CHAT"), host.log);
+	}
+
+	@Test void acceptedWorkHoldsOnlyRoutineProgressAndIdleThink() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		host.workHolds = true;
+		for (var type : ai.moeru.airicraft.agent.llm.PlannerTriggerType.values()) {
+			if (type == ai.moeru.airicraft.agent.llm.PlannerTriggerType.CHAT) continue;
+			scheduler.offerTrigger(autonomous(type, null), host);
+		}
+		// CRAFT, DAMAGE, PICKUP, SYSTEM, IDLE_THINK in declaration order.
+		assertEquals(List.of("dropped:G4.accepted_work", "deliver:DAMAGE", "dropped:G4.accepted_work", "deliver:SYSTEM",
+			"dropped:G4.accepted_work"), host.log);
+	}
+
+	@Test void triggerPathsKeepTheirAuditLabels() {
+		assertEquals("W5", WakeScheduler.triggerPath(ai.moeru.airicraft.agent.llm.PlannerTrigger.pending(
+			ai.moeru.airicraft.agent.llm.PlannerTriggerType.IDLE_THINK, "self", "", 1, 1)));
+		assertEquals("W4", WakeScheduler.triggerPath(autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.SYSTEM, "planner_goal")));
+		assertEquals("W6", WakeScheduler.triggerPath(autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.SYSTEM, "delegation")));
+		assertEquals("W7", WakeScheduler.triggerPath(ai.moeru.airicraft.agent.llm.PlannerTrigger.pending(
+			ai.moeru.airicraft.agent.llm.PlannerTriggerType.CHAT, "evaluation", "", 1, 1)));
+		assertEquals("W1", WakeScheduler.triggerPath(autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.PICKUP, "pickup:x")));
+	}
+
 	@Test void takeTaskWakesEmptiesTheQueueOldestFirst() {
 		var scheduler = new WakeScheduler();
 		scheduler.offerTask(Wake.task(1, 10, 0, null));
