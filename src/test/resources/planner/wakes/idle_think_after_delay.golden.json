@@ -5,7 +5,7 @@
         "objective": {}
       },
       "seqNo": 1,
-      "tick": 2,
+      "tick": 601,
       "type": "objective.changed"
     }
   ],
@@ -31,7 +31,7 @@
               "objective": {}
             },
             "seqNo": 1,
-            "tick": 2,
+            "tick": 601,
             "type": "objective.changed"
           }
         ],
@@ -46,7 +46,7 @@
         "serverTick": -1,
         "stateBaseline": true,
         "throughEventSequence": 1,
-        "tick": 2,
+        "tick": 601,
         "toolQueue": {
           "aborting": false,
           "pending": []
@@ -58,7 +58,7 @@
         "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
         "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
       },
-      "tick": 2
+      "tick": 601
     }
   ],
   "scenario": "idle_think_after_delay",
@@ -77,11 +77,11 @@
       "speakers": [
         "self"
       ],
-      "tick": 2,
+      "tick": 601,
       "triggerTypes": [
         "IDLE_THINK"
       ],
-      "wakeTick": 2
+      "wakeTick": 601
     }
   ]
 }

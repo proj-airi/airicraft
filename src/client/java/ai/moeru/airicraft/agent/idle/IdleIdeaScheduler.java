@@ -6,11 +6,17 @@ import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Idle-think cadence. Idle time is measured in agent ticks (20 per second), so a tick-debug pause or any other
+ * stretch of wall time without ticks never counts as idle time (D7). {@code nowMs} only stamps the trigger.
+ */
 public final class IdleIdeaScheduler {
+	private static final long TICKS_PER_SECOND = 20L;
+
 	private volatile IdleIdeasConfig config;
 	private final List<String> interests;
-	private long idleStartTimestampMs = -1L;
-	private long lastFireTimestampMs = -1L;
+	private long idleStartTick = -1L;
+	private long lastFireTick = -1L;
 
 	public IdleIdeaScheduler(IdleIdeasConfig config) {
 		this(config, List.of());
@@ -27,36 +33,36 @@ public final class IdleIdeaScheduler {
 	}
 
 	public synchronized void reset() {
-		idleStartTimestampMs = -1L;
-		lastFireTimestampMs = -1L;
+		idleStartTick = -1L;
+		lastFireTick = -1L;
 	}
 
 	public synchronized void recordActivity() {
-		idleStartTimestampMs = -1L;
+		idleStartTick = -1L;
 	}
 
 	public synchronized Optional<PlannerTrigger> tick(boolean activeJobIdle, long tickCount, long nowMs) {
 		IdleIdeasConfig current = config;
 		if (!current.enabled() || current.initialDelaySeconds() <= 0 || current.cooldownSeconds() <= 0 || nothingToSuggest(current)) {
-			idleStartTimestampMs = -1L;
+			idleStartTick = -1L;
 			return Optional.empty();
 		}
 		if (!activeJobIdle) {
-			idleStartTimestampMs = -1L;
+			idleStartTick = -1L;
 			return Optional.empty();
 		}
-		if (idleStartTimestampMs < 0L) {
-			idleStartTimestampMs = nowMs;
+		if (idleStartTick < 0L) {
+			idleStartTick = tickCount;
 		}
-		long sinceIdleMs = Math.max(0L, nowMs - idleStartTimestampMs);
-		long sinceLastFireMs = lastFireTimestampMs < 0L ? Long.MAX_VALUE : Math.max(0L, nowMs - lastFireTimestampMs);
-		if (sinceIdleMs < current.initialDelaySeconds() * 1000L) {
+		long idleTicks = Math.max(0L, tickCount - idleStartTick);
+		long ticksSinceLastFire = lastFireTick < 0L ? Long.MAX_VALUE : Math.max(0L, tickCount - lastFireTick);
+		if (idleTicks < current.initialDelaySeconds() * TICKS_PER_SECOND) {
 			return Optional.empty();
 		}
-		if (sinceLastFireMs < current.cooldownSeconds() * 1000L) {
+		if (ticksSinceLastFire < current.cooldownSeconds() * TICKS_PER_SECOND) {
 			return Optional.empty();
 		}
-		lastFireTimestampMs = nowMs;
+		lastFireTick = tickCount;
 		return Optional.of(buildTrigger(current.ideas(), interests, tickCount, nowMs));
 	}
 
@@ -65,10 +71,10 @@ public final class IdleIdeaScheduler {
 		if (nothingToSuggest(current)) {
 			return Optional.empty();
 		}
-		if (idleStartTimestampMs < 0L) {
-			idleStartTimestampMs = nowMs;
+		if (idleStartTick < 0L) {
+			idleStartTick = tickCount;
 		}
-		lastFireTimestampMs = nowMs;
+		lastFireTick = tickCount;
 		return Optional.of(buildTrigger(current.ideas(), interests, tickCount, nowMs));
 	}
 

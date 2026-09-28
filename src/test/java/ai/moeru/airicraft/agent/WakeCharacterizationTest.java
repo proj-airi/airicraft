@@ -164,8 +164,28 @@ class WakeCharacterizationTest {
 			h.transcript("navigation_failure_cascade").assertMatchesGolden("navigation_failure_cascade");
 		}
 	}
-	@Test void idle_think_after_delay() { idlePause("idle_think_after_delay", Duration.ofSeconds(31)); }
-	@Test void tick_debug_pause_then_resume() { idlePause("tick_debug_pause_then_resume", Duration.ofMinutes(5)); }
+	@Test void idle_think_after_delay() {
+		// Idle time is counted in agent ticks (D7): 31 seconds of ticks passes the 30-second initial delay.
+		try (var h = idleHarness()) {
+			h.tick(1);
+			h.tick(31 * 20);
+			assertEquals(1, h.backend.requests().size());
+			assertTrue(h.transcript("idle_think_after_delay").json().contains("W5"));
+			h.transcript("idle_think_after_delay").assertMatchesGolden("idle_think_after_delay");
+		}
+	}
+	@Test void tick_debug_pause_then_resume() {
+		// D7 fixed: five minutes of paused wall time with no ticks is not idle time, so resuming does not wake.
+		// A normal 30 seconds of idle ticks afterwards still does.
+		try (var h = idleHarness()) {
+			h.tick(1); h.advanceWallClock(Duration.ofMinutes(5)); h.tick(1);
+			assertEquals(0, h.backend.requests().size());
+			h.tick(30 * 20);
+			assertEquals(1, h.backend.requests().size());
+			assertTrue(h.transcript("tick_debug_pause_then_resume").json().contains("W5"));
+			h.transcript("tick_debug_pause_then_resume").assertMatchesGolden("tick_debug_pause_then_resume");
+		}
+	}
 	@Test void idle_think_invalidated_by_action_goal() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1);
@@ -187,15 +207,11 @@ class WakeCharacterizationTest {
 			h.transcript("idle_think_invalidated_by_action_goal").assertMatchesGolden("idle_think_invalidated_by_action_goal");
 		}
 	}
-	private void idlePause(String name, Duration pause) {
-		try (var h = new WakeScenarioHarness()) {
-			h.runtime.overrideSessionSnapshotForTests(new ai.moeru.airicraft.agent.session.SessionSnapshot(
-				ai.moeru.airicraft.agent.session.SessionMode.SINGLEPLAYER_LAN_HOST, true, true, "minecraft:overworld", true, 25565, 0));
-			h.tick(1); h.advanceWallClock(pause); h.tick(1);
-			assertEquals(1, h.backend.requests().size());
-			assertTrue(h.transcript(name).json().contains("W5"));
-			h.transcript(name).assertMatchesGolden(name);
-		}
+	private static WakeScenarioHarness idleHarness() {
+		var h = new WakeScenarioHarness();
+		h.runtime.overrideSessionSnapshotForTests(new ai.moeru.airicraft.agent.session.SessionSnapshot(
+			ai.moeru.airicraft.agent.session.SessionMode.SINGLEPLAYER_LAN_HOST, true, true, "minecraft:overworld", true, 25565, 0));
+		return h;
 	}
 	@Test void degraded_mode() {
 		try (var h = new WakeScenarioHarness()) {
