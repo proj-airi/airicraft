@@ -2,7 +2,9 @@ name: build
 on:
   pull_request:
   push:
-    branches: ['**']
+    # Only the long-lived branches build on every push; other branches build
+    # through their pull requests instead.
+    branches: [dev, main]
     tags: ['v*']
 
 permissions:
