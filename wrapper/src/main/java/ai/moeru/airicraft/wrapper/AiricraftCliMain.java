@@ -149,6 +149,9 @@ public final class AiricraftCliMain {
 		CommandLine worlds = root.getSubcommands().get("worlds");
 		worlds.addSubcommand(new WorldsListCommand(context));
 		worlds.addSubcommand(new WorldsJoinCommand(context));
+		worlds.addSubcommand(new WorldsCreateCommand(context));
+		worlds.addSubcommand(new WorldsRenameCommand(context));
+		worlds.addSubcommand(new WorldsDeleteCommand(context));
 
 		root.addSubcommand("servers", new UsageCommand(out, "airicraft servers", "Saved multiplayer servers"));
 		CommandLine servers = root.getSubcommands().get("servers");
@@ -1509,6 +1512,46 @@ public final class AiricraftCliMain {
 		@Override
 		Map<String, Object> runCommand() {
 			return PayloadViews.evaluationEvidence(transport().get("/v1/evaluation/evidence"), verbose());
+		}
+	}
+
+	@Command(name = "create", mixinStandardHelpOptions = true, description = "Create and join a normal survival world (normal difficulty, cheats off).")
+	private static final class WorldsCreateCommand extends BaseCommand {
+		@Option(names = "--name", required = true, description = "Save display name.")
+		private String name;
+		@Option(names = "--seed", description = "Numeric world seed; random when omitted.")
+		private Long seed;
+		private WorldsCreateCommand(CliContext context) { super(context, "worlds create"); }
+		@Override Map<String, Object> runCommand() {
+			if (name.isBlank()) throw new CliUsageException(commandPath(), "invalid_arguments", "Name must not be blank");
+			Map<String, Object> body = new LinkedHashMap<>();
+			body.put("name", name.trim());
+			if (seed != null) body.put("seed", seed);
+			return transport().post("/v1/worlds/create", body);
+		}
+	}
+
+	@Command(name = "rename", mixinStandardHelpOptions = true, description = "Rename a closed save's display name, preserving its folder and world ID.")
+	private static final class WorldsRenameCommand extends BaseCommand {
+		@Option(names = "--world-id", required = true, description = "World identifier from worlds list.")
+		private String worldId;
+		@Option(names = "--name", required = true, description = "New save display name.")
+		private String name;
+		private WorldsRenameCommand(CliContext context) { super(context, "worlds rename"); }
+		@Override Map<String, Object> runCommand() {
+			if (name.isBlank() || worldId.isBlank()) throw new CliUsageException(commandPath(), "invalid_arguments", "World ID and name must not be blank");
+			return transport().post("/v1/worlds/rename", Map.of("worldId", worldId, "name", name.trim()));
+		}
+	}
+
+	@Command(name = "delete", mixinStandardHelpOptions = true, description = "Permanently delete a closed save and all of its world data.")
+	private static final class WorldsDeleteCommand extends BaseCommand {
+		@Option(names = "--world-id", required = true, description = "World identifier from worlds list.")
+		private String worldId;
+		private WorldsDeleteCommand(CliContext context) { super(context, "worlds delete"); }
+		@Override Map<String, Object> runCommand() {
+			if (worldId.isBlank()) throw new CliUsageException(commandPath(), "invalid_arguments", "World ID must not be blank");
+			return transport().post("/v1/worlds/delete", Map.of("worldId", worldId));
 		}
 	}
 
