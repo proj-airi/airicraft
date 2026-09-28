@@ -28,6 +28,7 @@ public final class MovementController {
 			return;
 		}
 
+		MovementScreenCloser.closeIfMoving(minecraft, true);
 		if (!movingForward || movingSinceTick < 0L) {
 			movingSinceTick = tick;
 			movementStartPos = new Vec3(player.getX(), player.getY(), player.getZ());
@@ -96,6 +97,7 @@ public final class MovementController {
 			return;
 		}
 
+		MovementScreenCloser.closeIfMoving(minecraft, forward || back || left != right || jump || descend);
 		if (movingSinceTick < 0L) {
 			movingSinceTick = tick;
 			movementStartPos = new Vec3(player.getX(), player.getY(), player.getZ());

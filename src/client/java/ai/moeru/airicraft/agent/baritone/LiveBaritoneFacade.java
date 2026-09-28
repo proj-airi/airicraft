@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.baritone;
 
+import ai.moeru.airicraft.agent.control.MovementScreenCloser;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
@@ -12,6 +13,7 @@ import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.process.IBaritoneProcess;
+import baritone.api.utils.input.Input;
 import net.minecraft.core.BlockPos;
 
 import java.util.Objects;
@@ -48,8 +50,18 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 				@Override
 				public void onTick(TickEvent event) {
 					if (event.getType() == TickEvent.Type.IN
-						&& event.getState() == EventState.PRE)
+						&& event.getState() == EventState.PRE) {
 						NavigationDoorInteraction.restorePassedDoor(baritone.getPlayerContext());
+						var context = baritone.getPlayerContext();
+						var input = baritone.getInputOverrideHandler();
+						boolean moving = input.isInputForcedDown(Input.MOVE_FORWARD)
+							|| input.isInputForcedDown(Input.MOVE_BACK)
+							|| input.isInputForcedDown(Input.MOVE_LEFT)
+							|| input.isInputForcedDown(Input.MOVE_RIGHT)
+							|| input.isInputForcedDown(Input.JUMP)
+							|| input.isInputForcedDown(Input.SNEAK) && context.player().isInWater();
+						MovementScreenCloser.closeIfMoving(context.minecraft(), moving);
+					}
 				}
 
 				@Override

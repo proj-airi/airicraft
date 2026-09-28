@@ -9,6 +9,40 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmeltingProcessManagerTest {
 	@Test
+	void foregroundSmeltingKeepsItsMenuEvenIfNavigationStillHasMovementInput() {
+		var manager = new SmeltingProcessManager();
+		assertTrue(manager.requiresOpenScreen("minecraft:overworld", 7, WorldTaskType.SMELT_ITEMS));
+		assertTrue(manager.requiresOpenScreen("minecraft:overworld", 7, WorldTaskType.COLLECT_SMELTED_ITEMS));
+		assertFalse(manager.requiresOpenScreen("minecraft:overworld", 7, WorldTaskType.NAVIGATE));
+	}
+
+	@Test
+	void screenBoundProcessKeepsItsOnlyCollectionHandleUntilCollected() {
+		var manager = new SmeltingProcessManager();
+		var station = new SmeltingStationObservation(
+			new SmeltingStationKey("minecraft:overworld#open_screen", 7, 0, 0),
+			SmeltingStationKind.FURNACE, emptyStation().slots(), true, 0.0D);
+		var started = manager.startProcess(
+			new SmeltItemsStepArgs("open-iron", 1, SmeltingFuelMode.AUTO, null, 0, null), station, 0L);
+		assertTrue(started.accepted());
+		assertTrue(manager.requiresOpenScreen("minecraft:overworld", 7, null));
+		assertFalse(manager.requiresOpenScreen("minecraft:overworld", 8, null));
+		assertFalse(manager.requiresOpenScreen("minecraft:the_nether", 7, null));
+		manager.markReadyOutputs(java.util.List.of(), 10000L);
+		assertTrue(manager.requiresOpenScreen("minecraft:overworld", 7, null));
+		manager.markCollected(started.processId());
+		assertFalse(manager.requiresOpenScreen("minecraft:overworld", 7, null));
+	}
+
+	@Test
+	void locatedFurnaceDoesNotRequireAnOpenMenu() {
+		var manager = new SmeltingProcessManager();
+		manager.startProcess(new SmeltItemsStepArgs("nearby-iron", 1, SmeltingFuelMode.AUTO, null, 0, null),
+			emptyStation(), 0L);
+		assertFalse(manager.requiresOpenScreen("minecraft:overworld", 1, null));
+	}
+
+	@Test
 	void occupiedStationRequiresConfirmationBeforeMutation() {
 		SmeltingProcessManager manager = new SmeltingProcessManager();
 		SmeltingStationObservation occupied = occupiedStation(1);

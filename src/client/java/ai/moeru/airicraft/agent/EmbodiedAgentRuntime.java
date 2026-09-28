@@ -1387,6 +1387,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return tickCount;
 	}
 
+	public boolean requiresOpenSmeltingScreen(String dimensionId, int syncId) {
+		return smeltingProcessManager.requiresOpenScreen(dimensionId, syncId,
+			activeJobRuntime.activeTaskRequest().map(WorldTaskRequest::type).orElse(null));
+	}
+
 	public AgentRuntimeSnapshot snapshot() {
 		return new AgentRuntimeSnapshot(
 			initialized,

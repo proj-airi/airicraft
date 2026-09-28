@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.navigation;
 
 import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.MovementScreenCloser;
 import ai.moeru.airicraft.agent.tasks.MiningToolPreparation;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.MotorIntent;
@@ -51,6 +52,8 @@ public final class MinecraftMotor {
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
 		boolean forwardKey = forward > KEY_THRESHOLD, backKey = forward < -KEY_THRESHOLD;
 		boolean sprint = intent.sprint() && forwardKey && !intent.sneak();
+		MovementScreenCloser.closeIfMoving(minecraft, forwardKey || backKey || Math.abs(left) > KEY_THRESHOLD
+			|| intent.jump() || intent.sneak() && player.isInWater());
 		Options options = minecraft.options;
 		options.keyUp.setDown(forwardKey);
 		options.keyDown.setDown(backKey);
