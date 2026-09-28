@@ -879,6 +879,11 @@ changed.
 
 ### Phase 2: attention policy and wake scheduler (behaviour-preserving)
 
+Task-level plan, with the decisions Q1–Q9 taken on 2026-09-28 (slices 0 and
+2a–2d, Stage-B rules on a worker thread with the Java reference policy as
+fallback, a paired same-session A/B gate, D4 and D7 fixed here):
+[`plans/2026-09-28-planner-event-system-phase-2.md`](../plans/2026-09-28-planner-event-system-phase-2.md).
+
 - [ ] Add `AttentionState`, the Stage A constitution and Stage C clamp in
   Java, and `AttentionDecisionLog`.
 - [ ] Add the GraalJS rule engine (4.12): a worker thread, the per-step JSON
