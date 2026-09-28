@@ -35,7 +35,8 @@
   - Use `scripts/run-evaluation-scenarios --scenario <id>` for a serial run.
   - Add repeated `--scenario` options and `--jobs <count>` for isolated parallel clients.
   - Parallel clients use separate game directories and bridge files.
-  - Passed worker directories are deleted. Failed, review, and interrupted directories remain under `run/evaluator-workers/`.
+  - Passed worker directories are deleted. Failed, review, stalled, and interrupted directories remain under `run/evaluator-workers/`.
+  - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
 - Arthas CLI live-debug:
   - Cold-start path: `scripts/arthas kickstart` starts `runClient`, waits for the bridge, joins the first saved world, opens LAN, and attaches Arthas for later probes. It is cold-only and fails fast if a client is already running.

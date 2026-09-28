@@ -348,6 +348,52 @@ class ScenarioEvaluationRunnerTest {
 		assertEquals(PlannerGoalStore.Status.BLOCKED, context.goal.get().status());
 	}
 
+	@Test
+	void stallsAfterMaxStallTicksWithoutProgress() {
+		ScenarioEvaluationRunner runner = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		runner.start(scenario(List.of(new EvaluationCheck("inventory_contains", Map.of("itemId", "minecraft:iron_ingot", "count", 1))),
+			new EvaluationBudget(40, 100_000, 0, 5, 100)), 0, 0);
+		for (int tick = 0; tick < 100; tick++) { context.tick = tick; runner.onTick(context); }
+		assertEquals(EvaluationStatus.RUNNING, runner.report(99).status());
+		context.tick = 100; runner.onTick(context);
+		EvaluationReport report = runner.report(100);
+		assertEquals(EvaluationStatus.STALLED, report.status());
+		assertTrue(report.message().contains("100 ticks"), report.message());
+		assertTrue(runner.terminal());
+	}
+
+	@Test
+	void plannerCallsTurnsAndEventsResetTheStallClock() {
+		ScenarioEvaluationRunner runner = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		runner.start(scenario(List.of(new EvaluationCheck("inventory_contains", Map.of("itemId", "minecraft:iron_ingot", "count", 1))),
+			new EvaluationBudget(40, 100_000, 0, 5, 100)), 0, 0);
+		for (int tick = 0; tick <= 500; tick++) {
+			context.tick = tick;
+			context.plannerInFlight = tick == 90;
+			if (tick == 180) context.latestEventSeqNo++;
+			if (tick == 270) context.decisions++;
+			runner.onTick(context);
+			if (tick < 370) assertEquals(EvaluationStatus.RUNNING, runner.report(tick).status(), "tick " + tick);
+		}
+		// The last progress was the planner turn at tick 270.
+		assertEquals(EvaluationStatus.STALLED, runner.report(370).status());
+		assertEquals(370, runner.report(500).elapsedTicks());
+	}
+
+	@Test
+	void zeroStallBudgetDisablesTheCutoff() {
+		ScenarioEvaluationRunner runner = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		runner.start(scenario(List.of(new EvaluationCheck("inventory_contains", Map.of("itemId", "minecraft:iron_ingot", "count", 1))),
+			new EvaluationBudget(40, 1_000, 0, 5, 0)), 0, 0);
+		for (int tick = 0; tick < 1_000; tick++) { context.tick = tick; runner.onTick(context); }
+		assertEquals(EvaluationStatus.RUNNING, runner.report(999).status());
+		context.tick = 1_000; runner.onTick(context);
+		assertEquals(EvaluationStatus.FAILED, runner.report(1_000).status());
+	}
+
 	private static final class FakeContext implements ScenarioEvaluationRunner.Context {
 		private long tick;
 		private int inventoryCount;
@@ -361,6 +407,7 @@ class ScenarioEvaluationRunnerTest {
 		private final Map<String, String> blocks = new HashMap<>();
 		private final Map<String, Map<String, String>> blockProperties = new HashMap<>();
 		private long decisions;
+		private long latestEventSeqNo;
 		private Optional<PlannerGoalStore.Goal> goal = Optional.empty();
 		private String taskExecutionState = "IDLE";
 		private final ArrayList<String> triggers = new ArrayList<>();
@@ -407,6 +454,9 @@ class ScenarioEvaluationRunnerTest {
 
 		@Override
 		public long gameplayDecisionCount() { return decisions; }
+
+		@Override
+		public long latestEventSeqNo() { return latestEventSeqNo; }
 
 		@Override
 		public Optional<PlannerGoalStore.Goal> plannerGoal() { return goal; }

@@ -107,8 +107,12 @@ class RunnerPolicyTest(unittest.TestCase):
 
         passed = {"harnessStatus": "OK", "reportStatus": "PASSED", "clientKeptRunning": False}
         review = {"harnessStatus": "OK", "reportStatus": "NEEDS_REVIEW", "clientKeptRunning": False}
+        stalled = {"harnessStatus": "OK", "reportStatus": "STALLED", "clientKeptRunning": False}
         self.assertTrue(runner.should_delete_worker(passed))
         self.assertFalse(runner.should_delete_worker(review))
+        # A stalled scenario is terminal, so polling stops, but it is not a pass: keep its worker.
+        self.assertIn("STALLED", runner.TERMINAL_STATUSES)
+        self.assertFalse(runner.should_delete_worker(stalled))
         self.assertEqual(
             [1, 2],
             [item["index"] for item in runner.ordered_results({2: {"index": 2}, 1: {"index": 1}})],

@@ -19,6 +19,9 @@ public final class ScenarioEvaluationRunner {
 	private int plannerTurns;
 	private List<EvaluationCheckResult> latestCheckResults = List.of();
 	private boolean evidenceReviewRequired;
+	private long lastProgressTick;
+	private int lastProgressTurns = -1;
+	private long lastProgressEventSeqNo = -1L;
 
 	public void start(EvaluationScenario scenario, long tick, long nowMs) {
 		this.scenario = scenario;
@@ -31,6 +34,9 @@ public final class ScenarioEvaluationRunner {
 		this.plannerTurns = 0;
 		this.latestCheckResults = List.of();
 		this.evidenceReviewRequired = !scenario.hasDeterministicChecks();
+		this.lastProgressTick = tick;
+		this.lastProgressTurns = -1;
+		this.lastProgressEventSeqNo = -1L;
 	}
 
 	public void onTick(Context context) {
@@ -85,6 +91,13 @@ public final class ScenarioEvaluationRunner {
 			}
 		}
 
+		if (stalled(context)) {
+			finish(EvaluationStatus.STALLED, "No planner turn, planner call or agent event for "
+				+ (context.tick() - lastProgressTick) + " ticks (maxStallTicks=" + scenario.budget().maxStallTicks() + ")",
+				true, context.tick());
+			return;
+		}
+
 		if (budgetExhausted(context)) {
 			if (scenario.hasDeterministicChecks()) {
 				finish(EvaluationStatus.FAILED, "Evaluation budget exhausted before expected outcome", true, context.tick());
@@ -130,6 +143,9 @@ public final class ScenarioEvaluationRunner {
 		plannerTurns = 0;
 		latestCheckResults = List.of();
 		evidenceReviewRequired = false;
+		lastProgressTick = 0L;
+		lastProgressTurns = -1;
+		lastProgressEventSeqNo = -1L;
 	}
 
 	public EvaluationScenario scenario() {
@@ -237,6 +253,18 @@ public final class ScenarioEvaluationRunner {
 		}
 		return results.stream().filter(result -> !"external_judge".equals(result.type()) && !"subjective".equals(result.type()))
 			.allMatch(EvaluationCheckResult::passed);
+	}
+
+	/** Progress is a new planner turn, an in-flight planner call or a new agent event. */
+	private boolean stalled(Context context) {
+		long eventSeqNo = context.latestEventSeqNo();
+		if (plannerTurns != lastProgressTurns || eventSeqNo != lastProgressEventSeqNo || context.plannerInFlight()) {
+			lastProgressTurns = plannerTurns;
+			lastProgressEventSeqNo = eventSeqNo;
+			lastProgressTick = context.tick();
+			return false;
+		}
+		return scenario.budget().maxStallTicks() > 0L && context.tick() - lastProgressTick >= scenario.budget().maxStallTicks();
 	}
 
 	private boolean budgetExhausted(Context context) {
@@ -367,7 +395,7 @@ public final class ScenarioEvaluationRunner {
 	}
 
 	private static boolean terminal(EvaluationStatus status) {
-		return status == EvaluationStatus.PASSED || status == EvaluationStatus.FAILED || status == EvaluationStatus.NEEDS_REVIEW;
+		return status.terminal();
 	}
 
 	public interface Context {
@@ -382,6 +410,11 @@ public final class ScenarioEvaluationRunner {
 		boolean externalDriverActive();
 
 		boolean plannerInFlight();
+
+		/** Sequence number of the latest agent event; any change counts as progress for the stall budget. */
+		default long latestEventSeqNo() {
+			return 0L;
+		}
 
 		long gameplayDecisionCount();
 

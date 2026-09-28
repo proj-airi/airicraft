@@ -53,7 +53,8 @@ public final class EvaluationScenarioLoader {
 				integer(budgetRoot, "maxPlannerTurns", EvaluationBudget.defaults().maxPlannerTurns()),
 				longValue(budgetRoot, "maxElapsedTicks", EvaluationBudget.defaults().maxElapsedTicks()),
 				longValue(budgetRoot, "maxElapsedMillis", EvaluationBudget.defaults().maxElapsedMillis()),
-				longValue(budgetRoot, "heartbeatIntervalTicks", EvaluationBudget.defaults().heartbeatIntervalTicks())
+				longValue(budgetRoot, "heartbeatIntervalTicks", EvaluationBudget.defaults().heartbeatIntervalTicks()),
+				longValue(budgetRoot, "maxStallTicks", EvaluationBudget.defaults().maxStallTicks())
 			),
 			checks(root.get("checks")),
 			waypoints(root.get("waypoints")),
@@ -84,7 +85,8 @@ public final class EvaluationScenarioLoader {
 			"maxPlannerTurns", scenario.budget().maxPlannerTurns(),
 			"maxElapsedTicks", scenario.budget().maxElapsedTicks(),
 			"maxElapsedMillis", scenario.budget().maxElapsedMillis(),
-			"heartbeatIntervalTicks", scenario.budget().heartbeatIntervalTicks()
+			"heartbeatIntervalTicks", scenario.budget().heartbeatIntervalTicks(),
+			"maxStallTicks", scenario.budget().maxStallTicks()
 		));
 		ArrayList<Map<String, Object>> checkMaps = new ArrayList<>();
 		for (EvaluationCheck check : scenario.checks()) {
