@@ -78,6 +78,26 @@ class RuleAttentionPolicyTest {
 		}
 	}
 
+	@Test void evaluationSuppressionHoldsEvenWhenAnOverrideWakesAnIgnoredEvent() throws Exception {
+		var ignoreButWake = module("ignore-but-wake", """
+			(lib => ({ step(input, state) {
+			  return {state, decisions: input.events.map(e => ({seqNo: e.seqNo, emitSemantic: false,
+			    ruleMatch: {effect: 'IGNORE', ruleIndex: -1, ruleId: 'loud', reason: 'x', bypassed: false},
+			    policy: {effect: 'IGNORE', ruleIndex: -1, ruleId: 'loud', reason: 'x', bypassed: false},
+			    wake: {delivery: 'IMMEDIATE', urgency: 'HIGH', ruleId: 'loud', reason: 'x'}}))};
+			} }))
+			""");
+		var suppressed = new AttentionState(true, false, false, null, true, false, false);
+		var policy = new RuleAttentionPolicy(() -> suppressed, event -> AttentionEvidence.NONE, new SemanticEventBuffer(8), ignoreButWake);
+		var outcome = policy.decide(event(1, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true);
+		assertFalse(outcome.wake().wakes(), "no autonomous wake after an evaluation");
+		assertEquals(AttentionStage.CONSTITUTION, outcome.wake().stage());
+		assertEquals("constitution.evaluation_suppressed", outcome.wake().ruleId());
+		var unsuppressed = new RuleAttentionPolicy(AttentionState::idle, event -> AttentionEvidence.NONE, new SemanticEventBuffer(8), ignoreButWake);
+		assertTrue(unsuppressed.decide(event(2, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true).wake().wakes(),
+			"outside suppression the override's wake stands");
+	}
+
 	@Test void constitutionTypesNeverReachTheRules() throws Exception {
 		var broken = module("never-called", "(lib => ({ step() { throw Error('must not run'); } }))");
 		var diagnostics = new SemanticEventBuffer(8);

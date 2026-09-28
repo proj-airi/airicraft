@@ -73,10 +73,12 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 
 		AttentionOutcome ruled = runRules(event, profile, rules, plannerEnabled, snapshot, facts);
 		if (ruled == null) return asFallback(reference);
-		// Stage A precedes the rules: it applies whenever routing lets the event reach the gate, whatever the rules decided.
+		// Stage A precedes the rules: it applies whenever routing lets the event reach the gate, whatever the rules decided,
+		// and to any wake the rules deliver, whatever policy effect they claim alongside it.
 		boolean reachesGate = profile.triggerEligible() && ruled.policy().effect() != EventPolicyEffect.IGNORE
 			&& ruled.policy().effect() != EventPolicyEffect.SEMANTIC_ONLY;
-		if (reachesGate && snapshot.evaluationSuppressed() && ReferenceAttentionPolicy.EVALUATION_SUPPRESSED.contains(event.type())) {
+		if ((reachesGate || ruled.wake().wakes()) && snapshot.evaluationSuppressed()
+			&& ReferenceAttentionPolicy.EVALUATION_SUPPRESSED.contains(event.type())) {
 			ruled = ruled.withWake(WakeDecision.none(AttentionStage.CONSTITUTION, "constitution.evaluation_suppressed",
 				"autonomous wakes are suppressed after an evaluation"));
 		}
