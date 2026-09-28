@@ -110,3 +110,28 @@ A module is one JavaScript expression: a factory that receives the bundled libra
   - `maxStepMicros`, `stateBytes`, `lastFailure`
 - The attention decision log under `attention` records every decision with its stage, rule id and reason.
 - Diagnostic events `rules.step_failed` and `rules.reverted` appear in the event log.
+
+## Replaying a recorded run
+
+Evaluation runs and automatic playtests record each attention decision, with the inputs it was decided from, in
+`attention-decisions.jsonl` next to `events.jsonl`. The inputs are:
+
+- the attention state and chat evidence;
+- whether the planner was enabled;
+- the routing profile;
+- the planner rules.
+
+To re-decide every recorded decision with both the Java reference and a rule module, run:
+
+```sh
+./gradlew attentionReplay -Pairicraft.replayRun=<run-dir> [-Pairicraft.replayModule=<attention.js>]
+python3 scripts/wake_ledger.py replay-summary <run-dir>
+```
+
+The Gradle task writes `attention-replay.json` into the run directory. For each replayed event it holds three
+decisions: the recorded one, the reference's, and the rules'. Two decisions are the same when they agree on delivery,
+urgency, semantic feed and rule id. `replay-summary` counts where the recording differs from the reference and where
+the rules differ from it. It breaks these counts down by event type and rule transition, and lists the first
+differing decisions.
+
+Use it to check an override against real runs before shipping it.

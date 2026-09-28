@@ -80,7 +80,7 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 			ruled = ruled.withWake(WakeDecision.none(AttentionStage.CONSTITUTION, "constitution.evaluation_suppressed",
 				"autonomous wakes are suppressed after an evaluation"));
 		}
-		return clamp(ruled, reference, profile, plannerEnabled);
+		return clamp(ruled, reference, profile, plannerEnabled).withInputs(snapshot, facts);
 	}
 
 	/** Engine and rule status for the bridge debug state and the dashboard. */

@@ -1,0 +1,30 @@
+{
+  "schema": "airicraft.attention-replay.v1",
+  "runDir": "run-1",
+  "module": "bundled:attention/default.js",
+  "moduleSha": "0000000000000000",
+  "decisions": 4,
+  "replayed": 3,
+  "skippedWithoutInputs": 1,
+  "missingEvents": 0,
+  "recordedVsReference": 1,
+  "referenceVsRules": 1,
+  "ruleEngine": {"steps": 3, "fallbacks": 0, "failures": 0, "clamps": 0, "reverts": 0},
+  "entries": [
+    {"seqNo": 1, "tick": 10, "type": "pickup.item_picked_up",
+     "recorded": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "reference": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "rules": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "recordedDiffersFromReference": false, "rulesDifferFromReference": false},
+    {"seqNo": 2, "tick": 11, "type": "combat.damage_taken",
+     "recorded": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "reference": {"emitSemantic": true, "delivery": "NONE", "urgency": "LOW", "stage": "RULES", "ruleId": "ownership.reflex_actuation"},
+     "rules": {"emitSemantic": true, "delivery": "NONE", "urgency": "LOW", "stage": "RULES", "ruleId": "ownership.reflex_actuation"},
+     "recordedDiffersFromReference": true, "rulesDifferFromReference": false},
+    {"seqNo": 3, "tick": 12, "type": "pickup.item_picked_up",
+     "recorded": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "reference": {"emitSemantic": true, "delivery": "IMMEDIATE", "urgency": "LOW", "stage": "RULES", "ruleId": "catalog.trigger"},
+     "rules": {"emitSemantic": true, "delivery": "NONE", "urgency": "LOW", "stage": "RULES", "ruleId": "override.quiet_pickups"},
+     "recordedDiffersFromReference": false, "rulesDifferFromReference": true}
+  ]
+}

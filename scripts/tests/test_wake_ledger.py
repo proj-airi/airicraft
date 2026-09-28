@@ -1,5 +1,5 @@
 import copy
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import pathlib
@@ -11,9 +11,29 @@ from scripts import wake_ledger
 
 FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "wake-ledger" / "run-1"
 CANONICAL_FIXTURE = FIXTURE.parent / "run-2"
+REPLAY_FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "attention-replay" / "run-1"
 
 
 class WakeLedgerTest(unittest.TestCase):
+    def test_replay_summary_counts_and_lists_differences(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(wake_ledger.main(["replay-summary", str(REPLAY_FIXTURE)]), 0)
+        text = out.getvalue()
+        self.assertIn("decisions: 4  replayed: 3  skipped without inputs: 1  missing events: 0", text)
+        self.assertIn("| combat.damage_taken | 1 | 1 | 0 |", text)
+        self.assertIn("| pickup.item_picked_up | 2 | 0 | 1 |", text)
+        self.assertIn("| recorded→reference | combat.damage_taken | catalog.trigger | ownership.reflex_actuation | 1 |", text)
+        self.assertIn("| reference→rules | pickup.item_picked_up | catalog.trigger | override.quiet_pickups | 1 |", text)
+        self.assertIn("#2 tick 11 combat.damage_taken: recorded IMMEDIATE/LOW/semantic/catalog.trigger", text)
+
+    def test_replay_summary_requires_a_replay_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(wake_ledger.main(["replay-summary", directory]), 2)
+            self.assertIn("./gradlew attentionReplay", err.getvalue())
+
     def test_fixture_metrics_and_attribution(self):
         ledger = wake_ledger.build_ledger(FIXTURE)
         self.assertEqual(ledger["schema"], "airicraft.wake-ledger.v1")

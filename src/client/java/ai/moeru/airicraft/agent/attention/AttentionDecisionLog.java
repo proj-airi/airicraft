@@ -56,7 +56,7 @@ public final class AttentionDecisionLog {
 		state.put("recorded", recorded);
 		state.put("dropped", dropped);
 		state.put("countsByRule", Map.copyOf(countsByRule));
-		state.put("latest", latest(latest));
+		state.put("latest", latest(latest).stream().map(AttentionDecision::withoutInputs).toList());
 		return state;
 	}
 

@@ -63,6 +63,27 @@ class RuntimeFlightRecorderTest {
 		assertEquals("first call timed out", records.getLast().get("failureMessage").getAsString());
 	}
 
+	@Test void appendsEachAttentionDecisionOnceWithItsInputs() throws Exception {
+		var log = new ai.moeru.airicraft.agent.attention.AttentionDecisionLog();
+		var writer = new RuntimeFlightRecorder(root);
+		var inputs = new ai.moeru.airicraft.agent.attention.AttentionDecision.Inputs(
+			ai.moeru.airicraft.agent.attention.AttentionState.idle(), ai.moeru.airicraft.agent.attention.AttentionEvidence.NONE, true,
+			ai.moeru.airicraft.agent.events.EventRoutingProfile.rawOnly("task.notice"), List.of());
+		for (long seq = 1; seq <= 2; seq++) {
+			log.record(new ai.moeru.airicraft.agent.attention.AttentionDecision(seq, seq, "task.notice", false,
+				ai.moeru.airicraft.agent.attention.Delivery.NONE, ai.moeru.airicraft.agent.attention.Urgency.LOW,
+				ai.moeru.airicraft.agent.attention.AttentionStage.RULES, "catalog.semantic", "", false, inputs));
+			writer.drainAttentionDecisions(log, "tick " + seq);
+			writer.drainAttentionDecisions(log, "unchanged");
+		}
+		var lines = Files.readAllLines(root.resolve("attention-decisions.jsonl")).stream()
+			.map(line -> JsonParser.parseString(line).getAsJsonObject().getAsJsonObject("decision")).toList();
+		assertEquals(List.of(1L, 2L), lines.stream().map(d -> d.get("seqNo").getAsLong()).toList());
+		assertTrue(lines.getFirst().getAsJsonObject("inputs").getAsJsonObject("state").get("activeJobIdle").getAsBoolean());
+		assertEquals(2L, writer.statusPayload().get("attentionDecisionsLatestSeqNo"));
+		assertEquals(false, writer.statusPayload().get("attentionDecisionsTruncated"));
+	}
+
 	private List<com.google.gson.JsonObject> records() throws Exception {
 		return Files.readAllLines(root.resolve("llm-calls.jsonl")).stream()
 			.map(line -> JsonParser.parseString(line).getAsJsonObject().getAsJsonObject("record")).toList();

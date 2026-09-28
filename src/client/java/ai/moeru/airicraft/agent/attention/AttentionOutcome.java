@@ -9,13 +9,15 @@ import java.util.Objects;
  * decision; {@code wake} decides the trigger.
  *
  * @param ruleMatchIndex index of the matching planner rule in the evaluated store, or -1
+ * @param inputs the runtime facts the policy read, or {@code null} when it read none (routing only)
  */
 public record AttentionOutcome(
 	EventPolicyDecision ruleMatch,
 	int ruleMatchIndex,
 	EventPolicyDecision policy,
 	boolean emitSemantic,
-	WakeDecision wake
+	WakeDecision wake,
+	AttentionInputs inputs
 ) {
 	public AttentionOutcome {
 		Objects.requireNonNull(ruleMatch, "ruleMatch");
@@ -23,7 +25,16 @@ public record AttentionOutcome(
 		Objects.requireNonNull(wake, "wake");
 	}
 
+	public AttentionOutcome(EventPolicyDecision ruleMatch, int ruleMatchIndex, EventPolicyDecision policy, boolean emitSemantic,
+		WakeDecision wake) {
+		this(ruleMatch, ruleMatchIndex, policy, emitSemantic, wake, null);
+	}
+
 	public AttentionOutcome withWake(WakeDecision replacement) {
-		return new AttentionOutcome(ruleMatch, ruleMatchIndex, policy, emitSemantic, replacement);
+		return new AttentionOutcome(ruleMatch, ruleMatchIndex, policy, emitSemantic, replacement, inputs);
+	}
+
+	public AttentionOutcome withInputs(AttentionState state, AttentionEvidence evidence) {
+		return new AttentionOutcome(ruleMatch, ruleMatchIndex, policy, emitSemantic, wake, new AttentionInputs(state, evidence));
 	}
 }

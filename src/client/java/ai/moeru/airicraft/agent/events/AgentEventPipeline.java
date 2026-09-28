@@ -166,6 +166,7 @@ public final class AgentEventPipeline {
 			return List.of();
 		}
 
+		List<EventPolicyRule> activeRules = policyState.activeRules();
 		AttentionOutcome outcome = attentionPolicy.decide(event, profile, policyState, plannerEnabled);
 		policyState.recordEvaluation(new EventPolicyState.RuleMatch(outcome.ruleMatchIndex(), outcome.ruleMatch()), event.timestampMs());
 		EventPolicyDecision decision = outcome.policy();
@@ -202,7 +203,10 @@ public final class AgentEventPipeline {
 		PlannerTrigger trigger = wake.wakes() ? triggerFactory.create(event, profile) : null;
 		attentionLog.record(new AttentionDecision(event.seqNo(), event.tick(), event.type(), emitSemantic, wake.delivery(),
 			wake.urgency(), wake.stage(), wake.ruleId(), wake.wakes() && trigger == null ? "invalid_payload" : wake.reason(),
-			trigger != null));
+			trigger != null, new AttentionDecision.Inputs(
+				outcome.inputs() == null ? null : outcome.inputs().state(),
+				outcome.inputs() == null ? null : outcome.inputs().evidence(),
+				plannerEnabled, profile, activeRules)));
 		debugRecorder.recordEventRouting(
 			event.tick(),
 			event.timestampMs(),

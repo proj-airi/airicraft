@@ -42,7 +42,8 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 	/** The reference decision for one event with an explicit state snapshot and evidence. */
 	public static AttentionOutcome decide(AttentionState state, AttentionEvidence evidence, SemanticEvent event,
 		EventRoutingProfile profile, EventPolicyState rules, boolean plannerEnabled) {
-		AttentionOutcome routed = AttentionPolicy.route(event, profile, rules, plannerEnabled, defaultRule(event, state));
+		AttentionOutcome routed = AttentionPolicy.route(event, profile, rules, plannerEnabled, defaultRule(event, state))
+			.withInputs(state, evidence);
 		if (!routed.wake().wakes()) return routed;
 		return routed.withWake(gate(event, state, evidence));
 	}
