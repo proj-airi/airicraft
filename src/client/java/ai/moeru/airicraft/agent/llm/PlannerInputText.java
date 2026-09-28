@@ -27,6 +27,8 @@ public final class PlannerInputText {
 		out.append(context.phrase("worldSessionId", "World ")).append(context.phrase("tick", "; client tick "))
 			.append(context.phrase("serverTick", "; server tick ")).append(".\n");
 		out.append(context.phrase("decisionOwner", "Decisions: ")).append(context.phrase("actuatorOwner", "; actuation: ")).append(".\n");
+		JsonElement wake = context.take("wake");
+		if (wake != null) out.append("Woke for: ").append(wake(wake)).append('\n');
 		JsonElement patch = context.take("currentPatch");
 		if (patch != null) out.append(patch.isJsonArray() && patch.getAsJsonArray().isEmpty()
 			? "State unchanged since the previous observation.\n"
@@ -50,7 +52,8 @@ public final class PlannerInputText {
 					default -> key + ": " + text(value);
 				}).append('\n');
 			}
-			out.append(facts.rest());
+			String extra = facts.rest();
+			if (!extra.isEmpty()) out.append(extra).append('\n');
 		} else if (current != null) out.append("Current: ").append(text(current)).append('\n');
 		JsonElement queue = context.take("toolQueue");
 		if (queue != null) out.append("Tool queue: ").append(text(queue)).append('\n');
@@ -64,6 +67,9 @@ public final class PlannerInputText {
 			if (events.getAsJsonArray().isEmpty()) out.append("No new events.\n");
 			for (var event : events.getAsJsonArray()) out.append(event(event, currentWork)).append('\n');
 		} else if (events != null) out.append("Events: ").append(text(events)).append('\n');
+		JsonElement hints = context.take("hints");
+		if (hints != null && hints.isJsonArray()) for (var hint : hints.getAsJsonArray()) out.append(hint(hint)).append('\n');
+		else if (hints != null) out.append("Hints: ").append(text(hints)).append('\n');
 		return out.append(context.rest()).toString().stripTrailing();
 	}
 
@@ -99,6 +105,36 @@ public final class PlannerInputText {
 			add(parts, f.phrase(key, switch (key) { case "updatedTick" -> "updated tick "; case "holdId" -> "hold "; default -> key + " "; }));
 		add(parts, f.rest());
 		return String.join("; ", parts) + ".";
+	}
+
+	/** Wake entries lead the observation: an event wake names the event line below, a derived wake its reason. */
+	private static String wake(JsonElement value) {
+		if (!value.isJsonArray()) return text(value);
+		var parts = new ArrayList<String>();
+		for (var entry : value.getAsJsonArray()) {
+			if (!entry.isJsonObject()) { parts.add(text(entry)); continue; }
+			Fields f = new Fields(entry.getAsJsonObject());
+			JsonElement reason = f.take("reason");
+			String part;
+			if (reason != null && reason.isJsonPrimitive() && WakeRef.EVENT.equals(reason.getAsString())) {
+				part = f.phrase("seqNo", "event ") + f.phrase("type", " ") + f.phrase("urgency", ", urgency ");
+			} else part = reason == null ? "" : text(reason);
+			String rest = f.rest();
+			parts.add(rest.isEmpty() ? part : part + " (" + rest + ")");
+		}
+		return parts.isEmpty() ? "nothing new." : String.join("; ", parts) + ".";
+	}
+
+	/** Runtime coaching for this wake; labelled so it is never read as a request. */
+	private static String hint(JsonElement value) {
+		if (!value.isJsonObject()) return "Runtime hint: " + text(value);
+		Fields f = new Fields(value.getAsJsonObject());
+		f.take("provenance");
+		JsonElement reason = f.take("reason");
+		String subject = reason != null ? " for " + text(reason) : f.phrase("seqNo", " for event ") + f.phrase("type", " ");
+		JsonElement hint = f.take("hint");
+		String rest = f.rest();
+		return "Runtime hint" + subject + ": " + (hint == null ? "" : text(hint)) + (rest.isEmpty() ? "" : " " + rest);
 	}
 
 	private static String workList(JsonElement value) {

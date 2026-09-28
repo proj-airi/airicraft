@@ -76,6 +76,33 @@ class PlannerInputTextTest {
 		assertEquals(raw, message.content());
 	}
 
+	@Test void unknownCurrentFactsEndTheirOwnLine() {
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("current", Map.of("reflexPolicy", Map.of("combatEnabled", true)));
+		payload.put("toolQueue", Map.of("pending", java.util.List.of()));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("{\"reflexPolicy\":{\"combatEnabled\":true}}\nTool queue: "), prose);
+	}
+
+	@Test void wakeLeadsTheObservationAndHintsAreLabelledRuntimeCoaching() {
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("worldSessionId", "world"); payload.put("tick", 10); payload.put("serverTick", 8);
+		payload.put("decisionOwner", "controller"); payload.put("actuatorOwner", "idle");
+		payload.put("wake", java.util.List.of(Map.of("reason", "event", "seqNo", 7, "type", "social.item_offered", "urgency", "normal"),
+			Map.of("reason", "idle_think")));
+		payload.put("afterEventSequence", 6); payload.put("throughEventSequence", 7);
+		payload.put("events", java.util.List.of(Map.of("seqNo", 7, "type", "social.item_offered", "tick", 9, "payload", Map.of("count", 2))));
+		payload.put("hints", java.util.List.of(new java.util.LinkedHashMap<>(Map.of("seqNo", 7, "type", "social.item_offered", "hint", "Not a confirmed pickup.", "provenance", "runtime_hint")),
+			Map.of("reason", "idle_think", "hint", "Things you enjoy: fishing.", "provenance", "runtime_hint")));
+		String prose = PlannerInputText.observation(payload);
+		String[] lines = prose.split("\n");
+		assertEquals("Woke for: event 7 social.item_offered, urgency normal; idle_think.", lines[2], prose);
+		assertTrue(prose.contains("Runtime hint for event 7 social.item_offered: Not a confirmed pickup."), prose);
+		assertTrue(prose.contains("Runtime hint for idle_think: Things you enjoy: fishing."), prose);
+		assertTrue(prose.indexOf("Event 7") < prose.indexOf("Runtime hint"), prose);
+		assertFalse(prose.contains("Additional fields"), prose);
+	}
+
 	@Test void missingRangesAndUnknownFieldsPassThroughAndInputDoesNotMutate() {
 		var payload = Map.<String, Object>of("worldSessionId", "world", "tick", 10, "serverTick", 8, "decisionOwner", "thinker", "actuatorOwner", "reflex",
 			"missingEventRange", Map.of("from", 2, "to", 4), "current", Map.of("physical", Map.of("grounded", false, "touchingWater", true, "climbing", false, "newFlag", true), "newFact", Map.of("a", 7)),

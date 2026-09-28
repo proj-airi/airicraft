@@ -28,6 +28,27 @@ own reviewed golden diff; wake audits did not change in any of them.
   - `observe.notices` characters: 14,115 → 7,756 (−45%).
   - System prompt: 12,878 → 14,246 characters (+1,368, one new paragraph in
     the cached prefix).
+- **Verification (slice 3e):**
+  - `./gradlew build` passes: 1,786 root and 96 wrapper tests.
+  - The evaluator (44), Python (111) and dashboard (11) suites pass.
+  - A 200× repeat of both golden classes (6,200 scenario runs) passes after
+    one harness fix. `RecordingPlannerBackend.held()` read its volatile
+    field twice, so the provider thread could clear it in between; the
+    repeat hit that once.
+- **Live smoke.** The dev client ran the pickup world with the planner
+  pointed at a local stub endpoint. The stub records each request and
+  answers `continue`, or a scripted tool call. The rendered provider
+  requests showed:
+  - an event wake leading the observation: `Woke for: event 3
+    social.system_message, urgency low.` The event, `DIAGNOSTIC` before this
+    phase, is listed in the same observation;
+  - `Woke for: idle_think.`, followed after the events by `Runtime hint for
+    idle_think: …`;
+  - a chat wake with no wake entry and no chat event: the chat is its own
+    user turn;
+  - after a scripted `drop_items`: `Woke for: tool_queue_review.` with the
+    drop's events, then `Woke for: event 16 pickup.item_picked_up, urgency
+    low.` once the agent picked the dirt back up.
 - **Defects:**
   - D1, D2, D4 and D8 probes flipped to FIXED.
   - D3 is settled by O8: `ignore` stops the wake, and the evidence stays
@@ -53,6 +74,19 @@ own reviewed golden diff; wake audits did not change in any of them.
   reload.
 - **Debug views drop the planner-feed and pending-semantic counters.**
   `agent context` and `agent debug state` print fewer lines.
+- **The observation text renders `wake` and `hints` explicitly.** The
+  provider sees `observe` as prose (`PlannerInputText`), not JSON. The live
+  smoke showed both new keys falling through to the trailing "Additional
+  fields" line, so the wake came last instead of first. `wake` now follows
+  the ownership line, and each hint is a `Runtime hint for …:` line after
+  the events. The same smoke found that unknown `current` facts ran into the
+  next line (`…}Tool queue:`); they now end their own line. `reflexPolicy`
+  (3d) always lands there. The goldens record JSON, so neither change moves
+  them.
+- **Live smoke needs a stub endpoint, not the codex driver.** In
+  codex-driver mode the external driver owns decisions and planner wakes
+  are dropped, so `agent tools call observe` shows events and `current`
+  but never `wake` or `hints`.
 
 ---
 
@@ -184,25 +218,26 @@ These were settled on 2026-09-28, before implementation.
 
 ### Task 7
 
-- [ ] `./gradlew build`, the evaluator, Python and dashboard suites; a 200×
+- [x] `./gradlew build`, the evaluator, Python and dashboard suites; a 200×
   repeat of the golden scenarios.
-- [ ] Prompt-size check (R10): total `observe` and system-prompt characters
+- [x] Prompt-size check (R10): total `observe` and system-prompt characters
   across all golden requests, Phase 2 versus Phase 3, recorded here.
-- [ ] Live smoke without a model (as in Phase 2): a driven client shows
-  `observe.wake`, newly visible events and hints through `agent tools call observe`.
-- [ ] Docs: spec Phase 3 checklist and D-rows, this plan's status,
+- [x] Live smoke without a model (as in Phase 2): a driven client shows
+  `observe.wake`, newly visible events and hints (done against a stub
+  endpoint instead; see Revisions).
+- [x] Docs: spec Phase 3 checklist and D-rows, this plan's status,
   `docs/attention-rules.md` (R7), AGENTS.md behaviour notes.
 - [ ] The user decides on the live A/B (R10).
 
 ## Exit criteria
 
-- [ ] Build green; goldens changed only in the four slice commits, each
+- [x] Build green; goldens changed only in the four slice commits, each
   reviewed; the 200× repeat is stable; `wakeAudit` unchanged except named
   reasons.
-- [ ] No trigger prose reaches the model for event wakes, goal continuation,
+- [x] No trigger prose reaches the model for event wakes, goal continuation,
   idle think or task wakes; `observe.wake` names every wake.
-- [ ] D1, D2, D4 and D8 probes flipped; D3 documents O8.
-- [ ] The prompt-size check shows no growth in total observe characters
+- [x] D1, D2, D4 and D8 probes flipped; D3 documents O8.
+- [x] The prompt-size check shows no growth in total observe characters
   across the golden scenarios, or the growth is explained.
 - [ ] Spec exit (fewer empty wakes, latency and tokens no worse, no new failure
   classes) is measured live only if the user runs the A/B.
