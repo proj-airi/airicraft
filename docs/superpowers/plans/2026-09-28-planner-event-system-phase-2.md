@@ -66,7 +66,12 @@ the 20 golden scenarios (4,000 runs) is stable.
   See the [Phase 2 check](../../experiments/2026-09-28-planner-event-system-phase-2-check.md).
   Replay of two recorded runs (11 and 48 replayed decisions) found 0
   differences.
-- **Waiting on the user.** The paired A/B (Q3) needs a planner model.
+- **Decided after the live check (2026-09-28).**
+  - The paired A/B (Q3) is skipped. The bundled rules decide identically to
+    the reference (differential test and replay), and the only intended wake
+    change is the D7 fix.
+  - Stage-B steps stay synchronous (the Q2 revision), with the off-thread
+    warm-up.
 
 ---
 
@@ -524,7 +529,7 @@ Tasks 5–9 are "no behaviour change" commits.
     damage, item offer, physical, smelting, `task.blocked` and graph
     outcomes.
   - **Unchanged:** chat, `reflex.resolved` (Stage A) and the W2/W3/W9 paths.
-- [ ] **Step 4:** The user runs the paired A/B.
+- [ ] **Step 4:** The user runs the paired A/B. (Skipped by decision; see the status.)
   Commit: `feat(attention): decide stage-B events with the rule engine`.
 
 ### Task 15: Overrides and reload
@@ -591,9 +596,10 @@ Tasks 5–9 are "no behaviour change" commits.
   - an override rule loaded through `airicraft reload` takes effect;
   - a deliberately broken override is rejected with `invalid_config`;
   - the rule engine's counters show no fallback after warm-up.
-- [ ] **Step 3: Paired A/B and replay.** The user runs the final paired A/B
+- [x] **Step 3: Paired A/B and replay.** The user runs the final paired A/B
   (Q3). The replay harness runs on at least two recorded playtests, with
-  zero unexplained reference-versus-rule differences.
+  zero unexplained reference-versus-rule differences. Replay done (two runs,
+  0 differences). The A/B was skipped by decision; see the status.
 - [x] **Step 4: Docs.**
   - the spec: the Phase 2 checklist and the D4/D7 rows;
   - this plan's status;
@@ -604,7 +610,7 @@ Tasks 5–9 are "no behaviour change" commits.
 
 ## Exit criteria
 
-- [ ] `./gradlew build` is green. The wake goldens changed only in the
+- [x] `./gradlew build` is green. The wake goldens changed only in the
   **[golden diff]** commits (Tasks 7, 10 and 14, and 11 if needed), each
   with a reviewed explanation. A 200× repeat of the golden scenarios is
   stable.
@@ -613,20 +619,20 @@ Tasks 5–9 are "no behaviour change" commits.
   no longer owns `pendingTaskWakeups`, the G5 loop, goal continuation
   scheduling or the delegation start wake. The orchestrator no longer owns
   the coalesce window.
-- [ ] The JS default rules decide exactly like `ReferenceAttentionPolicy` on
+- [x] The JS default rules decide exactly like `ReferenceAttentionPolicy` on
   all recorded golden inputs and 5,000 random states. Replay is
   deterministic.
 - [ ] D4 and D7 probes are flipped to `FIXED`. D1, D2, D3, D5, D6 and D8
   probes are unchanged.
-- [ ] Every Stage-B decision is in the attention log with a rule id, and the
+- [x] Every Stage-B decision is in the attention log with a rule id, and the
   dashboard shows it.
-- [ ] **Paired A/B** (nine scenarios, three runs per arm), for every scenario:
+- [ ] **Paired A/B** (skipped by decision; see the status) (nine scenarios, three runs per arm), for every scenario:
   - pass/fail is no worse than the control arm's worst run;
   - the median planner-request rate (wall-clock and per 1,200 ticks) is
     within ×0.75–×1.33 of the control median;
   - there are no new failure classes and no new `STALLED` outcomes beyond
     the control's.
-- [ ] Replay of at least two recorded playtests shows no unexplained
+- [x] Replay of at least two recorded playtests shows no unexplained
   decision differences.
 
 ## Risks

@@ -943,7 +943,9 @@ factories and the suppression helpers.
   the recording, the reference and the rules. The check found an interpreter
   cold-step cost, now paid by an off-thread warm-up. See the
   [Phase 2 check](../../experiments/2026-09-28-planner-event-system-phase-2-check.md).
-- **Still open.** The paired A/B needs a planner model.
+- **A/B skipped.** The paired A/B was skipped by decision: the bundled rules decide
+  identically to the reference, and the only intended wake change is the D7
+  fix. Stage-B steps stay synchronous.
 
 ### Phase 3: wakes that reference evidence (changes what the model sees)
 

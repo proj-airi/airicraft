@@ -1,6 +1,6 @@
 # Planner event system Phase 2 live check
 
-**Status (2026-09-28):** the live smoke checks and replay of two recorded runs passed without a planner model. The smoke found that "warm" was too weak for the interpreter-only engine, which is now fixed by an off-thread warm-up. The paired A/B (plan Q3) is **not run**; it needs a planner model.
+**Status (2026-09-28):** the live smoke checks and replay of two recorded runs passed without a planner model. The smoke found that "warm" was too weak for the interpreter-only engine, which is now fixed by an off-thread warm-up. The paired A/B (plan Q3) was skipped by decision, and Stage-B steps stay synchronous.
 
 ## Setup
 
@@ -75,6 +75,7 @@ The first smoke client reported `maxStepMicros` 671,216: one synchronous step to
 
 ## Found, not fixed here
 
-- **Recorder cursors after reload.** `airicraft reload` creates a new runtime whose event sequence restarts at 1. `RuntimeFlightRecorder` keeps its cursors, so nothing more is written to `events.jsonl` or `attention-decisions.jsonl` for that recording (run 2 stopped at sequence 162). This predates Phase 2 for events.
 - **Syntax-error line numbers.** Load failures report positions in the wrapped module source (`Unnamed:4:0`), not the file's own lines.
 - **Dashboard row mix.** The Attention view lists raw-only decisions (`catalog.raw_only`) alongside the rest, which crowds the table in busy runs.
+
+Not a defect: after the clamp check's `airicraft reload`, run 2 recorded nothing more. This is by design. Reload calls `worldLeft("runtime_reloaded")`, which finishes an automatic playtest recording (one run per process); run 2's `summary.json` is `FINISHED` with reason `runtime_reloaded`. The hosted playtest's automatic reset is a dialogue reset inside the same runtime, so its recording continues.
