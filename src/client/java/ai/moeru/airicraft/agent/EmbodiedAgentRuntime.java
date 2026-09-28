@@ -74,6 +74,10 @@ import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.EventCatalog;
 import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
+import ai.moeru.airicraft.agent.attention.AttentionDecisionLog;
+import ai.moeru.airicraft.agent.attention.AttentionEvidence;
+import ai.moeru.airicraft.agent.attention.AttentionState;
+import ai.moeru.airicraft.agent.attention.ReferenceAttentionPolicy;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -240,6 +244,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AgentDebugRecorder debugRecorder = new AgentDebugRecorder();
 	private final AgentEventBus eventBus;
 	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
+	private final AttentionDecisionLog attentionDecisionLog = new AttentionDecisionLog();
 	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
@@ -433,7 +438,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
 		this.eventBus.subscribe(type -> type.equals("food.eaten") || type.equals("food.eat_failed"), foodOutcomes);
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
-			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
+			eventPolicyState, eventRoutingProfiles, debugRecorder,
+			new ReferenceAttentionPolicy(this::attentionState, this::attentionEvidence), attentionDecisionLog);
 		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
 			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
 			(boundary, tick) -> {
@@ -1655,6 +1661,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public AgentEventBus.AgentEventBusStats debugEventBusState() { return eventBus.stats(); }
+
+	/** Attention decision totals and the latest decisions, for the bridge debug state and the dashboard. */
+	public Map<String, Object> debugAttentionState() { return attentionDecisionLog.debugState(32); }
+
+	public AttentionDecisionLog attentionDecisionLog() { return attentionDecisionLog; }
 
 	public Map<String, Object> debugSystem2() { return dialogueRuntime.system2Snapshot(); }
 
@@ -4660,9 +4671,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (eventType == null) {
 			return null;
 		}
-		if (evaluationPlannerSuppressed && suppressAutonomousPlannerTriggerAfterEvaluation(eventType)) {
-			return null;
-		}
 		return switch (eventType) {
 			case "social.player_spoke" -> createPlayerSpokeTrigger(event);
 			case "social.player_addressed_agent" -> createAddressedChatTrigger(event);
@@ -4682,37 +4690,46 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		};
 	}
 
-	private static boolean suppressAutonomousPlannerTriggerAfterEvaluation(String eventType) {
-		return switch (eventType) {
-			case "social.player_spoke",
-				"social.system_message",
-				"pickup.item_picked_up",
-				"social.item_offered",
-				"crafting.item_crafted",
-				"combat.damage_taken",
-				"player.physical",
-				"smelting.output_ready",
-				"task.blocked",
-				"action_graph.goal_suspended",
-				"action_graph.goal_terminal" -> true;
-			default -> false;
-		};
+	/** The attention gate followed by the trigger factory, as the pipeline applies them to a routed event. */
+	PlannerTrigger createPlannerTriggerForTests(SemanticEvent event, EventRoutingProfile profile) {
+		return ReferenceAttentionPolicy.gate(event, attentionState(), attentionEvidence(event)).wakes()
+			? createPlannerTrigger(event, profile) : null;
 	}
 
-	PlannerTrigger createPlannerTriggerForTests(SemanticEvent event, EventRoutingProfile profile) {
-		return createPlannerTrigger(event, profile);
+	/** Runtime facts for one attention decision. */
+	private AttentionState attentionState() {
+		ActiveJob job = activeJobRuntime.current();
+		return new AttentionState(
+			evaluationPlannerSuppressed,
+			proactiveSocialModeEnabled(),
+			survivalReflexRuntime.snapshot().ownsActuation(),
+			job == null ? null : job.type().name(),
+			job == null || job.isIdle(),
+			job != null && job.status().terminal(),
+			suppressPlannerTriggersForPendingCraftToolResult()
+		);
+	}
+
+	/** Chat facts the policy cannot compute from the payload alone; other events carry none. */
+	private AttentionEvidence attentionEvidence(SemanticEvent event) {
+		String type = event.type();
+		if (!"social.player_spoke".equals(type) && !"social.player_addressed_agent".equals(type)
+			&& !"social.local_controller_spoke".equals(type)) {
+			return AttentionEvidence.NONE;
+		}
+		String player = stringPayloadValue(event.payload(), "player");
+		String message = stringPayloadValue(event.payload(), "message");
+		return new AttentionEvidence(
+			message != null && ChatIngestService.isAddressedToAgent(message),
+			message != null && DialogueRuntime.isResetCommand(message),
+			player != null && playerChatWithinConfiguredDistance(player)
+		);
 	}
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createPlayerSpokeTrigger(SemanticEvent event) {
 		String player = stringPayloadValue(event.payload(), "player");
 		String message = stringPayloadValue(event.payload(), "message");
 		if (player == null || message == null) {
-			return null;
-		}
-		if (ChatIngestService.isAddressedToAgent(message)) {
-			return null;
-		}
-		if (!proactiveSocialModeEnabled() || !playerChatWithinConfiguredDistance(player)) {
 			return null;
 		}
 		return PlannerTrigger.autonomous(PlannerTriggerType.CHAT, player, message, event.tick(), event.timestampMs(), "ambient_player_chat");
@@ -4724,15 +4741,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (player == null || message == null) {
 			return null;
 		}
-		if (DialogueRuntime.isResetCommand(message) || !playerChatWithinConfiguredDistance(player)) {
-			return null;
-		}
 		return PlannerTrigger.direct(PlannerTriggerType.CHAT, player, message, event.tick(), event.timestampMs());
 	}
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createLocalControllerTrigger(SemanticEvent event) {
 		String message = stringPayloadValue(event.payload(), "message");
-		if (message == null || DialogueRuntime.isResetCommand(message)) {
+		if (message == null) {
 			return null;
 		}
 		return PlannerTrigger.direct(
@@ -4746,7 +4760,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createSystemTrigger(SemanticEvent event) {
 		String message = stringPayloadValue(event.payload(), "message");
-		if (message == null || !proactiveSocialModeEnabled()) {
+		if (message == null) {
 			return null;
 		}
 		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "server", message, event.tick(), event.timestampMs(), "system_message");
@@ -4775,8 +4789,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createActionGraphTerminalTrigger(SemanticEvent event) {
 		String executionId = stringPayloadValue(event.payload(), "executionId");
-		String state = stringPayloadValue(event.payload(), "state");
-		if (executionId == null || !"FAILED".equals(state)) {
+		if (executionId == null) {
 			return null;
 		}
 		String goal = stringPayloadValue(event.payload(), "goal");
@@ -4811,9 +4824,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createPickupTrigger(SemanticEvent event) {
-		if (suppressPlannerTriggersForCollectResourceProgress()) {
-			return null;
-		}
 		String itemId = stringPayloadValue(event.payload(), "itemId");
 		Float count = floatPayloadValue(event.payload(), "count");
 		if (itemId == null || count == null) {
@@ -4829,29 +4839,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		);
 	}
 
-	private EventPolicyDecision resolveDefaultEventPolicy(SemanticEvent event, EventRoutingProfile profile) {
-		if (event == null || !"pickup.item_picked_up".equals(event.type())) {
-			return EventPolicyDecision.allow();
-		}
-		ActiveJob current = activeJobRuntime.current();
-		if (current == null || current.isIdle() || current.status().terminal()) {
-			return EventPolicyDecision.allow();
-		}
-		if (current.type() != ActiveJobType.MINE_BLOCKS && current.type() != ActiveJobType.ENSURE_BLOCKS_IN_INVENTORY) {
-			return EventPolicyDecision.allow();
-		}
-		return new EventPolicyDecision(
-			EventPolicyEffect.SEMANTIC_ONLY,
-			"default-mining-pickup-semantic-only",
-			"pickup progress is owned by the active mining job",
-			false
-		);
-	}
-
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createCraftTrigger(SemanticEvent event) {
-		if (suppressPlannerTriggersForCollectResourceProgress() || suppressPlannerTriggersForPendingCraftToolResult()) {
-			return null;
-		}
 		String itemId = stringPayloadValue(event.payload(), "itemId");
 		Float count = floatPayloadValue(event.payload(), "count");
 		if (itemId == null || count == null) {
@@ -4868,9 +4856,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private ai.moeru.airicraft.agent.llm.PlannerTrigger createDamageTrigger(SemanticEvent event) {
-		if (survivalReflexRuntime.snapshot().ownsActuation()) {
-			return null;
-		}
 		Map<String, Object> payload = event.payload();
 		String damageTypeId = stringPayloadValue(payload, "damageTypeId");
 		String attackerName = stringPayloadValue(payload, "attackerName");
@@ -4914,8 +4899,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private PlannerTrigger createPhysicalTrigger(SemanticEvent event) {
-		// Reflex observations still reach the semantic feed; its existing resolution event wakes the planner.
-		if (survivalReflexRuntime.snapshot().ownsActuation()) return null;
 		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
 			"Physical observation: " + new com.google.gson.Gson().toJson(event.payload())
 				+ ". These are observed changes, not proof of an involuntary cause. Use the actual position and task context to decide whether recovery is needed.",
@@ -5135,11 +5118,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
 		return EventCatalog.defaults().routingProfiles();
-	}
-
-	private boolean suppressPlannerTriggersForCollectResourceProgress() {
-		ActiveJob current = activeJobRuntime.current();
-		return current.type() == ActiveJobType.COLLECT_RESOURCE && !current.status().terminal();
 	}
 
 	private boolean suppressPlannerTriggersForPendingCraftToolResult() {

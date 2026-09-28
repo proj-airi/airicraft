@@ -23,23 +23,36 @@ public final class EventPolicyState {
 	}
 
 	public EventPolicyDecision evaluate(SemanticEvent event, boolean bypassed) {
+		RuleMatch match = match(event, bypassed);
+		recordEvaluation(match, event.timestampMs());
+		return match.decision();
+	}
+
+	/** Finds the decisive rule without recording it; the latest matching rule wins. */
+	public RuleMatch match(SemanticEvent event, boolean bypassed) {
 		Objects.requireNonNull(event, "event");
 		if (bypassed) {
-			lastDecision = EventPolicyDecision.bypass();
-			return lastDecision;
+			return new RuleMatch(-1, EventPolicyDecision.bypass());
 		}
 		for (int index = rules.size() - 1; index >= 0; index--) {
 			EventPolicyRule rule = rules.get(index);
-			if (!rule.match().matches(event)) {
-				continue;
+			if (rule.match().matches(event)) {
+				return new RuleMatch(index, new EventPolicyDecision(rule.effect(), rule.ruleId(), rule.reason(), false));
 			}
-			EventPolicyRule updated = rule.noteMatched(event.timestampMs());
-			rules.set(index, updated);
-			lastDecision = new EventPolicyDecision(updated.effect(), updated.ruleId(), updated.reason(), false);
-			return lastDecision;
 		}
-		lastDecision = EventPolicyDecision.allow();
-		return lastDecision;
+		return new RuleMatch(-1, EventPolicyDecision.allow());
+	}
+
+	/** Records a {@link #match} result: the matched rule's counters and the last decision. */
+	public void recordEvaluation(RuleMatch match, long timestampMs) {
+		if (match.ruleIndex() >= 0 && match.ruleIndex() < rules.size()) {
+			rules.set(match.ruleIndex(), rules.get(match.ruleIndex()).noteMatched(timestampMs));
+		}
+		lastDecision = match.decision();
+	}
+
+	/** A rule evaluation; {@code ruleIndex} is -1 when no rule matched or the event bypasses rules. */
+	public record RuleMatch(int ruleIndex, EventPolicyDecision decision) {
 	}
 
 	public void upsert(EventPolicyRule rule) {

@@ -1,5 +1,11 @@
 package ai.moeru.airicraft.agent.events;
 
+import ai.moeru.airicraft.agent.attention.AttentionDecision;
+import ai.moeru.airicraft.agent.attention.AttentionDecisionLog;
+import ai.moeru.airicraft.agent.attention.AttentionOutcome;
+import ai.moeru.airicraft.agent.attention.AttentionPolicy;
+import ai.moeru.airicraft.agent.attention.Delivery;
+import ai.moeru.airicraft.agent.attention.WakeDecision;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 
@@ -27,7 +33,8 @@ public final class AgentEventPipeline {
 	private final EventPolicyState policyState;
 	private final Map<String, EventRoutingProfile> routingProfiles;
 	private final AgentDebugRecorder debugRecorder;
-	private final DefaultPolicyResolver defaultPolicyResolver;
+	private final AttentionPolicy attentionPolicy;
+	private final AttentionDecisionLog attentionLog;
 	private long lastProcessedRawSeqNo;
 	private boolean plannerEnabled = true;
 
@@ -61,6 +68,21 @@ public final class AgentEventPipeline {
 		AgentDebugRecorder debugRecorder,
 		DefaultPolicyResolver defaultPolicyResolver
 	) {
+		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, debugRecorder,
+			AttentionPolicy.routingOnly(Objects.requireNonNull(defaultPolicyResolver, "defaultPolicyResolver")::resolve),
+			new AttentionDecisionLog());
+	}
+
+	public AgentEventPipeline(
+		AgentEventLog rawEventLog,
+		AgentEventBus rawPublisher,
+		SemanticEventBuffer plannerEventBuffer,
+		EventPolicyState policyState,
+		Map<String, EventRoutingProfile> routingProfiles,
+		AgentDebugRecorder debugRecorder,
+		AttentionPolicy attentionPolicy,
+		AttentionDecisionLog attentionLog
+	) {
 		this.rawEventLog = Objects.requireNonNull(rawEventLog, "rawEventLog");
 		this.rawEventBuffer = rawEventLog;
 		this.rawPublisher = Objects.requireNonNull(rawPublisher, "rawPublisher");
@@ -68,11 +90,16 @@ public final class AgentEventPipeline {
 		this.policyState = Objects.requireNonNull(policyState, "policyState");
 		this.routingProfiles = Map.copyOf(Objects.requireNonNull(routingProfiles, "routingProfiles"));
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
-		this.defaultPolicyResolver = Objects.requireNonNull(defaultPolicyResolver, "defaultPolicyResolver");
+		this.attentionPolicy = Objects.requireNonNull(attentionPolicy, "attentionPolicy");
+		this.attentionLog = Objects.requireNonNull(attentionLog, "attentionLog");
 	}
 
 	public SemanticEventBuffer plannerEventBuffer() {
 		return plannerEventBuffer;
+	}
+
+	public AttentionDecisionLog attentionLog() {
+		return attentionLog;
 	}
 
 	public EventPolicyState policyState() {
@@ -132,17 +159,16 @@ public final class AgentEventPipeline {
 	private List<PlannerTrigger> route(SemanticEvent event, TriggerFactory triggerFactory) {
 		EventRoutingProfile profile = routingProfiles.getOrDefault(event.type(), EventRoutingProfile.rawOnly(event.type()));
 		if (!profile.semanticEligible() && !profile.triggerEligible()) {
+			attentionLog.record(new AttentionDecision(event.seqNo(), event.tick(), event.type(), false, Delivery.NONE,
+				ai.moeru.airicraft.agent.attention.Urgency.LOW, ai.moeru.airicraft.agent.attention.AttentionStage.RULES,
+				"catalog.raw_only", "", false));
 			recordBufferState();
 			return List.of();
 		}
 
-		EventPolicyDecision decision = policyState.evaluate(event, profile.policyBypass());
-		if (!decision.bypassed() && decision.matchedRuleId() == null) {
-			EventPolicyDecision defaultDecision = defaultPolicyResolver.resolve(event, profile);
-			if (defaultDecision != null) {
-				decision = defaultDecision;
-			}
-		}
+		AttentionOutcome outcome = attentionPolicy.decide(event, profile, policyState, plannerEnabled);
+		policyState.recordEvaluation(new EventPolicyState.RuleMatch(outcome.ruleMatchIndex(), outcome.ruleMatch()), event.timestampMs());
+		EventPolicyDecision decision = outcome.policy();
 		if (decision.intervened()) {
 			EventPolicyIntervention intervention = new EventPolicyIntervention(
 				event.seqNo(),
@@ -167,24 +193,16 @@ public final class AgentEventPipeline {
 				"AgentEventPipeline", EventCause.event(event.seqNo()));
 		}
 
-		boolean emitSemantic = plannerEnabled && profile.semanticEligible();
-		boolean emitTrigger = profile.triggerEligible();
-		switch (decision.effect()) {
-			case IGNORE -> {
-				emitSemantic = false;
-				emitTrigger = false;
-			}
-			case SEMANTIC_ONLY -> emitTrigger = false;
-			case TRIGGER_ONLY -> emitSemantic = false;
-			case ALLOW -> {
-			}
-		}
-
+		boolean emitSemantic = outcome.emitSemantic();
 		if (emitSemantic) {
 			plannerEventBuffer.append(event.tick(), event.timestampMs(), event.type(), event.payload(), event.source(), event.cause());
 		}
 
-		PlannerTrigger trigger = emitTrigger ? triggerFactory.create(event, profile) : null;
+		WakeDecision wake = outcome.wake();
+		PlannerTrigger trigger = wake.wakes() ? triggerFactory.create(event, profile) : null;
+		attentionLog.record(new AttentionDecision(event.seqNo(), event.tick(), event.type(), emitSemantic, wake.delivery(),
+			wake.urgency(), wake.stage(), wake.ruleId(), wake.wakes() && trigger == null ? "invalid_payload" : wake.reason(),
+			trigger != null));
 		debugRecorder.recordEventRouting(
 			event.tick(),
 			event.timestampMs(),
