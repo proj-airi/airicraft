@@ -356,6 +356,34 @@ public final class PlannerOrchestrator {
 		contextAggregator.configureMicroCompaction(service);
 	}
 	public void configureDecisionAuthority(java.util.function.BooleanSupplier authority) { decisionAuthority = authority; }
+
+	/** Hears that the accepted context is about to be compacted, reset or shut down, while it can still be read. */
+	@FunctionalInterface
+	public interface ContextEndListener {
+		void contextEnding(String reason);
+	}
+
+	private ContextEndListener contextEndListener = reason -> { };
+
+	/** Wires episodic memory: it reads the context before it ends and supplies recall for each new one. */
+	public void configureMemory(ContextEndListener listener, java.util.function.Supplier<String> recall) {
+		contextEndListener = Objects.requireNonNull(listener, "listener");
+		contextAggregator.setRecallSource(recall);
+	}
+
+	/** The accepted context as compaction reads it; null when the provider keeps the history. */
+	public LlmConversation memoryContext() {
+		return plannerExecutor.managesConversationHistory() ? null : contextAggregator.buildMemoryContext();
+	}
+
+	private void notifyContextEnding(String reason) {
+		try {
+			contextEndListener.contextEnding(reason);
+		}
+		catch (RuntimeException failure) {
+			Airicraft.LOGGER.warn("Context end listener failed ({})", reason, failure);
+		}
+	}
 	private long incorporatedDecisionEventSequence;
 	private boolean decisionRefreshPending = true;
 
@@ -1226,6 +1254,7 @@ public final class PlannerOrchestrator {
 			return false;
 		}
 		lastCompactionResult = null;
+		notifyContextEnding("compaction");
 		return compactionService.submit(contextAggregator.buildCompactionConversation());
 	}
 
@@ -1242,6 +1271,7 @@ public final class PlannerOrchestrator {
 	}
 
 	public void reset() {
+		notifyContextEnding("reset");
 		decisionWorldSessionId = null;
 		incorporatedDecisionEventSequence = 0;
 		cancelPendingTool();
@@ -1251,6 +1281,7 @@ public final class PlannerOrchestrator {
 	}
 
 	public void shutdown() {
+		notifyContextEnding("shutdown");
 		cancelPendingTool();
 		sessionCoordinator.shutdown();
 		compactionService.shutdown();
@@ -1368,6 +1399,7 @@ public final class PlannerOrchestrator {
 			&& lastCompactionResult.failureMessage().matches("(?s)^Provider returned HTTP (400|401|403|404|405|413|415|422)(?:\\D.*|$)")) {
 			return false;
 		}
+		notifyContextEnding("compaction");
 		return compactionService.submit(contextAggregator.buildCompactionConversation());
 	}
 

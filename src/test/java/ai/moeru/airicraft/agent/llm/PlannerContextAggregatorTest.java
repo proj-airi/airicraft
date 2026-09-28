@@ -461,6 +461,36 @@ class PlannerContextAggregatorTest {
 	}
 
 	@Test
+	void recalledMemoryOpensEachNewContextAndStaysFixedWithinIt() {
+		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("Asia/Taipei"));
+		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);
+		var memory = new java.util.concurrent.atomic.AtomicReference<>("MEMORY\nMoments:\n- I fell into lava.");
+		aggregator.setRecallSource(memory::get);
+
+		PlannerContextSnapshot first = freezeSnapshot(aggregator, requestAt(1_000L, "Alice", "hi"));
+		assertEquals("system", first.plannerConversation().messages().get(0).role());
+		assertEquals("MEMORY\nMoments:\n- I fell into lava.", first.plannerConversation().messages().get(1).content());
+		assertEquals(LlmMessageKind.CHECKPOINT, first.plannerConversation().messages().get(1).kind());
+		aggregator.commitAcceptedTriggerBatch(first);
+
+		memory.set("MEMORY\nMoments:\n- I found diamonds.");
+		var second = freezeSnapshot(aggregator, requestAt(2_000L, "Alice", "again")).plannerConversation().messages();
+		assertEquals("MEMORY\nMoments:\n- I fell into lava.", second.get(1).content(), "Recall is read once per context");
+
+		aggregator.applyCheckpoint(new CompactionCheckpoint("today", "cave", "smelt iron", List.of(),
+			List.of("Three raw iron gathered"), List.of(), List.of(), List.of(), List.of()));
+		var compacted = aggregator.currentRetainedConversation(clock.millis()).messages();
+		assertEquals("MEMORY\nMoments:\n- I found diamonds.", compacted.get(1).content(), "Compaction starts a new context");
+		assertTrue(compacted.get(2).content().contains("Three raw iron gathered"), "Older memory comes before this session's checkpoint");
+		assertTrue(aggregator.buildMemoryContext().messages().get(1).content().contains("I found diamonds"));
+
+		aggregator.clear();
+		memory.set("");
+		var fresh = freezeSnapshot(aggregator, requestAt(3_000L, "Alice", "hello")).plannerConversation().messages();
+		assertFalse(fresh.stream().anyMatch(message -> message.content().startsWith("MEMORY")), "No memories, no block");
+	}
+
+	@Test
 	void acceptedAssistantHistoryRetainsRawAssistantContentOverride() {
 		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("Asia/Taipei"));
 		PlannerContextAggregator aggregator = new PlannerContextAggregator(clock, 65_536, PlannerVisionMode.EXTERNAL_SUMMARY);

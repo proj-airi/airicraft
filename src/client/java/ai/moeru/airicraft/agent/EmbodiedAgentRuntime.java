@@ -306,6 +306,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private ai.moeru.airicraft.policy.PolicyRuntime policyRuntime;
 	private ai.moeru.airicraft.agent.work.WorkHandle policyWork;
 	private final ai.moeru.airicraft.agent.llm.PlannerOrchestrator policyToolDispatcher;
+	private final ai.moeru.airicraft.agent.memory.episodic.EpisodicMemory episodicMemory;
 	private boolean dispatchingPolicyTool;
 	private final java.util.Set<ai.moeru.airicraft.agent.work.WorkHandle> policyChildren = new java.util.HashSet<>();
 
@@ -473,6 +474,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			debugRecorder.recordPlannerWake(tickCount, clock.millis(), kind, payload);
 		});
 		this.policyToolDispatcher = plannerShell.controllerPlanner();
+		var memory = plannerShell.episodicMemory();
+		this.episodicMemory = memory;
+		this.eventBus.subscribe(ai.moeru.airicraft.agent.memory.episodic.EpisodicMemory.BOUNDARY_EVENTS::containsKey,
+			event -> memory.onEvent(event.type()));
 		ai.moeru.airicraft.memory.InteractionLogbookRecorder.observe((server, entries) -> {
 			pendingInteractions.offer(new ObservedInteractions(server, entries));
 		});
@@ -530,6 +535,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public void onWorldLeave() {
+		episodicMemory.worldLeaving();
 		sessionRuntime.onWorldLeave(tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
@@ -591,6 +597,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.tick(client, activeTaskInProgress());
 		stopWorkOutsideTravelBounds(client);
 		dialogueRuntime.refreshPlannerGoalWorld();
+		episodicMemory.tick();
 		tickCount++;
 		localDamageTracker.pruneStale(tickCount);
 		BehaviorTreeSnapshot previousTreeSnapshot = behaviorTreeRuntime.snapshot();
@@ -1266,7 +1273,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=runtime_shutdown");
 		cancelPolicy("runtime_shutdown");
 		cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.RUNTIME_SHUTDOWN);
+		episodicMemory.worldLeaving();
 		dialogueRuntime.shutdown();
+		episodicMemory.close();
 		observability.shutdown();
 		visionService.shutdown();
 		worldTaskExecutor.shutdown();
@@ -1716,6 +1725,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public void prepareForEvaluation() {
+		episodicMemory.disable();
 		dialogueRuntime.clear();
 		eventPipeline.clearPlannerFeed();
 		plannerCallJournal.clear();

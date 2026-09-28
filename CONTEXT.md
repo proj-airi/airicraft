@@ -61,3 +61,11 @@ _Avoid_: Missing recording
 **Urgency**: The ordered importance of a wake, independent of its delivery mode. _Avoid_: Priority.
 
 **Delivery**: How a wake is scheduled, delayed, or used to preempt a decision. _Avoid_: Urgency.
+
+## Companion memory
+
+**Episode**: A neutral, past-tense record of one stretch of play, written from the planner's own context when that stretch ends. _Avoid_: Summary, log entry.
+
+**Memory digest**: Chapters and per-player facts rebuilt from episodes; derived and rewritable, while episodes stay append-only. _Avoid_: Profile store.
+
+**Recall**: The MEMORY block a new planner context starts with, fixed for that context. _Avoid_: Memory injection.

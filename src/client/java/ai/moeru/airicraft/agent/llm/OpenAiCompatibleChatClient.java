@@ -6,6 +6,7 @@ import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.NoopObservability;
 import ai.moeru.airicraft.agent.observability.TraceSanitizer;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
@@ -110,6 +111,22 @@ public final class OpenAiCompatibleChatClient {
 			responseModel(response.body()).orElse(config.model()),
 			requestBody
 		);
+	}
+
+	/** One JSON-object reply outside the planner loop, sent like compaction: no tools, no reasoning. */
+	public JsonObject completeJsonObject(LlmConversation conversation) throws LlmBackendException {
+		String body = complete(conversation, LlmRequestOptions.compaction()).payload();
+		try {
+			JsonArray choices = JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("choices");
+			if (choices == null || choices.isEmpty()) throw new JsonParseException("Missing choices");
+			JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
+			if (message == null) throw new JsonParseException("Missing message");
+			return OpenAiCompatibleMessageContent.extractJsonObject(message.get("content"))
+				.orElseThrow(() -> new JsonParseException("Missing JSON object"));
+		}
+		catch (IllegalStateException | JsonParseException exception) {
+			throw new LlmBackendException(LlmFailureType.PARSE_ERROR, "Failed to parse JSON reply", exception);
+		}
 	}
 
 	void resetProtocolMode() {

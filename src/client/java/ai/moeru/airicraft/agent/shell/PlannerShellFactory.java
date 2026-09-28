@@ -30,15 +30,20 @@ import ai.moeru.airicraft.agent.llm.PlannerToolRegistry;
 import ai.moeru.airicraft.agent.llm.WorldFeatureSearchService;
 import ai.moeru.airicraft.agent.llm.WorldFeatureSearchToolProvider;
 import ai.moeru.airicraft.agent.memory.PlaceMemoryToolProvider;
+import ai.moeru.airicraft.agent.memory.episodic.Episode;
+import ai.moeru.airicraft.agent.memory.episodic.EpisodicMemory;
 import ai.moeru.airicraft.agent.llm.codex.CodexAppServerLlmBackend;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
 
+import java.nio.file.Path;
 import java.time.Clock;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
@@ -196,11 +201,7 @@ public final class PlannerShellFactory {
 		CurrentInventoryService inventoryService = new CurrentInventoryService(MinecraftClient::getInstance);
 		CurrentWorldQueryService worldQueryService = new CurrentWorldQueryService(MinecraftClient::getInstance);
 		WorldFeatureSearchService worldFeatureSearchService = new WorldFeatureSearchService(MinecraftClient::getInstance);
-		var plannerGoal = new ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore(() -> {
-			MinecraftClient client = MinecraftClient.getInstance();
-			return client == null || client.world == null || client.getServer() == null ? null
-				: client.getServer().getSavePath(net.minecraft.util.WorldSavePath.ROOT);
-		});
+		var plannerGoal = new ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore(PlannerShellFactory::worldDirectory);
 		plannerGoal.refreshWorld();
 		var scriptedQueries = ai.moeru.airicraft.agent.llm.WorldQueryScriptToolProvider.forClient(effectiveServerTickSupplier, effectiveWorldReadObserver);
 		var sharedProviders = new java.util.ArrayList<>(List.<ai.moeru.airicraft.agent.llm.PlannerToolProvider>of(
@@ -253,6 +254,9 @@ public final class PlannerShellFactory {
 			effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, plannerCallJournal),
 			dual ? cacheSession + ":controller" : null, characterPrompt, backendFactory);
 		controllerRef.set(orchestrator);
+		EpisodicMemory episodicMemory = backendFactory != null ? EpisodicMemory.disabled()
+			: createMemory(controllerConfig, toolRegistry, observability, dual ? cacheSession + ":controller:compaction" : null,
+				orchestrator, effectiveClock);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
 		dialogue.configureMessages(DialogueMessages.DEFAULTS.withOverrides(config.character().messages()));
 		dialogueRef.set(dialogue);
@@ -286,7 +290,49 @@ public final class PlannerShellFactory {
 			thinker.shareGenerationSequence(generations);
 			dialogue.configureDelegation(thinker, handoff);
 		}
-		return new PlannerShellComponents(visionService, dialogue, journal, plannerCallJournal, orchestrator);
+		return new PlannerShellComponents(visionService, dialogue, journal, plannerCallJournal, orchestrator, episodicMemory);
+	}
+
+	/**
+	 * Memory reads the controller's local context, so provider-kept history has nothing to remember from.
+	 * {@code -Dairicraft.episodicMemory=false} turns it off.
+	 */
+	private static EpisodicMemory createMemory(AgentConfig.LlmConfig llm, PlannerToolRegistry tools, AgentObservability observability,
+		String cacheKey, PlannerOrchestrator controller, Clock clock) {
+		if (llm.plannerBackend() != AgentConfig.PlannerBackend.OPENAI_COMPATIBLE || llm.backendManagedHistory()
+			|| !Boolean.parseBoolean(System.getProperty("airicraft.episodicMemory", "true"))) {
+			return EpisodicMemory.disabled();
+		}
+		var client = new OpenAiCompatibleChatClient(llm, observability, tools, cacheKey);
+		var memory = new EpisodicMemory(client::completeJsonObject, controller::memoryContext, PlannerShellFactory::worldDirectory,
+			PlannerShellFactory::groundHere, PlannerShellFactory::otherPlayersHere, clock::millis);
+		controller.configureMemory(memory::contextEnding, memory::recall);
+		return memory;
+	}
+
+	/** Per-world files need a local save, as with goals, places and the interaction logbook. */
+	private static Path worldDirectory() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		return client == null || client.world == null || client.getServer() == null ? null
+			: client.getServer().getSavePath(net.minecraft.util.WorldSavePath.ROOT);
+	}
+
+	private static Episode.Ground groundHere() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client == null || client.world == null || client.player == null) return Episode.Ground.UNKNOWN;
+		BlockPos position = client.player.getBlockPos();
+		return new Episode.Ground(client.world.getTimeOfDay() / 24_000L, client.world.getRegistryKey().getValue().toString(),
+			position.getX(), position.getY(), position.getZ());
+	}
+
+	private static Set<String> otherPlayersHere() {
+		MinecraftClient client = MinecraftClient.getInstance();
+		if (client == null || client.world == null) return Set.of();
+		var names = new LinkedHashSet<String>();
+		for (var player : client.world.getPlayers()) {
+			if (player != client.player) names.add(player.getName().getString());
+		}
+		return names;
 	}
 
 	private static PlannerOrchestrator createOrchestrator(AgentConfig.LlmConfig llm, PlannerToolRegistry tools,

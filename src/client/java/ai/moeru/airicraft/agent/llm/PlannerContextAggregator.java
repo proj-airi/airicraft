@@ -13,6 +13,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 public final class PlannerContextAggregator {
 	private static final int DEFAULT_PENDING_SEMANTIC_EVENT_CAP = 128;
@@ -33,6 +34,9 @@ public final class PlannerContextAggregator {
 	private boolean decisionContextEnabled;
 	public void useDecisionContext() { decisionContextEnabled = true; }
 	private LlmConversation retainedConversation;
+	private Supplier<String> recallSource = () -> "";
+	/** Frozen for the current context; null until the next context reads it. */
+	private String recalledMemory;
 
 	private PlannerContextState state = PlannerContextState.initial();
 	private PlannerContextSnapshot lastFrozenSnapshot;
@@ -276,6 +280,7 @@ public final class PlannerContextAggregator {
 		}
 		ArrayList<LlmChatMessage> messages = new ArrayList<>();
 		messages.add(LlmChatMessage.system(systemPrompt()));
+		addRecalledMemory(messages);
 		if (state.activeCheckpoint() != null) {
 			messages.add(LlmChatMessage.user(state.activeCheckpoint().renderMessage(), LlmMessageKind.CHECKPOINT));
 		}
@@ -442,6 +447,20 @@ public final class PlannerContextAggregator {
 		);
 	}
 
+	/** The accepted context as compaction would read it, for sidecars that append their own task. */
+	public LlmConversation buildMemoryContext() {
+		return composeConversation(clock.millis(), List.of(), List.of());
+	}
+
+	/**
+	 * Supplies the MEMORY block a new context starts with. It is read once per context, at session
+	 * start or right after compaction, and stays fixed so the prompt prefix remains cacheable.
+	 */
+	public void setRecallSource(Supplier<String> source) {
+		recallSource = source == null ? () -> "" : source;
+		recalledMemory = null;
+	}
+
 	public void recordAgentTurn(DialogueTurn turn, JsonElement rawAssistantContent) {
 		Objects.requireNonNull(turn, "turn");
 		if (backendManagedHistory) {
@@ -488,8 +507,14 @@ public final class PlannerContextAggregator {
 	public void applyCheckpoint(CompactionCheckpoint checkpoint) {
 		if (microCompactor != null) microCompactor.reset();
 		state = PlannerContextReducer.clearCompactionPending(state, checkpoint, clock.millis());
-		if (toolRegistry.hasFixedPrefix()) retainedConversation = LlmConversation.of(List.of(
-			LlmChatMessage.system(systemPrompt()), LlmChatMessage.user(checkpoint.renderMessage(), LlmMessageKind.CHECKPOINT)));
+		recalledMemory = null;
+		if (toolRegistry.hasFixedPrefix()) {
+			ArrayList<LlmChatMessage> messages = new ArrayList<>();
+			messages.add(LlmChatMessage.system(systemPrompt()));
+			addRecalledMemory(messages);
+			messages.add(LlmChatMessage.user(checkpoint.renderMessage(), LlmMessageKind.CHECKPOINT));
+			retainedConversation = LlmConversation.of(messages);
+		}
 		lastFrozenSnapshot = null;
 	}
 
@@ -501,6 +526,7 @@ public final class PlannerContextAggregator {
 		if (microCompactor != null) microCompactor.reset();
 		state = PlannerContextState.initial();
 		retainedConversation = null;
+		recalledMemory = null;
 		lastFrozenSnapshot = null;
 		latestRequestSeed = null;
 		overflowFlushPending = false;
@@ -534,6 +560,12 @@ public final class PlannerContextAggregator {
 		if (microCompactor != null) conversation = microCompactor.update(conversation);
 		if (toolRegistry.hasFixedPrefix() && !backendManagedHistory) retainedConversation = conversation;
 		return conversation;
+	}
+
+	/** Older memories come before this session's checkpoint, so the context reads in time order. */
+	private void addRecalledMemory(List<LlmChatMessage> messages) {
+		if (recalledMemory == null) recalledMemory = recallSource.get();
+		if (recalledMemory != null && !recalledMemory.isBlank()) messages.add(LlmChatMessage.user(recalledMemory, LlmMessageKind.CHECKPOINT));
 	}
 
 	private String systemPrompt() {
@@ -587,6 +619,7 @@ public final class PlannerContextAggregator {
 			return microCompactor == null ? LlmConversation.of(messages) : microCompactor.update(LlmConversation.of(messages));
 		}
 		messages.add(LlmChatMessage.system(systemPrompt()));
+		if (!backendManagedHistory) addRecalledMemory(messages);
 		if (!backendManagedHistory && state.activeCheckpoint() != null) {
 			messages.add(LlmChatMessage.user(state.activeCheckpoint().renderMessage(), LlmMessageKind.CHECKPOINT));
 		}

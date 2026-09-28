@@ -9,6 +9,7 @@ public record PlannerShellComponents(
 	DialogueRuntime dialogueRuntime,
 	PlannerShellJournal plannerJournal,
 	PlannerCallJournal plannerCallJournal,
-	ai.moeru.airicraft.agent.llm.PlannerOrchestrator controllerPlanner
+	ai.moeru.airicraft.agent.llm.PlannerOrchestrator controllerPlanner,
+	ai.moeru.airicraft.agent.memory.episodic.EpisodicMemory episodicMemory
 ) {
 }
