@@ -73,6 +73,7 @@ import ai.moeru.airicraft.agent.events.EventPolicyState;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.EventCatalog;
 import ai.moeru.airicraft.agent.events.EventCause;
+import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -238,6 +239,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final LlmFlightRecorder llmFlightRecorder = new LlmFlightRecorder();
 	private final AgentDebugRecorder debugRecorder = new AgentDebugRecorder();
 	private final AgentEventBus eventBus;
+	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
 	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
@@ -429,6 +431,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.eventBus = new AgentEventBus(EventCatalog.defaults(), eventLog, this.clock::millis,
 			Boolean.getBoolean("airicraft.events.strict"), debugRecorder);
 		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
+		this.eventBus.subscribe(type -> type.equals("food.eaten") || type.equals("food.eat_failed"), foodOutcomes);
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
 			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
 		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
@@ -443,6 +446,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			(boundary, tick) -> { if (itemOfferObserver != null) itemOfferObserver.reset(); });
 		lifecycleDispatcher.register("slow", EnumSet.allOf(LifecycleBoundary.class),
 			(boundary, tick) -> { if (slowMiningObserver != null) slowMiningObserver.reset(); });
+		lifecycleDispatcher.register("food", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> foodOutcomes.clear());
 		lifecycleDispatcher.register("nearby", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
 			(boundary, tick) -> nearbyPlayerTracker.clear(tick, eventBus));
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
@@ -528,7 +533,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionRuntime.onWorldLeave(tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
-		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow"));
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
 		physicalObservationWorld = null;
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
@@ -1253,7 +1258,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		autoLanOpenState.clear();
-		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow"));
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
 		physicalObservationWorld = null;
 		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("nearby"));
 		eventPipeline.clearForShutdown();
@@ -2840,8 +2845,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					Map.of("physicalEffect", "Executor tracking ended or was replaced; this does not prove completion or reverse observed effects.")));
 			} else if (work.phase().equals("EATING")) {
 				long since = ((Number) work.details().get("afterEventSequence")).longValue();
-				eventBus.query(since).events().stream().filter(event -> event.type().equals("food.eaten") || event.type().equals("food.eat_failed"))
-					.findFirst().ifPresent(event -> recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(work.handle(), "",
+				foodOutcomes.firstAfter(since).ifPresent(event -> recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(work.handle(), "",
 						event.type().equals("food.eaten") ? ai.moeru.airicraft.agent.work.WorkSnapshot.State.SUCCEEDED : ai.moeru.airicraft.agent.work.WorkSnapshot.State.FAILED,
 						work.label(), "FINISHED", false, event.tick(), event.payload())));
 			}
