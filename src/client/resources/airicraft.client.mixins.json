@@ -28,6 +28,7 @@
 		"LivingEntityRendererMixin",
 		"MessageHandlerMixin",
 		"MinecraftClientTickDebugMixin",
+		"MinecraftClientOnboardingMixin",
 		"RenderLayersMixin",
 		"SectionBuilderMixin",
 		"SlotMixin"
