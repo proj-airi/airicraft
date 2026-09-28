@@ -3,10 +3,11 @@ set -euo pipefail
 
 usage() {
 	printf '%s\n' \
-		'Usage: scripts/codex-driver [Gradle runClient arguments...]' \
+		'Usage: scripts/codex-driver [--world <save-folder>] [Gradle runClient arguments...]' \
 		'' \
 		'Launch the Airicraft dev client with its embedded planner dormant.' \
 		'The current Codex task drives the client through the wrapper CLI.' \
+		'Use --world to load an existing save directly through Minecraft Quick Play.' \
 		'' \
 		'The launch prepares Minecraft options so a new worktree bypasses' \
 		'the narrator/accessibility onboarding screen unattended.' \
@@ -18,6 +19,23 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 	usage
 	exit 0
 fi
+
+gradle_args=()
+world_selected=false
+while (( $# )); do
+	case "$1" in
+		--world)
+			if [[ "$world_selected" == true || $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+				printf '%s\n' 'Provide --world once with a save folder name.' >&2
+				exit 2
+			fi
+			world_selected=true
+			gradle_args+=("-Pairicraft.world=$2")
+			shift 2
+			;;
+		*) gradle_args+=("$1"); shift ;;
+	esac
+done
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
@@ -42,4 +60,4 @@ printf '%s\n' \
 	'Keep this process running while the current Codex task uses the wrapper CLI.' \
 	"Bridge state: ${AIRICRAFT_BRIDGE_STATE_FILE:-$HOME/.airicraft/bridge-state.json}"
 
-exec ./gradlew wrapper:installDist runClient -Pairicraft.codexDriver=true "$@"
+exec ./gradlew wrapper:installDist runClient -Pairicraft.codexDriver=true "${gradle_args[@]}"

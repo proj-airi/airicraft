@@ -75,6 +75,16 @@ group = project.maven_group
 def runClientJdwpPort = providers.gradleProperty("airicraft.jdwp.port").orElse("5005")
 def runClientJdwpSuspend = providers.gradleProperty("airicraft.jdwp.suspend").orElse("n")
 def devPlayerName = providers.gradleProperty("airicraft.devPlayerName").orElse("AiricraftTest")
+// Minecraft Quick Play owns startup joining; no bridge polling or deferred mod-side join.
+def launchWorld = providers.gradleProperty("airicraft.world")
+if (launchWorld.isPresent()) {
+	def name = launchWorld.get()
+	if (name.isBlank() || name in [".", ".."] || name.contains("/") || name.contains("\\")) {
+		throw new GradleException("airicraft.world must be a save folder name, not a path or world ID")
+	}
+}
+def quickPlayArgs = launchWorld.isPresent() ? ["--quickPlaySingleplayer=${launchWorld.get()}".toString()] : []
+
 def automaticPlaytestEnabled = providers.gradleProperty("airicraft.automaticPlaytest").orElse("false")
 def automaticPlaytestId = providers.gradleProperty("airicraft.automaticPlaytestId")
 def automaticPlaytestDir = providers.gradleProperty("airicraft.automaticPlaytestDir").orElse(file("automatic_playtest").absolutePath)
@@ -186,6 +196,7 @@ loom {
 	runs {
 		client {
 			programArgs "--username", devPlayerName.get()
+			programArgs quickPlayArgs.toArray(new String[0])
 		}
 
 		configureEach {
@@ -428,6 +439,7 @@ allprojects {
 		jvmArgs.add("-Dairicraft.hostedPlaytestAutoReset=${hostedPlaytestAutoReset.get()}")
 		if (lanPort.isPresent()) jvmArgs.add("-Dairicraft.lanPort=${lanPort.get()}")
 		programArgs.addAll("--username", devPlayerName.get())
+		programArgs.addAll(quickPlayArgs)
 	}
 
     java {

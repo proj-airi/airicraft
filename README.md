@@ -316,7 +316,9 @@ Related upstream references:
 ### Singleplayer save management
 
 The wrapper can create and join new worlds, rename save display names, and delete
-closed saves. See [save management](docs/save-management.md) for commands and behavior.
+closed saves. Launch straight into an existing save with
+`scripts/codex-driver --world "Save folder"` (or `./gradlew runClient -Pairicraft.world="Save folder"`).
+See [save management](docs/save-management.md) for commands and behavior.
 
 ### Agent debug CLI
 

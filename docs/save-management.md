@@ -41,3 +41,24 @@ in the bridge and 125 seconds in the wrapper. After a timeout, inspect the clien
 and save list before retrying: an operation that already started may still finish.
 If creation fails after reserving its folder, that folder may remain for diagnosis;
 the error identifies it. Creation uses the standard installed datapack loading flow.
+
+## Launch directly into a saved world
+
+```sh
+scripts/codex-driver --world "New survival"
+# Normal launch with the embedded planner:
+./gradlew runClient -Pairicraft.world="New survival"
+```
+
+Use the save **folder name** (`name` from `worlds list`), not its display name or
+hashed `worldId`. The save must already exist under the launched client's `saves/`
+folder. Minecraft Quick Play loads it during startup, so no separate status/list/join
+loop is required. This works for the normal compatibility launch and the bare
+Minecraft development client. Other production launch tasks accept the same Gradle
+property; evaluator launches resolve the name within their isolated game directory.
+Missing or incompatible saves use Minecraft's normal Quick Play error screens.
+Without `--world` or `airicraft.world`, startup behavior is unchanged.
+
+The launcher remains attached to the Minecraft process. Startup is not a readiness
+receipt; when subsequent automation needs a loaded world, use the bridge's
+`worldLoaded` state as the readiness check, without issuing another join request.
