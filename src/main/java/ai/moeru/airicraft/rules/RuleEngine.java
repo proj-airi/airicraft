@@ -30,6 +30,17 @@ public final class RuleEngine implements AutoCloseable {
 	public static final int STATEMENT_LIMIT = 50_000;
 	public static final int MAX_STATE_BYTES = 16 * 1024;
 	public static final int MAX_OUTPUT_CHARS = 64 * 1024;
+	/**
+	 * Steps run off-thread before the engine reports ready. The interpreter specializes a module's code as it runs:
+	 * a first step takes ~170 ms and early steps several ms, against ~0.3 ms once specialized. Steps run
+	 * synchronously on the routing thread, so that cost is paid here instead.
+	 */
+	static final int WARMUP_STEPS = 600;
+	private static final String[] WARMUP_TYPES = {
+		"pickup.item_picked_up", "crafting.item_crafted", "combat.damage_taken", "player.physical", "social.item_offered",
+		"social.player_spoke", "social.system_message", "smelting.output_ready", "task.blocked", "action_graph.goal_suspended",
+		"action_graph.goal_terminal", "session.world_loaded", "task.notice"};
+	private static final String[] WARMUP_JOBS = {"null", "\"MINE_BLOCKS\"", "\"COLLECT_RESOURCE\"", "\"IDLE\""};
 	private static final ExecutorService WARMUP = Executors.newSingleThreadExecutor(
 		Thread.ofPlatform().daemon().name("airicraft-rules-warmup").factory());
 	/** The bundled module plus at most one override stay warm; replaced overrides are closed. */
@@ -182,6 +193,10 @@ public final class RuleEngine implements AutoCloseable {
 	}
 
 	private void build() {
+		build(true);
+	}
+
+	private void build(boolean warm) {
 		Context built = Context.newBuilder("js").option("engine.WarnInterpreterOnly", "false")
 			.allowHostAccess(HostAccess.NONE).allowHostClassLookup(name -> false).allowHostClassLoading(false)
 			.allowIO(IOAccess.NONE).allowCreateThread(false).allowCreateProcess(false).allowNativeAccess(false)
@@ -196,6 +211,13 @@ public final class RuleEngine implements AutoCloseable {
 					built.close(true);
 					return;
 				}
+			}
+			if (warm) warmUp(built, loadedKernel);
+			synchronized (this) {
+				if (closed) {
+					built.close(true);
+					return;
+				}
 				context = built;
 				kernel = loadedKernel;
 			}
@@ -205,10 +227,53 @@ public final class RuleEngine implements AutoCloseable {
 			throw new java.util.concurrent.CompletionException(new RuleException("load_failed",
 				module.origin() + ": " + exception.getMessage(), exception));
 		}
+		catch (WarmupCancelled cancelled) {
+			built.close(true);
+			build(false);
+		}
 		catch (RuntimeException exception) {
 			built.close(true);
 			throw exception;
 		}
+	}
+
+	/**
+	 * Runs {@link #WARMUP_STEPS} representative attention steps and discards their results. A module that fails on
+	 * this synthetic input is not rejected here; its real steps fail and fall back as usual. A warm-up step that
+	 * exhausts the statement limit cancels the context, so it is rebuilt once without warm-up.
+	 */
+	private void warmUp(Context built, Value loadedKernel) {
+		for (int step = 0; step < WARMUP_STEPS; step++) {
+			try {
+				built.resetLimits();
+				loadedKernel.invokeMember("run", warmupInput(step), "{}");
+			}
+			catch (PolyglotException exception) {
+				if (exception.isResourceExhausted() || exception.isCancelled()) throw new WarmupCancelled();
+				return;
+			}
+		}
+	}
+
+	private static final class WarmupCancelled extends RuntimeException {
+		WarmupCancelled() {
+			super(null, null, false, false);
+		}
+	}
+
+	static String warmupInput(int step) {
+		String type = WARMUP_TYPES[step % WARMUP_TYPES.length];
+		boolean flag = (step / WARMUP_TYPES.length) % 2 == 0;
+		String job = WARMUP_JOBS[(step / 2) % WARMUP_JOBS.length];
+		String rules = step % 3 == 0 ? "[]" : "[{\"index\":0,\"ruleId\":\"warmup\",\"effect\":\"" + (step % 2 == 0 ? "IGNORE" : "SEMANTIC_ONLY")
+			+ "\",\"reason\":\"warmup\",\"match\":{\"eventType\":\"" + type + "\",\"itemId\":\"minecraft:dirt\"}}]";
+		return "{\"tick\":" + step + ",\"seed\":" + (step + 1) + ",\"attention\":{\"proactiveSocialMode\":" + flag
+			+ ",\"reflexOwnsActuation\":" + !flag + ",\"activeJobType\":" + job + ",\"activeJobIdle\":" + (step % 5 == 0)
+			+ ",\"activeJobTerminal\":" + (step % 7 == 0) + ",\"pendingCraftToolResult\":" + (step % 4 == 0) + "},\"plannerRules\":" + rules
+			+ ",\"events\":[{\"seqNo\":" + (step + 1) + ",\"type\":\"" + type + "\",\"fields\":{\"itemId\":\"minecraft:" + (flag ? "dirt" : "oak_log")
+			+ "\",\"player\":\"Alex\",\"state\":\"" + (flag ? "FAILED" : "SUCCEEDED") + "\"},\"profile\":{\"semantic\":true,\"trigger\":" + (step % 6 != 0)
+			+ ",\"bypass\":" + (step % 11 == 0) + "},\"plannerEnabled\":" + (step % 9 != 0) + ",\"evidence\":{\"addressedToAgent\":" + (step % 8 == 0)
+			+ ",\"resetCommand\":false,\"senderWithinChatDistance\":" + flag + "}}]}";
 	}
 
 	/**

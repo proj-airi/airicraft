@@ -91,6 +91,15 @@ class RuleEngineTest {
 		assertTrue(RuleEngine.shared(RuleModule.bundledAttention()) != null);
 	}
 
+	@Test void warmUpRunsOffThreadAndSurvivesModulesThatExhaustTheLimitOnSyntheticInput() throws Exception {
+		assertTrue(RuleEngine.warmupInput(0).contains("\"events\""));
+		com.google.gson.JsonParser.parseString(RuleEngine.warmupInput(RuleEngine.WARMUP_STEPS - 1));
+		// Loops forever on anything but tick 7: warm-up is cancelled, the context is rebuilt without it, and real steps work.
+		RuleEngine engine = warm("(lib => ({ step(input, state) { while (input.tick !== 7) {} return {decisions: [], state}; } }))");
+		assertEquals("{}", engine.step(EMPTY, "{}").stateJson());
+		assertEquals(0, engine.rebuilds(), "a warm-up cancel is not a runtime rebuild");
+	}
+
 	private static String tick(int tick) {
 		return JsonParser.parseString(EMPTY).getAsJsonObject().deepCopy().toString().replace("\"tick\":7", "\"tick\":" + tick);
 	}

@@ -309,7 +309,14 @@ class AiricraftCliMainTest {
 				"status", "FAILED",
 				"lastError", "CALC_FAILED"
 			),
-			"taskExecution", linkedMap("state", "IDLE")
+			"taskExecution", linkedMap("state", "IDLE"),
+			"attention", linkedMap(
+				"recorded", 7,
+				"latest", List.of(linkedMap("seqNo", 7, "type", "pickup.item_picked_up", "ruleId", "catalog.trigger")),
+				"countsByRule", linkedMap("catalog.trigger", 7),
+				"rules", linkedMap("module", "bundled:attention/default.js", "ready", true, "fallbacks", 0),
+				"scheduler", linkedMap("pending", List.of(linkedMap("path", "W2")), "retainedBy", "G5.run_policy")
+			)
 		);
 
 		CliResult result = execute(transport, "agent", "debug", "state");
@@ -320,6 +327,13 @@ class AiricraftCliMainTest {
 		assertTrue(result.output().contains("lastError: CALC_FAILED\n"));
 		assertTrue(result.output().contains("[taskExecution]\n"));
 		assertTrue(result.output().contains("state: IDLE\n"));
+		assertTrue(result.output().contains("attentionDecisionsRecorded: 7\n"));
+		assertTrue(result.output().contains("attentionPendingWakes: 1\n"));
+		assertTrue(result.output().contains("attentionRetainedBy: G5.run_policy\n"));
+		assertTrue(result.output().contains("[attentionRules]\n"));
+		assertTrue(result.output().contains("module: bundled:attention/default.js\n"));
+		assertFalse(result.output().contains("pickup.item_picked_up"), "decisions are verbose-only");
+		assertTrue(execute(transport, "agent", "debug", "state", "--verbose").output().contains("pickup.item_picked_up"));
 	}
 
 	@Test
