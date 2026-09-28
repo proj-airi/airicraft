@@ -20,7 +20,9 @@ public final class AgentEventPipeline {
 		EventPolicyDecision resolve(SemanticEvent event, EventRoutingProfile profile);
 	}
 
-	private final SemanticEventBuffer rawEventBuffer;
+	private final EventView rawEventBuffer;
+	private final AgentEventLog rawEventLog;
+	private final AgentEventBus rawPublisher;
 	private final SemanticEventBuffer plannerEventBuffer;
 	private final EventPolicyState policyState;
 	private final Map<String, EventRoutingProfile> routingProfiles;
@@ -30,46 +32,43 @@ public final class AgentEventPipeline {
 	private boolean plannerEnabled = true;
 
 	public AgentEventPipeline(
-		SemanticEventBuffer rawEventBuffer,
+		AgentEventLog rawEventLog,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles
 	) {
-		this(rawEventBuffer, plannerEventBuffer, policyState, routingProfiles, new AgentDebugRecorder(), (event, profile) -> EventPolicyDecision.allow());
+		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, new AgentDebugRecorder(), (event, profile) -> EventPolicyDecision.allow());
 	}
 
 	public AgentEventPipeline(
-		SemanticEventBuffer rawEventBuffer,
+		AgentEventLog rawEventLog,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
 		AgentDebugRecorder debugRecorder
 	) {
-		this(rawEventBuffer, plannerEventBuffer, policyState, routingProfiles, debugRecorder, (event, profile) -> EventPolicyDecision.allow());
+		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, debugRecorder, (event, profile) -> EventPolicyDecision.allow());
 	}
 
 	public AgentEventPipeline(
-		SemanticEventBuffer rawEventBuffer,
+		AgentEventLog rawEventLog,
+		AgentEventBus rawPublisher,
 		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
 		AgentDebugRecorder debugRecorder,
 		DefaultPolicyResolver defaultPolicyResolver
 	) {
-		this.rawEventBuffer = Objects.requireNonNull(rawEventBuffer, "rawEventBuffer");
+		this.rawEventLog = Objects.requireNonNull(rawEventLog, "rawEventLog");
+		this.rawEventBuffer = rawEventLog;
+		this.rawPublisher = Objects.requireNonNull(rawPublisher, "rawPublisher");
 		this.plannerEventBuffer = Objects.requireNonNull(plannerEventBuffer, "plannerEventBuffer");
 		this.policyState = Objects.requireNonNull(policyState, "policyState");
 		this.routingProfiles = Map.copyOf(Objects.requireNonNull(routingProfiles, "routingProfiles"));
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
 		this.defaultPolicyResolver = Objects.requireNonNull(defaultPolicyResolver, "defaultPolicyResolver");
-	}
-
-	public SemanticEvent appendRaw(long tick, String type, Map<String, Object> payload) {
-		return rawEventBuffer.append(tick, type, payload);
-	}
-
-	public SemanticEventBuffer rawEventBuffer() {
-		return rawEventBuffer;
 	}
 
 	public SemanticEventBuffer plannerEventBuffer() {
@@ -81,7 +80,7 @@ public final class AgentEventPipeline {
 	}
 
 	public void clear() {
-		rawEventBuffer.clear();
+		rawEventLog.clear();
 		plannerEventBuffer.clear();
 		policyState.clear();
 		lastProcessedRawSeqNo = 0L;
@@ -93,7 +92,7 @@ public final class AgentEventPipeline {
 	 * asynchronous terminal evidence emitted by the retiring runtime.
 	 */
 	public void clearForShutdown() {
-		rawEventBuffer.clearPreservingSequence();
+		rawEventLog.clearPreservingSequence();
 		plannerEventBuffer.clear();
 		policyState.clear();
 		lastProcessedRawSeqNo = 0L;
@@ -164,7 +163,8 @@ public final class AgentEventPipeline {
 			if (decision.reason() != null) {
 				payload.put("reason", decision.reason());
 			}
-			rawEventBuffer.append(event.tick(), event.timestampMs(), "policy.event_intervened", payload);
+			rawPublisher.publish(event.tick(), event.timestampMs(), "policy.event_intervened", payload,
+				"AgentEventPipeline", EventCause.event(event.seqNo()));
 		}
 
 		boolean emitSemantic = plannerEnabled && profile.semanticEligible();
@@ -181,7 +181,7 @@ public final class AgentEventPipeline {
 		}
 
 		if (emitSemantic) {
-			plannerEventBuffer.append(event.tick(), event.timestampMs(), event.type(), event.payload());
+			plannerEventBuffer.append(event.tick(), event.timestampMs(), event.type(), event.payload(), event.source(), event.cause());
 		}
 
 		PlannerTrigger trigger = emitTrigger ? triggerFactory.create(event, profile) : null;

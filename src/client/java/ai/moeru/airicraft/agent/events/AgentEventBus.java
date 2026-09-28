@@ -24,6 +24,7 @@ public final class AgentEventBus implements EventStream {
 	private static final int MAX_WARNING_KEYS = 256;
 	// Reject before append, so every accepted event retains its subscriber delivery.
 	private static final int MAX_PENDING_EVENTS = 512;
+	static final String TEST_SOURCE = "test";
 
 	private final EventCatalog catalog;
 	private final AgentEventLog log;
@@ -60,6 +61,11 @@ public final class AgentEventBus implements EventStream {
 	 */
 	@Override
 	public SemanticEvent publish(long tick, String type, Map<String, Object> payload, String source, EventCause cause) {
+		return publish(tick, wallClockMs.getAsLong(), type, payload, source, cause);
+	}
+
+	/** Derived events retain their source's observation time through the same validated delivery path. */
+	SemanticEvent publish(long tick, long timestampMs, String type, Map<String, Object> payload, String source, EventCause cause) {
 		SemanticEvent event;
 		synchronized (this) {
 			Objects.requireNonNull(type, "type");
@@ -71,14 +77,14 @@ public final class AgentEventBus implements EventStream {
 			if (spec == null) {
 				undeclared++;
 				validationFailure(new WarningKey(type, null), "Undeclared event type: " + type);
-			} else if (source == null || !spec.producers().contains(source)) {
+			} else if (source == null || !acceptsProducer(spec, source)) {
 				unknownSource++;
 				validationFailure(new WarningKey(type, source), "Undeclared producer for " + type + ": " + source);
 			}
 			if (pending.size() == MAX_PENDING_EVENTS) {
 				throw new IllegalStateException("Nested event delivery queue is full");
 			}
-			event = log.append(tick, wallClockMs.getAsLong(), type, payload, source, cause);
+			event = log.append(tick, timestampMs, type, payload, source, cause);
 			pending.addLast(event);
 			// The thread already delivering, including this one when nested, delivers this event in order.
 			if (dispatching) return event;
@@ -86,6 +92,15 @@ public final class AgentEventBus implements EventStream {
 		}
 		dispatchPending();
 		return event;
+	}
+
+	/**
+	 * Test injection ({@code appendEventForTests}) may publish any declared type as {@value #TEST_SOURCE}.
+	 * Only strict mode accepts it; strict mode is enabled solely by the Gradle test task, so a production
+	 * publish claiming the test source is counted and warned as an unknown producer.
+	 */
+	private boolean acceptsProducer(EventTypeSpec spec, String source) {
+		return spec.producers().contains(source) || strict && TEST_SOURCE.equals(source);
 	}
 
 	private void validationFailure(WarningKey key, String message) {

@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.dialogue;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventStream;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.llm.CompactionExecutionResult;
 import ai.moeru.airicraft.agent.llm.ExternalPlannerToolResult;
@@ -99,7 +100,7 @@ public final class DialogueRuntime {
 	private CompletableFuture<String> continuationAdmission;
 	private ai.moeru.airicraft.agent.llm.PlannerToolCall admittedContinuation;
 
-	private boolean pollPolicyContinuation(long tick, SemanticEventBuffer events) {
+	private boolean pollPolicyContinuation(long tick, EventStream events) {
 		if (policyContinuation == null || decisionContextSource == null) return false;
 		boolean handled = false;
 		if (continuationAdmission != null) {
@@ -108,7 +109,7 @@ public final class DialogueRuntime {
 			try { receipt = continuationAdmission.join(); }
 			catch (RuntimeException error) { receipt = "TOOL_ERROR: continuation admission failed"; }
 			boolean accepted = !receipt.startsWith("TOOL_ERROR:") && !receipt.startsWith("TOOL_UNAVAILABLE:");
-			events.append(tick, "policy.continuation." + (accepted ? "accepted" : "rejected"),
+			events.from("DialogueRuntime").publish(tick, "policy.continuation." + (accepted ? "accepted" : "rejected"),
 				Map.of("source", admittedContinuation.arguments().get("source").getAsString(),
 					"input", admittedContinuation.arguments().get("input"), "receipt", receipt));
 			continuationAdmission = null;
@@ -134,7 +135,7 @@ public final class DialogueRuntime {
 				handled = true;
 			}
 		}
-		for (var event : policyContinuation.drainEvents()) events.append(tick, "policy.continuation." + event.get("state"), event);
+		for (var event : policyContinuation.drainEvents()) events.from("DialogueRuntime").publish(tick, "policy.continuation." + event.get("state"), event);
 		return handled;
 	}
 
@@ -253,7 +254,7 @@ public final class DialogueRuntime {
 	/** Called after action/reflex updates. Returning true reserves initiative for the current goal. */
 	public boolean continuePlannerGoal(long tick, boolean workIdle, SessionSnapshot session,
 		String primaryPlayer, Optional<GoalSnapshot> actionGoal, TaskSnapshot task,
-		MissionExecutionSnapshot mission, SemanticEventBuffer events) {
+		MissionExecutionSnapshot mission, EventStream events) {
 		delegationWorkIdle = workIdle;
 		boolean delegated = delegation != null && delegation.active();
 		if (delegated && (delegation.starting() || delegation.returning())) return true;
@@ -465,7 +466,7 @@ public final class DialogueRuntime {
 		}
 	}
 
-	public boolean handleResetCommand(String senderName, String plainTextMessage, long tick, SemanticEventBuffer eventBuffer) {
+	public boolean handleResetCommand(String senderName, String plainTextMessage, long tick, EventStream eventBuffer) {
 		if (!DialogueCore.isResetCommand(plainTextMessage)) {
 			return false;
 		}
@@ -489,7 +490,7 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		appendTurn(new DialogueTurn(senderName, plainTextMessage, tick, timestampMs));
@@ -520,7 +521,7 @@ public final class DialogueRuntime {
 		SessionSnapshot sessionSnapshot,
 		String primaryInteractionPlayer,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		submitPlannerTrigger(
@@ -548,7 +549,7 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer plannerEventBuffer
+		EventStream plannerEventBuffer
 	) {
 		if (plannerGoal != null && plannerGoal.blocked() && trigger != null && !trigger.maySupersedeLaunchedTurn()) {
 			auditTrigger(trigger, "dropped", "G4.blocked_goal");
@@ -591,7 +592,7 @@ public final class DialogueRuntime {
 		SessionSnapshot sessionSnapshot,
 		String primaryInteractionPlayer,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		onPlayerChat(senderName, plainTextMessage, tick, sessionSnapshot, primaryInteractionPlayer, activeGoal, null, null, eventBuffer);
 	}
@@ -603,11 +604,11 @@ public final class DialogueRuntime {
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
 		MissionExecutionSnapshot missionExecution,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
 		appendTurn(new DialogueTurn("system", updateMessage, tick, timestampMs));
-		var event = eventBuffer.append(tick, "task.notice", Map.of("message", updateMessage));
+		var event = eventBuffer.from("DialogueRuntime").publish(tick, "task.notice", Map.of("message", updateMessage));
 		if (externalDriverActive || (state.degraded() && activePlanner().isEnabled()) || !activePlanner().isConfigured()) {
 			return;
 		}
@@ -620,18 +621,18 @@ public final class DialogueRuntime {
 		long tick,
 		SessionSnapshot sessionSnapshot,
 		Optional<GoalSnapshot> activeGoal,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		onInternalTaskUpdate(updateMessage, tick, sessionSnapshot, activeGoal, null, null, eventBuffer);
 	}
 
-	public DialogueResponse poll(long tick, SemanticEventBuffer eventBuffer) {
+	public DialogueResponse poll(long tick, EventStream eventBuffer) {
 		return poll(tick, eventBuffer, null, Optional.empty(), null, null);
 	}
 
 	public DialogueResponse poll(
 		long tick,
-		SemanticEventBuffer eventBuffer,
+		EventStream eventBuffer,
 		SessionSnapshot sessionSnapshot,
 		Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask,
@@ -739,7 +740,7 @@ public final class DialogueRuntime {
 		return facts;
 	}
 
-	public void resetLlmState(long tick, SemanticEventBuffer eventBuffer) {
+	public void resetLlmState(long tick, EventStream eventBuffer) {
 		resetPlanners("runtime reset");
 		planners().forEach(p -> p.updateSafetyContext(safetyEpoch, safetyHoldId, reflexActive));
 		queuedTimeoutInjections = 0;
@@ -791,7 +792,7 @@ public final class DialogueRuntime {
 
 	private void submitPlannerTrigger(
 		PlannerRequest request,
-		SemanticEventBuffer eventBuffer,
+		EventStream eventBuffer,
 		long timestampMs,
 		boolean directUserGuidance
 	) {
@@ -800,7 +801,7 @@ public final class DialogueRuntime {
 
 	private void submitPlannerTrigger(
 		PlannerRequest request,
-		SemanticEventBuffer eventBuffer,
+		EventStream eventBuffer,
 		long timestampMs,
 		boolean directUserGuidance,
 		WakeOutcome outcome
@@ -861,7 +862,7 @@ public final class DialogueRuntime {
 	}
 
 	private boolean submitNextPendingInternalTaskUpdate(
-		SemanticEventBuffer eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
+		EventStream eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution
 	) {
 		if (externalDriverActive || pendingTaskWakeups.isEmpty() || activePlanner().hasInFlight()) return false;
@@ -957,7 +958,7 @@ public final class DialogueRuntime {
 		};
 	}
 
-	private void supersedePendingInternalTaskUpdates(String reason, long tick, SemanticEventBuffer eventBuffer) {
+	private void supersedePendingInternalTaskUpdates(String reason, long tick, EventStream eventBuffer) {
 		if (policyContinuation != null) policyContinuation.discard(reason);
 		continuationParent = null;
 		acceptedWork = null;
@@ -972,13 +973,13 @@ public final class DialogueRuntime {
 		String reason,
 		String currentMissionId,
 		long supersededAtTick,
-		SemanticEventBuffer eventBuffer
+		EventStream eventBuffer
 	) {
 		if (pendingUpdate == null || eventBuffer == null) {
 			return;
 		}
 		auditTask(pendingUpdate, "dropped", "G5.superseded");
-		eventBuffer.append(supersededAtTick, "planner.internal_task_update_superseded", Map.of(
+		eventBuffer.from("DialogueRuntime").publish(supersededAtTick, "planner.internal_task_update_superseded", Map.of(
 			"reason", reason,
 			"updateTick", pendingUpdate.tick(),
 			"supersededAtTick", supersededAtTick,
@@ -986,7 +987,7 @@ public final class DialogueRuntime {
 			"currentGuidanceRevision", userGuidanceRevision,
 			"updateMissionId", pendingUpdate.missionId() == null ? "" : pendingUpdate.missionId(),
 			"currentMissionId", currentMissionId == null ? "" : currentMissionId
-		));
+		), pendingUpdate.eventSequence() <= 0L ? null : EventCause.event(pendingUpdate.eventSequence()));
 	}
 
 	private static String missionId(TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution) {
@@ -1023,7 +1024,7 @@ public final class DialogueRuntime {
 		}
 	}
 
-	private void applyTransition(DialogueTransition transition, long tick, SemanticEventBuffer eventBuffer) {
+	private void applyTransition(DialogueTransition transition, long tick, EventStream eventBuffer) {
 		visibleReplyOwner = activePlanner();
 		state = transition.state();
 		applyEffects(transition.effects(), tick, eventBuffer);
@@ -1039,10 +1040,10 @@ public final class DialogueRuntime {
 		state = state.withPendingReply(!pendingVisibleReplies.isEmpty(), pendingReplyReason());
 	}
 
-	private static void applyEffects(List<DialogueEffect> effects, long tick, SemanticEventBuffer eventBuffer) {
+	private static void applyEffects(List<DialogueEffect> effects, long tick, EventStream eventBuffer) {
 		for (DialogueEffect effect : effects) {
 			if (effect instanceof DialogueEffect.AppendSemanticEvent appendSemanticEvent) {
-				eventBuffer.append(tick, appendSemanticEvent.type(), appendSemanticEvent.payload());
+				eventBuffer.from("DialogueCore").publish(tick, appendSemanticEvent.type(), appendSemanticEvent.payload());
 			}
 		}
 	}

@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.dialogue;
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -79,6 +80,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogueRuntimeTest {
@@ -816,6 +818,28 @@ class DialogueRuntimeTest {
 		runtime.shutdown();
 	}
 
+	@Test void plannerFeedWritesStayOutOfRawLog() {
+		var backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
+		var runtime = newDialogueRuntime(backend);
+		var raw = new ai.moeru.airicraft.agent.events.AgentEventBus(
+			ai.moeru.airicraft.agent.events.EventCatalog.defaults(), new ai.moeru.airicraft.agent.events.AgentEventLog(32),
+			System::currentTimeMillis, true);
+		var planner = new SemanticEventBuffer(32);
+		try {
+			for (long tick = 1; tick <= 3; tick++) {
+				backend.injectTimeout();
+				runtime.onPlayerChat("Alice", "@agent follow me", tick, SessionSnapshot.initial(), "Alice", Optional.empty(), raw);
+				awaitFailureProcessed(runtime, raw, tick, Duration.ofSeconds(1));
+			}
+			assertTrue(runtime.isDegraded());
+			runtime.onPlannerTrigger(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "system", "progress", 50, 1000),
+				SessionSnapshot.initial(), "Alice", Optional.empty(), null, null, ai.moeru.airicraft.agent.events.PlannerFeedPublisher.wrap(planner));
+			assertFalse(raw.containsType("planner.degraded_blocked"));
+			var blocked = planner.query(null).events().stream().filter(event -> event.type().equals("planner.degraded_blocked")).findFirst().orElseThrow();
+			assertEquals("DialogueCore", blocked.source());
+		} finally { runtime.shutdown(); }
+	}
+
 	@Test
 	void degradedDirectChatEmitsBlockedEventAndVisibleResetReminder() {
 		OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
@@ -1082,6 +1106,7 @@ class DialogueRuntimeTest {
 			MissionExecutionSnapshot.idle(),
 			eventBuffer
 		);
+		runtime.queueTaskWakeup(null, 11L, 0L);
 		runtime.onPlannerTrigger(
 			PlannerTrigger.pending(PlannerTriggerType.CHAT, "Alice", "@agent stop, come back", 12L, 1200L),
 			SessionSnapshot.initial(),
@@ -1093,6 +1118,14 @@ class DialogueRuntimeTest {
 		);
 
 		assertTrue(eventBuffer.containsType("planner.internal_task_update_superseded"));
+		var notice = eventBuffer.query(null).events().stream()
+			.filter(event -> "task.notice".equals(event.type())).findFirst().orElseThrow();
+		var superseded = eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.event(notice.seqNo()), superseded.cause());
+		assertNull(eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type()))
+			.skip(1).findFirst().orElseThrow().cause());
 		latestResponse.complete(new PlannerResponse("Coming back.", new PlannerIntent("reply_only", null, null)));
 		firstResponse.complete(new PlannerResponse("Gathering wood.", new PlannerIntent("reply_only", null, null)));
 
@@ -1413,7 +1446,7 @@ class DialogueRuntimeTest {
 		throw new AssertionError("Timed out waiting for dialogue response");
 	}
 
-	private static void awaitFailureProcessed(DialogueRuntime runtime, SemanticEventBuffer eventBuffer, long tick, Duration timeout) {
+	private static void awaitFailureProcessed(DialogueRuntime runtime, ai.moeru.airicraft.agent.events.EventStream eventBuffer, long tick, Duration timeout) {
 		Instant deadline = Instant.now().plus(timeout);
 		long pollTick = tick + 100L;
 		while (Instant.now().isBefore(deadline)) {

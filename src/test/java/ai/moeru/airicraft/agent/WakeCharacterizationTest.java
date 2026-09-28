@@ -72,6 +72,8 @@ class WakeCharacterizationTest {
 			h.tick(1);
 			h.reflex(new ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent("reflex.started", Map.of("reason", "threat")));
 			h.tick(10);
+			// Intentionally cross the existing 30-minute time-beacon threshold.
+			h.advanceWallClock(Duration.ofMinutes(31));
 			h.reflex(new ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent("reflex.resolved", Map.of("holdId", "hold-1", "reason", "safe")));
 			h.tick(10);
 			assertEquals(2, h.backend.requests().size());

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.social;
 
-import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventPublisher;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class NearbyPlayerTracker {
+	private static final String SOURCE = "NearbyPlayerTracker";
 	private static final double DEFAULT_NEARBY_RADIUS = 32.0D;
 
 	private final double nearbyRadius;
@@ -29,7 +30,7 @@ public final class NearbyPlayerTracker {
 		this.nearbyRadius = nearbyRadius;
 	}
 
-	public void poll(MinecraftClient client, long tick, SemanticEventBuffer eventBuffer) {
+	public void poll(MinecraftClient client, long tick, EventPublisher eventBuffer) {
 		Map<UUID, NearbyPlayerSnapshot> nextNearby = new LinkedHashMap<>();
 
 		if (client != null && client.world != null && client.player != null) {
@@ -60,7 +61,7 @@ public final class NearbyPlayerTracker {
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 	}
 
-	public void injectPlayerNearby(String playerName, Vec3d pos, long tick, SemanticEventBuffer eventBuffer) {
+	public void injectPlayerNearby(String playerName, Vec3d pos, long tick, EventPublisher eventBuffer) {
 		Objects.requireNonNull(playerName, "playerName");
 		Objects.requireNonNull(pos, "pos");
 		UUID playerUuid = injectedPlayerIds.computeIfAbsent(playerName, ignored -> UUID.randomUUID());
@@ -77,11 +78,11 @@ public final class NearbyPlayerTracker {
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 	}
 
-	public void injectPlayerMove(String playerName, Vec3d pos, long tick, SemanticEventBuffer eventBuffer) {
+	public void injectPlayerMove(String playerName, Vec3d pos, long tick, EventPublisher eventBuffer) {
 		injectPlayerNearby(playerName, pos, tick, eventBuffer);
 	}
 
-	public void injectPlayerDisconnect(String playerName, long tick, SemanticEventBuffer eventBuffer) {
+	public void injectPlayerDisconnect(String playerName, long tick, EventPublisher eventBuffer) {
 		UUID playerUuid = injectedPlayerIds.get(playerName);
 		if (playerUuid == null) {
 			return;
@@ -93,7 +94,7 @@ public final class NearbyPlayerTracker {
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 	}
 
-	public void clear(long tick, SemanticEventBuffer eventBuffer) {
+	public void clear(long tick, EventPublisher eventBuffer) {
 		Map<UUID, NearbyPlayerSnapshot> nextNearby = Map.of();
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 		injectedPlayers.clear();
@@ -117,10 +118,10 @@ public final class NearbyPlayerTracker {
 		return nearbyPlayers.containsKey(playerUuid);
 	}
 
-	private void replaceNearbyPlayers(Map<UUID, NearbyPlayerSnapshot> nextNearby, long tick, SemanticEventBuffer eventBuffer) {
+	private void replaceNearbyPlayers(Map<UUID, NearbyPlayerSnapshot> nextNearby, long tick, EventPublisher eventBuffer) {
 		for (NearbyPlayerSnapshot previous : nearbyPlayers.values()) {
 			if (!nextNearby.containsKey(previous.uuid())) {
-				eventBuffer.append(tick, "social.player_left_nearby", Map.of(
+				eventBuffer.from(SOURCE).publish(tick, "social.player_left_nearby", Map.of(
 					"player", previous.name()
 				));
 			}
@@ -128,7 +129,7 @@ public final class NearbyPlayerTracker {
 
 		for (NearbyPlayerSnapshot current : nextNearby.values()) {
 			if (!nearbyPlayers.containsKey(current.uuid())) {
-				eventBuffer.append(tick, "social.player_joined_nearby", Map.of(
+				eventBuffer.from(SOURCE).publish(tick, "social.player_joined_nearby", Map.of(
 					"player", current.name(),
 					"x", current.x(),
 					"y", current.y(),
