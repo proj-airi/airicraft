@@ -91,7 +91,7 @@ jobs:
           gh api -X DELETE "repos/$GH_REPO/git/refs/tags/dev-snapshot" || true
           gh release create dev-snapshot release/*.jar \
             --target "$RELEASE_SHA" \
-            --prerelease --latest=false --clobber \
+            --prerelease --latest=false \
             --title "dev-snapshot (${RELEASE_SHA:0:8})" \
             --notes "Rolling snapshot of the \`dev\` branch @ $RELEASE_SHA (run: $RUN_URL). Latest jars replace the previous snapshot on every dev push; tagged releases remain on the releases page."
 
