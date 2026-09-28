@@ -65,6 +65,19 @@ class RuleAttentionPolicyTest {
 		assertEquals(AttentionStage.RULES, policy.decide(event(4, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true).wake().stage());
 	}
 
+	@Test void malformedSequenceNumbersFailTheStepAndFallBack() throws Exception {
+		for (String seqNo : java.util.List.of("'oops'", "null", "{}")) {
+			var module = module("bad-seq-" + seqNo.hashCode(), "(lib => ({ step(input, state) { return {state, decisions: [{seqNo: " + seqNo + "}]}; } }))");
+			var diagnostics = new SemanticEventBuffer(8);
+			var policy = new RuleAttentionPolicy(AttentionState::idle, event -> AttentionEvidence.NONE, diagnostics, module);
+			var outcome = assertDoesNotThrow(() -> policy.decide(event(1, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true));
+			assertEquals(AttentionStage.FALLBACK, outcome.wake().stage(), seqNo);
+			assertTrue(outcome.wake().wakes(), "the reference decision is used");
+			assertTrue(String.valueOf(policy.debugState().get("lastFailure")).startsWith("malformed_decision"), seqNo);
+			assertEquals("rules.step_failed", diagnostics.query(null).events().getFirst().type());
+		}
+	}
+
 	@Test void constitutionTypesNeverReachTheRules() throws Exception {
 		var broken = module("never-called", "(lib => ({ step() { throw Error('must not run'); } }))");
 		var diagnostics = new SemanticEventBuffer(8);

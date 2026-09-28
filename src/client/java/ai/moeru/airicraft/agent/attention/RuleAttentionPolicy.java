@@ -233,11 +233,17 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 
 	private static AttentionOutcome parse(SemanticEvent event, JsonArray decisions, List<EventPolicyRule> rules) throws RuleException {
 		JsonObject decision = null;
-		for (JsonElement element : decisions) {
-			if (element.isJsonObject() && element.getAsJsonObject().has("seqNo")
-				&& element.getAsJsonObject().get("seqNo").getAsLong() == event.seqNo()) {
-				decision = element.getAsJsonObject();
+		try {
+			for (JsonElement element : decisions) {
+				if (element.isJsonObject() && element.getAsJsonObject().has("seqNo")
+					&& element.getAsJsonObject().get("seqNo").getAsLong() == event.seqNo()) {
+					decision = element.getAsJsonObject();
+				}
 			}
+		}
+		catch (RuntimeException exception) {
+			// A string, null or object seqNo must fail the step like any other malformed decision, not the routing.
+			throw new RuleException("malformed_decision", "a decision has an invalid seqNo: " + exception.getMessage());
 		}
 		if (decision == null) throw new RuleException("missing_decision", "no decision for event " + event.seqNo());
 		try {
