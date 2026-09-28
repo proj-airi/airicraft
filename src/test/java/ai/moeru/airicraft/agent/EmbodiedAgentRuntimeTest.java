@@ -629,6 +629,16 @@ class EmbodiedAgentRuntimeTest {
 		return (ActiveJobRuntime) field.get(runtime);
 	}
 
+	@Test
+	void awaitingSafetyHoldIsAPendingDecisionInTheObservation() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		assertNull(runtime.currentPlannerDecisionContext().current().get("pendingDecision"));
+		assertNotNull(runtime.currentPlannerDecisionContext().current().get("reflexPolicy"));
+		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, "hold-7", null, null));
+		assertEquals(Map.of("holdId", "hold-7", "options", List.of("continue", "clear_queue")),
+			runtime.currentPlannerDecisionContext().current().get("pendingDecision"));
+	}
+
 	private static void setReflexSnapshot(EmbodiedAgentRuntime runtime, SurvivalReflexSnapshot snapshot) throws Exception {
 		Field runtimeField = EmbodiedAgentRuntime.class.getDeclaredField("survivalReflexRuntime");
 		runtimeField.setAccessible(true);

@@ -284,9 +284,11 @@ public final class DialogueRuntime {
 		if (awaitingSafetyDecision) continuation = "Safety hold " + safetyHoldId
 			+ " still awaits your decision. The previous job remains paused. Use continue to keep and resume the plan, or clear_queue to abort and replace it."
 			+ " Saying you will act does not release the hold.\n" + continuation;
-		onPlannerTrigger(PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
-			continuation, tick, clock.millis(), "planner_goal", delegationPrompt == null ? null : delegationPrompt.fields()),
-			session, primaryPlayer, actionGoal, task, mission, events);
+		var trigger = PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
+			continuation, tick, clock.millis(), "planner_goal", delegationPrompt == null ? null : delegationPrompt.fields());
+		// A delegated role's continuation is its task statement and keeps its text; the audit label stays W4.
+		if (delegationPrompt != null) trigger = trigger.withWake(WakeRef.reason("delegation"));
+		onPlannerTrigger(trigger, session, primaryPlayer, actionGoal, task, mission, events);
 		return true;
 	}
 

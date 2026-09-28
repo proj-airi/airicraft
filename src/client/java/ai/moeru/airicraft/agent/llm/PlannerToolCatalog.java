@@ -243,7 +243,7 @@ public final class PlannerToolCatalog {
 				prop("fuelQuantity", integer("Fuel item quantity for manual fuel. Use 0 or omit for auto fuel.")),
 				prop("confirmationToken", optionalString("Short-lived token returned when an occupied or stale furnace requires confirmation."))
 			), List.of("optionId", "inputQuantity")), PlannerToolCatalog::validateSmeltItemsArguments),
-		builtInTool(COLLECT_SMELTED_ITEMS, false, tool(COLLECT_SMELTED_ITEMS, "Collect output from an Airicraft-owned smelting process, or from an untracked occupied furnace with confirmation.", properties(
+		builtInTool(COLLECT_SMELTED_ITEMS, false, tool(COLLECT_SMELTED_ITEMS, "Collect output from an Airicraft-owned smelting process, or from an untracked occupied furnace with confirmation. A smelting.output_ready event means its output still needs collection: collect with that event's processId, then verify inventory.", properties(
 				prop("processId", optionalString("Airicraft-owned process id from smelt_items or inspect_smelting.")),
 				prop("confirmationToken", optionalString("Short-lived token required for untracked or occupied furnace collection."))
 			), List.of()), PlannerToolCatalog::validateCollectSmeltedItemsArguments),
@@ -318,7 +318,7 @@ public final class PlannerToolCatalog {
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(CLEAR_GOAL, false, tool(CLEAR_GOAL, "Clear the current goal.", properties(
 			), List.of()), NO_ARGUMENT_VALIDATION),
-		builtInTool(UPDATE_EVENT_POLICY, false, tool(UPDATE_EVENT_POLICY, "Update future event routing policy.", properties(
+		builtInTool(UPDATE_EVENT_POLICY, false, tool(UPDATE_EVENT_POLICY, "Update future event routing policy. ignore and semantic_only stop matching events from waking you; the events stay visible in observe. trigger_only behaves like allow.", properties(
 				prop("clearAll", bool("Clear all active planner policy rules.")),
 				prop("removeRuleIds", stringArray("Rule ids to remove.")),
 				prop("upserts", array("Policy rule upserts.", policyUpsertSchema()))

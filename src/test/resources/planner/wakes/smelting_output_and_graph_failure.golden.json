@@ -70,8 +70,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "Smelting output ready: processId=furnace-1 output=minecraft:iron_ingotx1. Output still needs collection: call collect_smelted_items with this processId, then verify inventory."
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -93,8 +92,8 @@
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 2
     },
@@ -125,9 +124,6 @@
             "type": "action_graph.goal_terminal"
           }
         ],
-        "notices": [
-          "ACTION GRAPH FAILED: executionId=graph-1 goal= failedPrimitive= failedTarget= failedArgs={} failureCode=failed message=no path. Explain the terminal failure accurately. Do not claim completion. Assess the identified failure and choose a supported next attempt toward the objective."
-        ],
         "serverTick": -1,
         "throughEventSequence": 3,
         "tick": 12,
@@ -147,8 +143,8 @@
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 12
     }

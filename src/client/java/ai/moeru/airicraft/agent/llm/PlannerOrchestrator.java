@@ -425,6 +425,8 @@ public final class PlannerOrchestrator {
 		var payload = new java.util.LinkedHashMap<String, Object>();
 		var wake = WakeRef.render(wakes);
 		if (!wake.isEmpty()) payload.put("wake", wake);
+		var hints = DecisionHints.render(wakes, context.observations().events());
+		if (!hints.isEmpty()) payload.put("hints", hints);
 		payload.putAll(context.observation(sinceSequence, decisionRefreshPending));
 		if (usesToolQueue()) payload.put("toolQueue", queueState());
 		if (!notices.isEmpty()) payload.put("notices", notices);

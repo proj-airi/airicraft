@@ -862,7 +862,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		facts.put("session", sessionSnapshot.mode());
 		facts.put("travelRestrictions", ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.snapshot());
 		facts.put("physical", currentPhysicalState());
-		facts.put("reflex", survivalReflexRuntime.snapshot());
+		var reflex = survivalReflexRuntime.snapshot();
+		facts.put("reflex", reflex);
+		facts.put("reflexPolicy", survivalReflexRuntime.policy());
+		if (reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.holdId() != null) {
+			facts.put("pendingDecision", Map.of("holdId", reflex.holdId(), "options", List.of("continue", "clear_queue")));
+		}
 		facts.put("foodPolicy", foodRuntime.policy());
 		var work = workHistory.list();
 		var recent = work.stream().filter(value -> value.state().terminal()).toList();
