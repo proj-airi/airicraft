@@ -61,6 +61,33 @@ These were settled on 2026-09-28, before implementation.
 | Q8 | Where do the engine and bundled rules live? | **The engine in `src/main` (`ai.moeru.airicraft.rules`, no Minecraft dependencies), bundled modules in `src/main/resources/airicraft/rules/`, and an optional override at `config/airicraft/rules/attention.js`.** An invalid override **fails `airicraft reload`** with `invalid_config` and keeps the running runtime. At startup it falls back to the bundled module with a warning. | This matches how config files behave today. A typo in a rule must never leave the agent unable to wake (O13). |
 | Q9 | What happens to `update_event_policy`? | **The schema is unchanged.** `EventPolicyState` stays the store. From 2c it is passed to the rule as the `plannerRules` table. The host still records rule matches (`matchCount`, `lastMatchedAt`) from the `ruleId` in the returned decision. | Frozen tool schema (4.11). Existing debug views of rule matches keep working. |
 
+## Revisions during implementation (2026-09-28)
+
+- **Task 10 is folded into Task 14.** Moving `IMMEDIATE` delivery to one
+  end-of-tick dispatch would add up to 50 ms to chat and safety wakes and
+  reorder deliveries without fixing a characterized defect. After Task 14,
+  autonomous Stage-B wakes are delivered at the rules phase, a fixed point in
+  the tick. `DIRECT` and `CRITICAL` wakes stay immediate, as Stage A requires.
+  This leaves one reviewed timing change instead of two.
+- **Task 11 (coalescing) and the W9 move go to Phase 5.** The coalesce window
+  belongs to the orchestrator's supersede mechanism. The spec places the
+  supersede budget in the scheduler in Phase 5, so the two move together
+  there. W9 is the tool queue's own continuation (G8 session mechanics) and
+  already has its audit label.
+- **W6 (delegation start) stays in `DialogueRuntime.poll`.** It fires as soon
+  as a delegation starts, not when the agent is idle, so it is admitted
+  through `WakeScheduler.offerTrigger` with the other trigger wakes rather
+  than run from the idle hook.
+- **D4 is not flipped in Phase 2.** `hasIncorporatedDecisionEvent` is already
+  a cursor comparison, so satisfaction is identical for single-reference
+  wakes. Collapsing the W1+W2 double path needs W1 wakes to carry event
+  references into the scheduler, which is Phase 3 work.
+- **The Stage C clamp compares against the reference.** Today's bundled
+  behaviour already sets some protected types to `NONE`: `player.physical`
+  while the reflex owns actuation, and non-failed graph terminals. So the
+  clamp rule is: *a protected type may not be set to `NONE` by rules when the
+  Java reference would wake it*. Delays remain allowed.
+
 ## Ground rules
 
 1. **The goldens change only in named commits.** After every task, run:
