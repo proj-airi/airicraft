@@ -13,8 +13,8 @@
     },
     {
       "payload": {
-        "message": "@agent gather wood",
-        "normalizedMessage": "@agent gather wood",
+        "message": "@agent check your inventory and tell me",
+        "normalizedMessage": "@agent check your inventory and tell me",
         "player": "Alex"
       },
       "seqNo": 2,
@@ -23,8 +23,8 @@
     },
     {
       "payload": {
-        "message": "@agent gather wood",
-        "normalizedMessage": "@agent gather wood",
+        "message": "@agent check your inventory and tell me",
+        "normalizedMessage": "@agent check your inventory and tell me",
         "player": "Alex"
       },
       "seqNo": 3,
@@ -38,26 +38,6 @@
       "seqNo": 4,
       "tick": 1,
       "type": "objective.changed"
-    },
-    {
-      "payload": {
-        "message": "@agent stop and listen",
-        "normalizedMessage": "@agent stop and listen",
-        "player": "Alex"
-      },
-      "seqNo": 5,
-      "tick": 1,
-      "type": "social.player_spoke"
-    },
-    {
-      "payload": {
-        "message": "@agent stop and listen",
-        "normalizedMessage": "@agent stop and listen",
-        "player": "Alex"
-      },
-      "seqNo": 6,
-      "tick": 1,
-      "type": "social.player_addressed_agent"
     }
   ],
   "requests": [
@@ -74,7 +54,7 @@
         {
           "kind": "USER_TURN",
           "role": "user",
-          "text": "Alex: @agent gather wood"
+          "text": "Alex: @agent check your inventory and tell me"
         }
       ],
       "observe": {
@@ -124,8 +104,7 @@
         "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
         "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
-      "tick": 1,
-      "superseded": true
+      "tick": 1
     },
     {
       "discarded": false,
@@ -133,9 +112,14 @@
       "index": 2,
       "newMessages": [
         {
-          "kind": "USER_TURN",
-          "role": "user",
-          "text": "Alex: @agent gather wood\nAlex: @agent stop and listen"
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Report checkpoint reached; execution continues."
         }
       ],
       "observe": {
@@ -144,19 +128,21 @@
         "decisionOwner": "controller",
         "events": [],
         "notices": [
-          "<time>",
-          "Session mode is currently remote multiplayer.",
-          "Primary interaction player is Alex.",
-          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "report_to_me reached. Review the requested results; the remaining FIFO continues independently.",
+          "REPORT REQUEST: {}"
         ],
         "serverTick": -1,
-        "throughEventSequence": 6,
-        "tick": 2,
+        "throughEventSequence": 4,
+        "tick": 4,
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "tool_queue_review"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
@@ -164,10 +150,10 @@
         "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
         "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
-      "tick": 2
+      "tick": 4
     }
   ],
-  "scenario": "addressed_chat_while_turn_in_flight",
+  "scenario": "tool_queue_review",
   "wakeAudit": [
     {
       "coalescingKeys": [],
@@ -191,19 +177,20 @@
       "coalescingKeys": [],
       "kind": "submitted",
       "origins": [
-        "DIRECT_GUIDANCE"
+        "AUTONOMOUS"
       ],
       "owner": "controller",
-      "path": "W1",
+      "path": "W9",
+      "review": "checkpoint",
       "serverTick": -1,
       "speakers": [
-        "Alex"
+        "tool_queue"
       ],
-      "tick": 1,
+      "tick": 4,
       "triggerTypes": [
-        "CHAT"
+        "SYSTEM"
       ],
-      "wakeTick": 1
+      "wakeTick": 4
     }
   ]
 }

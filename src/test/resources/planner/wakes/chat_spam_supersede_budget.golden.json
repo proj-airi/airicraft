@@ -1,0 +1,419 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent line 0",
+        "normalizedMessage": "@agent line 0",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent line 0",
+        "normalizedMessage": "@agent line 0",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "message": "@agent line 1",
+        "normalizedMessage": "@agent line 1",
+        "player": "Alex"
+      },
+      "seqNo": 5,
+      "tick": 40,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent line 1",
+        "normalizedMessage": "@agent line 1",
+        "player": "Alex"
+      },
+      "seqNo": 6,
+      "tick": 40,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "message": "@agent line 2",
+        "normalizedMessage": "@agent line 2",
+        "player": "Alex"
+      },
+      "seqNo": 7,
+      "tick": 80,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent line 2",
+        "normalizedMessage": "@agent line 2",
+        "player": "Alex"
+      },
+      "seqNo": 8,
+      "tick": 80,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "message": "@agent line 3",
+        "normalizedMessage": "@agent line 3",
+        "player": "Alex"
+      },
+      "seqNo": 9,
+      "tick": 120,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent line 3",
+        "normalizedMessage": "@agent line 3",
+        "player": "Alex"
+      },
+      "seqNo": 10,
+      "tick": 120,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "message": "@agent line 4",
+        "normalizedMessage": "@agent line 4",
+        "player": "Alex"
+      },
+      "seqNo": 11,
+      "tick": 160,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent line 4",
+        "normalizedMessage": "@agent line 4",
+        "player": "Alex"
+      },
+      "seqNo": 12,
+      "tick": 160,
+      "type": "social.player_addressed_agent"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent line 0"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "player": "Alex",
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "social.player_joined_nearby"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 4,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 4,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 1
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent line 0\nAlex: @agent line 1"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 4,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 6,
+        "tick": 41,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 41
+    },
+    {
+      "discarded": false,
+      "generation": 3,
+      "index": 3,
+      "newMessages": [
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent line 0\nAlex: @agent line 1\nAlex: @agent line 2"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 6,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 8,
+        "tick": 81,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 81
+    },
+    {
+      "discarded": false,
+      "generation": 4,
+      "index": 4,
+      "newMessages": [
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent line 0\nAlex: @agent line 1\nAlex: @agent line 2\nAlex: @agent line 3"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 8,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 10,
+        "tick": 121,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 121
+    }
+  ],
+  "scenario": "chat_spam_supersede_budget",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 1
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 40,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 40
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 80,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 80
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 120,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 120
+    },
+    {
+      "coalescingKeys": [],
+      "gate": "supersede.budget",
+      "kind": "queued",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 160,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 160
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 160,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 160
+    }
+  ]
+}

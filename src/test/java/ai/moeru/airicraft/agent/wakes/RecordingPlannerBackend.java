@@ -13,6 +13,7 @@ public final class RecordingPlannerBackend implements LlmBackend {
 	private final LinkedBlockingQueue<CompletableFuture<PlannerResponse>> scripted = new LinkedBlockingQueue<>();
 	private final LongSupplier tick;
 	private volatile CompletableFuture<PlannerResponse> held;
+	private volatile long heldGeneration = -1L;
 	private final Object gate = new Object();
 	private boolean gateOpen = true;
 	public RecordingPlannerBackend(LongSupplier tick) { this.tick = tick; }
@@ -41,6 +42,7 @@ public final class RecordingPlannerBackend implements LlmBackend {
 	@Override public LlmCallResult<PlannerResponse> generate(PlannerBackendRequest request) throws LlmBackendException {
 		awaitGate();
 		var response = scripted.poll();
+		heldGeneration = request.generation();
 		held = response;
 		synchronized (requests) {
 			requests.add(new Request(requests.size() + 1, request, tick.getAsLong()));
@@ -75,4 +77,10 @@ public final class RecordingPlannerBackend implements LlmBackend {
 	@Override public void injectMockResponse(PlannerResponse response) { scripted.add(CompletableFuture.completedFuture(response)); }
 	@Override public void injectTimeout() { var future = holdNext(); future.completeExceptionally(new TimeoutException("injected")); }
 	@Override public boolean isConfigured() { return true; }
+	/** Like both production backends: a discarded generation's held call ends at once. */
+	@Override public boolean supportsGenerationCancellation() { return true; }
+	@Override public void discardGeneration(long generation) {
+		var current = held;
+		if (current != null && heldGeneration == generation) current.cancel(true);
+	}
 }

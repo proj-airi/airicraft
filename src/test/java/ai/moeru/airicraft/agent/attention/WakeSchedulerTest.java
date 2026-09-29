@@ -29,6 +29,66 @@ class WakeSchedulerTest {
 		@Override public void audit(Wake wake, String kind, String gate) { log.add(kind + ":" + wake.eventSequence() + ":" + gate); }
 		@Override public void superseded(Wake wake, String reason, String currentMissionId) { log.add("superseded:" + wake.eventSequence() + ":" + reason); }
 		@Override public void deliver(Wake wake) { log.add("deliver:" + wake.eventSequence()); }
+		String preemption = "nothing_in_flight";
+		@Override public String preemptInFlight() {
+			log.add("preempt?");
+			if ("preempted".equals(preemption)) inFlight = false;
+			return preemption;
+		}
+	}
+
+	@Test void aPreemptWakeBehindAnOrdinaryWakeStillPreemptsAndGoesFirst() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		host.preemption = "preempted";
+		scheduler.offerTask(Wake.task(30, 10, 0, null));
+		scheduler.offerTask(Wake.task(30, 11, 0, null).preempting());
+		assertTrue(scheduler.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "preempted:11:preempt.safety_epoch", "deliver:11"), host.log);
+		assertTrue(scheduler.releaseTaskWake(host));
+		assertEquals("deliver:10", host.log.getLast(), "the earlier wake stays queued behind the reflex");
+	}
+
+	@Test void thePendingSetIsBoundedAndKeepsAttentionAndPreemptingWakes() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		scheduler.offerTask(Wake.task(1, 1, 0, null).preempting());
+		scheduler.offerAttention(Wake.attention(1, 2, 0));
+		for (long seq = 3; seq < 3 + WakeScheduler.MAX_TASK_WAKES; seq++) scheduler.offerTask(Wake.task(1, seq, 0, null));
+		assertEquals(WakeScheduler.MAX_TASK_WAKES, ((List<?>) scheduler.debugState().get("pending")).size());
+		scheduler.releaseTaskWake(host);
+		assertEquals(List.of("dropped:3:pending.bounded", "dropped:4:pending.bounded"), host.log.subList(0, 2),
+			"the two oldest ordinary wakes went; attention and preempting wakes stayed");
+
+		var triggers = new Triggers();
+		for (long seq = 1; seq <= WakeScheduler.MAX_DEBOUNCED; seq++) scheduler.offerTrigger(percept(seq, 10, "LOW"), triggers);
+		scheduler.offerTrigger(percept(100, 10, "NORMAL"), triggers);
+		assertEquals("dropped:pending.bounded:1", triggers.log.getLast(), "the oldest LOW wake goes, not the NORMAL one");
+	}
+
+	@Test void aPreemptWakeCancelsAStaleTurnAndIsDeliveredAtOnce() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		scheduler.offerTask(Wake.task(1, 10, 0, null));
+		assertFalse(scheduler.releaseTaskWake(host), "an ordinary wake waits for the turn");
+		assertEquals(List.of(), host.log, "and never asks to preempt");
+
+		var preempting = new WakeScheduler();
+		preempting.offerTask(Wake.task(2, 11, 0, null).preempting());
+		host.preemption = "side_effect_tool_ran";
+		assertFalse(preempting.releaseTaskWake(host));
+		assertFalse(preempting.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "dropped:11:preempt.side_effect_tool_ran", "preempt?"), host.log,
+			"a refusal is audited once and the wake keeps waiting");
+		host.preemption = "preempted";
+		assertTrue(preempting.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "preempted:11:preempt.safety_epoch", "deliver:11"), host.log.subList(3, 6));
+		var debugged = new WakeScheduler();
+		debugged.offerTask(Wake.task(3, 12, 0, null).preempting());
+		assertEquals("PREEMPT", ((java.util.Map<?, ?>) ((List<?>) debugged.debugState().get("pending")).getFirst()).get("delivery"));
 	}
 
 	@Test void releasesOneWakeInOrderWithAttentionFirst() {
@@ -103,7 +163,7 @@ class WakeSchedulerTest {
 			"superseded:12:new_user_guidance", "superseded:13:mission_changed", "deliver:14"), host.log);
 	}
 
-	private static final class Triggers implements WakeScheduler.TriggerHost {
+	private static class Triggers implements WakeScheduler.TriggerHost {
 		boolean blocked, workHolds;
 		long incorporatedThrough;
 		final List<String> log = new ArrayList<>();
@@ -117,6 +177,85 @@ class WakeSchedulerTest {
 			log.add("deliver:" + String.join(",", triggers.stream().map(trigger -> trigger.wake() == null
 				? trigger.type().name() : String.valueOf(trigger.wake().seqNo())).toList()));
 		}
+	}
+
+	/** A planner with a replaceable turn in flight until something supersedes it. */
+	private static final class Superseding extends Triggers {
+		boolean replaceable = true;
+		int queued;
+		int released;
+		@Override public boolean canSupersede() { return replaceable; }
+		@Override public void releaseCoalesceHold() { released++; }
+		@Override public int queuedTriggerCount() { return queued; }
+		@Override public void deliver(List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers, boolean supersede) {
+			queued += triggers.size();
+			log.add((supersede ? "supersede:" : "queue:") + triggers.getLast().tick());
+			if (supersede) replaceable = false;
+		}
+	}
+
+	private static ai.moeru.airicraft.agent.llm.PlannerTrigger chat(long tick) {
+		return ai.moeru.airicraft.agent.llm.PlannerTrigger.direct(ai.moeru.airicraft.agent.llm.PlannerTriggerType.CHAT, "Alex", "hi", tick, tick * 50);
+	}
+
+	@Test void aSupersedeOpensACoalesceWindowTimedInTicks() {
+		var scheduler = new WakeScheduler();
+		var host = new Superseding();
+		host.queued = 1; // the running turn's trigger
+		scheduler.offerTrigger(chat(10), host);
+		assertEquals(List.of("supersede:10"), host.log);
+		assertTrue(scheduler.coalescing());
+		assertFalse(scheduler.releaseCoalesce(10), "10 ms rounds up to one tick");
+		assertTrue(scheduler.releaseCoalesce(11));
+		assertFalse(scheduler.coalescing());
+
+		// Each batch delivered into the window re-arms it with the queue's size, clamped to the maximum (100 ms: 2 ticks).
+		host.replaceable = true;
+		host.queued = 1;
+		scheduler.offerTrigger(chat(20), host);
+		for (int index = 0; index < 15; index++) scheduler.offerTrigger(chat(20), host);
+		assertEquals("queue:20", host.log.getLast(), "inside the window, direct guidance joins the held turn");
+		assertFalse(scheduler.releaseCoalesce(21));
+		assertTrue(scheduler.releaseCoalesce(22));
+
+		var single = new WakeScheduler();
+		var alone = new Superseding();
+		single.offerTrigger(chat(30), alone);
+		assertFalse(single.coalescing(), "a single queued trigger has nothing to coalesce");
+		assertEquals(1, alone.released, "the planner starts at once, as before the move");
+
+		var zero = new WakeScheduler();
+		zero.configureCoalescing(0, 0, 0);
+		var host0 = new Superseding();
+		host0.queued = 3;
+		zero.offerTrigger(chat(40), host0);
+		assertFalse(zero.coalescing());
+		assertEquals(1, host0.released, "a zero window closes at once");
+
+		var reset = new WakeScheduler();
+		var host1 = new Superseding();
+		host1.queued = 2;
+		reset.offerTrigger(chat(50), host1);
+		assertTrue(reset.coalescing());
+		reset.clearTaskWakes();
+		assertFalse(reset.coalescing(), "a reset closes the window, so new guidance can supersede again");
+	}
+
+	@Test void theSupersedeBudgetQueuesDirectGuidanceOverThreeIn600Ticks() {
+		var scheduler = new WakeScheduler();
+		var host = new Superseding();
+		for (long tick : new long[]{1, 40, 80, 120}) {
+			host.replaceable = true;
+			scheduler.offerTrigger(chat(tick), host);
+			scheduler.releaseCoalesce(tick + 5);
+		}
+		assertEquals(List.of("supersede:1", "supersede:40", "supersede:80", "queued:supersede.budget", "queue:120"), host.log);
+		host.replaceable = true;
+		scheduler.offerTrigger(chat(601), host);
+		assertEquals("supersede:601", host.log.getLast(), "the first supersede left the 600-tick window");
+		scheduler.releaseCoalesce(700);
+		scheduler.clearTaskWakes();
+		assertTrue(((List<?>) scheduler.debugState().get("recentSupersedes")).isEmpty(), "resets clear the budget window");
 	}
 
 	private static ai.moeru.airicraft.agent.llm.PlannerTrigger percept(long seqNo, long tick, String urgency) {

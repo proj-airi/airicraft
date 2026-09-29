@@ -350,6 +350,7 @@ def build_ledger(run_dir):
                "chatReplyLatencyTicks": {"toRequest": distribution(chat_request_latency),
                                          "toApplied": distribution(chat_applied_latency)},
                "droppedWakes": dict(sorted(Counter(drop["gate"] or "unknown" for drop in drops).items())),
+               "priority": priority_counts(run_dir, wakes),
                "tokensPerHour": rate(tokens, rate_span, 72000) if tokens_complete else None,
                "rateWindowUsable": rate_span > 0,
                "tokensComplete": tokens_complete,
@@ -393,9 +394,18 @@ def diff_ledgers(before, after):
     return {"schema": "airicraft.wake-ledger-diff.v1", "changedRequests": changed}
 
 
+def priority_counts(run_dir, wakes):
+    """Phase 5 refinements: turns preempted by a safety epoch, and wakes the two budgets held back."""
+    decisions = [row.get("decision") or {} for row in read_jsonl(run_dir / "attention-decisions.jsonl")]
+    return {"preempted": sum(entry.get("action") == "preempted" for entry in wakes),
+            "supersedeBudget": sum((entry.get("payload") or {}).get("gate") == "supersede.budget" for entry in wakes),
+            "autonomousBudget": sum(decision.get("ruleId") == "budget.autonomous_wakes" for decision in decisions),
+            "pendingBounded": sum((entry.get("payload") or {}).get("gate") == "pending.bounded" for entry in wakes)}
+
+
 def summary_table(ledgers):
-    rows = ["| Run | INITIAL | Requests/min | Follow-ups/turn | Empty | Drops | Tokens/hour | Gaps |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+    rows = ["| Run | INITIAL | Requests/min | Follow-ups/turn | Empty | Drops | Preempted | Budget holds | Tokens/hour | Gaps |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     rates, token_rates = [], []
     for ledger in ledgers:
         m = ledger["metrics"]
@@ -405,7 +415,9 @@ def summary_table(ledgers):
         if m["tokensPerHour"] is not None:
             token_rates.append(m["tokensPerHour"])
         initial_count = "n/a" if m["plannerCallsMissing"] else m["initialTurns"]
-        rows.append(f"| {Path(ledger['runDir']).name} | {initial_count} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if not m['inputComplete'] else 'no'} |")
+        priority = m.get("priority") or {}
+        holds = priority.get("supersedeBudget", 0) + priority.get("autonomousBudget", 0)
+        rows.append(f"| {Path(ledger['runDir']).name} | {initial_count} | {rpm if rpm is not None else 'n/a'} | {m['followUpsPerTurn'] if m['followUpsPerTurn'] is not None else 'n/a'} | {sum(m['emptyWakes'].values())} | {sum(m['droppedWakes'].values())} | {priority.get('preempted', 0)} | {holds} | {m['tokensPerHour'] if m['tokensPerHour'] is not None else 'n/a'} | {'yes' if not m['inputComplete'] else 'no'} |")
     rows.append(f"\nRequests/min spread: {min(rates)}–{max(rates)}" if rates else "\nRequests/min spread: n/a")
     rows.append(f"Tokens/hour spread: {min(token_rates)}–{max(token_rates)}" if token_rates else "Tokens/hour spread: n/a")
     return "\n".join(rows)

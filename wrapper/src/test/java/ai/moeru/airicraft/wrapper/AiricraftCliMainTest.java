@@ -121,8 +121,6 @@ class AiricraftCliMainTest {
 				"toolInFlight", false,
 				"toolUsed", false,
 				"coalescePending", true,
-				"coalesceReadyAtMs", 123456999L,
-				"coalesceWindowMs", 20L,
 				"context", linkedMap(
 					"compactionTriggerTokens", 65536,
 					"compactionPending", true,
@@ -148,7 +146,6 @@ class AiricraftCliMainTest {
 		assertTrue(result.output().contains("plannerVisionMode: native_tool_image\n"));
 		assertTrue(result.output().contains("compactionPending: true\n"));
 		assertTrue(result.output().contains("coalescePending: true\n"));
-		assertTrue(result.output().contains("coalesceWindowMs: 20\n"));
 		assertTrue(result.output().contains("queuedTriggerCount: 3\n"));
 		assertTrue(result.output().contains("acceptedTurnCount: 8\n"));
 		assertTrue(result.output().contains("lastAcceptedTimeContextAtMs: 123456789\n"));

@@ -13,8 +13,9 @@ overridden:
 ## Modules
 
 The bundled module is `src/main/resources/airicraft/rules/attention/default.js` (origin
-`bundled:attention/default.js`). It is a port of the Java `ReferenceAttentionPolicy`, and `RuleDifferentialTest` pins
-it to the same decisions.
+`bundled:attention/default.js`). Each of its decisions is a port of the Java `ReferenceAttentionPolicy`, and
+`RuleDifferentialTest` pins it to the same decisions. Its one stateful part, the
+[autonomous-wake budget](#autonomous-wake-budget), has no Java mirror.
 
 To override it, place a module at `config/airicraft/rules/attention.js`. Copying the bundled module is the usual
 starting point.
@@ -52,7 +53,7 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 ```text
 {tick, seed,
  attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal, pendingCraftToolResult,
-             activeJobTargets},
+             activeJobTargets, routineWakesHeld, goalBlocked},
  plannerRules: [{index, ruleId, effect, reason, match: {eventType, player, speaker, actor, itemId, damageTypeId, attackerName}}],
  events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled,
            evidence: {addressedToAgent, resetCommand, senderWithinChatDistance}}]}
@@ -61,6 +62,9 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 - `plannerRules` holds the planner's `update_event_policy` rules in order. The latest matching rule wins.
 - `fields` holds the payload values the policy reads (`player`, `speaker`, `actor`, `itemId`, `damageTypeId`,
   `attackerName`, `state`, `blockId`, `change`), as strings.
+- `routineWakesHeld` and `goalBlocked` say that the scheduler will drop the wake anyway (G4): routine pickups and
+  crafts while accepted or queued work consumes them, and everything but direct guidance while the goal is blocked.
+  The bundled budget does not charge those wakes.
 - `activeJobTargets` lists the block and item ids the running job works on (a mining job's block ids, a collect job's
   target blocks and accepted items).
 
@@ -90,6 +94,42 @@ A module is one JavaScript expression: a factory that receives the bundled libra
   job targets is `NONE`. `perception.environment_changed` wakes only for dusk while idle; other changes are evidence.
 - Do not start rule ids with an event-id namespace such as `social.`. Use prefixes like `chat.`, `ownership.` or your
   own.
+
+### Autonomous-wake budget
+
+The bundled module keeps a leaky bucket in its rule state (`state.autonomous`, through `lib.leakyBucket`).
+
+- **What it counts:** every `NORMAL` or `LOW` wake (`IMMEDIATE` or `DEBOUNCE`) of a type that is not protected costs
+  one. `HIGH` and above are never budgeted, and protected types (`profile.bypass`) are skipped, since the clamp would
+  restore their wakes anyway.
+- **Defaults:** capacity 10 and a leak of 0.01 per tick, so a burst of 10 wakes and then 12 a minute.
+- **Over budget:** the decision becomes `NONE` with rule id `budget.autonomous_wakes` and the bucket level in its
+  reason. The event is still observed; only the wake is withheld.
+- **Retuning:** change `AUTONOMOUS_BUDGET` in a copy of the module, or remove the `budget` call to turn it off. The
+  Java fallback, used while the engine is cold or failing, does not budget.
+
+The defaults are meant to catch storms (a burst of pickups, a flood of noticed items), not ordinary play: replaying
+the recorded runs through the module changes no decision.
+
+## The wake scheduler
+
+The rules decide each wake; `WakeScheduler` decides when a wake reaches the planner. These timings are Java and cannot
+be overridden:
+
+- **Preemption.** A reflex start opens a new safety epoch, and its wake has delivery `PREEMPT`. If a planner turn is
+  running for the old epoch and has externalized nothing (its model call is still running, no tool is executing, and
+  no tool other than a read tool ran in the turn), it is cancelled at once and `planner.turn_preempted` is published;
+  the reflex wake is delivered in the same tick. After a side-effect tool the turn is never preempted: it is rejected
+  when it completes (`planner.stale_response_rejected`), as before. A hold change within the same epoch does not
+  preempt. Both backends cancel the discarded call.
+- **Supersession.** Direct guidance cancels a replaceable running turn at most 3 times per 600 ticks. Over that
+  budget, the guidance waits behind the running turn (audit gate `supersede.budget`) and starts the next one. Reset
+  commands are handled before the planner, so a player can always stop the agent.
+- **Coalescing.** After a supersede, the scheduler holds the new turn for `clamp((n−1) × step, min, max)` from
+  `plannerSessionCoalesce{Step,Min,Max}Millis` (defaults 10/10/100 ms), rounded up to ticks (1/1/2), so lines typed
+  together start one turn. With a single queued line there is nothing to coalesce, and the new turn starts at once.
+- **Pending bound.** At most 64 pending task wakes and 32 held debounced wakes; overflow drops the least urgent,
+  oldest first, and never an attention, preempting, critical or direct wake (audit gate `pending.bounded`).
 
 ## Salience rules
 

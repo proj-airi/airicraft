@@ -61,3 +61,9 @@ _Avoid_: Missing recording
 **Urgency**: The ordered importance of a wake, independent of its delivery mode. _Avoid_: Priority.
 
 **Delivery**: How a wake is scheduled, delayed, or used to preempt a decision. _Avoid_: Urgency.
+
+**Preemption**: Cancelling a planner turn that a new safety epoch made stale, before it has externalized anything. _Avoid_: Supersession (that is direct guidance replacing a turn).
+
+**Supersede budget**: The limit on how often direct guidance may cancel a running turn; over it, guidance waits behind the turn. _Avoid_: Rate limit.
+
+**Autonomous-wake budget**: The attention rules' leaky bucket over low-urgency wakes; over it, events stay evidence without waking the planner. _Avoid_: Throttle.

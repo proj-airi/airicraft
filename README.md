@@ -226,6 +226,10 @@ Run `scripts/automatic-playtest --world <saved-world-directory> --recorder-jar <
 
 The companion plays a character defined by a Character Card V3 file, the format AIRI uses, with an Airicraft extension for interests, dislikes, chattiness, mischief and fixed chat lines. Without `config/airicraft/character.json` it plays the built-in generic Minecraft player; copy `character.json.example` to customize, then run `airicraft reload`. See [companion character](docs/character-card.md).
 
+### Planner perception and attention
+
+The companion notices what a player standing in its place could notice, with no X-ray, and each noticed thing reaches the planner as an ordinary `perception.*` event. Sandboxed GraalJS rules decide which events wake the planner; the wake scheduler times the wakes, lets a reflex start preempt a stale turn, and budgets autonomous wakes and supersedes. Override the rules in `config/airicraft/rules/` and apply them with `airicraft reload`. See [perception](docs/perception.md) and [attention rules](docs/attention-rules.md).
+
 ### Hosted playtests
 
 Run `scripts/hosted-playtest --world <template-world-directory> --recorder-jar <profile>` to let human testers play with the companion. The companion hosts a fresh copy of the world on one fixed LAN port (`--lan-port`, default 25565), which testers join directly or through a forwarded port. The session ends after its testers leave, and it is recorded with the same pipeline plus tester join/leave records and every tester's Recorder Play under `hosted_playtest/`. See [hosted playtests](docs/hosted-playtest.md).

@@ -254,6 +254,8 @@ public final class PlannerShellFactory {
 			dual ? cacheSession + ":controller" : null, characterPrompt, backendFactory);
 		controllerRef.set(orchestrator);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
+		dialogue.configureCoalescing(config.llm().plannerSessionCoalesceStepMillis(), config.llm().plannerSessionCoalesceMinMillis(),
+			config.llm().plannerSessionCoalesceMaxMillis());
 		dialogue.configureMessages(DialogueMessages.DEFAULTS.withOverrides(config.character().messages()));
 		dialogueRef.set(dialogue);
 
@@ -303,8 +305,7 @@ public final class PlannerShellFactory {
 				cacheKey == null ? null : cacheKey + ":compaction"), observability),
 			new PlannerContextAggregator(clock, llm.plannerCompactionTriggerTokens(),
 				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt), vision, inventory, llm.plannerVisionMode(),
-			llm.visionImageDetail(), 1, llm.plannerSessionCoalesceStepMillis(),
-			llm.plannerSessionCoalesceMinMillis(), llm.plannerSessionCoalesceMaxMillis(), clock, observability,
+			llm.visionImageDetail(), 1, clock, observability,
 			listener, debug, actions, chat, tools, toolObserver, llm.plannerMaxImages(),
 			new ai.moeru.airicraft.agent.llm.PlannerVisionService(llm, observability));
 		if (llm.plannerSummarizeToolResults()) orchestrator.configureMicroCompaction(new ai.moeru.airicraft.agent.llm.PlannerMicroCompactor(llm, observability, tools));

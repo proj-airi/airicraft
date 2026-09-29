@@ -6,6 +6,9 @@ package ai.moeru.airicraft.agent.attention;
  *
  * @param activeJobType the active job's type name, or {@code null} without a job
  * @param activeJobTargets block and item ids the running job works on (percept ownership)
+ * @param routineWakesHeld accepted or queued work consumes routine progress, so the scheduler drops pickup and craft
+ *     wakes (G4); budgets should not charge them
+ * @param goalBlocked a blocked planner goal holds every wake but direct guidance (G4)
  */
 public record AttentionState(
 	boolean evaluationSuppressed,
@@ -15,7 +18,9 @@ public record AttentionState(
 	boolean activeJobIdle,
 	boolean activeJobTerminal,
 	boolean pendingCraftToolResult,
-	java.util.List<String> activeJobTargets
+	java.util.List<String> activeJobTargets,
+	boolean routineWakesHeld,
+	boolean goalBlocked
 ) {
 	public AttentionState {
 		activeJobTargets = activeJobTargets == null ? java.util.List.of() : java.util.List.copyOf(activeJobTargets);
@@ -25,6 +30,13 @@ public record AttentionState(
 		String activeJobType, boolean activeJobIdle, boolean activeJobTerminal, boolean pendingCraftToolResult) {
 		this(evaluationSuppressed, proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal,
 			pendingCraftToolResult, java.util.List.of());
+	}
+
+	public AttentionState(boolean evaluationSuppressed, boolean proactiveSocialMode, boolean reflexOwnsActuation,
+		String activeJobType, boolean activeJobIdle, boolean activeJobTerminal, boolean pendingCraftToolResult,
+		java.util.List<String> activeJobTargets) {
+		this(evaluationSuppressed, proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal,
+			pendingCraftToolResult, activeJobTargets, false, false);
 	}
 
 	public static AttentionState idle() {

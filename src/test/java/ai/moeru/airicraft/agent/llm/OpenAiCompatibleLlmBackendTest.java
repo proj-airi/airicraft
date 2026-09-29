@@ -148,6 +148,52 @@ class OpenAiCompatibleLlmBackendTest {
 		}
 	}
 
+	@Test void discardingAGenerationClosesItsStreamAndLeavesTheWorkerUninterrupted() throws Exception {
+		var server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
+		var firstLine = new java.util.concurrent.CountDownLatch(1);
+		var closed = new java.util.concurrent.CountDownLatch(1);
+		server.createContext("/chat/completions", exchange -> {
+			exchange.getRequestBody().readAllBytes();
+			exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+			exchange.sendResponseHeaders(200, 0);
+			try (var body = exchange.getResponseBody()) {
+				for (int line = 0; line < 100; line++) {
+					body.write("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n".getBytes(StandardCharsets.UTF_8));
+					body.flush();
+					firstLine.countDown();
+					Thread.sleep(100);
+				}
+			}
+			catch (IOException | InterruptedException exception) {
+				closed.countDown();
+			}
+		});
+		server.setExecutor(Executors.newCachedThreadPool());
+		server.start();
+		var worker = Executors.newSingleThreadExecutor();
+		try {
+			var backend = new OpenAiCompatibleLlmBackend(config(server.getAddress().getPort(), false));
+			assertTrue(backend.supportsGenerationCancellation());
+			var request = PlannerRequest.ofTrigger(1, 0, ai.moeru.airicraft.agent.session.SessionMode.SINGLEPLAYER_LOCAL, null, null,
+				PlannerTriggerType.CHAT, "Alex", "hi", null);
+			var conversation = LlmConversation.of(List.of(LlmChatMessage.user("Continue.", LlmMessageKind.USER_TURN)));
+			var call = worker.submit(() -> backend.generate(new PlannerBackendRequest(7, 1, PlannerSessionPhase.PLANNER_REQUEST, request, conversation), ignored -> {}));
+			assertTrue(firstLine.await(5, java.util.concurrent.TimeUnit.SECONDS), "the stream started");
+			long discardedAt = System.nanoTime();
+			backend.discardGeneration(7);
+			var failure = assertThrows(java.util.concurrent.ExecutionException.class, () -> call.get(2, java.util.concurrent.TimeUnit.SECONDS));
+			assertTrue(failure.getCause() instanceof LlmBackendException, String.valueOf(failure.getCause()));
+			assertTrue(closed.await(2, java.util.concurrent.TimeUnit.SECONDS), "the server saw the connection close");
+			assertTrue(System.nanoTime() - discardedAt < 2_000_000_000L);
+			assertFalse(worker.submit(() -> Thread.currentThread().isInterrupted()).get(), "the discard's interrupt stays with the discarded call");
+			backend.discardGeneration(7);
+			assertFalse(worker.submit(() -> Thread.currentThread().isInterrupted()).get(), "discarding a finished generation is a no-op");
+		} finally {
+			worker.shutdownNow();
+			server.stop(0);
+		}
+	}
+
 	@Test void retryAfterSupportsHttpDatesAndConservativeMissingHeaderDelay() {
 		var now = java.time.Instant.parse("2026-09-13T11:00:00Z");
 		assertEquals(60_000L, OpenAiCompatibleChatClient.retryAfterMillis("Sun, 13 Sep 2026 11:01:00 GMT", now));

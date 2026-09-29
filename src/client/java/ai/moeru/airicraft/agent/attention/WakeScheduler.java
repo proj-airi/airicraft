@@ -46,6 +46,14 @@ public final class WakeScheduler {
 
 		/** Submits the wake to the planner; the host records its final audit outcome. */
 		void deliver(Wake wake);
+
+		/**
+		 * Asks the active planner to cancel its turn if a newer safety epoch made it stale and it has externalized
+		 * nothing ({@code PREEMPT}). Returns the gate naming the outcome: {@code preempted}, or why not.
+		 */
+		default String preemptInFlight() {
+			return "nothing_in_flight";
+		}
 	}
 
 	/** Facts and delivery for trigger wakes (W1, W4-W7). */
@@ -63,6 +71,25 @@ public final class WakeScheduler {
 
 		/** Submits the triggers to the planner as one batch; the host records each one's final audit outcome. */
 		void deliver(List<PlannerTrigger> triggers);
+
+		/** As {@link #deliver(List)}; {@code supersede} lets direct guidance replace the running turn. */
+		default void deliver(List<PlannerTrigger> triggers, boolean supersede) {
+			deliver(triggers);
+		}
+
+		/** Direct guidance delivered now would supersede a replaceable running turn. */
+		default boolean canSupersede() {
+			return false;
+		}
+
+		/** Triggers queued behind the running or superseded turn: the coalesce window grows with them. */
+		default int queuedTriggerCount() {
+			return 1;
+		}
+
+		/** The coalesce window closed at once (a single queued trigger): the planner starts the combined turn now. */
+		default void releaseCoalesceHold() {
+		}
 	}
 
 	/** A debounced wake is released once no other has arrived for this many ticks (spec section 5). */
@@ -71,6 +98,23 @@ public final class WakeScheduler {
 	public static final int DEBOUNCE_MAX_HOLD_TICKS = 100;
 
 	private record Held(PlannerTrigger trigger, long heldAt) {}
+
+	/** The pending set is bounded (spec 4.7); overflow drops the least urgent, oldest first, and records it. */
+	public static final int MAX_TASK_WAKES = 64;
+	public static final int MAX_DEBOUNCED = 32;
+	private final Deque<Wake> boundDrops = new ConcurrentLinkedDeque<>();
+
+	/** At most this many supersedes within {@link #SUPERSEDE_WINDOW_TICKS}; later direct guidance queues (spec 4.7). */
+	public static final int SUPERSEDE_BUDGET = 3;
+	public static final int SUPERSEDE_WINDOW_TICKS = 600;
+	private static final long MILLIS_PER_TICK = 50L;
+
+	private long coalesceStepMillis = 10L;
+	private long coalesceMinMillis = 10L;
+	private long coalesceMaxMillis = 100L;
+	/** The tick the coalesce window after a supersede ends, or -1 without one. */
+	private volatile long coalesceReadyAt = -1L;
+	private final Deque<Long> supersedes = new ConcurrentLinkedDeque<>();
 
 	/** Routine progress that accepted or queued work already consumes (G4). */
 	private static final Set<PlannerTriggerType> ROUTINE_PROGRESS =
@@ -86,10 +130,21 @@ public final class WakeScheduler {
 
 	public void offerTask(Wake wake) {
 		taskWakes.addLast(Objects.requireNonNull(wake, "wake"));
+		boundTaskWakes();
 	}
 
 	public void offerAttention(Wake wake) {
 		taskWakes.addFirst(Objects.requireNonNull(wake, "wake"));
+		boundTaskWakes();
+	}
+
+	/** Over the bound, the oldest ordinary task wake goes; attention and preempting wakes are never dropped. */
+	private void boundTaskWakes() {
+		while (taskWakes.size() > MAX_TASK_WAKES) {
+			Wake dropped = taskWakes.stream().filter(wake -> !wake.attention() && !wake.preempts()).findFirst().orElse(null);
+			if (dropped == null || !taskWakes.remove(dropped)) return;
+			boundDrops.addLast(dropped);
+		}
 	}
 
 	public boolean hasTaskWakes() {
@@ -100,6 +155,32 @@ public final class WakeScheduler {
 	public void clearTaskWakes() {
 		taskWakes.clear();
 		debounced.clear();
+		supersedes.clear();
+		boundDrops.clear();
+		coalesceReadyAt = -1L;
+		outcomeRecorded();
+	}
+
+	/** The coalesce window's settings from {@code agent.yml}, in milliseconds; timed here in ticks, rounded up. */
+	public void configureCoalescing(long stepMillis, long minMillis, long maxMillis) {
+		coalesceStepMillis = Math.max(0L, stepMillis);
+		coalesceMinMillis = Math.max(0L, minMillis);
+		coalesceMaxMillis = Math.max(coalesceMinMillis, maxMillis);
+	}
+
+	/** A supersede's coalesce window is open: the superseded planner is holding its queued triggers. */
+	public boolean coalescing() {
+		return coalesceReadyAt >= 0L;
+	}
+
+	/**
+	 * Ends the coalesce window once its tick has come. Returns whether the planner should now start the combined
+	 * turn ({@code releaseCoalesceHold}).
+	 */
+	public boolean releaseCoalesce(long tick) {
+		if (coalesceReadyAt < 0L || tick < coalesceReadyAt) return false;
+		coalesceReadyAt = -1L;
+		return true;
 	}
 
 	public boolean hasDebouncedWakes() {
@@ -118,7 +199,9 @@ public final class WakeScheduler {
 	 * new guidance or a changed mission are dropped on the way. Returns whether a wake was delivered.
 	 */
 	public boolean releaseTaskWake(TaskWakeHost host) {
-		if (host.externalDriverActive() || taskWakes.isEmpty() || host.plannerInFlight()) return false;
+		for (Wake dropped; (dropped = boundDrops.pollFirst()) != null; ) audit(host, dropped, "dropped", "pending.bounded");
+		if (host.externalDriverActive() || taskWakes.isEmpty()) return false;
+		if (host.plannerInFlight() && !preempt(host)) return false;
 		if (host.plannerUnavailable()) {
 			taskWakes.clear();
 			return false;
@@ -157,6 +240,27 @@ public final class WakeScheduler {
 	}
 
 	/**
+	 * A pending {@code PREEMPT} wake asks the planner to cancel a turn that its safety change made stale. Whether
+	 * that works is audited once per outcome; the wake keeps waiting when the turn cannot be preempted.
+	 */
+	private boolean preempt(TaskWakeHost host) {
+		// The newest safety epoch decides, wherever its wake waits: ordinary task wakes queued earlier do not shield
+		// the stale turn.
+		Wake preempting = null;
+		for (Wake wake : taskWakes) if (wake.preempts()) preempting = wake;
+		if (preempting == null) return false;
+		String outcome = host.preemptInFlight();
+		if (!"preempted".equals(outcome)) {
+			auditDeferred(host, preempting, "preempt." + outcome);
+			return false;
+		}
+		audit(host, preempting, "preempted", "preempt.safety_epoch");
+		// The reflex is why the planner wakes now; earlier wakes stay queued behind it (or are satisfied by its turn).
+		if (taskWakes.remove(preempting)) taskWakes.addFirst(preempting);
+		return !host.plannerInFlight();
+	}
+
+	/**
 	 * Admits a trigger wake (G4) and delivers it. Direct guidance is never held back here; a blocked goal holds
 	 * every other trigger, and accepted or queued work holds routine progress and idle think. A debounced wake is
 	 * held until quiet ({@link #releaseDebounced}); any wake delivered meanwhile takes the held ones with it, so they
@@ -179,11 +283,44 @@ public final class WakeScheduler {
 			debounced.addLast(new Held(trigger, trigger.tick()));
 			lastDebouncedAt = trigger.tick();
 			host.audit(trigger, "debounced", "debounce.hold");
+			boundDebounced(host);
 			return;
 		}
 		var batch = takeDebounced(host, "debounce.piggyback");
 		batch.add(trigger);
-		host.deliver(batch);
+		boolean supersede = false;
+		if (direct && !coalescing() && host.canSupersede()) {
+			if (withinSupersedeBudget(trigger.tick())) supersede = true;
+			else host.audit(trigger, "queued", "supersede.budget");
+		}
+		host.deliver(batch, supersede);
+		// Every batch delivered into an open window (or opening one) re-arms it from this tick, as it grows.
+		if (supersede) supersedes.addLast(trigger.tick());
+		if (supersede || coalescing()) armCoalesce(trigger.tick(), host);
+	}
+
+	private boolean withinSupersedeBudget(long tick) {
+		while (!supersedes.isEmpty() && tick - supersedes.peekFirst() >= SUPERSEDE_WINDOW_TICKS) supersedes.removeFirst();
+		return supersedes.size() < SUPERSEDE_BUDGET;
+	}
+
+	/**
+	 * {@code clamp((n-1) x step, min, max)} from the settings, rounded up to whole ticks. With a single queued trigger
+	 * there is nothing to coalesce, and the planner starts at once.
+	 */
+	private void armCoalesce(long tick, TriggerHost host) {
+		int queued = host.queuedTriggerCount();
+		if (queued <= 1) {
+			coalesceReadyAt = -1L;
+			host.releaseCoalesceHold();
+			return;
+		}
+		long window = Math.max(coalesceMinMillis, Math.min(coalesceMaxMillis, (long) (queued - 1) * coalesceStepMillis));
+		coalesceReadyAt = tick + (window + MILLIS_PER_TICK - 1) / MILLIS_PER_TICK;
+		if (window == 0L) {
+			coalesceReadyAt = -1L;
+			host.releaseCoalesceHold();
+		}
 	}
 
 	/**
@@ -199,6 +336,21 @@ public final class WakeScheduler {
 		if (batch.isEmpty()) return false;
 		host.deliver(batch);
 		return true;
+	}
+
+	/** Over the bound, the least urgent held wake goes, oldest first among equals. */
+	private void boundDebounced(TriggerHost host) {
+		while (debounced.size() > MAX_DEBOUNCED) {
+			Held least = null;
+			for (Held held : debounced) if (least == null || urgencyRank(held.trigger()) > urgencyRank(least.trigger())) least = held;
+			if (least == null || !debounced.remove(least)) return;
+			host.audit(least.trigger(), "dropped", "pending.bounded");
+		}
+	}
+
+	private static int urgencyRank(PlannerTrigger trigger) {
+		int rank = trigger.wake() == null ? -1 : List.of("critical", "direct", "high", "normal", "low", "self").indexOf(trigger.wake().urgency());
+		return rank < 0 ? 6 : rank;
 	}
 
 	/** Protected urgencies are never delayed, whatever a rule asked for (Stage C). */
@@ -237,6 +389,7 @@ public final class WakeScheduler {
 			entry.put("eventRefs", wake.eventRefs());
 			entry.put("guidanceRevision", wake.guidanceRevision());
 			entry.put("missionId", wake.missionId());
+			entry.put("delivery", wake.delivery().name());
 			pending.add(entry);
 		}
 		var held = new ArrayList<Map<String, Object>>();
@@ -250,6 +403,8 @@ public final class WakeScheduler {
 		var state = new LinkedHashMap<String, Object>();
 		state.put("pending", pending);
 		state.put("debounced", held);
+		state.put("coalesceReadyAt", coalesceReadyAt);
+		state.put("recentSupersedes", List.copyOf(supersedes));
 		String gate = lastDeferredAuditGate;
 		state.put("retainedBy", pending.isEmpty() || gate == null ? null : gate);
 		return state;

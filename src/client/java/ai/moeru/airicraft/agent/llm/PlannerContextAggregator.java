@@ -76,6 +76,11 @@ public final class PlannerContextAggregator {
 		return !state.queuedTriggers().isEmpty();
 	}
 
+	/** A player's direct guidance waits in the queue, for example after the supersede budget held it back. */
+	public boolean hasQueuedDirectGuidance() {
+		return state.queuedTriggers().stream().anyMatch(PlannerTrigger::maySupersedeLaunchedTurn);
+	}
+
 	public int queuedTriggerCount() {
 		return state.queuedTriggers().size();
 	}

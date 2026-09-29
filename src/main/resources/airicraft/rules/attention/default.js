@@ -1,13 +1,19 @@
 // Bundled attention rules (Stage B). They decide, per routed event, whether it feeds the planner's semantic
 // input and whether it may wake the planner. The Java constitution decides direct chat, reset commands, the
 // reflex safety handoff and evaluation suppression before and after this module; the clamp keeps protected
-// types from being silenced. These rules must decide exactly like the Java ReferenceAttentionPolicy.
+// types from being silenced. Each single decision matches the Java ReferenceAttentionPolicy; the one stateful
+// part, the autonomous-wake budget below, has no Java mirror (the reference is only the cold/failure fallback).
 //
 // input:  {tick, seed, attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle,
-//          activeJobTerminal, pendingCraftToolResult, activeJobTargets}, plannerRules: [{index, ruleId, effect, reason, match}],
+//          activeJobTerminal, pendingCraftToolResult, activeJobTargets, routineWakesHeld, goalBlocked},
+//          plannerRules: [{index, ruleId, effect, reason, match}],
 //          events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled, evidence}]}
 // output: {decisions: [{seqNo, emitSemantic, ruleMatch, policy, wake: {delivery, urgency, ruleId, reason}}], state}
 (lib => {
+  // Autonomous-wake budget (spec 4.7): a leaky bucket over NORMAL and LOW wakes of unprotected types. A burst of
+  // `capacity` wakes, then `leakPerTick` per tick (12 a minute). Over it, the wake becomes NONE; the event stays
+  // evidence in observe. Retune or remove it in an override; protected types are never budgeted (the clamp keeps them).
+  const AUTONOMOUS_BUDGET = {capacity: 10, leakPerTick: 0.01, cost: 1};
   const MATCH_KEYS = ['player', 'speaker', 'actor', 'itemId', 'damageTypeId', 'attackerName'];
   const ALLOW = {effect: 'ALLOW', ruleIndex: -1, ruleId: null, reason: null, bypassed: false};
 
@@ -102,6 +108,22 @@
     }
   }
 
+  // Wakes the scheduler drops anyway (G4) cost nothing: routine progress while work consumes it, anything while blocked.
+  const ROUTINE_PROGRESS = ['pickup.item_picked_up', 'crafting.item_crafted'];
+  const schedulerDrops = (event, attention) => attention.goalBlocked
+    || (attention.routineWakesHeld && ROUTINE_PROGRESS.includes(event.type));
+
+  function budget(decision, event, input, state) {
+    if (decision.delivery === 'NONE' || event.profile.bypass) return decision;
+    if (decision.urgency !== 'NORMAL' && decision.urgency !== 'LOW') return decision;
+    if (schedulerDrops(event, input.attention)) return decision;
+    const bucket = lib.leakyBucket(state.autonomous || {}, AUTONOMOUS_BUDGET, input.tick);
+    state.autonomous = bucket.state;
+    if (bucket.accepted) return decision;
+    return none('budget.autonomous_wakes', 'autonomous wake budget spent (level ' + Math.round(bucket.state.level * 10) / 10
+      + ' of ' + AUTONOMOUS_BUDGET.capacity + ')');
+  }
+
   function decide(event, input) {
     const ruleMatch = plannerRule(event, input.plannerRules);
     let policy = ruleMatch;
@@ -122,7 +144,12 @@
 
   return {
     step(input, state) {
-      return {decisions: input.events.map(event => decide(event, input)), state};
+      const decisions = input.events.map(event => {
+        const decided = decide(event, input);
+        decided.wake = budget(decided.wake, event, input, state);
+        return decided;
+      });
+      return {decisions, state};
     }
   };
 })

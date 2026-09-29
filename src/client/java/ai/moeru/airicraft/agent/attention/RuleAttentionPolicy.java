@@ -188,6 +188,8 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 		var targets = new JsonArray();
 		snapshot.activeJobTargets().forEach(targets::add);
 		attention.add("activeJobTargets", targets);
+		attention.addProperty("routineWakesHeld", snapshot.routineWakesHeld());
+		attention.addProperty("goalBlocked", snapshot.goalBlocked());
 		input.add("attention", attention);
 		var plannerRules = new JsonArray();
 		for (int index = 0; index < rules.size(); index++) {

@@ -60,9 +60,6 @@ public final class PlannerOrchestrator {
 	private final PlannerVisionMode visionMode;
 	private final String imageDetail;
 	private final Clock clock;
-	private final long coalesceStepMs;
-	private final long coalesceMinMs;
-	private final long coalesceMaxMs;
 	private final AgentObservability observability;
 	private final PlannerLifecycleListener lifecycleListener;
 	private final AgentDebugRecorder debugRecorder;
@@ -80,9 +77,9 @@ public final class PlannerOrchestrator {
 	private boolean awaitingAcceptedReplyRecord;
 	private JsonElement pendingAcceptedAssistantRawContent;
 	private volatile boolean captureInFlight;
+	/** After a supersede, triggers queue here until the wake scheduler ends its coalesce window. */
 	private boolean coalescePending;
-	private long coalesceReadyAtMs = -1L;
-	private long coalesceWindowMs;
+	private boolean coalesceReleased;
 	private PlannerContextSnapshot coalesceSupersededSnapshot;
 	private Context turnContext;
 	private boolean inventoryBootstrapPending = true;
@@ -106,9 +103,6 @@ public final class PlannerOrchestrator {
 		PlannerVisionMode visionMode,
 		String imageDetail,
 		int plannerSessionMaxConcurrentAttempts,
-		int plannerSessionCoalesceStepMillis,
-		int plannerSessionCoalesceMinMillis,
-		int plannerSessionCoalesceMaxMillis,
 		Clock clock,
 		AgentObservability observability,
 		PlannerLifecycleListener lifecycleListener,
@@ -127,9 +121,6 @@ public final class PlannerOrchestrator {
 			visionMode,
 			imageDetail,
 			plannerSessionMaxConcurrentAttempts,
-			plannerSessionCoalesceStepMillis,
-			plannerSessionCoalesceMinMillis,
-			plannerSessionCoalesceMaxMillis,
 			clock,
 			observability,
 			lifecycleListener,
@@ -150,9 +141,6 @@ public final class PlannerOrchestrator {
 		PlannerVisionMode visionMode,
 		String imageDetail,
 		int plannerSessionMaxConcurrentAttempts,
-		int plannerSessionCoalesceStepMillis,
-		int plannerSessionCoalesceMinMillis,
-		int plannerSessionCoalesceMaxMillis,
 		Clock clock,
 		AgentObservability observability,
 		PlannerLifecycleListener lifecycleListener,
@@ -182,9 +170,6 @@ public final class PlannerOrchestrator {
 		this.inventoryTool = Objects.requireNonNull(inventoryTool, "inventoryTool");
 		this.visionMode = Objects.requireNonNull(visionMode, "visionMode");
 		this.imageDetail = Objects.requireNonNull(imageDetail, "imageDetail");
-		this.coalesceStepMs = Math.max(0L, plannerSessionCoalesceStepMillis);
-		this.coalesceMinMs = Math.max(0L, plannerSessionCoalesceMinMillis);
-		this.coalesceMaxMs = Math.max(this.coalesceMinMs, plannerSessionCoalesceMaxMillis);
 		this.observability = Objects.requireNonNull(observability, "observability");
 		this.lifecycleListener = Objects.requireNonNull(lifecycleListener, "lifecycleListener");
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
@@ -263,9 +248,7 @@ public final class PlannerOrchestrator {
 			sessionCoordinator.supersededCount(),
 			activeSession != null && activeSession.retryPending(),
 			activeSession == null ? -1L : activeSession.retryReadyAtMs(),
-			coalescePending,
-			coalesceReadyAtMs,
-			coalesceWindowMs
+			coalescePending
 		);
 	}
 
@@ -496,6 +479,52 @@ public final class PlannerOrchestrator {
 		safetyLaunchBlocked = false;
 	}
 
+	/** What {@link #preemptStaleTurn()} did; the scheduler records the lowercase name as its gate. */
+	public enum Preemption {
+		PREEMPTED,
+		NOTHING_IN_FLIGHT,
+		NOT_STALE,
+		TOOL_EXECUTING,
+		SIDE_EFFECT_TOOL_RAN,
+		REPLY_ACCEPTED;
+
+		public String gate() {
+			return name().toLowerCase(Locale.ROOT);
+		}
+	}
+
+	/**
+	 * Cancels the active turn when a safety epoch newer than its request made it stale and it has externalized
+	 * nothing: its model call is still running, no tool is executing, and no tool other than a read tool ran in this
+	 * generation (spec O3: never preempt after a side effect). The result is the same as a stale rejection, only
+	 * earlier: the generation is discarded, and its trigger is not replayed; read-tool results stay as evidence.
+	 * A hold change within the same epoch is not preempted, since the planner's own tools can cause it.
+	 */
+	public Preemption preemptStaleTurn() {
+		long generation = sessionCoordinator.activeGeneration();
+		if (!enabled || generation <= 0L || !sessionCoordinator.hasReplaceableActiveSession()) return Preemption.NOTHING_IN_FLIGHT;
+		PlannerContextSnapshot snapshot = sessionCoordinator.contextSnapshotFor(generation);
+		PlannerRequest request = snapshot == null ? null : snapshot.request();
+		if (request == null || request.safetyEpoch() >= minimumSafetyEpoch) return Preemption.NOT_STALE;
+		if (pendingToolExecution != null) return Preemption.TOOL_EXECUTING;
+		if (awaitingAcceptedReplyRecord) return Preemption.REPLY_ACCEPTED;
+		if (recordedToolExchanges(generation).stream().anyMatch(exchange -> exchange.toolCall() == null
+			|| !toolRegistry.isReadTool(exchange.toolCall().name()))) return Preemption.SIDE_EFFECT_TOOL_RAN;
+		PlannerSessionPhase phase = sessionCoordinator.activePhase();
+		commitRecordedToolExchanges(generation);
+		stalePlannerRejections.addLast(new StalePlannerRejection(generation, request.safetyEpoch(), minimumSafetyEpoch,
+			request.safetyHoldId(), currentSafetyHoldId, phase == null ? "UNKNOWN" : phase.name(), true));
+		turnJournal.markSuperseded(generation);
+		contextAggregator.dropSupersededGeneration(sessionCoordinator.supersedeActiveSessionIfReplaceable());
+		committedSnapshotGenerations.remove(generation);
+		recordConversationSources();
+		endTurnSpan();
+		// Wait for an identified ownership/event wake; do not replay the obsolete trigger.
+		pendingSubmitRequest = null;
+		clearCoalesceState();
+		return Preemption.PREEMPTED;
+	}
+
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
 		if (stalePlannerRejections.isEmpty()) {
 			return List.of();
@@ -505,7 +534,50 @@ public final class PlannerOrchestrator {
 		return List.copyOf(drained);
 	}
 
+	/**
+	 * {@link #submit(PlannerRequest, boolean)} allowing a supersede. A caller that lets direct guidance supersede owns
+	 * ending the coalesce window ({@link #releaseCoalesceHold()}); in the runtime that is the wake scheduler.
+	 */
 	public boolean submit(PlannerRequest request) {
+		return submit(request, true);
+	}
+
+	/**
+	 * Whether a direct-guidance batch submitted now would supersede the running turn: one is in flight and
+	 * replaceable, and no compaction, accepted-reply record or side-effect tool holds it. The wake scheduler asks
+	 * before it decides (supersede budget) and times the coalesce window that follows.
+	 */
+	public boolean canSupersede() {
+		if (!enabled || compactionService.hasInFlight()) return false;
+		sessionCoordinator.drainCompletedResults();
+		return !awaitingAcceptedReplyRecord && !pendingSideEffectToolExecution() && sessionCoordinator.hasReplaceableActiveSession();
+	}
+
+	/** Triggers queued behind the running or superseded turn; the coalesce window grows with them. */
+	public int queuedTriggerCount() {
+		return contextAggregator.queuedTriggerCount();
+	}
+
+	/**
+	 * Starts a player's guidance that queued behind a turn which has now ended (over the supersede budget). Autonomous
+	 * triggers keep waiting for a turn to join. The dialogue calls this after a failed turn, once the failure is applied.
+	 */
+	public void startQueuedDirectGuidance() {
+		if (pendingSubmitRequest != null && contextAggregator.hasQueuedDirectGuidance()) startQueuedWorkIfPossible();
+	}
+
+	/** Ends the coalesce window after a supersede: the queued triggers start one combined turn. */
+	public void releaseCoalesceHold() {
+		if (!coalescePending) return;
+		coalesceReleased = true;
+		startQueuedWorkIfPossible();
+	}
+
+	/**
+	 * Submits a batch. A direct-guidance batch supersedes a replaceable running turn only when {@code supersede}
+	 * allows it (the scheduler's supersede budget); the triggers then wait for {@link #releaseCoalesceHold()}.
+	 */
+	public boolean submit(PlannerRequest request, boolean supersede) {
 		Objects.requireNonNull(request, "request");
 		if (request.triggerBatch() == null || request.triggerBatch().isEmpty()) {
 			return false;
@@ -529,18 +601,18 @@ public final class PlannerOrchestrator {
 		if (pendingSideEffectToolExecution()) {
 			return true;
 		}
-		if (sessionCoordinator.hasReplaceableActiveSession() && request.triggerBatch().maySupersedeLaunchedTurn()) {
+		if (supersede && sessionCoordinator.hasReplaceableActiveSession() && request.triggerBatch().maySupersedeLaunchedTurn()) {
 			long supersededGeneration = sessionCoordinator.activeGeneration();
 			coalesceSupersededSnapshot = sessionCoordinator.supersedeActiveSessionIfReplaceable();
 			committedSnapshotGenerations.remove(supersededGeneration);
 			turnJournal.markSuperseded(supersededGeneration);
 			recordConversationSources();
-			armCoalesceWindow();
-			return coalesceWindowMs > 0L || startQueuedWorkIfPossible();
+			coalescePending = true;
+			coalesceReleased = false;
+			return true;
 		}
 		if (coalescePending) {
-			armCoalesceWindow();
-			return coalesceWindowMs > 0L || startQueuedWorkIfPossible();
+			return true;
 		}
 		return startQueuedWorkIfPossible();
 	}
@@ -597,7 +669,7 @@ public final class PlannerOrchestrator {
 	}
 
 	private void pollCoalescedQueue() {
-		if (coalescePending) {
+		if (coalescePending && coalesceReleased) {
 			startQueuedWorkIfPossible();
 		}
 	}
@@ -1012,6 +1084,8 @@ public final class PlannerOrchestrator {
 		committedSnapshotGenerations.remove(result.generation());
 		endTurnSpan();
 		lifecycleListener.onPlannerExecutionApplied(result);
+		// A player's guidance that queued behind this turn (over the supersede budget) starts the next one.
+		startQueuedDirectGuidance();
 		return null;
 	}
 
@@ -1362,7 +1436,7 @@ public final class PlannerOrchestrator {
 	}
 
 	private boolean startTriggeredPlannerTurn() {
-		if (coalescePending && clock.millis() < coalesceReadyAtMs) {
+		if (coalescePending && !coalesceReleased) {
 			return true;
 		}
 		if (sessionCoordinator.hasInFlight() || pendingToolExecution != null || compactionService.hasInFlight()) {
@@ -1585,6 +1659,9 @@ public final class PlannerOrchestrator {
 			committedSnapshotGenerations.remove(toolExecution.generation());
 			endTurnSpan();
 			toolExecution.toolCalls().forEach(call -> toolRegistry.afterResultCommitted(call.name()));
+			// A player's guidance that queued behind this turn (over the supersede budget) starts the next one, as
+			// after an accepted reply. Autonomous triggers keep waiting for the next turn they can join.
+			startQueuedDirectGuidance();
 			return null;
 		}
 		sessionCoordinator.submitToolFollowUp(
@@ -1903,24 +1980,9 @@ public final class PlannerOrchestrator {
 		return turnJournal.toolExchanges(generation).size();
 	}
 
-	private void armCoalesceWindow() {
-		coalescePending = true;
-		coalesceWindowMs = computeCoalesceWindowMs(contextAggregator.queuedTriggerCount());
-		coalesceReadyAtMs = clock.millis() + coalesceWindowMs;
-	}
-
-	private long computeCoalesceWindowMs(int queuedTriggerCount) {
-		if (queuedTriggerCount <= 1) {
-			return 0L;
-		}
-		long windowMs = (long) (queuedTriggerCount - 1) * coalesceStepMs;
-		return Math.max(coalesceMinMs, Math.min(coalesceMaxMs, windowMs));
-	}
-
 	private void clearCoalesceState() {
 		coalescePending = false;
-		coalesceReadyAtMs = -1L;
-		coalesceWindowMs = 0L;
+		coalesceReleased = false;
 		coalesceSupersededSnapshot = null;
 	}
 

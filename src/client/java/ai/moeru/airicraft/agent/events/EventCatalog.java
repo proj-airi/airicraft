@@ -67,6 +67,7 @@ public final class EventCatalog {
 			new EventTypeSpec("planner.response_applied", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.response_applied")),
 			new EventTypeSpec("planner.stale_response_rejected", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("planner.stale_response_rejected", true, null, true)),
 			new EventTypeSpec("planner.timeout", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.timeout")),
+			new EventTypeSpec("planner.turn_preempted", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("planner.turn_preempted", true, null, true)),
 			new EventTypeSpec("planner.unknown_intent", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.unknown_intent")),
 
 			// player

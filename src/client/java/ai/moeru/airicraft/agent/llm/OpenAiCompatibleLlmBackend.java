@@ -26,6 +26,9 @@ public final class OpenAiCompatibleLlmBackend implements LlmBackend {
 	private final AgentObservability observability;
 	private final PlannerToolRegistry toolRegistry;
 	private final Deque<Object> injectedOutcomes = new ArrayDeque<>();
+	/** Threads running a generation's HTTP call, so a discard can abort the exchange by interrupting them. */
+	private final java.util.Map<Long, Thread> running = new java.util.HashMap<>();
+	private final java.util.Set<Long> discarded = new java.util.HashSet<>();
 
 	public OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig config) {
 		this(config, NoopObservability.INSTANCE, PlannerToolRegistry.empty());
@@ -57,7 +60,40 @@ public final class OpenAiCompatibleLlmBackend implements LlmBackend {
 
 	@Override
 	public LlmCallResult<PlannerResponse> generate(PlannerBackendRequest request, java.util.function.Consumer<String> preview) throws LlmBackendException {
-		return generate(request.conversation(), preview);
+		long generation = request.generation();
+		synchronized (running) {
+			running.put(generation, Thread.currentThread());
+		}
+		try {
+			return generate(request.conversation(), preview);
+		}
+		finally {
+			synchronized (running) {
+				running.remove(generation);
+				// The pool thread goes back to its executor: never let a discard's interrupt reach the next call.
+				if (discarded.remove(generation)) Thread.interrupted();
+			}
+		}
+	}
+
+	@Override
+	public boolean supportsGenerationCancellation() {
+		return true;
+	}
+
+	/**
+	 * Aborts the generation's HTTP exchange, streaming or not: the waiting thread is interrupted, and an interrupted
+	 * {@code HttpClient} call cancels its request and closes the stream. The discarded call ends with an exception its
+	 * executor no longer listens for.
+	 */
+	@Override
+	public void discardGeneration(long generation) {
+		synchronized (running) {
+			Thread thread = running.get(generation);
+			if (thread == null) return;
+			discarded.add(generation);
+			thread.interrupt();
+		}
 	}
 
 	private synchronized LlmCallResult<PlannerResponse> generate(LlmConversation conversation, java.util.function.Consumer<String> preview) throws LlmBackendException {

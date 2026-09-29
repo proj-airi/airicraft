@@ -70,6 +70,11 @@ public final class PlannerSessionCoordinator {
 		return activeSession == null ? 0L : activeSession.generation();
 	}
 
+	/** The active session's phase, or {@code null} without one. */
+	public PlannerSessionPhase activePhase() {
+		return activeSession == null ? null : activeSession.phase();
+	}
+
 	public long pendingNewestGeneration() {
 		return activeSession != null && activeSession.awaitingLaunch() ? activeSession.generation() : 0L;
 	}

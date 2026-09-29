@@ -165,7 +165,7 @@ class PlannerOrchestratorTest {
 			var orchestrator = new PlannerOrchestrator(new PlannerExecutor(backend),
 				new PlannerCompactionService(new OpenAiCompatibleChatClient(config, tools)),
 				new PlannerContextAggregator(clock, config.plannerCompactionTriggerTokens(), PlannerVisionMode.NATIVE_TOOL_IMAGE, tools),
-				vision, CurrentInventoryTool.disabled(), PlannerVisionMode.NATIVE_TOOL_IMAGE, "low", 1, 0, 0, 0,
+				vision, CurrentInventoryTool.disabled(), PlannerVisionMode.NATIVE_TOOL_IMAGE, "low", 1,
 				clock, NoopObservability.INSTANCE, PlannerLifecycleListener.NO_OP, new AgentDebugRecorder(),
 				PlannerActionToolExecutor.DISABLED, PlannerChatSink.NO_OP, tools, PlannerToolExecutionObserver.NO_OP, maxImages, fallback);
 			try {
@@ -618,9 +618,6 @@ class PlannerOrchestratorTest {
 			PlannerVisionMode.EXTERNAL_SUMMARY,
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			observability,
 			CompositePlannerLifecycleListener.of(plannerCallJournal),
@@ -1664,8 +1661,6 @@ class PlannerOrchestratorTest {
 
 		PlannerOrchestratorDebugSnapshot snapshot = orchestrator.debugSnapshot();
 		assertFalse(snapshot.coalescePending());
-		assertEquals(-1L, snapshot.coalesceReadyAtMs());
-		assertEquals(0L, snapshot.coalesceWindowMs());
 	}
 
 	@Test
@@ -1686,30 +1681,15 @@ class PlannerOrchestratorTest {
 		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"));
 		assertEquals(1, backend.callCount());
 		assertEquals(List.of(1L), backend.discardedGenerations());
-		PlannerOrchestratorDebugSnapshot firstCoalesce = orchestrator.debugSnapshot();
-		assertTrue(firstCoalesce.coalescePending());
-		assertEquals(1_010L, firstCoalesce.coalesceReadyAtMs());
-		assertEquals(10L, firstCoalesce.coalesceWindowMs());
-
-		clock.advanceMillis(9L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
-
-		clock.advanceMillis(1L);
+		assertTrue(orchestrator.debugSnapshot().coalescePending(), "the triggers wait for the scheduler's coalesce window");
+		assertTrue(orchestrator.hasInFlight());
 		assertNull(orchestrator.poll());
 		assertEquals(1, backend.callCount());
 
 		orchestrator.submit(requestAt(12L, 1_200L, "Alice", "C"));
 		assertEquals(1, backend.callCount());
-		PlannerOrchestratorDebugSnapshot secondCoalesce = orchestrator.debugSnapshot();
-		assertTrue(secondCoalesce.coalescePending());
-		assertEquals(20L, secondCoalesce.coalesceWindowMs());
-
-		clock.advanceMillis(19L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
-
-		clock.advanceMillis(1L);
+		assertEquals(3, orchestrator.queuedTriggerCount());
+		orchestrator.releaseCoalesceHold();
 		assertNull(orchestrator.poll());
 		assertEquals(1, backend.callCount());
 
@@ -1784,6 +1764,98 @@ class PlannerOrchestratorTest {
 		orchestrator.onAcceptedReplyRecorded();
 		for (int i = 0; i < 30; i++) orchestrator.poll();
 		assertEquals(1, backend.callCount());
+	}
+
+	private static PlannerOrchestrator preemptionOrchestrator(RecordingBackend backend, List<String> invokedTools) {
+		return newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY,
+			3, 10, 10, 100, 128, Clock.systemUTC(),
+			toolCall -> {
+				invokedTools.add(toolCall.name());
+				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
+			},
+			PlannerChatSink.NO_OP);
+	}
+
+	private static void awaitCalls(PlannerOrchestrator orchestrator, RecordingBackend backend, int calls) {
+		Instant deadline = Instant.now().plus(Duration.ofSeconds(2));
+		while (backend.callCount() < calls && Instant.now().isBefore(deadline)) orchestrator.poll();
+		assertEquals(calls, backend.callCount());
+	}
+
+	@Test
+	void aNewSafetyEpochPreemptsAnUnexternalizedTurn() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		assertEquals(PlannerOrchestrator.Preemption.NOTHING_IN_FLIGHT, orchestrator.preemptStaleTurn());
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		assertEquals(PlannerOrchestrator.Preemption.NOT_STALE, orchestrator.preemptStaleTurn(), "the turn is valid for the current epoch");
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.PREEMPTED, orchestrator.preemptStaleTurn());
+		assertEquals(List.of(1L), backend.discardedGenerations(), "the backend is asked to cancel the call");
+		List<StalePlannerRejection> preempted = orchestrator.drainStalePlannerRejections();
+		assertEquals(1, preempted.size());
+		assertTrue(preempted.getFirst().preempted());
+		assertEquals("PLANNER_REQUEST", preempted.getFirst().phase());
+		assertEquals(0L, preempted.getFirst().requestSafetyEpoch());
+		assertEquals(1L, preempted.getFirst().currentSafetyEpoch());
+
+		backend.succeed(0, replyOnly("too late"));
+		for (int i = 0; i < 20; i++) assertNull(orchestrator.poll(), "a preempted turn's late response is never applied");
+		assertTrue(orchestrator.drainStalePlannerRejections().isEmpty());
+	}
+
+	@Test
+	void aHoldChangeWithinTheEpochIsNotPreempted() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		orchestrator.updateSafetyContext(1L, "hold-1", false);
+		orchestrator.submit(autonomousRequestAt(20L, 2_000L, "reflex resolved holdId=hold-1", "survival-resolved").withSafetyContext(1L, "hold-1"));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		orchestrator.updateSafetyContext(1L, null, false);
+		assertEquals(PlannerOrchestrator.Preemption.NOT_STALE, orchestrator.preemptStaleTurn());
+		assertTrue(orchestrator.hasInFlight());
+	}
+
+	@Test
+	void aTurnIsNeverPreemptedAfterASideEffectTool() {
+		RecordingBackend backend = new RecordingBackend();
+		var invokedTools = new ArrayList<String>();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, invokedTools);
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null)), null));
+		awaitCalls(orchestrator, backend, 2);
+		assertEquals(List.of(PlannerToolCatalog.CANCEL_TASK), invokedTools);
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.SIDE_EFFECT_TOOL_RAN, orchestrator.preemptStaleTurn());
+		assertTrue(orchestrator.hasInFlight());
+		backend.succeed(1, replyOnly("follow-up after the side effect"));
+		List<StalePlannerRejection> rejected = awaitStaleRejections(orchestrator);
+		assertFalse(rejected.getFirst().preempted(), "it is rejected on completion, as before Phase 5");
+	}
+
+	@Test
+	void readToolResultsSurviveAPreemption() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("look", PlannerToolCatalog.INSPECT_INVENTORY, new JsonObject(), null)), null));
+		awaitCalls(orchestrator, backend, 2);
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.PREEMPTED, orchestrator.preemptStaleTurn());
+		assertEquals("TOOL_FOLLOW_UP", orchestrator.drainStalePlannerRejections().getFirst().phase());
+		// This test backend cannot cancel: let the orphaned call finish so it frees its attempt slot.
+		backend.succeed(1, replyOnly("late"));
+		backend.awaitCompletions(2, Duration.ofSeconds(1));
+		orchestrator.submit(autonomousRequestAt(20L, 2_000L, "reflex started", "reflex-started").withSafetyContext(1L, "hold-1"));
+		awaitCalls(orchestrator, backend, 3);
+		assertTrue(backend.conversation(2).messages().stream().anyMatch(message -> message.content().contains("Tool result: INVENTORY_UNAVAILABLE")),
+			"the read tool's exchange is kept as evidence");
 	}
 
 	@Test
@@ -1900,7 +1972,7 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
-	void coalesceWindowResetsFromLatestTriggerAndBatchesQueuedTriggersOnce() {
+	void aSupersededTurnWaitsForTheSchedulersReleaseAndBatchesItsTriggersOnce() {
 		RecordingBackend backend = new RecordingBackend();
 		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("Asia/Taipei"));
 		PlannerOrchestrator orchestrator = newOrchestrator(
@@ -1913,77 +1985,60 @@ class PlannerOrchestratorTest {
 
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "A"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
-
+		assertTrue(orchestrator.canSupersede());
 		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"));
-		PlannerOrchestratorDebugSnapshot firstWindow = orchestrator.debugSnapshot();
-		assertTrue(firstWindow.coalescePending());
-		assertEquals(1_010L, firstWindow.coalesceReadyAtMs());
-		assertEquals(10L, firstWindow.coalesceWindowMs());
-
-		clock.advanceMillis(5L);
+		assertFalse(orchestrator.canSupersede(), "nothing replaceable is left in flight");
 		orchestrator.submit(requestAt(12L, 1_200L, "Alice", "C"));
-		PlannerOrchestratorDebugSnapshot resetWindow = orchestrator.debugSnapshot();
-		assertTrue(resetWindow.coalescePending());
-		assertEquals(20L, resetWindow.coalesceWindowMs());
-		assertEquals(1_025L, resetWindow.coalesceReadyAtMs());
-
-		clock.advanceMillis(19L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
-
-		clock.advanceMillis(1L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
 
 		backend.succeed(0, replyOnly("old A"));
 		backend.awaitCompletions(1, Duration.ofSeconds(1));
+		clock.advanceMillis(600_000L);
+		for (int i = 0; i < 20; i++) assertNull(orchestrator.poll());
+		assertEquals(1, backend.callCount(), "time alone never ends the hold; the scheduler does");
+
+		orchestrator.releaseCoalesceHold();
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 		assertPromptContains(backend.conversation(1), "[chat][Alice] A", "[chat][Alice] B", "[chat][Alice] C");
-
 		backend.succeed(1, replyOnly("latest ABC"));
-
 		PlannerExecutionResult result = awaitResult(orchestrator);
 		assertEquals("latest ABC", result.response().replyText());
-		assertEquals(2L, result.generation());
 		assertEquals(3, result.request().triggerBatch().size());
+		assertFalse(orchestrator.debugSnapshot().coalescePending());
 	}
 
 	@Test
-	void coalesceWindowClampsAtConfiguredMaximum() {
+	void queuedGuidanceStartsAfterTheTurnAheadOfItFails() {
 		RecordingBackend backend = new RecordingBackend();
-		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("Asia/Taipei"));
-		PlannerOrchestrator orchestrator = newOrchestrator(
-			backend,
-			CurrentViewVisionTool.disabled(),
-			PlannerVisionMode.EXTERNAL_SUMMARY,
-			3,
-			clock
-		);
-
+		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
 		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "A"));
 		backend.awaitCalls(1, Duration.ofSeconds(1));
-
-		for (int index = 0; index < 15; index++) {
-			clock.advanceMillis(1L);
-			orchestrator.submit(requestAt(11L + index, 1_100L + index, "Alice", "T" + index));
-		}
-
-		PlannerOrchestratorDebugSnapshot snapshot = orchestrator.debugSnapshot();
-		assertTrue(snapshot.coalescePending());
-		assertEquals(100L, snapshot.coalesceWindowMs());
-		assertEquals(clock.instant().toEpochMilli() + 100L, snapshot.coalesceReadyAtMs());
-
-		clock.advanceMillis(99L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
-
-		clock.advanceMillis(1L);
-		assertNull(orchestrator.poll());
-		assertEquals(1, backend.callCount());
-
-		backend.succeed(0, replyOnly("old A"));
-		backend.awaitCompletions(1, Duration.ofSeconds(1));
+		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"), false);
+		backend.fail(0, LlmFailureType.PROVIDER_ERROR, "Provider returned HTTP 400 bad request");
+		PlannerExecutionResult failed = awaitResult(orchestrator);
+		assertFalse(failed.succeeded());
+		for (int i = 0; i < 10; i++) orchestrator.poll();
+		assertEquals(1, backend.callCount(), "the failure alone starts nothing");
+		orchestrator.startQueuedDirectGuidance();
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
+		assertPromptContains(backend.conversation(1), "[chat][Alice] B");
+	}
+
+	@Test
+	void directGuidanceQueuesWithoutSupersedingWhenTheSchedulerSaysSo() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "A"));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"), false);
+		assertEquals(0L, orchestrator.debugSnapshot().supersededCount(), "over the supersede budget: the running turn continues");
+		assertFalse(orchestrator.debugSnapshot().coalescePending());
+		backend.succeed(0, replyOnly("finished A"));
+		PlannerExecutionResult first = awaitResult(orchestrator);
+		assertEquals("finished A", first.response().replyText());
+		orchestrator.recordAssistantTurn(new DialogueTurn("agent", first.response().replyText(), 12L, 1_200L));
+		orchestrator.onAcceptedReplyRecorded();
+		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
+		assertPromptContains(backend.conversation(1), "[chat][Alice] B");
 	}
 
 	@org.junit.jupiter.params.ParameterizedTest
@@ -2002,6 +2057,7 @@ class PlannerOrchestratorTest {
 		backend.awaitCompletions(1, Duration.ofSeconds(1));
 
 		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"));
+		orchestrator.releaseCoalesceHold(); // the wake scheduler's coalesce window ends
 		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
 		assertPromptContains(backend.conversation(1), "[chat][Alice] A", "[chat][Alice] B");
 		assertTrue(invokedTools.isEmpty(), "The old model result must not actuate after newer operator guidance");
@@ -2092,6 +2148,7 @@ class PlannerOrchestratorTest {
 		backend.rateLimit(0, 30_000L);
 		awaitRetryPending(orchestrator, Duration.ofSeconds(1));
 		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "Check food first."));
+		orchestrator.releaseCoalesceHold(); // the wake scheduler's coalesce window ends; the cooldown still holds
 		clock.advanceMillis(29_999L);
 		assertNull(orchestrator.poll());
 		assertEquals(1, backend.callCount());
@@ -3085,7 +3142,7 @@ class PlannerOrchestratorTest {
 		assertEquals(1, backend.callCount());
 		PlannerOrchestratorDebugSnapshot snapshot = orchestrator.debugSnapshot();
 		assertTrue(snapshot.coalescePending());
-		assertEquals(0L, snapshot.coalesceWindowMs());
+		orchestrator.releaseCoalesceHold();
 
 		visionTool.captureFuture().complete(capturedScreenshot());
 		assertNull(awaitNullPoll(orchestrator));
@@ -3377,9 +3434,6 @@ class PlannerOrchestratorTest {
 			config.plannerVisionMode(),
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			NoopObservability.INSTANCE,
 			PlannerLifecycleListener.NO_OP,
@@ -3423,9 +3477,6 @@ class PlannerOrchestratorTest {
 			visionMode,
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			NoopObservability.INSTANCE,
 			lifecycleListener,
@@ -3456,9 +3507,6 @@ class PlannerOrchestratorTest {
 			visionMode,
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			NoopObservability.INSTANCE,
 			PlannerLifecycleListener.NO_OP,
@@ -3526,9 +3574,6 @@ class PlannerOrchestratorTest {
 			visionMode,
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			NoopObservability.INSTANCE,
 			listener,
@@ -3559,9 +3604,6 @@ class PlannerOrchestratorTest {
 			visionMode,
 			config.visionImageDetail(),
 			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
 			clock,
 			observability,
 			PlannerLifecycleListener.NO_OP,
@@ -3691,9 +3733,6 @@ class PlannerOrchestratorTest {
 			visionMode,
 			config.visionImageDetail(),
 			plannerSessionMaxConcurrentAttempts,
-			plannerSessionCoalesceStepMillis,
-			plannerSessionCoalesceMinMillis,
-			plannerSessionCoalesceMaxMillis,
 			clock,
 			NoopObservability.INSTANCE,
 			PlannerLifecycleListener.NO_OP,
