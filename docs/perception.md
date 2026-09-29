@@ -84,4 +84,5 @@ percept wake decisions per minute. Each run builds the course in a fresh place, 
 noticed.
 
 `scenarios/notice-walk` is the same course for a model run. Its checks cover perception; what the planner chooses
-to do about what it noticed is for the reviewer.
+to do about what it noticed is for the reviewer. Its `event_absent` checks are invariants: a forbidden percept fails the
+run as soon as it appears, so the run passes only when the planner goal or the budget ends with the other checks met.
