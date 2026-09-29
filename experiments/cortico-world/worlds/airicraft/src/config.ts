@@ -13,8 +13,8 @@ export interface AiricraftConfigSection {
   /** Prefix for tool names; Cortico requires names to be unique across Worlds. */
   toolPrefix: string;
   /**
-   * airicraft tools that are not exposed. The persona speaks through its own tools, so the embedded
-   * planner's `say` and `report_to_me` are hidden by default.
+   * airicraft tools that are not exposed. The persona speaks, holds objectives and decides when it is woken
+   * through Cortico, so the embedded planner's own tools for those are hidden by default.
    */
   excludeTools: string[];
 }
@@ -25,5 +25,16 @@ export const AIRICRAFT_DEFAULTS: AiricraftConfigSection = {
   pollIntervalMs: 300,
   toolTimeoutMs: 120_000,
   toolPrefix: 'ac_',
-  excludeTools: ['say', 'report_to_me'],
+  excludeTools: [
+    'say',
+    'report_to_me',
+    'update_event_policy',
+    'record_decision',
+    'set_planner_goal',
+    'change_planner_goal',
+    'finish_planner_goal',
+    'block_planner_goal',
+    'resume_planner_goal',
+    'inspect_planner_goal',
+  ],
 };

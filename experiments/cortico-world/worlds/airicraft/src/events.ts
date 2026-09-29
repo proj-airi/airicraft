@@ -26,8 +26,15 @@ const RULES: readonly Rule[] = [
   { match: /^(action_graph\.|mission\.|planner\.|rules\.|policy\.event_intervened$|social\.local_controller_spoke$)/, delivery: 'archive' },
 ];
 
-export function deliveryFor(type: string): Delivery {
+export function deliveryFor(type: string, payload?: Record<string, unknown>): Delivery {
+  // The mod announces its debug dashboard (a URL with a viewer token) as a system message; that is not for the persona.
+  if (type === 'social.system_message' && /dashboard/i.test(JSON.stringify(payload ?? {}))) return 'archive';
   return RULES.find((rule) => rule.match.test(type))?.delivery ?? 'piggyback';
+}
+
+/** Credentials never go into persona context, whatever event carried them. */
+export function redact(text: string): string {
+  return text.replace(/(token=)[^\s&"'#]+/gi, '$1<redacted>');
 }
 
 const MAX_VALUE_CHARS = 120;
@@ -46,6 +53,6 @@ export function eventText(event: BridgeEvent): string {
   const fields = Object.entries(event.payload ?? {})
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
     .map(([key, value]) => `${key}=${render(value)}`);
-  const text = fields.length ? `${event.type} ${fields.join(' ')}` : event.type;
+  const text = redact(fields.length ? `${event.type} ${fields.join(' ')}` : event.type);
   return text.length > MAX_TEXT_CHARS ? `${text.slice(0, MAX_TEXT_CHARS)}…` : text;
 }

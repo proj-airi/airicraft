@@ -8,7 +8,7 @@ import { AIRICRAFT } from '../src/definition.ts';
 import { AIRICRAFT_DEFAULTS } from '../src/config.ts';
 import { AiricraftWorld } from '../src/world.ts';
 import { BridgeClient } from '../src/bridge.ts';
-import { deliveryFor } from '../src/events.ts';
+import { deliveryFor, eventText } from '../src/events.ts';
 import { tagsFor } from '../src/tools.ts';
 import { FakeHost } from './helpers/fake-host.ts';
 import { startMockBridge, type MockBridge } from './mock-bridge.ts';
@@ -60,6 +60,15 @@ describe('delivery table', () => {
     expect(deliveryFor(type)).toBe(expected);
   });
 
+  it('archives the dashboard notice and redacts tokens in any event text', () => {
+    const notice = { normalizedMessage: 'Airicraft debug dashboard: http://192.0.2.2:8765/#token=abc123def' };
+    expect(deliveryFor('social.system_message', notice)).toBe('archive');
+    expect(deliveryFor('social.system_message', { normalizedMessage: 'Server restarting' })).toBe('debounce');
+    const text = eventText({ seqNo: 1, tick: 1, timestampMs: 1, type: 'social.system_message', payload: { normalizedMessage: 'open http://h/?a=1&token=abc123def now' } });
+    expect(text).not.toContain('abc123def');
+    expect(text).toContain('token=<redacted>');
+  });
+
   it('classifies tools', () => {
     expect(tagsFor('inspect_inventory')).toEqual(['read']);
     expect(tagsFor('navigate_to')).toEqual(['act']);
@@ -69,7 +78,7 @@ describe('delivery table', () => {
 
 describe('tools', () => {
   it('exposes the mod tools with a prefix and hides the excluded ones', async () => {
-    mock.tools = [tool('navigate_to', 'go somewhere'), tool('say'), tool('report_to_me'), tool('inspect_inventory')];
+    mock.tools = [tool('navigate_to', 'go somewhere'), tool('say'), tool('report_to_me'), tool('set_planner_goal'), tool('inspect_inventory')];
     const world = new AiricraftWorld({ cfg: cfg(), timezone: 'UTC', bridge: bridge() });
     await world.start(new FakeHost());
     expect(world.tools().map((t) => t.name)).toEqual(['ac_navigate_to', 'ac_inspect_inventory']);

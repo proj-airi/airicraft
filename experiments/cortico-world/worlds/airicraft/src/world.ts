@@ -138,7 +138,7 @@ export class AiricraftWorld implements World {
   }
 
   private async pushEvent(event: BridgeEvent): Promise<void> {
-    await this.push(`airicraft.${event.type}`, eventText(event), deliveryFor(event.type), 'external', {
+    await this.push(`airicraft.${event.type}`, eventText(event), deliveryFor(event.type, event.payload), 'external', {
       seqNo: event.seqNo,
       tick: event.tick,
     });
