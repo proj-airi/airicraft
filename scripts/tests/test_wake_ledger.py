@@ -277,6 +277,28 @@ class WakeLedgerTest(unittest.TestCase):
             self.assertFalse(metrics["inputComplete"])
             self.assertIsNone(metrics["tokensPerHour"])
 
+    def test_priority_counts_preemption_and_budget_holds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = pathlib.Path(tmp)
+            timeline = [
+                {"entryId": 1, "tick": 5, "domain": "planner_wake", "action": "preempted", "payload": {"path": "W2", "gate": "preempt.safety_epoch"}},
+                {"entryId": 2, "tick": 9, "domain": "planner_wake", "action": "queued", "payload": {"path": "W1", "gate": "supersede.budget"}},
+                {"entryId": 3, "tick": 9, "domain": "planner_wake", "action": "dropped", "payload": {"path": "W2", "gate": "pending.bounded"}},
+                {"entryId": 4, "tick": 9, "domain": "planner_wake", "action": "submitted", "payload": {"path": "W1"}},
+            ]
+            (run / "debug-timeline.jsonl").write_text("".join(json.dumps({"entry": entry}) + "\n" for entry in timeline))
+            decisions = [{"decision": {"seqNo": 1, "ruleId": "budget.autonomous_wakes"}},
+                         {"decision": {"seqNo": 2, "ruleId": "catalog.trigger"}},
+                         {"decision": {"seqNo": 3, "ruleId": "budget.autonomous_wakes"}}]
+            (run / "attention-decisions.jsonl").write_text("".join(json.dumps(row) + "\n" for row in decisions))
+            wakes = [entry for entry in timeline if entry["domain"] == "planner_wake"]
+            self.assertEqual({"preempted": 1, "supersedeBudget": 1, "autonomousBudget": 2, "pendingBounded": 1},
+                             wake_ledger.priority_counts(run, wakes))
+        ledger = wake_ledger.build_ledger(FIXTURE)
+        self.assertEqual({"preempted": 0, "supersedeBudget": 0, "autonomousBudget": 0, "pendingBounded": 0},
+                         ledger["metrics"]["priority"])
+        self.assertIn("| Preempted | Budget holds |", wake_ledger.summary_table([ledger]))
+
     def test_cli_writes_and_summarizes(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "ledger.json"
