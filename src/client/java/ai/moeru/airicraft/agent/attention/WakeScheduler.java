@@ -95,6 +95,11 @@ public final class WakeScheduler {
 
 	private record Held(PlannerTrigger trigger, long heldAt) {}
 
+	/** The pending set is bounded (spec 4.7); overflow drops the least urgent, oldest first, and records it. */
+	public static final int MAX_TASK_WAKES = 64;
+	public static final int MAX_DEBOUNCED = 32;
+	private final Deque<Wake> boundDrops = new ConcurrentLinkedDeque<>();
+
 	/** At most this many supersedes within {@link #SUPERSEDE_WINDOW_TICKS}; later direct guidance queues (spec 4.7). */
 	public static final int SUPERSEDE_BUDGET = 3;
 	public static final int SUPERSEDE_WINDOW_TICKS = 600;
@@ -121,10 +126,21 @@ public final class WakeScheduler {
 
 	public void offerTask(Wake wake) {
 		taskWakes.addLast(Objects.requireNonNull(wake, "wake"));
+		boundTaskWakes();
 	}
 
 	public void offerAttention(Wake wake) {
 		taskWakes.addFirst(Objects.requireNonNull(wake, "wake"));
+		boundTaskWakes();
+	}
+
+	/** Over the bound, the oldest ordinary task wake goes; attention and preempting wakes are never dropped. */
+	private void boundTaskWakes() {
+		while (taskWakes.size() > MAX_TASK_WAKES) {
+			Wake dropped = taskWakes.stream().filter(wake -> !wake.attention() && !wake.preempts()).findFirst().orElse(null);
+			if (dropped == null || !taskWakes.remove(dropped)) return;
+			boundDrops.addLast(dropped);
+		}
 	}
 
 	public boolean hasTaskWakes() {
@@ -136,6 +152,7 @@ public final class WakeScheduler {
 		taskWakes.clear();
 		debounced.clear();
 		supersedes.clear();
+		boundDrops.clear();
 	}
 
 	/** The coalesce window's settings from {@code agent.yml}, in milliseconds; timed here in ticks, rounded up. */
@@ -176,6 +193,7 @@ public final class WakeScheduler {
 	 * new guidance or a changed mission are dropped on the way. Returns whether a wake was delivered.
 	 */
 	public boolean releaseTaskWake(TaskWakeHost host) {
+		for (Wake dropped; (dropped = boundDrops.pollFirst()) != null; ) audit(host, dropped, "dropped", "pending.bounded");
 		if (host.externalDriverActive() || taskWakes.isEmpty()) return false;
 		if (host.plannerInFlight() && !preempt(host)) return false;
 		if (host.plannerUnavailable()) {
@@ -254,6 +272,7 @@ public final class WakeScheduler {
 			debounced.addLast(new Held(trigger, trigger.tick()));
 			lastDebouncedAt = trigger.tick();
 			host.audit(trigger, "debounced", "debounce.hold");
+			boundDebounced(host);
 			return;
 		}
 		var batch = takeDebounced(host, "debounce.piggyback");
@@ -293,6 +312,21 @@ public final class WakeScheduler {
 		if (batch.isEmpty()) return false;
 		host.deliver(batch);
 		return true;
+	}
+
+	/** Over the bound, the least urgent held wake goes, oldest first among equals. */
+	private void boundDebounced(TriggerHost host) {
+		while (debounced.size() > MAX_DEBOUNCED) {
+			Held least = null;
+			for (Held held : debounced) if (least == null || urgencyRank(held.trigger()) > urgencyRank(least.trigger())) least = held;
+			if (least == null || !debounced.remove(least)) return;
+			host.audit(least.trigger(), "dropped", "pending.bounded");
+		}
+	}
+
+	private static int urgencyRank(PlannerTrigger trigger) {
+		int rank = trigger.wake() == null ? -1 : List.of("critical", "direct", "high", "normal", "low", "self").indexOf(trigger.wake().urgency());
+		return rank < 0 ? 6 : rank;
 	}
 
 	/** Protected urgencies are never delayed, whatever a rule asked for (Stage C). */

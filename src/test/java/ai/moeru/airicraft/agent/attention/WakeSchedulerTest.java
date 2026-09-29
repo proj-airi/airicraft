@@ -37,6 +37,24 @@ class WakeSchedulerTest {
 		}
 	}
 
+	@Test void thePendingSetIsBoundedAndKeepsAttentionAndPreemptingWakes() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		scheduler.offerTask(Wake.task(1, 1, 0, null).preempting());
+		scheduler.offerAttention(Wake.attention(1, 2, 0));
+		for (long seq = 3; seq < 3 + WakeScheduler.MAX_TASK_WAKES; seq++) scheduler.offerTask(Wake.task(1, seq, 0, null));
+		assertEquals(WakeScheduler.MAX_TASK_WAKES, ((List<?>) scheduler.debugState().get("pending")).size());
+		scheduler.releaseTaskWake(host);
+		assertEquals(List.of("dropped:3:pending.bounded", "dropped:4:pending.bounded"), host.log.subList(0, 2),
+			"the two oldest ordinary wakes went; attention and preempting wakes stayed");
+
+		var triggers = new Triggers();
+		for (long seq = 1; seq <= WakeScheduler.MAX_DEBOUNCED; seq++) scheduler.offerTrigger(percept(seq, 10, "LOW"), triggers);
+		scheduler.offerTrigger(percept(100, 10, "NORMAL"), triggers);
+		assertEquals("dropped:pending.bounded:1", triggers.log.getLast(), "the oldest LOW wake goes, not the NORMAL one");
+	}
+
 	@Test void aPreemptWakeCancelsAStaleTurnAndIsDeliveredAtOnce() {
 		var scheduler = new WakeScheduler();
 		var host = new Host();
