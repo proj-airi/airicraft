@@ -18,8 +18,30 @@ that tune attention badly". **Previous phase:** [`plans/2026-09-29-planner-event
 
 ## Status (2026-09-29)
 
-Draft, awaiting the user's confirmation of decisions G1–G14. `dev` is at 97828e23 (Phase 5 and the Mojang-mappings
-migration), CI green.
+Decisions G1–G14 confirmed by the user on 2026-09-29 ("all good, implement and create one PR"). Slices 6a–6e are
+implemented on `claude/hopeful-gauss-1gjr8v`, with the revisions below. `dev` was at 97828e23 (Phase 5 and the
+Mojang-mappings migration), CI green.
+
+**Revisions during implementation**
+
+- **G3, activation.** The event bus accepts events only from the tick thread, so the worker never activates. It
+  validates, warms a private engine and replays; then it queues the activation, which `PlannerRules.drain()` runs at the
+  start of the next tick (`EmbodiedAgentRuntime.tickClient`). If the game does not tick for 10 s the edit is dropped
+  (`rules_update_timeout`). An automatic revert between the check and the activation refuses the edit
+  (`rules_changed_during_check`), since the candidate's origin names the version number it would get.
+- **Engines.** `RuleEngine.shared` closes the hook's previous override, which would have closed the running module
+  during the check. `RuleEngine.detached` builds the candidate privately and `RuleEngine.adopt` registers it once it is
+  accepted, so the runtime's `shared(module)` finds it warm. A restored older version has a new origin, so its engine
+  warms after activation, and the Java reference decides (`FALLBACK`) until it is ready.
+- **Revert target.** The policies revert through a `RuleRevert` that the runtime points at the `RulesStore`; each
+  version records the version to fall back to, and a revert or rollback copies its target's fallback, so a version that
+  fails never reverts to a bad one. `rules.reverted` gained `hook`, `fromVersion` and `toVersion` (the version now
+  active, 0 for the base).
+- **G12, docs.** `read_rules_docs` is `docs.md` plus `lib.js`, the protected and constitution types read from the live
+  catalog, and the bundled attention module, so the list cannot go stale. A test checks it against
+  `docs/attention-rules.md`.
+- **Goldens.** Wake tests settle a rules edit by draining on the tick thread (`WakeScenarioHarness.settle`, with
+  `PlannerRules.inFlight()`), so an edit's warm-up never changes a tick count.
 
 ## Where Phase 6 starts
 

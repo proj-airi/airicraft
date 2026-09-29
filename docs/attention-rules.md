@@ -167,6 +167,54 @@ output: {percepts: [{type, payload, candidateIds}], drops: [{candidateId, reason
 with `./gradlew salienceReplay -Pairicraft.replayRun=<run-dir> [-Pairicraft.replaySalienceModule=<salience.js>]`,
 which writes `salience-replay.json` with the steps whose percepts or drops differ.
 
+## Planner-authored rules
+
+The planner can tune both modules for the session with three native tools. `read_rules_docs` returns the planner's own
+version of this page (the contract, the helpers, the protected types read from the live catalog, and the bundled
+attention module as an example).
+
+- **`inspect_rules {hook, [version]}`** returns the running source (or an older version's), the version history, the
+  engine's counters and the rule ids of recent decisions.
+- **`update_rules {hook, source | revert_to, reason}`** replaces one module, or activates an older version or `base`
+  (the bundled module, or the operator's override). `reason` (at most 200 characters) is recorded with the version.
+
+An edit goes through these checks, off the game tick, before it takes effect:
+
+1. The candidate loads in a private engine and runs one empty step. Failing either rejects the edit
+   (`rules_invalid`).
+2. **Replay.** Attention replays the newest 200 recorded decisions that carry their inputs and whose event is still in
+   the event log; salience replays the newest 64 recorded steps. The running module and the candidate each start from
+   an empty state (the live state is not copied), so the diff is like for like. A candidate that fails any replayed step
+   is rejected (`rules_step_failed`), and the result carries the failing replay.
+3. The result of an accepted edit carries the replay diff: entries replayed and skipped, how many changed, the wakes
+   (or percepts) gained and lost overall and per event type, and up to 10 examples. An edit that only mutes wakes is
+   allowed and says so; the diff is information, not a gate.
+4. Activation happens on the game tick, which owns event publication. If the game does not tick within 10 seconds the
+   edit is dropped (`rules_update_timeout`); if an automatic revert changed the module meanwhile it is refused
+   (`rules_changed_during_check`).
+
+Limits and scope:
+
+- Session-local. `airicraft reload` builds a new runtime, which drops the planner's edits and history; an operator
+  override in `config/airicraft/rules/` remains the base that `revert_to: base` returns to.
+- Source is capped at 32,768 characters; 8 versions per hook are kept; at most 6 accepted edits per hook per 12,000
+  ticks (`rules_update_rate`); edits are refused while a safety hold is open (`work_in_safety_hold`).
+- A new module starts with empty state, so budgets and cooldowns begin full.
+- An attention module that never mentions `plannerRules` makes `update_event_policy` do nothing while it runs; the
+  result warns about it.
+- The constitution, the clamp and the scheduler's timings are Java, so no edit can reach them.
+
+**Versions.** Version numbers only grow. A rollback or an automatic revert is a new version that copies an older one,
+so the history reads as a log. Every version names the version to fall back to if it fails: the one it replaced, or
+the base module. A version that fails 3 steps in a row (or fails to load) reverts to that fallback, and
+`rules.reverted` says which hook and versions. The restored module's engine may still be warming, and the Java
+reference decides (stage `FALLBACK`) until it is ready.
+
+**Review.** `rules.updated` (hook, version, kind, sha, reason and the diff counts) and `rules.reverted` are evidence in
+the planner's `observe`. Recorded runs write every accepted version with its source to `planner-rules.jsonl`; the
+dashboard's Attention view lists them, and `airicraft agent debug state` shows the active version per hook under
+`plannerRules`. Review the file after a playtest: it is the record of what the planner decided to stop hearing about.
+
 ## Sandbox
 
 - **No host access.** No I/O, threads, Java interop, or host access.
@@ -198,7 +246,8 @@ which writes `salience-replay.json` with the steps whose percepts or drops diffe
   - `clamps`, `reverts`, `rebuilds`
   - `maxStepMicros`, `stateBytes`, `lastFailure`
 - The attention decision log under `attention` records every decision with its stage, rule id and reason.
-- Diagnostic events `rules.step_failed` and `rules.reverted` appear in the event log.
+- `rules.step_failed` is a diagnostic event in the event log. `rules.reverted` (with `hook`, `from`, `to`,
+  `fromVersion`, `toVersion` and `reason`) and `rules.updated` are also shown to the planner in `observe`.
 
 ## Replaying a recorded run
 

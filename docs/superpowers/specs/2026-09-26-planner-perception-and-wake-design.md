@@ -1033,16 +1033,16 @@ Plan: [`plans/2026-09-29-planner-event-system-phase-5.md`](../plans/2026-09-29-p
 
 ### Phase 6: planner-authored rules
 
-- [ ] Add native tools `inspect_rules` and `update_rules`, which change
+- [x] Add native tools `inspect_rules` and `update_rules`, which change
   the frozen native tool prefix in a deliberate release. They follow the
   `SelfToolProvider` precedent: bounded source size, versioning with a bounded
   history, rollback, and session-local scope unless O11 decides otherwise.
-- [ ] Dry-run every update by replaying the last N logged events through the
+- [x] Dry-run every update by replaying the last N logged events through the
   old and new module, and return the decision diff in the tool result.
   Reject any update that fails to evaluate.
-- [ ] Automatically revert on repeated step failures, and publish
+- [x] Automatically revert on repeated step failures, and publish
   `rules.reverted` so the planner sees it in `observe`.
-- [ ] Add prompt guidance and `read_rules_docs` (the contract, `lib.js`, and
+- [x] Add prompt guidance and `read_rules_docs` (the contract, `lib.js`, and
   the constitution the planner cannot change).
 - [ ] Live playtest in which the planner tunes its own attention, for example
   muting noticed-item wakes while building. Review rule edits in the decision

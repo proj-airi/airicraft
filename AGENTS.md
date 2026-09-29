@@ -99,6 +99,10 @@
   - `SaliencePolicy`: the salience rule hook (candidates to percepts); `SalienceReplay` re-runs recorded steps
 - `src/main/java/ai/moeru/airicraft/rules/` and `src/main/resources/airicraft/rules/`
   - sandboxed GraalJS rule engine, kernel, `lib.js` and the bundled `attention/default.js` and `salience/default.js`
+  - `RulesStore` (the planner's versions per hook, rollback, edit rate), `RuleRevert`, and `docs.md` (what `read_rules_docs` returns)
+- `src/client/java/ai/moeru/airicraft/agent/rules/`
+  - `PlannerRules`: checks a planner edit off the tick and activates it on the tick; `RuleDryRun`: the replay diff
+  - `agent/llm/RulesToolProvider`: `inspect_rules`, `update_rules`, `read_rules_docs`
 
 ## Key Wrapper Files
 
@@ -191,6 +195,7 @@
 - Each client automatically owns a read-only LAN debug dashboard. It scans upward from configured port `8765`, uses a viewer token distinct from the control bridge token, and prints the clickable URL in logs, `airicraft status`, and in-game chat.
 - The companion plays a character from `config/airicraft/character.json` (Character Card V3, as AIRI exports, plus `extensions.airicraft`), or the built-in generic Minecraft player. It opens both planner prompts, drives idle free time, and voices fixed failure/reset lines. `airicraft reload` applies edits. See `docs/character-card.md`.
 - Attention rules (Stage B: which events reach the planner and which wake it) run as sandboxed GraalJS. `config/airicraft/rules/attention.js` overrides the bundled module; `airicraft reload` rejects an invalid override with `invalid_config`, startup reverts to the bundled module. The Java constitution and clamp cannot be overridden. See `docs/attention-rules.md`.
+- The planner tunes its own attention and salience modules with `inspect_rules`, `update_rules` and `read_rules_docs` (session-local, `airicraft reload` drops the edits). An edit is loaded, run once and replayed against the recent decision or step log next to the running module; the replay diff is returned and a module that fails to evaluate is rejected. Versions are bounded (8 per hook); a rollback or automatic revert is a new version, and a failing version reverts to the one it replaced (`rules.reverted`). Edits are rate-limited (6 per hook per 12,000 ticks) and refused during a safety hold; `rules.updated` is evidence in `observe`; recorded runs write `planner-rules.jsonl`. Adding or changing these tools or the planner prompt changes the tool/system prefix hashes in every wake golden.
 - Hosted playtests: `scripts/hosted-playtest --world <template> --recorder-jar <profile>` hosts a fresh world copy on one fixed LAN port for human testers and records it like an automatic playtest, plus `players.jsonl` and tester Recorder Plays. The planner has no `something_wrong` there; a degraded planner gets at most one automatic operator reset per session instead of ending the run. See `docs/hosted-playtest.md`.
 - Live playtest diagnosis: pause server ticks, query the rolling decision history, and export the incident before rebuilding. See `docs/live-playtest-recording.md` for CLI queries, selective frames, playback, and loss checks.
 - Dashboard observations include full LLM envelopes, runtime snapshots, decision states, events, and sparse client RGB. The default window is 12,000 completed server ticks, capped at 64 MiB; tick-debug pause freezes it. Pixel-identical frames are skipped before encoding.

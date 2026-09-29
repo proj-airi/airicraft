@@ -67,3 +67,7 @@ _Avoid_: Missing recording
 **Supersede budget**: The limit on how often direct guidance may cancel a running turn; over it, guidance waits behind the turn. _Avoid_: Rate limit.
 
 **Autonomous-wake budget**: The attention rules' leaky bucket over low-urgency wakes; over it, events stay evidence without waking the planner. _Avoid_: Throttle.
+
+**Planner-authored rules**: The session-local attention or salience module the planner replaced through `update_rules`, as a bounded history of versions. _Avoid_: Custom rules (that is the operator's config override).
+
+**Replay diff**: What a candidate rule module would have changed if it had decided the recent recorded history instead of the running one; returned before the edit takes effect. _Avoid_: Dry run result.
