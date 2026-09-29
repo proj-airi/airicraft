@@ -2,7 +2,9 @@ name: build
 on:
   pull_request:
   push:
-    branches: ['**']
+    # Only the long-lived branches build on every push; other branches build
+    # through their pull requests instead.
+    branches: [dev, main]
     tags: ['v*']
 
 permissions:
@@ -19,43 +21,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          # axion-release needs full history and tags to derive the version.
           fetch-depth: 0
           persist-credentials: false
-      - name: select mod version
-        id: version
-        shell: bash
-        run: |
-          version=$(sed -n 's/^mod_version=//p' gradle.properties)
-          prerelease=false
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            version=${GITHUB_REF_NAME#v}
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
-              echo "Expected a version tag such as v1.2.3 or v1.2.3-rc.1" >&2
-              exit 1
-            fi
-            # Tags have no source branch. Prefer main when both branches contain
-            # the tagged commit; otherwise releases must come from dev.
-            if git show-ref --verify --quiet refs/remotes/origin/main && \
-                git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
-              if [[ "${version%%+*}" == *-* ]]; then
-                prerelease=true
-              fi
-            elif git show-ref --verify --quiet refs/remotes/origin/dev && \
-                git merge-base --is-ancestor HEAD refs/remotes/origin/dev; then
-              if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                version="$version-alpha"
-              elif [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha(\.[0-9]+)?$ ]]; then
-                echo "Dev releases must use vX.Y.Z or vX.Y.Z-alpha.N; RCs require main" >&2
-                exit 1
-              fi
-              prerelease=true
-            else
-              echo "Release tags must point to a commit on origin/dev or origin/main" >&2
-              exit 1
-            fi
-          fi
-          echo "value=$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
       - name: setup jdk
         uses: actions/setup-java@v5
         with:
@@ -67,10 +35,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
+      - name: select mod version
+        id: version
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { default: selectModVersion } = require('./.github/scripts/select-mod-version.mjs');
+            await selectModVersion({ core, exec });
       - name: build
         env:
-          MOD_VERSION: ${{ steps.version.outputs.value }}
-        run: ./gradlew build "-Pmod_version=$MOD_VERSION"
+          AIRICRAFT_RELEASE_CHANNEL: ${{ steps.version.outputs.channel }}
+        run: ./gradlew build
       - name: collect release jars
         env:
           MOD_VERSION: ${{ steps.version.outputs.value }}
@@ -85,6 +60,40 @@ jobs:
           name: mod-jars
           path: build/release/*.jar
           if-no-files-found: error
+
+  dev-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: dev-snapshot-release
+      cancel-in-progress: false
+    steps:
+      - name: download tested jars
+        uses: actions/download-artifact@v8
+        with:
+          name: mod-jars
+          path: release
+      - name: publish rolling dev snapshot prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          # Remove the previous snapshot release and tag, then recreate both on
+          # this commit. The tag name has no 'v' prefix, so axion-release ignores
+          # it for version derivation.
+          gh release delete dev-snapshot --yes --cleanup-tag || true
+          gh api -X DELETE "repos/$GH_REPO/git/refs/tags/dev-snapshot" || true
+          gh release create dev-snapshot release/*.jar \
+            --target "$RELEASE_SHA" \
+            --prerelease --latest=false \
+            --title "dev-snapshot (${RELEASE_SHA:0:8})" \
+            --notes "Rolling snapshot of the \`dev\` branch @ $RELEASE_SHA (run: $RUN_URL). Latest jars replace the previous snapshot on every dev push; tagged releases remain on the releases page."
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

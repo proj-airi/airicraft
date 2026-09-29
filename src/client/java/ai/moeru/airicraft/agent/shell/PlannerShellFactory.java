@@ -25,7 +25,7 @@ import ai.moeru.airicraft.agent.llm.PlannerContextAggregator;
 import ai.moeru.airicraft.agent.llm.PlannerExecutor;
 import ai.moeru.airicraft.agent.llm.PlannerOrchestrator;
 import ai.moeru.airicraft.agent.llm.PlannerToolExecutionObserver;
-import ai.moeru.airicraft.agent.llm.PlannerToolNarrationSink;
+import ai.moeru.airicraft.agent.llm.PlannerChatSink;
 import ai.moeru.airicraft.agent.llm.PlannerToolRegistry;
 import ai.moeru.airicraft.agent.llm.WorldFeatureSearchService;
 import ai.moeru.airicraft.agent.llm.WorldFeatureSearchToolProvider;
@@ -60,7 +60,7 @@ public final class PlannerShellFactory {
 			clock,
 			debugRecorder,
 			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
+			PlannerChatSink.NO_OP,
 			PlannerToolExecutionObserver.NO_OP,
 			ignored -> {
 			},
@@ -75,7 +75,7 @@ public final class PlannerShellFactory {
 		Clock clock,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink
+		PlannerChatSink chatSink
 	) {
 		return create(
 			config,
@@ -84,7 +84,7 @@ public final class PlannerShellFactory {
 			clock,
 			debugRecorder,
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			PlannerToolExecutionObserver.NO_OP,
 			ignored -> {
 			},
@@ -99,7 +99,7 @@ public final class PlannerShellFactory {
 		Clock clock,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolExecutionObserver toolExecutionObserver,
 		Consumer<List<BlockPos>> worldReadObserver
 	) {
@@ -110,7 +110,7 @@ public final class PlannerShellFactory {
 			clock,
 			debugRecorder,
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			toolExecutionObserver,
 			worldReadObserver,
 			new CameraController()
@@ -124,7 +124,7 @@ public final class PlannerShellFactory {
 		Clock clock,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolExecutionObserver toolExecutionObserver,
 		Consumer<List<BlockPos>> worldReadObserver,
 		CameraController cameraController
@@ -136,7 +136,7 @@ public final class PlannerShellFactory {
 			clock,
 			debugRecorder,
 			actionToolExecutor,
-			narrationSink,
+			chatSink,
 			toolExecutionObserver,
 			worldReadObserver,
 			cameraController,
@@ -151,18 +151,36 @@ public final class PlannerShellFactory {
 		Clock clock,
 		AgentDebugRecorder debugRecorder,
 		PlannerActionToolExecutor actionToolExecutor,
-		PlannerToolNarrationSink narrationSink,
+		PlannerChatSink chatSink,
 		PlannerToolExecutionObserver toolExecutionObserver,
 		Consumer<List<BlockPos>> worldReadObserver,
 		CameraController cameraController,
 		LongSupplier serverTickSupplier
+	) {
+		return create(config, screenshotService, observability, clock, debugRecorder, actionToolExecutor,
+			chatSink, toolExecutionObserver, worldReadObserver, cameraController, serverTickSupplier, null);
+	}
+
+	public static PlannerShellComponents create(
+		AgentConfig config,
+		FirstPersonScreenshotService screenshotService,
+		AgentObservability observability,
+		Clock clock,
+		AgentDebugRecorder debugRecorder,
+		PlannerActionToolExecutor actionToolExecutor,
+		PlannerChatSink chatSink,
+		PlannerToolExecutionObserver toolExecutionObserver,
+		Consumer<List<BlockPos>> worldReadObserver,
+		CameraController cameraController,
+		LongSupplier serverTickSupplier,
+		java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory
 	) {
 		Objects.requireNonNull(config, "config");
 		Objects.requireNonNull(screenshotService, "screenshotService");
 		Objects.requireNonNull(observability, "observability");
 		CameraController effectiveCameraController = Objects.requireNonNull(cameraController, "cameraController");
 		PlannerActionToolExecutor effectiveActionToolExecutor = Objects.requireNonNull(actionToolExecutor, "actionToolExecutor");
-		PlannerToolNarrationSink effectiveNarrationSink = Objects.requireNonNull(narrationSink, "narrationSink");
+		PlannerChatSink effectiveChatSink = Objects.requireNonNull(chatSink, "chatSink");
 		PlannerToolExecutionObserver effectiveToolExecutionObserver = Objects.requireNonNull(toolExecutionObserver, "toolExecutionObserver");
 		Consumer<List<BlockPos>> effectiveWorldReadObserver = Objects.requireNonNull(worldReadObserver, "worldReadObserver");
 		LongSupplier effectiveServerTickSupplier = Objects.requireNonNull(serverTickSupplier, "serverTickSupplier");
@@ -188,6 +206,7 @@ public final class PlannerShellFactory {
 		var sharedProviders = new java.util.ArrayList<>(List.<ai.moeru.airicraft.agent.llm.PlannerToolProvider>of(
 			new ai.moeru.airicraft.agent.work.WorkToolProvider(effectiveActionToolExecutor),
 			new ai.moeru.airicraft.agent.llm.PlannerQueueToolProvider(effectiveActionToolExecutor),
+			new ai.moeru.airicraft.agent.llm.SayToolProvider(effectiveChatSink),
 			new ai.moeru.airicraft.agent.spatial.TravelPolicyToolProvider(),
 			new CurrentWorldQueryToolProvider(worldQueryService, result -> effectiveWorldReadObserver.accept(result.observedPositions())),
 			scriptedQueries,
@@ -230,9 +249,9 @@ public final class PlannerShellFactory {
 		// Both roles speak to players, so they share one character; it is fixed until reload for prompt caching.
 		String characterPrompt = CharacterPrompt.render(config.character(), inGameName());
 		PlannerOrchestrator orchestrator = createOrchestrator(controllerConfig, toolRegistry, visionService, inventoryService,
-			effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveNarrationSink,
+			effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 			effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, plannerCallJournal),
-			dual ? cacheSession + ":controller" : null, characterPrompt);
+			dual ? cacheSession + ":controller" : null, characterPrompt, backendFactory);
 		controllerRef.set(orchestrator);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
 		dialogue.configureMessages(DialogueMessages.DEFAULTS.withOverrides(config.character().messages()));
@@ -259,9 +278,9 @@ public final class PlannerShellFactory {
 				}
 			};
 			var thinker = createOrchestrator(thinkingConfig, thinkingRegistry, visionService, inventoryService,
-				effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveNarrationSink,
+				effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 				effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, thinkingCalls, handoffEvidence), cacheSession + ":thinking",
-				characterPrompt);
+				characterPrompt, backendFactory);
 			var generations = new java.util.concurrent.atomic.AtomicLong(1L);
 			orchestrator.shareGenerationSequence(generations);
 			thinker.shareGenerationSequence(generations);
@@ -272,10 +291,10 @@ public final class PlannerShellFactory {
 
 	private static PlannerOrchestrator createOrchestrator(AgentConfig.LlmConfig llm, PlannerToolRegistry tools,
 		CurrentViewVisionService vision, CurrentInventoryService inventory, Clock clock, AgentObservability observability,
-		AgentDebugRecorder debug, PlannerActionToolExecutor actions, PlannerToolNarrationSink narration,
+		AgentDebugRecorder debug, PlannerActionToolExecutor actions, PlannerChatSink chat,
 		PlannerToolExecutionObserver toolObserver, ai.moeru.airicraft.agent.llm.PlannerLifecycleListener listener, String cacheKey,
-		String characterPrompt) {
-		LlmBackend backend = switch (llm.plannerBackend()) {
+		String characterPrompt, java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory) {
+		LlmBackend backend = backendFactory != null ? backendFactory.apply(llm) : switch (llm.plannerBackend()) {
 			case OPENAI_COMPATIBLE -> new OpenAiCompatibleLlmBackend(llm, observability, tools, cacheKey);
 			case CODEX_APP_SERVER -> new CodexAppServerLlmBackend(llm, observability, tools);
 		};
@@ -286,7 +305,7 @@ public final class PlannerShellFactory {
 				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt), vision, inventory, llm.plannerVisionMode(),
 			llm.visionImageDetail(), 1, llm.plannerSessionCoalesceStepMillis(),
 			llm.plannerSessionCoalesceMinMillis(), llm.plannerSessionCoalesceMaxMillis(), clock, observability,
-			listener, debug, actions, narration, tools, toolObserver, llm.plannerMaxImages(),
+			listener, debug, actions, chat, tools, toolObserver, llm.plannerMaxImages(),
 			new ai.moeru.airicraft.agent.llm.PlannerVisionService(llm, observability));
 		if (llm.plannerSummarizeToolResults()) orchestrator.configureMicroCompaction(new ai.moeru.airicraft.agent.llm.PlannerMicroCompactor(llm, observability, tools));
 		return orchestrator;

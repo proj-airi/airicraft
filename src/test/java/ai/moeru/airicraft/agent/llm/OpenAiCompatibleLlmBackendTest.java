@@ -60,7 +60,7 @@ class OpenAiCompatibleLlmBackendTest {
 		image.add("image_url", url); raw.add(image);
 		messages.add(LlmChatMessage.assistant("Inspect the latest view"));
 		messages.add(new LlmChatMessage("user", "raw view", LlmMessageKind.TOOL_RESULT, null, raw));
-		messages.add(LlmChatMessage.assistantToolCall("", new PlannerToolCall("call-1", "inspect_inventory", new JsonObject(), null, null)));
+		messages.add(LlmChatMessage.assistantToolCall("", new PlannerToolCall("call-1", "inspect_inventory", new JsonObject(), null)));
 		messages.add(LlmChatMessage.tool("call-1", "inventory retained"));
 		var conversation = LlmConversation.of(messages);
 		var captured = new AtomicReference<String>();
@@ -246,12 +246,12 @@ class OpenAiCompatibleLlmBackendTest {
 	}
 
 	@Test
-	void generateParsesSingleToolCallWithNarration() throws Exception {
+	void generateParsesSingleToolCall() throws Exception {
 		AtomicReference<String> bodyRef = new AtomicReference<>();
 		try (TestServer server = TestServer.start(bodyRef, toolCallResponse(
 			"call_nav",
 			"navigate_to",
-			"{\\\"x\\\":12,\\\"y\\\":64,\\\"z\\\":-8,\\\"exactY\\\":true,\\\"narration\\\":\\\"I'm going there\\\"}"
+			"{\\\"x\\\":12,\\\"y\\\":64,\\\"z\\\":-8,\\\"exactY\\\":true}"
 		))) {
 			OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(config(server.port(), false));
 
@@ -264,7 +264,6 @@ class OpenAiCompatibleLlmBackendTest {
 			assertNotNull(toolCall);
 			assertEquals("call_nav", toolCall.id());
 			assertEquals("navigate_to", toolCall.name());
-			assertEquals("I'm going there", toolCall.narration());
 			assertEquals(12, toolCall.arguments().get("x").getAsInt());
 			assertEquals(64, toolCall.arguments().get("y").getAsInt());
 			assertEquals(-8, toolCall.arguments().get("z").getAsInt());
@@ -503,8 +502,8 @@ class OpenAiCompatibleLlmBackendTest {
 		try (TestServer server = TestServer.start(bodyRef, plaintextResponse("Done."))) {
 			OpenAiCompatibleChatClient chatClient = new OpenAiCompatibleChatClient(config(server.port(), false));
 			JsonObject args = new JsonObject();
-			args.addProperty("narration", "I'm checking inventory");
-			PlannerToolCall toolCall = new PlannerToolCall("call_inv", "inspect_inventory", args, "I'm checking inventory", null);
+			args.addProperty("prompt", "List current counts.");
+			PlannerToolCall toolCall = new PlannerToolCall("call_inv", "inspect_inventory", args, null);
 
 			chatClient.complete(
 				LlmConversation.of(List.of(
@@ -549,7 +548,7 @@ class OpenAiCompatibleLlmBackendTest {
 		server.start();
 		try {
 			var backend = new OpenAiCompatibleLlmBackend(config(server.getAddress().getPort(), false));
-			var call = new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null, null);
+			var call = new PlannerToolCall("call_inv", "inspect_inventory", new JsonObject(), null);
 			var conversation = LlmConversation.of(List.of(
 				LlmChatMessage.system("Use the inventory result."),
 				LlmChatMessage.assistantToolCall("", call),
@@ -638,7 +637,7 @@ class OpenAiCompatibleLlmBackendTest {
 			rawAssistant.add("content", JsonNull.INSTANCE);
 			rawAssistant.addProperty("reasoning_content", "private chain");
 			JsonObject args = new JsonObject();
-			PlannerToolCall toolCall = new PlannerToolCall("call_inv", "inspect_inventory", args, "", null);
+			PlannerToolCall toolCall = new PlannerToolCall("call_inv", "inspect_inventory", args, null);
 
 			chatClient.complete(
 				LlmConversation.of(List.of(

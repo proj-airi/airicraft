@@ -17,6 +17,7 @@ import ai.moeru.airicraft.agent.dialogue.DialogueIntentType;
 import ai.moeru.airicraft.agent.dialogue.DialogueResponse;
 import ai.moeru.airicraft.agent.debug.AgentDebugTimelineEntry;
 import ai.moeru.airicraft.agent.events.EventPolicyEffect;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
 import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.job.ActiveJob;
@@ -102,11 +103,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EmbodiedAgentRuntimeTest {
+	@Test void rawEventsRetainProducerAndRuntimeClock() {
+		try (var harness = new WakeScenarioHarness()) {
+			harness.runtime.onPlayerPickedUpItem("minecraft:apple", 1);
+			var event = harness.runtime.recentEvents(null).events().getFirst();
+			assertEquals("EmbodiedAgentRuntime", event.source());
+			assertEquals(harness.clock.millis(), event.timestampMs());
+			harness.runtime.injectNearbyPlayerForTests("Alice", Vec3d.ZERO);
+			assertEquals("NearbyPlayerTracker", harness.runtime.recentEvents(event.seqNo()).events().stream()
+				.filter(observed -> observed.type().equals("social.player_joined_nearby")).findFirst().orElseThrow().source());
+			harness.event("task.notice", Map.of("message", "test evidence"));
+			assertEquals("test", harness.runtime.recentEvents(null).events().getLast().source());
+			assertEquals(new ai.moeru.airicraft.agent.events.AgentEventBus.AgentEventBusStats(0, 0, 0, 0), harness.runtime.debugEventBusState());
+		}
+	}
+
 	@Test void optionalMiningObservationReachesNextPlannerDecisionContext() {
 		var config = AgentConfig.defaults();
 		var journal = new MiningOpportunityJournal();
@@ -168,7 +185,7 @@ class EmbodiedAgentRuntimeTest {
 		try {
 			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
 			String receipt = runtime.executePlannerAction(new PlannerToolCall("nav", "navigate_to",
-				JsonParser.parseString("{\"x\":12,\"y\":64,\"z\":8,\"exactY\":true}").getAsJsonObject(), null, null)).join();
+				JsonParser.parseString("{\"x\":12,\"y\":64,\"z\":8,\"exactY\":true}").getAsJsonObject(), null)).join();
 			var json = JsonParser.parseString(receipt.substring(receipt.indexOf('{'))).getAsJsonObject();
 			assertTrue(json.get("accepted").getAsBoolean(), receipt);
 			String workId = json.get("workId").getAsString();
@@ -180,11 +197,11 @@ class EmbodiedAgentRuntimeTest {
 				"CALC_FAILED", TaskTerminationCause.CALCULATION_FAILED));
 			runtime.onClientTick(null);
 			JsonObject args = new JsonObject(); args.addProperty("workId", workId);
-			String inspected = runtime.execute(new PlannerToolCall("inspect", "inspect_work", args, null, null)).join();
+			String inspected = runtime.execute(new PlannerToolCall("inspect", "inspect_work", args, null)).join();
 			assertTrue(inspected.contains(workId), inspected);
 			assertTrue(inspected.contains("FAILED"), inspected);
 			assertTrue(inspected.contains("CALC_FAILED"), inspected);
-			String listed = runtime.execute(new PlannerToolCall("list", "list_work", new JsonObject(), null, null)).join();
+			String listed = runtime.execute(new PlannerToolCall("list", "list_work", new JsonObject(), null)).join();
 			assertTrue(listed.contains(workId), listed);
 		} finally { runtime.shutdown(); }
 	}
@@ -193,7 +210,7 @@ class EmbodiedAgentRuntimeTest {
 	void rejectedPlannerActionDoesNotInventSuccessfulWork() {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {
-			String result = runtime.executePlannerAction(new PlannerToolCall("bad", "not_a_tool", new JsonObject(), null, null)).join();
+			String result = runtime.executePlannerAction(new PlannerToolCall("bad", "not_a_tool", new JsonObject(), null)).join();
 			var receipt = JsonParser.parseString(result.substring(result.indexOf('{'))).getAsJsonObject();
 			assertFalse(receipt.get("accepted").getAsBoolean(), result);
 			assertFalse(receipt.has("work"), result);
@@ -287,7 +304,7 @@ class EmbodiedAgentRuntimeTest {
 			assertTrue(queried.contains("foodChoice=COOKED_ONLY"), queried);
 			String invalid = runtime.execute(new PlannerToolCall("bad-food", "configure_food",
 				com.google.gson.JsonParser.parseString("{\"goal\":\"heal\",\"foodChoice\":\"poisonous\"}").getAsJsonObject(),
-				null, null)).join();
+				null)).join();
 			assertTrue(invalid.startsWith("TOOL_ERROR:"), invalid);
 			runtime.onWorldLeave();
 			String reset = runtime.execute(PlannerToolCatalog.parseToolCall("configure_food", new com.google.gson.JsonObject(),
@@ -317,10 +334,10 @@ class EmbodiedAgentRuntimeTest {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {
 			var args = JsonParser.parseString("{\"source\":\"function* main() { return {}; }\",\"input\":{}}").getAsJsonObject();
-			String result = runtime.executePlannerAction(new PlannerToolCall("policy-test", "run_policy", args, null, null)).join();
+			String result = runtime.executePlannerAction(new PlannerToolCall("policy-test", "run_policy", args, null)).join();
 			assertEquals("TOOL_UNAVAILABLE: run_policy disabled", result);
 			setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, "policy-hold", null, null));
-			String held = runtime.executePlannerAction(new PlannerToolCall("held-policy-test", "run_policy", args, null, null)).join();
+			String held = runtime.executePlannerAction(new PlannerToolCall("held-policy-test", "run_policy", args, null)).join();
 			assertEquals("TOOL_UNAVAILABLE: run_policy disabled", held);
 		} finally { runtime.shutdown(); }
 	}
@@ -351,9 +368,9 @@ class EmbodiedAgentRuntimeTest {
 			assertTrue(policy.active(), "Child admission must not cancel its owner");
 			String childId = executor.lastActiveTask.orElseThrow().taskId();
 			String inspected = runtime.execute(new PlannerToolCall("inspect", "inspect_work",
-				JsonParser.parseString("{\"workId\":\"JOB:" + childId + "\"}").getAsJsonObject(), null, null)).join();
+				JsonParser.parseString("{\"workId\":\"JOB:" + childId + "\"}").getAsJsonObject(), null)).join();
 			assertTrue(inspected.contains("OPERATION:test-policy"), inspected);
-			String competing = runtime.execute(new PlannerToolCall("competing", "navigate_to", arguments, null, null)).join();
+			String competing = runtime.execute(new PlannerToolCall("competing", "navigate_to", arguments, null)).join();
 			assertTrue(competing.contains("policy_active"));
 			policy.cancel("test_cancel");
 			assertEquals(ActiveJobStatus.CANCELLED, runtime.activeJob().status());
@@ -393,7 +410,7 @@ class EmbodiedAgentRuntimeTest {
 		runtime.overrideSessionSnapshotForTests(new SessionSnapshot(SessionMode.SINGLEPLAYER_LAN_HOST,
 			true, true, "minecraft:overworld", true, 25565, 1));
 		runtime.execute(new PlannerToolCall("food-graph", PlannerToolCatalog.START_ACTION_GOAL,
-			JsonParser.parseString("{\"kind\":\"resource_collection\",\"resourceKind\":\"WOOD_LOGS\",\"quantity\":1}").getAsJsonObject(), null, null)).join();
+			JsonParser.parseString("{\"kind\":\"resource_collection\",\"resourceKind\":\"WOOD_LOGS\",\"quantity\":1}").getAsJsonObject(), null)).join();
 		Field controllerField = EmbodiedAgentRuntime.class.getDeclaredField("playerItemUseController");
 		controllerField.setAccessible(true);
 		Object controller = controllerField.get(runtime);
@@ -477,9 +494,9 @@ class EmbodiedAgentRuntimeTest {
 			activeJobRuntime(runtime).pauseForReflex(2);
 			setReflexSnapshot(runtime,reflexSnapshot(SurvivalReflexState.AWAITING_PLANNER,"hold-1",id,null));
 			JsonObject args = new JsonObject(); args.addProperty("x",1); args.addProperty("y",64); args.addProperty("z",1);
-			String denied = runtime.executePlannerAction(new PlannerToolCall("replace","navigate_to",args,null,null)).join();
+			String denied = runtime.executePlannerAction(new PlannerToolCall("replace","navigate_to",args,null)).join();
 			assertTrue(denied.contains("work_in_safety_hold")); assertEquals(id,runtime.activeJob().jobId());
-			String resumed = runtime.executePlannerAction(new PlannerToolCall("resume","continue",new JsonObject(),null,null)).join();
+			String resumed = runtime.executePlannerAction(new PlannerToolCall("resume","continue",new JsonObject(),null)).join();
 			assertTrue(resumed.contains("resumed"),resumed);
 			assertEquals(SurvivalReflexState.IDLE,runtime.survivalReflexSnapshot().state());
 			assertEquals(id,runtime.activeJob().jobId());
@@ -491,7 +508,7 @@ class EmbodiedAgentRuntimeTest {
 		try {
 			for (var state : List.of(SurvivalReflexState.AWAITING_PLANNER, SurvivalReflexState.ACTIVE)) {
 				setReflexSnapshot(runtime, reflexSnapshot(state, "orphan-hold", null, null));
-				runtime.executePlannerAction(new PlannerToolCall("clear", "clear_queue", new JsonObject(), null, null)).join();
+				runtime.executePlannerAction(new PlannerToolCall("clear", "clear_queue", new JsonObject(), null)).join();
 				assertNull(runtime.survivalReflexSnapshot().holdId());
 				assertEquals(state == SurvivalReflexState.ACTIVE ? state : SurvivalReflexState.IDLE,
 					runtime.survivalReflexSnapshot().state());
@@ -503,7 +520,7 @@ class EmbodiedAgentRuntimeTest {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {
 			setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.ACTIVE, "active-hold", null, null));
-			runtime.executePlannerAction(new PlannerToolCall("keep", "continue", new JsonObject(), null, null)).join();
+			runtime.executePlannerAction(new PlannerToolCall("keep", "continue", new JsonObject(), null)).join();
 			assertEquals(SurvivalReflexState.ACTIVE, runtime.survivalReflexSnapshot().state());
 			assertEquals("active-hold", runtime.survivalReflexSnapshot().holdId());
 		} finally { runtime.shutdown(); }
@@ -523,7 +540,7 @@ class EmbodiedAgentRuntimeTest {
 			constructor.setAccessible(true);
 			window.set(owner.get(runtime), constructor.newInstance(1200L));
 			String receipt = runtime.executePlannerAction(new PlannerToolCall("escape", "navigate_to",
-				JsonParser.parseString("{\"x\":12,\"y\":64,\"z\":8,\"exactY\":true}").getAsJsonObject(), null, null)).join();
+				JsonParser.parseString("{\"x\":12,\"y\":64,\"z\":8,\"exactY\":true}").getAsJsonObject(), null)).join();
 			assertTrue(receipt.contains("\"accepted\":true"), receipt);
 			assertEquals(SurvivalReflexState.IDLE, runtime.survivalReflexSnapshot().state());
 			assertTrue(runtime.recentEvents(null).events().stream().anyMatch(e -> "reflex.hold_released".equals(e.type())));
@@ -812,7 +829,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"kind":"inventory_item","itemId":"minecraft:bread","quantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -832,7 +848,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 					{"kind":"resource_collection","resourceKind":"RAW_IRON","quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -851,7 +866,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"kind":"crafting_output","itemId":"minecraft:crafting_table","quantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -865,7 +879,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"kind":"smelting_output","itemId":"minecraft:iron_ingot","quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -885,7 +898,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"kind":"inventory_item","itemId":"minecraft:iron_pickaxe","quantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -909,14 +921,12 @@ class EmbodiedAgentRuntimeTest {
 			"call_clear",
 			PlannerToolCatalog.CLEAR_GOAL,
 			new com.google.gson.JsonObject(),
-			null,
 			null
 		)).join();
 		String collectSmelted = runtime.execute(new PlannerToolCall(
 			"call_collect_smelted",
 			PlannerToolCatalog.COLLECT_SMELTED_ITEMS,
 			new com.google.gson.JsonObject(),
-			null,
 			null
 		)).join();
 
@@ -938,21 +948,18 @@ class EmbodiedAgentRuntimeTest {
 			"call_inspect",
 			PlannerToolCatalog.INSPECT_ACTION_GOAL,
 			JsonParser.parseString(selection).getAsJsonObject(),
-			null,
 			null
 		)).join();
 		String list = runtime.execute(new PlannerToolCall(
 			"call_list",
 			PlannerToolCatalog.LIST_ACTION_GOALS,
 			new com.google.gson.JsonObject(),
-			null,
 			null
 		)).join();
 		String trace = runtime.execute(new PlannerToolCall(
 			"call_trace",
 			PlannerToolCatalog.INSPECT_ACTION_TRACE,
 			JsonParser.parseString(selection).getAsJsonObject(),
-			null,
 			null
 		)).join();
 		String cancel = runtime.execute(new PlannerToolCall(
@@ -961,7 +968,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"executionId":"%s","reason":"user_changed_task"}
 				""".formatted(started.executionId())).getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -985,7 +991,6 @@ class EmbodiedAgentRuntimeTest {
 			"call_capabilities",
 			PlannerToolCatalog.LIST_ACTION_CAPABILITIES,
 			new com.google.gson.JsonObject(),
-			null,
 			null
 		)).join();
 
@@ -1064,7 +1069,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:oak_log","quantity":2}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1091,7 +1095,6 @@ class EmbodiedAgentRuntimeTest {
 				JsonParser.parseString("""
 					{"optionId":"smelt:iron:nearby-1","inputQuantity":3,"fuelMode":"manual","fuelItemId":"minecraft:coal","fuelQuantity":1,"confirmationToken":"confirm-1"}
 					""").getAsJsonObject(),
-				null,
 				null
 			)).join();
 		assertTrue(result.contains("accepted"), result);
@@ -1131,7 +1134,6 @@ class EmbodiedAgentRuntimeTest {
 				JsonParser.parseString("""
 					{"blockIds":["minecraft:dirt"],"quantity":1}
 					""").getAsJsonObject(),
-				null,
 				null
 			)).join();
 		runtime.onClientTick(null);
@@ -1157,7 +1159,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:raw_iron"],"quantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1180,7 +1181,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:dirt"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1217,7 +1217,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:cobblestone"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1241,7 +1240,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:iron_ore"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1265,7 +1263,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:dirt"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1308,7 +1305,6 @@ class EmbodiedAgentRuntimeTest {
 				JsonParser.parseString("""
 					{"blockIds":["minecraft:dirt"],"quantity":3}
 					""").getAsJsonObject(),
-				null,
 				null
 			)).join();
 		runtime.onClientTick(null);
@@ -1331,7 +1327,6 @@ class EmbodiedAgentRuntimeTest {
 			"call_return",
 			"return_to_surface",
 			JsonParser.parseString("{}").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1359,7 +1354,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"useTowering":false}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1379,7 +1373,6 @@ class EmbodiedAgentRuntimeTest {
 			"call_return",
 			"return_to_surface",
 			JsonParser.parseString("{}").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1428,7 +1421,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:crafting_table","targets":[{"targetPosition":{"x":1,"y":64,"z":2,"exactY":true},"placementMode":"air_or_replaceable"}]}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -1474,7 +1466,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:dirt"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1518,7 +1509,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:stone"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1544,7 +1534,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"x":1,"y":64,"z":1,"exactY":true}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -1565,7 +1554,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"optionId":"smelt:iron:nearby-1","inputQuantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		String processId = extractProcessId(startResult);
@@ -1576,7 +1564,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"processId":"%s","confirmationToken":"confirm-2"}
 				""".formatted(processId)).getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1600,7 +1587,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"optionId":"smelt:iron:nearby-1","inputQuantity":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		String processId = extractProcessId(startResult);
@@ -1611,7 +1597,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1631,7 +1616,7 @@ class EmbodiedAgentRuntimeTest {
 		Field field = EmbodiedAgentRuntime.class.getDeclaredField("eventPipeline");
 		field.setAccessible(true);
 		var pipeline = (ai.moeru.airicraft.agent.events.AgentEventPipeline) field.get(runtime);
-		pipeline.appendRaw(20, "social.item_offered", payload);
+		runtime.appendEventForTests("social.item_offered", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
 		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
@@ -1652,7 +1637,7 @@ class EmbodiedAgentRuntimeTest {
 		Field field = EmbodiedAgentRuntime.class.getDeclaredField("eventPipeline");
 		field.setAccessible(true);
 		var pipeline = (ai.moeru.airicraft.agent.events.AgentEventPipeline) field.get(runtime);
-		pipeline.appendRaw(20, "player.physical", payload);
+		runtime.appendEventForTests("player.physical", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
 		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
@@ -1663,11 +1648,11 @@ class EmbodiedAgentRuntimeTest {
 		assertTrue(trigger.text().contains("-12"));
 		assertTrue(trigger.text().contains("not proof of an involuntary cause"));
 		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.ACTIVE, "hold-1", "nav-1", null));
-		pipeline.appendRaw(21, "player.physical", Map.of("kind", "burning", "phase", "started"));
+		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "started"));
 		assertTrue(pipeline.drain(runtime::createPlannerTriggerForTests).isEmpty());
 		assertEquals(2, pipeline.plannerEventBuffer().query(null).events().size());
 		setReflexSnapshot(runtime, SurvivalReflexSnapshot.idle());
-		pipeline.appendRaw(22, "player.physical", Map.of("kind", "burning", "phase", "ended"));
+		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "ended"));
 		assertEquals(1, pipeline.drain(runtime::createPlannerTriggerForTests).size());
 	}
 
@@ -1858,7 +1843,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"entityTypeId":"minecraft:sheep","mode":"hit_once"}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1896,7 +1880,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"uuid":"12345678-aaaa-4d9d-8b9d-fb24b98cb81d"}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1930,7 +1913,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"name":"Dinner","itemId":"minecraft:shears"}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -1959,7 +1941,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:dirt","x":1,"y":64,"z":2}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -2015,7 +1996,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:wheat_seeds","x":1,"y":65,"z":2,"expectedSupportBlockIds":["minecraft:farmland"],"expectedTargetMaterial":"air"}
 				""").getAsJsonObject(),
-			null,
 			null
 		));
 
@@ -2056,7 +2036,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:stone_hoe","x":1,"y":65,"z":2,"expectedSupportBlockIds":["minecraft:dirt"],"expectedTargetMaterial":"air"}
 				""").getAsJsonObject(),
-			null,
 			null
 		));
 
@@ -2135,47 +2114,49 @@ class EmbodiedAgentRuntimeTest {
 
 	@Test
 	void replacementCompletesOnlyTheOldBlockModificationToolResult() throws Exception {
-		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
-		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
-		runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+		assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+			FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
+			EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
 
-		CompletableFuture<String> firstResult = startPendingUseBlock(runtime, executor, 1);
-		WorldTaskRequest firstRequest = executor.lastActiveTask.orElseThrow();
-		activeJobRuntime(runtime).clear();
-		setTaskSnapshot(runtime, TaskSnapshot.idle());
-		setTaskExecutionSnapshot(runtime, TaskExecutionSnapshot.idle());
-		runtime.recordWorldReadForTests(new BlockPos(2, 65, 2));
-		CompletableFuture<String> secondResult = assertTimeoutPreemptively(
-			Duration.ofSeconds(1),
-			() -> runtime.execute(useBlockToolCall("call_use_block_2", 2))
-		);
+			CompletableFuture<String> firstResult = startPendingUseBlock(runtime, executor, 1);
+			WorldTaskRequest firstRequest = executor.lastActiveTask.orElseThrow();
+			activeJobRuntime(runtime).clear();
+			setTaskSnapshot(runtime, TaskSnapshot.idle());
+			setTaskExecutionSnapshot(runtime, TaskExecutionSnapshot.idle());
+			runtime.recordWorldReadForTests(new BlockPos(2, 65, 2));
+			CompletableFuture<String> secondResult = assertTimeout(
+				Duration.ofSeconds(1),
+				() -> runtime.execute(useBlockToolCall("call_use_block_2", 2))
+			);
 
-		assertTrue(firstResult.isDone(), "secondResult=" + (secondResult.isDone() ? secondResult.getNow("<missing>") : "pending"));
-		String firstToolResult = firstResult.getNow("<missing>");
-		assertTrue(firstToolResult.contains("cancelled reason=superseded"), firstToolResult);
-		assertFalse(secondResult.isDone());
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertTrue(firstResult.isDone(), "secondResult=" + (secondResult.isDone() ? secondResult.getNow("<missing>") : "pending"));
+			String firstToolResult = firstResult.getNow("<missing>");
+			assertTrue(firstToolResult.contains("cancelled reason=superseded"), firstToolResult);
+			assertFalse(secondResult.isDone());
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
 
-		executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
-			firstRequest.taskId(),
-			firstRequest.goal(),
-			TaskExecutionState.COMPLETED,
-			"stale first result",
-			null
-		));
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
-		assertFalse(secondResult.isDone());
+			executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
+				firstRequest.taskId(),
+				firstRequest.goal(),
+				TaskExecutionState.COMPLETED,
+				"stale first result",
+				null
+			));
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertFalse(secondResult.isDone());
 
-		WorldTaskRequest currentRequestAfterStaleEvent = executor.lastActiveTask.orElseThrow();
-		executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
-			currentRequestAfterStaleEvent.taskId(),
-			currentRequestAfterStaleEvent.goal(),
-			TaskExecutionState.COMPLETED,
-			"second result",
-			null
-		));
-		assertTimeoutPreemptively(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
-		assertTrue(secondResult.get(1, TimeUnit.SECONDS).contains("second result"));
+			WorldTaskRequest currentRequestAfterStaleEvent = executor.lastActiveTask.orElseThrow();
+			executor.nextTerminalEvent = Optional.of(new TaskTerminalEvent(
+				currentRequestAfterStaleEvent.taskId(),
+				currentRequestAfterStaleEvent.goal(),
+				TaskExecutionState.COMPLETED,
+				"second result",
+				null
+			));
+			assertTimeout(Duration.ofSeconds(1), () -> runtime.onClientTick(null));
+			assertTrue(secondResult.get(1, TimeUnit.SECONDS).contains("second result"));
+		});
 	}
 
 	@Test
@@ -2191,7 +2172,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:wheat_seeds","targets":[{"x":1,"y":65,"z":2},{"x":2,"y":65,"z":2}]}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -2223,7 +2203,6 @@ class EmbodiedAgentRuntimeTest {
 				  ]
 				}
 				""").getAsJsonObject(),
-			null,
 			null
 		));
 		assertFalse(resultFuture.isDone());
@@ -2278,7 +2257,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:crafting_table","x":1,"y":64,"z":2,"requireCurrentTargetMaterial":"air"}
 				""").getAsJsonObject(),
-			null,
 			null
 		));
 		runtime.onClientTick(null);
@@ -2429,7 +2407,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"targets":[{"x":1,"y":64,"z":2,"expectedBlockIds":["minecraft:grass_block"]}]}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -2453,7 +2430,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"targets":[{"x":1,"y":64,"z":2,"expectedBlockIds":["minecraft:grass_block","minecraft:dirt"]}]}
 				""").getAsJsonObject(),
-			null,
 			null
 		));
 		assertFalse(resultFuture.isDone());
@@ -2790,7 +2766,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"x":-30,"y":115,"z":-55,"exactY":false}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		assertTrue(result.contains("accepted"));
@@ -2821,7 +2796,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"targetPlayer":"Alice","itemId":"minecraft:oak_log","quantity":2}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -2859,7 +2833,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"targetPlayer":"Alice","itemId":"minecraft:oak_log","quantity":2}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -2888,7 +2861,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"targetPlayer":"Alice","itemId":"minecraft:oak_log","quantity":2}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 		runtime.onClientTick(null);
@@ -3215,7 +3187,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"x":71,"y":70,"z":-299,"exactY":false}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -3227,7 +3198,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"blockIds":["minecraft:oak_log"],"quantity":3}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -3239,7 +3209,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"useTowering":true}
 				""").getAsJsonObject(),
-			null,
 			null
 		)).join();
 
@@ -3505,81 +3474,87 @@ class EmbodiedAgentRuntimeTest {
 		assertEquals(TaskState.CANCELLED, runtime.taskSnapshot().state());
 		assertEquals(1, executor.onWorldLeaveCalls);
 		assertTrue(runtime.recentEvents(null).events().stream().anyMatch(event -> "player.died".equals(event.type())));
+		SemanticEvent death = runtime.recentEvents(null).events().stream()
+			.filter(event -> "player.died".equals(event.type())).findFirst().orElseThrow();
+		SemanticEvent cancelled = runtime.recentEvents(null).events().stream()
+			.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.event(death.seqNo()), cancelled.cause());
 		assertThrows(
 			BridgeUnavailableException.class,
 			() -> runtime.submitTask(new TaskSpec(TaskType.COLLECT_RESOURCE, TaskResourceKind.WOOD_LOGS, 1), "test")
 		);
 	}
 
-	private static final class FakeWorldTaskExecutor implements WorldTaskExecutor {
-		private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
-		private TaskExecutionSnapshot forcedSnapshot;
-		private Optional<TaskTerminalEvent> nextTerminalEvent = Optional.empty();
-		private Optional<WorldTaskRequest> lastActiveTask = Optional.empty();
-		private int onWorldLeaveCalls;
+	@Test
+	void workChangeCauseNamesItsOwnWork() {
+		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		runtime.overrideBlockAcquisitionsForTests(BlockAcquisitionTestFixtures.survival());
+		runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+		runtime.submitTask(new TaskSpec(TaskType.COLLECT_RESOURCE, TaskResourceKind.WOOD_LOGS, 2), "test");
+		runtime.onClientTick(null);
+		SemanticEvent changed = runtime.recentEvents(null).events().stream()
+			.filter(event -> "work.changed".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.work((String) changed.payload().get("workId")), changed.cause());
+	}
 
-		@Override
-		public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
-			lastActiveTask = activeTask;
-			if (forcedSnapshot != null) {
-				snapshot = forcedSnapshot;
-			}
-			else if (!sessionSnapshot.companionActuationAllowed()) {
-				snapshot = new TaskExecutionSnapshot(
-					TaskExecutionState.PAUSED_BY_SESSION_GATE,
-					activeTask.map(WorldTaskRequest::taskId).orElse(null),
-					activeTask.map(WorldTaskRequest::goal).orElse(null),
-					null,
-					null,
-					null,
-					null
-				);
-			}
-			else if (nextTerminalEvent.isPresent()) {
-				TaskTerminalEvent terminalEvent = nextTerminalEvent.get();
-				snapshot = new TaskExecutionSnapshot(
-					terminalEvent.terminalState(),
-					terminalEvent.taskId(),
-					terminalEvent.goal(),
-					null,
-					terminalEvent.message(),
-					null,
-					terminalEvent.terminationCause()
-				);
-			}
-			else {
-				snapshot = new TaskExecutionSnapshot(
-					activeTask.isPresent() ? TaskExecutionState.RUNNING : TaskExecutionState.IDLE,
-					activeTask.map(WorldTaskRequest::taskId).orElse(null),
-					activeTask.map(WorldTaskRequest::goal).orElse(null),
-					null,
-					null,
-					null,
-					null
-				);
-			}
+	@Test
+	void sessionDeathPublicationCausesCancellationButDoesNotSurviveWorldLeave() {
+		try (var harness = new WakeScenarioHarness()) {
+			var death = harness.runtimeEvents().from("SessionRuntime").publish(1L, "player.died", Map.of(
+				"mode", "REMOTE_MULTIPLAYER", "dimensionId", "minecraft:overworld"));
+			harness.runtime.overrideSessionSnapshotForTests(deadRemoteSession());
+			harness.runtime.onClientTick(null);
+			var cancelled = harness.runtime.recentEvents(death.seqNo()).events().stream()
+				.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+			assertEquals(EventCause.event(death.seqNo()), cancelled.cause());
 
-			Optional<TaskTerminalEvent> result = nextTerminalEvent;
-			nextTerminalEvent = Optional.empty();
-			return result;
-		}
-
-		@Override
-		public TaskExecutionSnapshot snapshot() {
-			return snapshot;
-		}
-
-		@Override
-		public void onWorldLeave() {
-			onWorldLeaveCalls++;
-			snapshot = TaskExecutionSnapshot.idle();
-		}
-
-		@Override
-		public void shutdown() {
-			snapshot = TaskExecutionSnapshot.idle();
+			harness.runtime.onWorldLeave();
+			long afterLeave = harness.runtime.recentEvents(null).latestSeqNo();
+			harness.runtime.overrideSessionSnapshotForTests(deadRemoteSession());
+			harness.runtime.onClientTick(null);
+			var unrelated = harness.runtime.recentEvents(afterLeave).events().stream()
+				.filter(event -> "player.actions_cancelled".equals(event.type())).findFirst().orElseThrow();
+			assertNull(unrelated.cause());
 		}
 	}
+
+	@Test
+	void travelViolationWithoutJobStillPublishesAndWakesPlanner() throws Exception {
+		try (var harness = new WakeScenarioHarness()) {
+			harness.executor.forcedSnapshot = new TaskExecutionSnapshot(TaskExecutionState.RUNNING,
+				"non-job-task", null, null, null, null, null);
+			harness.tick(1);
+			assertTrue(harness.runtime.activeJob().isIdle());
+			assertEquals(TaskExecutionState.RUNNING, harness.runtime.snapshot().taskExecution().state());
+
+			Object world = new Object();
+			var stateField = ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.class.getDeclaredField("state");
+			stateField.setAccessible(true);
+			Object originalState = stateField.get(null);
+			var stateType = Class.forName("ai.moeru.airicraft.agent.spatial.WorldTravelPolicy$State");
+			var constructor = stateType.getDeclaredConstructor(Object.class,
+				ai.moeru.airicraft.agent.spatial.TravelBounds.class,
+				ai.moeru.airicraft.agent.spatial.TravelBounds.class, String.class);
+			constructor.setAccessible(true);
+			stateField.set(null, constructor.newInstance(world,
+				new ai.moeru.airicraft.agent.spatial.TravelBounds(0, 0, 0, 1, 100, 1), null, ""));
+			try {
+				var method = EmbodiedAgentRuntime.class.getDeclaredMethod("stopWorkOutsideTravelBounds", Object.class, BlockPos.class);
+				method.setAccessible(true);
+				method.invoke(harness.runtime, world, new BlockPos(5, 64, 5));
+			} finally {
+				stateField.set(null, originalState);
+			}
+			var violation = harness.runtime.recentEvents(null).events().stream()
+				.filter(event -> "work.travel_restriction_violated".equals(event.type())).findFirst().orElseThrow();
+			assertNull(violation.cause());
+			harness.tick(1);
+			assertTrue(harness.runtime.debugTimeline(null).entries().stream()
+				.anyMatch(entry -> "planner_wake".equals(entry.domain()) && "submitted".equals(entry.action())
+					&& ((Number) entry.payload().get("eventSequence")).longValue() == violation.seqNo()));
+		}
+	}
+
 
 	private static WorldTaskRequest runtimeTaskRequest(EmbodiedAgentRuntime runtime, FakeWorldTaskExecutor executor) {
 		runtime.onClientTick(null);
@@ -3624,7 +3599,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"recipeId":"oak_planks_x2_to_stick","times":1}
 				""").getAsJsonObject(),
-			null,
 			null
 		);
 	}
@@ -3649,7 +3623,6 @@ class EmbodiedAgentRuntimeTest {
 			JsonParser.parseString("""
 				{"itemId":"minecraft:wheat_seeds","x":%d,"y":65,"z":2,"expectedSupportBlockIds":["minecraft:farmland"],"expectedTargetMaterial":"air"}
 				""".formatted(x)).getAsJsonObject(),
-			null,
 			null
 		);
 	}

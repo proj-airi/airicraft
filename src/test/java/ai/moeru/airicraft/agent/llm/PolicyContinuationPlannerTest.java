@@ -92,7 +92,7 @@ class PolicyContinuationPlannerTest {
 	@Test void missingGuardCannotReachExecution() {
 		start();
 		var args = proposal().toolCalls().getFirst().arguments().deepCopy(); args.remove("guard");
-		response.complete(new PlannerResponse("", new PlannerToolCall("bad", "run_policy", args, null, null), null));
+		response.complete(new PlannerResponse("", new PlannerToolCall("bad", "run_policy", args, null), null));
 		assertNull(planner.poll(context("world", 4), success(), 1, 0, b -> true));
 		assertEquals("invalid_or_failed_proposal", planner.lastReason());
 	}
@@ -129,6 +129,6 @@ class PolicyContinuationPlannerTest {
 			{"source":"function* main(p) { return {crafted:true}; }", "input":{},
 			 "guard":{"parentResult":{"gathered":true},"inventoryMin":{"minecraft:oak_log":4},
 			 "blocks":[{"x":1,"y":64,"z":2,"blockId":"minecraft:crafting_table"}]}}
-			""").getAsJsonObject(), null, null), null);
+			""").getAsJsonObject(), null), null);
 	}
 }

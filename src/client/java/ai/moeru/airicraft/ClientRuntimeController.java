@@ -50,6 +50,7 @@ public final class ClientRuntimeController {
 	private volatile boolean plannerEnabled = true;
 	private final HighlightManager highlightManager = new HighlightManager();
 	private final FirstPersonScreenshotService screenshotService = new FirstPersonScreenshotService();
+	private final WorldCameraService worldCameraService = new WorldCameraService(screenshotService);
 	private final ClientTickDebugRuntime clientTickDebugRuntime = new ClientTickDebugRuntime(screenshotService);
 	private final BaritoneFacade baritoneFacade = new LiveBaritoneFacade();
 	private final CameraController cameraController;
@@ -89,6 +90,7 @@ public final class ClientRuntimeController {
 			this::highlightManager,
 			this::agentRuntime,
 			this::screenshotService,
+			this::worldCameraService,
 			this::clientTickDebugRuntime,
 			this::reload,
 			cameraController,
@@ -185,6 +187,10 @@ public final class ClientRuntimeController {
 		return screenshotService;
 	}
 
+	public WorldCameraService worldCameraService() {
+		return worldCameraService;
+	}
+
 	public ClientTickDebugRuntime clientTickDebugRuntime() {
 		return clientTickDebugRuntime;
 	}
@@ -204,6 +210,7 @@ public final class ClientRuntimeController {
 
 	public void onWorldLeave() {
 		automaticPlaytest.worldLeft("world_left");
+		worldCameraService.clear();
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.clear();
 		dashboardObservationCollector.worldLeft();
 		if (!automaticPlaytest.captureReady()) clientTickDebugRuntime.reset("world_left", "The world closed during a client tick debug capture");

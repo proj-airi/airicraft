@@ -44,7 +44,7 @@ class PlannerGoalStoreTest {
 		var provider = new PlannerGoalToolProvider(store, Runnable::run, false, () -> true);
 		assertFalse(provider.handles("set_planner_goal"));
 		assertEquals(1, provider.openAiTools().size());
-		String result = provider.execute(new PlannerToolCall("one", "set_planner_goal", JsonParser.parseString("{\"objective\":\"different\"}").getAsJsonObject(), null, null)).join();
+		String result = provider.execute(new PlannerToolCall("one", "set_planner_goal", JsonParser.parseString("{\"objective\":\"different\"}").getAsJsonObject(), null)).join();
 		assertTrue(result.contains("objective_control_requires_controller_ownership"));
 		assertEquals(original.id(), store.snapshot().id());
 	}

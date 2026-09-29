@@ -113,6 +113,6 @@ class PlaceMemoryToolProviderTest {
 	}
 
 	private static String call(PlaceMemoryToolProvider provider, String name, String args) {
-		return provider.execute(new PlannerToolCall("test-place", name, JsonParser.parseString(args).getAsJsonObject(), null, null)).join();
+		return provider.execute(new PlannerToolCall("test-place", name, JsonParser.parseString(args).getAsJsonObject(), null)).join();
 	}
 }

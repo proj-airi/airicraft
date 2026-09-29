@@ -82,7 +82,6 @@ public final class PlannerToolCatalog {
 				+ "State after the first observation is shown as an RFC 6902 JSON Patch against the previous observation.",
 				properties(), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(TAKE_A_LOOK, true, tool(TAKE_A_LOOK, "Inspect current first-person view.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Short prompt describing what to inspect.")),
 				prop("direction", enumString("Optional compass direction to face before capture.", List.of(
 					"north",
@@ -100,7 +99,6 @@ public final class PlannerToolCatalog {
 				prop("targetPlayer", optionalString("Optional loaded player name to look at before capture."))
 			), List.of()), PlannerToolCatalog::validateTakeALookArguments),
 		builtInTool(INSPECT_WORLD, true, tool(INSPECT_WORLD, "Inspect loaded world blocks. Summaries group identical patches; unknown cells stay unknown. Use detail=blocks for individual records.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("detail", enumString("inspect_area/placement sites: summary (default) or individual blocks.", List.of("summary", "blocks"))),
 				prop("feetY", Map.of("type", "number", "description", "check_position only: exact feet height for slabs/partial blocks, within one block of y. Defaults to y. check_interaction treats query center as target and returns local approach positions, reach and obstruction; neither mode guarantees routes.")),
 				prop("mode", enumString("World query mode.", List.of("inspect_area", "find_blocks", "find_placement_sites", "check_position", "check_interaction"))),
@@ -158,33 +156,27 @@ public final class PlannerToolCatalog {
 				} else validateTransferItem(args);
 			}),
 		builtInTool(INSPECT_INVENTORY, true, tool(INSPECT_INVENTORY, "Inspect current inventory counts.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Optional inventory question."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(CHECK_CRAFTABLES, true, tool(CHECK_CRAFTABLES, "Check currently executable crafting options. Optionally filter by exact outputItemId before the bounded result limit; truncation is reported.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Optional crafting question.")),
 				prop("outputItemId", optionalString("Exact output item id, for example minecraft:barrel. Omit to list all currently craftable outputs."))
 			), List.of()), args -> {
 				if (args.has("outputItemId")) requireString(args, "outputItemId");
 			}),
 		builtInTool(CHECK_SMELTABLES, true, tool(CHECK_SMELTABLES, "Check currently executable smelting options and ranked furnace candidates.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Optional smelting question."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(INSPECT_SMELTING, true, tool(INSPECT_SMELTING, "Inspect Airicraft-owned smelting processes and nearby furnace observations.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Optional smelting status question."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(INSPECT_NEARBY_ENTITIES, true, tool(INSPECT_NEARBY_ENTITIES, "Search loaded entities by exact type, with nearest-first bounded results and selectors, positions and health. Absence does not describe unloaded terrain. Navigate within 32 blocks before interacting with a distant result.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("prompt", string("Optional nearby-entity question.")),
 				prop("radius", integer("Search radius in blocks, 1 to 128. Default 32. Loaded entities only.")),
 				prop("maxResults", integer("Maximum nearest matching entities, 1 to 64. Default 32.")),
 				prop("entityTypeIds", stringArray("Optional exact entity type IDs, for example minecraft:sheep. Omit for all types."))
 			), List.of()), PlannerToolCatalog::validateNearbyEntitiesArguments),
 		builtInTool(START_ACTION_GOAL, false, tool(START_ACTION_GOAL, "Start one runtime-owned action graph goal from a high-level typed intent. Prefer this over low-level action tools for execution.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("kind", enumString("Typed action goal kind. crafting_output and smelting_output are aliases of inventory_item.", List.of(
 					"inventory_item",
 					"resource_collection",
@@ -196,67 +188,54 @@ public final class PlannerToolCatalog {
 				prop("resourceKind", optionalString("Resource kind for resource_collection goals. Supported values: " + String.join(", ", ResourceGatheringCatalog.supportedKindNames()) + "."))
 			), List.of("kind")), PlannerToolCatalog::validateStartActionGoalArguments),
 		builtInTool(LIST_ACTION_GOALS, true, tool(LIST_ACTION_GOALS, "List foreground, suspended, runnable, and recent terminal action graph executions.", properties(
-				prop("narration", optionalString("Optional pre-action narration."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(INSPECT_ACTION_GOAL, true, tool(INSPECT_ACTION_GOAL, "Inspect an action graph goal. Without executionId, selects foreground or the most recently updated nonterminal execution.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("executionId", optionalString("Optional action graph execution id."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(CANCEL_ACTION_GOAL, false, tool(CANCEL_ACTION_GOAL, "Cancel an action graph goal and its foreground primitive, if any. executionId is required when multiple suspended goals make the target ambiguous.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("executionId", optionalString("Optional action graph execution id.")),
 				prop("reason", optionalString("Optional cancellation reason."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(INSPECT_ACTION_TRACE, true, tool(INSPECT_ACTION_TRACE, "Inspect an action graph trace, route, facts, watches, and terminal status.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("executionId", optionalString("Optional action graph execution id."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(LIST_ACTION_CAPABILITIES, true, tool(LIST_ACTION_CAPABILITIES, "List runtime action graph capabilities, primitives, providers, and supported goal kinds.", properties(
-				prop("narration", optionalString("Optional pre-action narration."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(FOLLOW_PLAYER, false, tool(FOLLOW_PLAYER, "Continuously follow a named player until the goal is cleared, cancelled, or replaced. Use navigate_to when only reaching a fixed position once is needed.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("targetPlayer", string("Player name to follow."))
 			), List.of("targetPlayer")), PlannerToolCatalog::validateFollowPlayerArguments),
 		builtInTool(NAVIGATE_TO, false, tool(NAVIGATE_TO, "Navigate to a block position.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("x", number("Block x coordinate.")),
 				prop("y", number("Block y coordinate.")),
 				prop("z", number("Block z coordinate.")),
 				prop("exactY", bool("True requires the exact x/y/z block; false navigates to x/z at any height and ignores y."))
 			), List.of("x", "y", "z", "exactY")), PlannerToolCatalog::validateNavigateToArguments),
 		builtInTool(RETURN_TO_SURFACE, false, tool(RETURN_TO_SURFACE, "Return to the remembered surface or last safe ground after mining. Optionally tower upward with filler blocks if trapped in a shaft.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("useTowering", bool("Whether the executor may build a pillar underfoot while jumping if path navigation cannot return to the surface. Defaults to true when omitted.")),
 				prop("fillerBlockIds", stringArray("Optional namespaced block/item ids to use for towering. Omit to use defaults: " + String.join(", ", ReturnToSurfaceStepArgs.DEFAULT_FILLER_BLOCK_IDS) + "."))
 			), List.of()), PlannerToolCatalog::validateReturnToSurfaceArguments),
 		builtInTool(MINE_BLOCKS, false, tool(MINE_BLOCKS, "Acquire at least the requested number of matching blocks inside a fixed loaded area, using System 1 target selection and bounded excavation approaches, including fully buried sources. The default opportunistic mining policy may also break nearby exposed ore and a few more blocks of the requested ore after the count is reached; disable it for an exact quota. Review task.mining_opportunity observations in the next DECISION CONTEXT for extra breaks and matching item gains; a break alone does not confirm pickup. Do not pass item ids from inventory itemCounts. Likely underground work requires at least one torch unless explicitly overridden.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("blockIds", stringArray("Namespaced block ids to mine, for example minecraft:iron_ore. These must be block ids, not item ids such as minecraft:raw_iron.")),
 				prop("quantity", integer("Minimum number of matching blocks to mine when opportunistic mining is enabled.")),
 				prop("constraints", acquisitionConstraintsSchema()),
 				prop("allowUnilluminated", bool("Explicitly allow predicted underground or unilluminated mining with no torches. Default false."))
 			), List.of("blockIds", "quantity")), PlannerToolCatalog::validateMineBlocksArguments),
 		builtInTool(ENSURE_BLOCKS_IN_INVENTORY, false, tool(ENSURE_BLOCKS_IN_INVENTORY, "Ensure the inventory contains at least a target count from mined block drops. While mining ore, nearby optional ore breaks appear as task.mining_opportunity observations in the next DECISION CONTEXT. Do not pass inventory item ids.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("blockIds", stringArray("Namespaced block ids whose drops count toward the target, for example minecraft:iron_ore. These must be block ids, not item ids such as minecraft:raw_iron.")),
 				prop("quantity", integer("Minimum matching item count required in inventory. Existing inventory and pickups count.")),
 				prop("constraints", acquisitionConstraintsSchema()),
 				prop("allowUnilluminated", bool("Explicitly allow predicted underground or unilluminated mining with no torches. Default false."))
 			), List.of("blockIds", "quantity")), PlannerToolCatalog::validateMineBlocksArguments),
 		builtInTool(COLLECT_RESOURCE, false, tool(COLLECT_RESOURCE, "Collect a supported resource kind within a fixed loaded area. System 1 selects targets, approaches, breaks and collects drops. While collecting ore, nearby optional ore breaks appear as task.mining_opportunity observations in the next DECISION CONTEXT. Optional constraints restrict the search; no speculative mining or distant exploration. Use break_blocks for exact coordinates.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 					prop("resourceKind", enumString("Resource kind.", ResourceGatheringCatalog.supportedKindNames())),
 				prop("quantity", integer("Additional items to collect; completion requires inventory gain.")),
 				prop("constraints", acquisitionConstraintsSchema())
 			), List.of("resourceKind", "quantity")), PlannerToolCatalog::validateCollectResourceArguments),
 		builtInTool(CRAFT_RECIPE, false, tool(CRAFT_RECIPE, "Run a listed crafting recipe, including automatic crafting-table setup for 3x3 recipes.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("recipeId", string("Exact recipe id from check_craftables.")),
 				prop("times", integer("Recipe run count."))
 			), List.of("recipeId", "times")), PlannerToolCatalog::validateCraftRecipeArguments),
 		builtInTool(SMELT_ITEMS, false, tool(SMELT_ITEMS, "Start one background smelting process from an exact optionId returned by check_smeltables.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("optionId", string("Exact optionId from check_smeltables.")),
 				prop("inputQuantity", integer("Number of input items to smelt.")),
 				prop("fuelMode", enumString("Fuel mode. Use auto unless explicitly selecting fuel.", List.of("auto", "manual"))),
@@ -265,49 +244,40 @@ public final class PlannerToolCatalog {
 				prop("confirmationToken", optionalString("Short-lived token returned when an occupied or stale furnace requires confirmation."))
 			), List.of("optionId", "inputQuantity")), PlannerToolCatalog::validateSmeltItemsArguments),
 		builtInTool(COLLECT_SMELTED_ITEMS, false, tool(COLLECT_SMELTED_ITEMS, "Collect output from an Airicraft-owned smelting process, or from an untracked occupied furnace with confirmation.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("processId", optionalString("Airicraft-owned process id from smelt_items or inspect_smelting.")),
 				prop("confirmationToken", optionalString("Short-lived token required for untracked or occupied furnace collection."))
 			), List.of()), PlannerToolCatalog::validateCollectSmeltedItemsArguments),
 		builtInTool(CANCEL_SMELTING, false, tool(CANCEL_SMELTING, "Stop tracking an Airicraft-owned smelting process without reclaiming furnace contents.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("processId", string("Airicraft-owned process id to stop tracking."))
 			), List.of("processId")), PlannerToolCatalog::validateCancelSmeltingArguments),
 		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Armor is worn through normal item use; weapons and tools become the selected main-hand item.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("itemId", string("Exact namespaced food item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(DROP_ITEMS, false, tool(DROP_ITEMS, "Drop exact items from current inventory at the current position.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("quantity", integer("Number of items to drop."))
 			), List.of("itemId", "quantity")), PlannerToolCatalog::validateDropItemsArguments),
 		builtInTool(GIVE_PLAYER, false, tool(GIVE_PLAYER, "Drop exact items for a named nearby player to pick up.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("targetPlayer", string("Nearby player name receiving the items.")),
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("quantity", integer("Number of items to drop."))
 			), List.of("targetPlayer", "itemId", "quantity")), PlannerToolCatalog::validateGivePlayerArguments),
 		builtInTool(ATTACK_ENTITY, false, tool(ATTACK_ENTITY, "Attack one nearby entity. Default mode kill attacks until death, then collects nearby item drops within 4 blocks of the death position for up to 200 active ticks. Completion waits for local drops to clear and reports collectedItems as observed inventory gains in its terminal result, including partial gains on failure; full inventory or unreachable drops report a failure after the kill. hit_once stops after one landed hit without collection. Always copy the uuid token shown by inspect_nearby_entities or focus, and optionally include name or entityTypeId.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("uuid", optionalString("Entity uuid token copied from inspect_nearby_entities or focus. Full uuid also works.")),
 				prop("name", optionalString("Visible custom name or display name when available.")),
 				prop("entityTypeId", optionalString("Exact namespaced entity type id, for example minecraft:sheep.")),
 				prop("mode", enumString("Attack mode. Use kill unless the user asks for one hit.", List.of("kill", "hit_once")))
 			), List.of("uuid")), PlannerToolCatalog::validateAttackEntityArguments),
 		builtInTool(USE_ENTITY, false, tool(USE_ENTITY, "Use current hand or an optional item on one nearby entity, including opening a chest minecart or chest boat. Then inspect_container and transfer_container using the opened syncId. Always copy the uuid token shown by inspect_nearby_entities or focus, and optionally include name or entityTypeId.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("uuid", optionalString("Entity uuid token copied from inspect_nearby_entities or focus. Full uuid also works.")),
 				prop("name", optionalString("Visible custom name or display name when available.")),
 				prop("entityTypeId", optionalString("Exact namespaced entity type id, for example minecraft:sheep.")),
 				prop("itemId", optionalString("Optional exact namespaced item id to equip first, for example minecraft:shears."))
 			), List.of("uuid")), PlannerToolCatalog::validateUseEntityArguments),
 		builtInTool(PLACE_BLOCK, false, tool(PLACE_BLOCK, "Place a block item at one or more intended modified target positions. Target positions must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("x", integer("Intended modified target block x coordinate.")),
 				prop("y", integer("Intended modified target block y coordinate.")),
@@ -317,7 +287,6 @@ public final class PlannerToolCatalog {
 				prop("targets", array("Ordered target blocks to place into. Maximum 16. Root facePreference and requireCurrentTargetMaterial apply as defaults.", placeBlockTargetSchema()))
 			), List.of("itemId")), PlannerToolCatalog::validatePlaceBlockArguments),
 		builtInTool(USE_BLOCK, false, tool(USE_BLOCK, "Interact with an existing block (including opening chests, furnaces, or doors), or use an optional item at a target position. To open a chest, call with x,y,z only; omit itemId and expectedTargetMaterial. If target is air/replaceable, runtime clicks adjacent support such as farmland below seeds. Target positions must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("itemId", optionalString("Optional exact namespaced item id to equip first, for example minecraft:wheat_seeds.")),
 				prop("x", integer("Intended modified target block x coordinate.")),
 				prop("y", integer("Intended modified target block y coordinate.")),
@@ -328,41 +297,33 @@ public final class PlannerToolCatalog {
 				prop("targets", array("Ordered target blocks to use. Maximum 16. Root facePreference, expectedSupportBlockIds, and expectedTargetMaterial apply as defaults.", useBlockTargetSchema()))
 			), List.of()), PlannerToolCatalog::validateUseBlockArguments),
 		builtInTool(LURE_ENTITIES, false, tool(LURE_ENTITIES, "Lure 1..8 observed animals into an inclusive destination box within 64 blocks. Animals must respond to the held food item. System 1 approaches moving followers, pauses travel for catch-up and chooses standing positions inside the area. Completion requires every selected animal's body inside; player arrival is insufficient. Does not feed animals or close gates. Use a roomy interior box and an open entrance. Uses temporary walking-only path settings, restored on release. Resume a safety hold after combat to reacquire followers.", properties(
-			prop("narration", optionalString("Optional visible narration.")),
 			prop("uuids", stringArray("1..8 distinct UUID tokens copied from inspect_nearby_entities. Targets must initially be within 32 blocks.")),
 			prop("itemId", string("Held lure item, for example minecraft:wheat_seeds for chickens or minecraft:wheat for cows.")),
 			prop("x1", integer("Minimum destination x.")), prop("y1", integer("Minimum destination y.")), prop("z1", integer("Minimum destination z.")),
 			prop("x2", integer("Maximum destination x.")), prop("y2", integer("Maximum destination y.")), prop("z2", integer("Maximum destination z."))
 		), List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2")), ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs::parse),
 		builtInTool(TEND_CROPS, false, tool(TEND_CROPS, "Tend one existing flat crop plot, at most 16 by 16 blocks within 64 blocks of you. System 1 inspects the plot, harvests mature crops, collects drops and replants, and plants empty farmland when seeds are available. Leaves immature crops and other blocks intact. Deliberately edits crops within preserved places. One pass; does not wait for growth or till soil. Its terminal result reports counts and missing seeds.", properties(
-			prop("narration", optionalString("Optional visible narration.")),
 			prop("seedItemId", string("Crop planting item, e.g. minecraft:wheat_seeds, minecraft:carrot, minecraft:potato, minecraft:beetroot_seeds.")),
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),
 			prop("z1", integer("Minimum plot z.")), prop("x2", integer("Maximum plot x.")), prop("z2", integer("Maximum plot z."))
 		), List.of("seedItemId", "x1", "y", "z1", "x2", "z2")), ai.moeru.airicraft.agent.tasks.CropTendingStepArgs::parse),
 		builtInTool(BREAK_BLOCKS, false, tool(BREAK_BLOCKS, "Break exact target blocks in order. Use this for precise terrain editing, not resource mining. Every target position must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("targets", array("Ordered target blocks to break. Maximum 16.", breakBlockTargetSchema()))
 			), List.of("targets")), PlannerToolCatalog::validateBreakBlocksArguments),
 		builtInTool(RESUME_TASK, false, tool(RESUME_TASK, "Resume the exact task paused by a resolved survival reflex. The holdId must match the current safety hold.", properties(
-			prop("narration", optionalString("Optional visible narration before resuming the task.")),
 			prop("holdId", string("Exact holdId from the survival update."))
 		), List.of("holdId")), arguments -> requireString(arguments, "holdId")),
 		builtInTool(CANCEL_TASK, false, tool(CANCEL_TASK, "Cancel the current task or job.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("reason", string("Optional cancellation reason."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(CLEAR_GOAL, false, tool(CLEAR_GOAL, "Clear the current goal.", properties(
-				prop("narration", optionalString("Optional pre-action narration."))
 			), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(UPDATE_EVENT_POLICY, false, tool(UPDATE_EVENT_POLICY, "Update future event routing policy.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("clearAll", bool("Clear all active planner policy rules.")),
 				prop("removeRuleIds", stringArray("Rule ids to remove.")),
 				prop("upserts", array("Policy rule upserts.", policyUpsertSchema()))
 			), List.of()), PlannerToolCatalog::validatePolicyArguments),
 		builtInTool(CONFIGURE_PATHFIND, false, tool(CONFIGURE_PATHFIND, "Atomically update runtime Baritone pathfinding settings. Use this only when the current route needs a deliberate capability or risk trade-off; settings reset to Airicraft defaults on client restart.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("settings", BaritonePathfindSettings.plannerSettingsSchema())
 			), List.of("settings")), PlannerToolCatalog::validateConfigurePathfindArguments),
 		builtInTool(CONFIGURE_REFLEX, false, tool(CONFIGURE_REFLEX, "Read or replace System 1 automatic survival policy. Call with {} to read; provide all four settings to replace. Defaults: combatEnabled=true, drowningEnabled=true, maxThreatDistance=16, requireLineOfSight=true. Engagement is limited to known aggressive or visible hostile mobs, with melee engagement additionally limited to 6 blocks. Nearby threat awareness extends to maxThreatDistance, including remembered hidden flankers, for terrain-aware swarm kiting and circling; awareness alone does not trigger distant/hidden pursuit. Disabling combat also disables automatic shield/melee actions; manual gameplay tools remain available. Policy lasts until agent reload/recreation, including across death. Allowed during a reflex; stops disabled reflex actuation next tick but does not resume an interrupted job: wait for the survival update and use continue to resume the plan or clear_queue to replace it. Use deliberately when automatic behavior conflicts with your task, and restore settings when that tactic ends.", properties(
@@ -376,7 +337,6 @@ public final class PlannerToolCatalog {
 			prop("foodChoice", enumString("Automatic food selection.", List.of("any", "cooked_only")))
 		), List.of()), PlannerToolCatalog::validateConfigureFoodArguments),
 		builtInTool(CONFIGURE_LIGHTING, false, tool(CONFIGURE_LIGHTING, "Configure automatic torch placement while mining, navigating, or idle after standing still for five seconds. Uses the average over only air cells in a centered 5x5 horizontal square at foot level; occupied cells do not count. Any sky-visible cell in that square prevents placement. Enabled by default underground when average combined light is strictly below 4 (spacing 6); can be disabled explicitly. Keeps offhand equipment such as a shield, temporarily uses a carried torch and restores the held item. Does not interrupt combat, item use or active block breaking. Confirmed placements are batched into the next planner window.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("enabled", bool("Whether automatic torch placement is enabled.")),
 				prop("mode", enumString("Lighting rule. darkness averages combined light; spawn_proof averages block light.", List.of("darkness", "spawn_proof"))),
 				prop("maxLightLevel", integer("Place when the selected 5x5 foot-level average is strictly below this threshold, from 0 to 15; default 4.")),
@@ -384,7 +344,6 @@ public final class PlannerToolCatalog {
 			), List.of("enabled", "mode", "maxLightLevel", "minSpacingBlocks")), PlannerToolCatalog::validateConfigureLightingArguments),
 		builtInTool(CONFIGURE_OPPORTUNISTIC_MINING, false, tool(CONFIGURE_OPPORTUNISTIC_MINING,
 			"Configure automatic nearby ore breaks during an active mining task. Enabled by default. Stops for exposed ore within interaction reach, then resumes the original target. After the requested count, it may mine a few more exposed blocks of the requested ore. It never excavates a detour or starts while navigating for another purpose. Disable when exact block edits or strict quotas matter.", properties(
-				prop("narration", optionalString("Optional pre-action narration.")),
 				prop("enabled", bool("Whether nearby ore opportunities are enabled.")),
 				prop("maxExtraBlocks", integer("Maximum extra ore blocks per mining task, from 0 to 32; default 6.")),
 				prop("maxExtraTicks", integer("Maximum active ticks spent breaking extra ore per mining task, from 0 to 1200; default 200."))
@@ -425,7 +384,7 @@ public final class PlannerToolCatalog {
 		PlannerJsonRepair.Result repair = repairArguments(name, parseArguments(getString(function, "arguments").orElse("{}")), toolRegistry);
 		JsonObject arguments = toolRegistry.references().resolveArguments(repair.value().getAsJsonObject());
 		validateArguments(name, arguments, toolRegistry);
-		return new PlannerToolCall(id, name, arguments, getString(arguments, "narration").orElse(null), object, repair.paths());
+		return new PlannerToolCall(id, name, arguments, object, repair.paths());
 	}
 
 	public static PlannerToolCall parseToolCall(String name, JsonObject arguments, PlannerToolRegistry toolRegistry) {
@@ -440,7 +399,6 @@ public final class PlannerToolCatalog {
 			"call_external_" + normalizedName,
 			normalizedName,
 			effectiveArguments,
-			getString(effectiveArguments, "narration").orElse(null),
 			null,
 			repair.paths()
 		);

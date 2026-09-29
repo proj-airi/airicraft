@@ -1,0 +1,3 @@
+{"record":{"sequenceId":1,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":100,"usage":{"promptTokens":10,"completionTokens":10,"totalTokens":20}}}
+{"record":{"sequenceId":2,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":110,"usage":{"promptTokens":10,"completionTokens":10,"totalTokens":20}}}
+{"record":{"sequenceId":3,"requestKind":"planner","status":"COMPLETED","dispatchServerTick":200,"usage":{"promptTokens":10,"completionTokens":10,"totalTokens":20}}}

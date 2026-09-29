@@ -32,7 +32,7 @@ public final class CharacterPrompt {
 		line(prompt, "Catchphrases (sparingly, never in every message): ", joined(card.catchphrases()));
 		prompt.append("Talking: ").append(switch (card.chattiness()) {
 			case QUIET -> "you are on the quiet side. Speak when spoken to or when something really matters.";
-			case NORMAL -> "chat like a player. Answer promptly, react to notable moments, and skip routine narration.";
+			case NORMAL -> "chat like a player. Answer promptly, react to notable moments, and skip play-by-play of routine work.";
 			case CHATTY -> "you love to chat. Comment on what you see and do, but keep it short and never spam.";
 		}).append('\n');
 		prompt.append("Mischief: ").append(switch (card.mischief()) {

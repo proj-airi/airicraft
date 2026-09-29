@@ -56,6 +56,10 @@ import ai.moeru.airicraft.agent.dialogue.DialogueSpeakerLabels;
 import ai.moeru.airicraft.agent.dialogue.DialogueSnapshot;
 import ai.moeru.airicraft.agent.dialogue.DialogueRuntime;
 import ai.moeru.airicraft.agent.events.AgentEventPipeline;
+import ai.moeru.airicraft.agent.events.AgentEventBus;
+import ai.moeru.airicraft.agent.events.AgentEventLog;
+import ai.moeru.airicraft.agent.events.EventIngressQueue;
+import ai.moeru.airicraft.agent.events.PlannerFeedPublisher;
 import ai.moeru.airicraft.agent.events.PhysicalEventObserver;
 import ai.moeru.airicraft.agent.events.ItemOfferObserver;
 import ai.moeru.airicraft.agent.events.EventPolicyChanges;
@@ -67,6 +71,9 @@ import ai.moeru.airicraft.agent.events.EventPolicyRule;
 import ai.moeru.airicraft.agent.events.EventPolicyRuleUpsert;
 import ai.moeru.airicraft.agent.events.EventPolicyState;
 import ai.moeru.airicraft.agent.events.EventRoutingProfile;
+import ai.moeru.airicraft.agent.events.EventCatalog;
+import ai.moeru.airicraft.agent.events.EventCause;
+import ai.moeru.airicraft.agent.food.FoodOutcomeIndex;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.FlightRecordingObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
@@ -192,11 +199,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.time.Clock;
 import java.util.Locale;
@@ -229,20 +238,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final AgentObservability observability;
 	private final LlmFlightRecorder llmFlightRecorder = new LlmFlightRecorder();
 	private final AgentDebugRecorder debugRecorder = new AgentDebugRecorder();
-	private final SemanticEventBuffer eventBuffer = new SemanticEventBuffer(512);
+	private final AgentEventBus eventBus;
+	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
 	private final SemanticEventBuffer plannerEventBuffer = new SemanticEventBuffer(512);
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
-	private final AgentEventPipeline eventPipeline = new AgentEventPipeline(
-		eventBuffer,
-		plannerEventBuffer,
-		eventPolicyState,
-		eventRoutingProfiles,
-		debugRecorder,
-		this::resolveDefaultEventPolicy
-	);
+	private final AgentEventPipeline eventPipeline;
 	private final ChatIngestService chatIngestService = new ChatIngestService();
 	private final LocalDamageTracker localDamageTracker = new LocalDamageTracker();
+	private final LifecycleDispatcher lifecycleDispatcher = new LifecycleDispatcher();
 	private PhysicalEventObserver physicalEventObserver;
 	private ItemOfferObserver itemOfferObserver;
 	private net.minecraft.client.world.ClientWorld itemOfferWorld;
@@ -325,6 +329,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private String lastSystemChatText;
 	private Float lastKnownPlayerHealth;
 	private boolean deathBoundaryApplied;
+	private long deathEventSequence;
 	private long lastRespawnRequestTick = -1L;
 	private long lastSmeltingOutputReadyPollTick = Long.MIN_VALUE;
 	private Object nearbyBlockSnapshotWorld;
@@ -335,8 +340,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final Map<UUID, String> seenPlayerNames = new LinkedHashMap<>();
 	private volatile PendingCraftToolResult pendingCraftToolResult;
 	private record ObservedInteractions(net.minecraft.server.MinecraftServer server, List<ai.moeru.airicraft.memory.InteractionLogbook.Entry> entries) { }
-	private final java.util.concurrent.ArrayBlockingQueue<ObservedInteractions> pendingInteractions = new java.util.concurrent.ArrayBlockingQueue<>(128);
-	private final java.util.concurrent.atomic.AtomicInteger droppedInteractionBatches = new java.util.concurrent.atomic.AtomicInteger();
+	private final EventIngressQueue<ObservedInteractions> pendingInteractions = new EventIngressQueue<>(128);
 	private Object lastObservedObjective;
 	private final AtomicReference<PendingBlockModificationToolResult> pendingBlockModificationToolResult = new AtomicReference<>();
 	private TaskTerminalEvent pendingActionGraphTerminalEvent;
@@ -370,6 +374,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			smeltingProcessManager, cameraController, baritoneFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
 	}
 
+	private final Clock clock;
+
 	public EmbodiedAgentRuntime(
 		AiricraftConfig airicraftConfig,
 		AgentConfig config,
@@ -381,6 +387,24 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		BaritoneFacade baritoneFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal
+	) {
+		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability, smeltingProcessManager,
+			cameraController, baritoneFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
+	}
+
+	EmbodiedAgentRuntime(
+		AiricraftConfig airicraftConfig,
+		AgentConfig config,
+		FirstPersonScreenshotService screenshotService,
+		WorldTaskExecutor worldTaskExecutor,
+		AgentObservability observability,
+		SmeltingProcessManager smeltingProcessManager,
+		CameraController cameraController,
+		BaritoneFacade baritoneFacade,
+		MiningOpportunityPolicyState miningOpportunityPolicy,
+		MiningOpportunityJournal miningOpportunityJournal,
+		java.util.function.Function<AgentConfig.LlmConfig, ai.moeru.airicraft.agent.llm.LlmBackend> backendFactory,
+		Clock clock
 	) {
 		this.airicraftConfig = Objects.requireNonNull(airicraftConfig, "airicraftConfig");
 		this.config = Objects.requireNonNull(config, "config");
@@ -402,7 +426,30 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			this::executeBlockModificationPlannerTool,
 			this::executePlannerToolCallNow
 		);
-		Clock clock = Clock.systemDefaultZone();
+		this.clock = Objects.requireNonNull(clock, "clock");
+		var eventLog = new AgentEventLog(512);
+		this.eventBus = new AgentEventBus(EventCatalog.defaults(), eventLog, this.clock::millis,
+			Boolean.getBoolean("airicraft.events.strict"), debugRecorder);
+		this.eventBus.subscribe("player.died"::equals, event -> deathEventSequence = event.seqNo());
+		this.eventBus.subscribe(type -> type.equals("food.eaten") || type.equals("food.eat_failed"), foodOutcomes);
+		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus, plannerEventBuffer,
+			eventPolicyState, eventRoutingProfiles, debugRecorder, this::resolveDefaultEventPolicy);
+		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
+			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> {
+				if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) localDamageTracker.clear();
+				else localDamageTracker.onLifecycleReset(tick);
+			});
+		lifecycleDispatcher.register("physical", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> physicalObserver().reset());
+		lifecycleDispatcher.register("item", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> { if (itemOfferObserver != null) itemOfferObserver.reset(); });
+		lifecycleDispatcher.register("slow", EnumSet.allOf(LifecycleBoundary.class),
+			(boundary, tick) -> { if (slowMiningObserver != null) slowMiningObserver.reset(); });
+		lifecycleDispatcher.register("food", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> foodOutcomes.clear());
+		lifecycleDispatcher.register("nearby", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
+			(boundary, tick) -> nearbyPlayerTracker.clear(tick, eventBus));
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
 			config,
 				Objects.requireNonNull(screenshotService, "screenshotService"),
@@ -410,17 +457,24 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				clock,
 				debugRecorder,
 				this::executePlannerAction,
-				this::emitPlannerToolNarration,
+				this::sayInChat,
 				this::beforePlannerToolExecution,
 				worldReadLedger::recordObserved,
 				effectiveCameraController,
-				EmbodiedAgentRuntime::integratedServerTick
+				EmbodiedAgentRuntime::integratedServerTick,
+				backendFactory
 			);
 		this.visionService = plannerShell.visionService();
 		this.dialogueRuntime = plannerShell.dialogueRuntime();
+		this.dialogueRuntime.configureWakeAudit((wakeTick, kind, fields) -> {
+			var payload = new LinkedHashMap<String, Object>(fields);
+			payload.put("serverTick", integratedServerTick());
+			// Stamp with the recording tick so the entry's agent and server ticks describe the same moment.
+			debugRecorder.recordPlannerWake(tickCount, clock.millis(), kind, payload);
+		});
 		this.policyToolDispatcher = plannerShell.controllerPlanner();
 		ai.moeru.airicraft.memory.InteractionLogbookRecorder.observe((server, entries) -> {
-			if (!pendingInteractions.offer(new ObservedInteractions(server, entries))) droppedInteractionBatches.incrementAndGet();
+			pendingInteractions.offer(new ObservedInteractions(server, entries));
 		});
 		this.dialogueRuntime.configureDecisionContext(this::currentPlannerDecisionContext);
 		this.llmFlightRecorder.configureClock(() -> tickCount, EmbodiedAgentRuntime::integratedServerTick);
@@ -471,22 +525,19 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	public void onClientStarted(MinecraftClient client) {
 		initialized = true;
-		sessionRuntime.onClientStarted(client, tickCount, eventBuffer);
+		sessionRuntime.onClientStarted(client, tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 	}
 
 	public void onWorldLeave() {
-		sessionRuntime.onWorldLeave(tickCount, eventBuffer);
+		sessionRuntime.onWorldLeave(tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
-		localDamageTracker.clear();
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
 		physicalObservationWorld = null;
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
-		nearbyPlayerTracker.clear(tickCount, eventBuffer);
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("nearby"));
 		primaryInteractionResolver.clear();
 		eventPolicyState.clear();
 		eventPipeline.clearPlannerFeed();
@@ -517,6 +568,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastSystemChatText = null;
 		lastKnownPlayerHealth = null;
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(MinecraftClient.getInstance());
 		playerItemUseController.reset(MinecraftClient.getInstance());
@@ -534,6 +586,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void tickClient(MinecraftClient client) {
+		eventBus.bindOwnerThread(Thread.currentThread());
 		drainInteractionEvidence(client);
 		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.tick(client, activeTaskInProgress());
 		stopWorkOutsideTravelBounds(client);
@@ -544,22 +597,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean wasWorldLoaded = sessionSnapshot.worldLoaded();
 		sessionSnapshot = sessionSnapshotOverrideForTests != null
 			? sessionSnapshotOverrideForTests.withTickCount(tickCount)
-			: sessionRuntime.poll(client, tickCount, eventBuffer);
+			: sessionRuntime.poll(client, tickCount, eventBus);
 		blockAcquisitionKnowledgeService.tick(client);
 		miningOpportunityPolicy.updateAcquisitions(blockAcquisitions());
 		activeJobRuntime.updateBlockAcquisitions(blockAcquisitions());
 		enforcePlayerLifecycle(client);
 		if (!wasWorldLoaded && sessionSnapshot.worldLoaded()) {
 			worldLoadTick = tickCount;
-			localDamageTracker.onLifecycleReset(tickCount);
-			physicalObserver().reset();
-			if (itemOfferObserver != null) itemOfferObserver.reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LOADED, tickCount);
 		}
 		if (sessionSnapshot.requiresRespawn()) {
-			physicalObserver().reset();
-			if (itemOfferObserver != null) itemOfferObserver.reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.AWAITING_RESPAWN, tickCount);
 			behaviorTreeRuntime.tick(
 				client,
 				sessionSnapshot,
@@ -580,7 +628,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		observeSlowMining(client);
 		openLanIfSingleplayerLocal(client);
 		surfaceMemory.tick(client, tickCount);
-		playerItemUseController.tick(client, tickCount).ifPresent(result -> eventBuffer.append(
+		playerItemUseController.tick(client, tickCount).ifPresent(result -> eventBus.from("EmbodiedAgentRuntime").publish(
 			tickCount,
 			result.completed() ? "food.eaten" : "food.eat_failed",
 			Map.of("itemId", result.itemId(), "reason", result.reason())
@@ -589,7 +637,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		tickIdleEating(client);
 		drainEventPipeline();
 
-		nearbyPlayerTracker.poll(client, tickCount, eventBuffer);
+		nearbyPlayerTracker.poll(client, tickCount, eventBus);
 		primaryInteractionResolver.current().ifPresent(current ->
 			primaryInteractionResolver.clearIfNotNearby(current.uuid(), nearbyPlayerTracker.isNearby(current.uuid()))
 		);
@@ -605,7 +653,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			&& !playerItemUseController.eating());
 		DialogueResponse completedDialogueResponse = dialogueRuntime.poll(
 			tickCount,
-			eventBuffer,
+			eventBus,
 			sessionSnapshot,
 			activeGoal(),
 			taskSnapshot,
@@ -664,13 +712,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			activeGoal,
 			nearbyPlayerTracker,
 			tickCount,
-			eventBuffer
+			eventBus
 		);
 		TaskExecutionSnapshot previousTaskExecutionSnapshot = taskExecutionSnapshot;
 		Optional<TaskTerminalEvent> terminalTaskEvent = worldTaskExecutor.tick(sessionSnapshot, activeTaskRequest);
 		taskExecutionSnapshot = worldTaskExecutor.snapshot();
 		for (MiningOpportunityJournal.Notice notice : miningOpportunityJournal.drain()) {
-			eventBuffer.append(tickCount, "task.mining_opportunity", notice.payload());
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.mining_opportunity", notice.payload());
 		}
 		boolean semanticTaskContext = hasSemanticTaskContext(previousTaskSnapshot, taskSnapshot);
 		recordTaskStateTransition(previousTaskExecutionSnapshot, taskExecutionSnapshot, semanticTaskContext);
@@ -689,7 +737,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean lightingActuationAllowed = sessionSnapshot.companionActuationAllowed()
 			&& (activeTaskRequest.isEmpty() || taskExecutionSnapshot.state() == TaskExecutionState.RUNNING);
 		lightingRuntime.tick(client, lightingActivity, lightingActuationAllowed, tickCount).ifPresent(event ->
-			eventBuffer.append(tickCount, "lighting.torch_placed", event.payload())
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "lighting.torch_placed", event.payload())
 		);
 		completePendingCraftToolResultFromTaskSnapshot(taskSnapshot);
 		completePendingBlockModificationToolResultFromTaskSnapshot(taskSnapshot);
@@ -713,7 +761,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			&& !previousTreeSnapshot.movement().stuck()
 			&& currentTreeSnapshot.movement().stuck()
 		) {
-			eventBuffer.append(tickCount, "follow.stuck", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "follow.stuck", Map.of(
 				"player", followState.targetPlayer(),
 				"distanceToTarget", followState.distanceToTarget()
 			));
@@ -726,12 +774,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void observeItemOffers(MinecraftClient client) {
 		if (itemOfferObserver == null) itemOfferObserver = new ItemOfferObserver();
 		if (client == null || client.world == null || client.player == null || !client.player.isAlive()) {
-			itemOfferObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("item"));
 			itemOfferWorld = null;
 			return;
 		}
 		if (itemOfferWorld != client.world) {
-			itemOfferObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("item"));
 			itemOfferWorld = client.world;
 		}
 		var players = client.world.getPlayers().stream().filter(player -> player.isAlive() && !player.isSpectator())
@@ -747,7 +795,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		for (var payload : itemOfferObserver.observe(tickCount, client.world.getRegistryKey().getValue().toString(),
 			client.player.getUuid(), new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ()), players, items)) {
-			eventBuffer.append(tickCount, "social.item_offered", payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.item_offered", payload);
 		}
 	}
 
@@ -786,14 +834,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	ai.moeru.airicraft.agent.llm.PlannerDecisionContext currentPlannerDecisionContext() {
 		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.observeChanges(change ->
-			eventBuffer.append(tickCount, "policy.travel_changed", change));
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "policy.travel_changed", change));
 		refreshWorkHistory();
 		var client = MinecraftClient.getInstance();
 		var facts = new java.util.LinkedHashMap<String, Object>();
 		Object objective = dialogueRuntime.currentPlannerObjective();
 		if (!Objects.equals(lastObservedObjective, objective)) {
 			lastObservedObjective = objective;
-			eventBuffer.append(tickCount,"objective.changed",Map.of("objective",objective));
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount,"objective.changed",Map.of("objective",objective));
 		}
 		facts.put("objective", objective);
 		facts.put("session", sessionSnapshot.mode());
@@ -830,19 +878,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			: survivalReflexRuntime.snapshot().holdsNormalTasks() ? "safety_hold"
 			: policyActive() ? "policy" : activeTaskInProgress() ? "work" : "idle";
 		return new ai.moeru.airicraft.agent.llm.PlannerDecisionContext(worldSession, tickCount, integratedServerTick(),
-			dialogueRuntime.decisionOwner(), actuator, facts, eventBuffer.query(null));
+			dialogueRuntime.decisionOwner(), actuator, facts, eventBus.query(null));
 	}
 
 	private void observePhysicalEvents(MinecraftClient client) {
 		if (client == null || client.player == null || client.world == null || !client.player.isAlive()) {
-			physicalObserver().reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("physical", "slow"));
 			physicalObservationWorld = null;
 			return;
 		}
 		if (physicalObservationWorld != client.world) {
-			physicalObserver().reset();
-			if (slowMiningObserver != null) slowMiningObserver.reset();
+			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("physical", "slow"));
 			physicalObservationWorld = client.world;
 		}
 		var player = client.player;
@@ -857,7 +903,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			player.isOnGround(), player.isTouchingWater(), player.isSubmergedInWater(), player.isClimbing(),
 			player.getAbilities().flying || player.isGliding() || player.hasVehicle(), directional, player.isOnFire(),
 			player.isSubmergedInWater() && player.getAir() <= config.reflex().lowAirTicks(), player.getAir(), player.getHealth(), physicalTaskContext());
-		for (var event : physicalObserver().observe(sample)) eventBuffer.append(tickCount, "player.physical", event.payload());
+		for (var event : physicalObserver().observe(sample)) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.physical", event.payload());
 	}
 
 	private void observeWorkProgress(MinecraftClient client) {
@@ -892,12 +938,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			? new ai.moeru.airicraft.agent.work.WorkSnapshot(w.handle(), w.parentWorkId(),
 				ai.moeru.airicraft.agent.work.WorkSnapshot.State.WAITING, w.label(), w.phase(), w.foreground(), w.updatedTick(), w.details()) : w).toList();
 		for (var notice : workProgressWatchdog.observe(work, sample, enabled)) {
-			var event = eventBuffer.append(tickCount, "task.notice", Map.of(
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", Map.of(
 				"reason", "work_stalled", "workId", notice.workId(), "evidence", notice.reason(),
 				"stalledActiveTicks", notice.stalledTicks(), "position", Map.of("x", player.getX(), "y", player.getY(), "z", player.getZ()),
 				"message", "No observed progress for " + notice.stalledTicks() + " active ticks on " + notice.workId()
 					+ " (" + notice.reason() + "). Work is still running. Inspect current world/work and choose recovery or continue trying. "
-					+ "Use continue to grant another observation window; this notice does not cancel or fail work."));
+					+ "Use continue to grant another observation window; this notice does not cancel or fail work."), EventCause.work(notice.workId()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
 	}
@@ -952,7 +998,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			+ "; elapsed " + slowMiningObserver.elapsedTicks(tickCount) + " ticks, estimated total " + estimatedTicks
 			+ " ticks (-1 means no progress predicted). Best carried tool by base speed: " + bestItem + " in slot " + bestSlot
 			+ ". Review current work and tool/conditions before continuing; this observation is not a task failure.");
-		var event = eventBuffer.append(tickCount, "task.notice", payload);
+		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload,
+			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
@@ -987,7 +1034,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		var decision = foodRuntime.evaluateIdle(idle, player.getHungerManager().getFoodLevel(),
 			player.getHealth(), player.getMaxHealth(), foodCandidates(player), tickCount);
 		if (decision.missingFood()) {
-			var event = eventBuffer.append(tickCount, "food.unavailable", Map.of(
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.unavailable", Map.of(
 				"goal", foodRuntime.policy().goal().name(), "foodChoice", foodRuntime.policy().foodChoice().name(),
 				"hunger", player.getHungerManager().getFoodLevel()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
@@ -996,10 +1043,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			foodRuntime.recordAttempt(tickCount);
 			try {
 				playerItemUseController.eat(client, itemId, tickCount);
-				eventBuffer.append(tickCount, "food.eat_started", Map.of("itemId", itemId, "source", "idle_policy"));
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.eat_started", Map.of("itemId", itemId, "source", "idle_policy"));
 			}
 			catch (RuntimeException exception) {
-				eventBuffer.append(tickCount, "food.eat_failed", Map.of("itemId", itemId,
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.eat_failed", Map.of("itemId", itemId,
 					"reason", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()));
 			}
 		});
@@ -1056,7 +1103,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void processSurvivalReflexEvents() {
 		List<SurvivalReflexEvent> events = survivalReflexRuntime.drainEvents();
 		for (SurvivalReflexEvent event : events) {
-			var observed = eventBuffer.append(tickCount, event.type(), event.payload());
+			var observed = eventBus.from("SurvivalReflexRuntime").publish(tickCount, event.type(), event.payload());
 			if (List.of("reflex.started", "reflex.resolved", "reflex.threat_detected", "reflex.actuator_failed").contains(event.type()))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, observed.seqNo());
 			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable"))
@@ -1071,7 +1118,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void recordStalePlannerRejections() {
-		dialogueRuntime.drainStalePlannerRejections().forEach(rejection -> eventBuffer.append(
+		dialogueRuntime.drainStalePlannerRejections().forEach(rejection -> eventBus.from("EmbodiedAgentRuntime").publish(
 			tickCount,
 			"planner.stale_response_rejected",
 			mapOfNullable(
@@ -1081,13 +1128,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				"requestHoldId", rejection.requestHoldId(),
 				"currentHoldId", rejection.currentHoldId(),
 				"phase", rejection.phase()
-			)
+			), EventCause.generation(rejection.generation())
 		));
 	}
 
 	private void enforcePlayerLifecycle(MinecraftClient client) {
 		if (!sessionSnapshot.requiresRespawn()) {
 			deathBoundaryApplied = false;
+			deathEventSequence = 0L;
 			lastRespawnRequestTick = -1L;
 			return;
 		}
@@ -1101,11 +1149,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 						"Automatically recorded at the most recent death. Dropped items may have moved or despawned; this location is not necessarily safe.");
 					ai.moeru.airicraft.agent.memory.LocationMemoryBridge.forClient(client).remember(null, place);
 					ai.moeru.airicraft.agent.memory.WorldPlacePreservation.reload(client);
-					eventBuffer.append(tickCount, "player.death_place_saved", Map.of(
-						"name", place.name(), "dimension", place.dimension(), "x", place.x(), "y", place.y(), "z", place.z()));
+					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_saved", Map.of(
+						"name", place.name(), "dimension", place.dimension(), "x", place.x(), "y", place.y(), "z", place.z()), deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 				}
 				catch (java.io.IOException | IllegalArgumentException | IllegalStateException exception) {
-					eventBuffer.append(tickCount, "player.death_place_save_failed", Map.of("message", exception.toString()));
+					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_save_failed", Map.of("message", exception.toString()));
 				}
 			}
 			cancelActionsForPlayerDeath(client);
@@ -1123,12 +1171,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastRespawnRequestTick = tickCount;
 		try {
 			client.player.requestRespawn();
-			eventBuffer.append(tickCount, "player.respawn_requested", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.respawn_requested", Map.of(
 				"attemptTick", tickCount
 			));
 		}
 		catch (RuntimeException exception) {
-			eventBuffer.append(tickCount, "player.respawn_request_failed", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.respawn_request_failed", Map.of(
 				"attemptTick", tickCount,
 				"message", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()
 			));
@@ -1176,7 +1224,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			payload.put("jobId", activeJob.jobId());
 			payload.put("jobType", activeJob.type().name());
 		}
-		eventBuffer.append(tickCount, "player.actions_cancelled", payload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.actions_cancelled", payload,
+			deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 	}
 
 	private void openLanIfSingleplayerLocal(MinecraftClient client) {
@@ -1187,7 +1236,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		try {
 			lanHostingService.openLan(sessionSnapshot);
 			if (sessionSnapshotOverrideForTests == null) {
-				sessionSnapshot = sessionRuntime.poll(client, tickCount, eventBuffer);
+				sessionSnapshot = sessionRuntime.poll(client, tickCount, eventBus);
 			}
 		}
 		catch (LanHostingService.LanHostingException exception) {
@@ -1195,7 +1244,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				return;
 			}
 			autoLanOpenState.recordFailure();
-			eventBuffer.append(tickCount, "session.lan_open_failed", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "session.lan_open_failed", Map.of(
 				"errorCode", exception.code(),
 				"message", exception.getMessage()
 			));
@@ -1209,12 +1258,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		autoLanOpenState.clear();
-		localDamageTracker.clear();
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
 		physicalObservationWorld = null;
-		nearbyPlayerTracker.clear(tickCount, eventBuffer);
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("nearby"));
 		eventPipeline.clearForShutdown();
 		primaryInteractionResolver.clear();
 		completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=runtime_shutdown");
@@ -1244,6 +1290,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastSystemChatText = null;
 		lastKnownPlayerHealth = null;
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(MinecraftClient.getInstance());
 		playerItemUseController.reset(MinecraftClient.getInstance());
@@ -1293,7 +1340,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				taskSnapshot = activeJobRuntime.taskSnapshot();
 				missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 				processSurvivalReflexEvents();
-				eventBuffer.append(tickCount, "reflex.task_resumed", Map.of(
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "reflex.task_resumed", Map.of(
 					"source", source == null || source.isBlank() ? "unknown" : source,
 					"safetyEpoch", survivalReflexRuntime.snapshot().safetyEpoch()
 				));
@@ -1384,7 +1431,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		Map<String, Object> payload = new LinkedHashMap<>(result.toPayload(false));
 		payload.put("requestedGoal", goal.normalizedKey());
 		payload.put("source", source == null || source.isBlank() ? "bridge_debug" : source);
-		eventBuffer.append(tickCount, "action_graph.goal_admission", payload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "action_graph.goal_admission", payload);
 		drainActionGraphCoordinatorEvents();
 		return result;
 	}
@@ -1607,6 +1654,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return debugRecorder.eventPipelineSnapshot();
 	}
 
+	public AgentEventBus.AgentEventBusStats debugEventBusState() { return eventBus.stats(); }
+
 	public Map<String, Object> debugSystem2() { return dialogueRuntime.system2Snapshot(); }
 
 	public ConversationSourcesDebugSnapshot debugConversationSources() {
@@ -1663,7 +1712,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public boolean semanticEventContains(String eventType) {
-		return eventType != null && eventBuffer.containsType(eventType);
+		return eventType != null && eventBus.containsType(eventType);
 	}
 
 	public void prepareForEvaluation() {
@@ -1763,7 +1812,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public long latestEventSeqNo() {
-		return eventBuffer.latestSeqNo();
+		return eventBus.latestSeqNo();
 	}
 
 	public boolean startDebugCompaction() {
@@ -1788,7 +1837,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			);
 		}
 		Optional<GoalSnapshot> activeGoal = activeGoal();
-		Optional<PlannerTrigger> trigger = idleIdeaScheduler.fireNow(tickCount, System.currentTimeMillis());
+		Optional<PlannerTrigger> trigger = idleIdeaScheduler.fireNow(tickCount, clock.millis());
 		trigger.ifPresent(plannerTrigger -> {
 			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 			dialogueRuntime.onPlannerTrigger(
@@ -1798,7 +1847,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				activeGoal,
 				taskSnapshot,
 				missionExecutionSnapshot,
-				plannerEventBuffer
+				PlannerFeedPublisher.wrap(plannerEventBuffer)
 			);
 		});
 		return trigger;
@@ -1823,14 +1872,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 		if (isLocalControllerMessage(senderName, localPlayerName())) {
-			eventBuffer.append(tickCount, "social.local_controller_spoke", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.local_controller_spoke", Map.of(
 				"player", senderName,
 				"message", plainTextMessage,
 				"normalizedMessage", ChatIngestService.normalize(plainTextMessage)
 			));
 
 			String plannerSender = DialogueSpeakerLabels.SAME_CLIENT_ADMIN;
-			if (dialogueRuntime.handleResetCommand(plannerSender, plainTextMessage, tickCount, eventBuffer)) {
+			if (dialogueRuntime.handleResetCommand(plannerSender, plainTextMessage, tickCount, eventBus)) {
 				completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=planner_reset");
 				cancelPolicy("planner_reset");
 				cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.PLANNER_RESET);
@@ -1848,10 +1897,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			tickCount,
 			nearbyPlayerTracker,
 			primaryInteractionResolver,
-			eventBuffer
+			eventBus
 		);
 
-		if (dialogueRuntime.handleResetCommand(senderName, plainTextMessage, tickCount, eventBuffer)) {
+		if (dialogueRuntime.handleResetCommand(senderName, plainTextMessage, tickCount, eventBus)) {
 			completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=planner_reset");
 			cancelPolicy("planner_reset");
 			cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.PLANNER_RESET);
@@ -1870,7 +1919,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		chatIngestService.ingestSystemMessage(plainTextMessage, tickCount, eventBuffer);
+		chatIngestService.ingestSystemMessage(plainTextMessage, tickCount, eventBus);
 		drainEventPipeline();
 	}
 
@@ -1879,7 +1928,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		eventBuffer.append(tickCount, "crafting.item_crafted", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "crafting.item_crafted", Map.of(
 			"actor", "self",
 			"itemId", itemId,
 			"count", count
@@ -1892,7 +1941,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		eventBuffer.append(tickCount, "pickup.item_picked_up", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "pickup.item_picked_up", Map.of(
 			"actor", "self",
 			"itemId", itemId,
 			"count", count
@@ -1940,7 +1989,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (player != null) {
 				damagePayload.put("position", Map.of("x", player.getX(), "y", player.getY(), "z", player.getZ()));
 			}
-			eventBuffer.append(tickCount, "combat.damage_taken", damagePayload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "combat.damage_taken", damagePayload);
 			survivalReflexRuntime.observeDamage(new SurvivalReflexRuntime.DamageObservation(
 				tickCount,
 				stringPayloadValue(payload, "damageTypeId"),
@@ -1957,13 +2006,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (sessionSnapshotOverrideForTests != null) {
 				sessionSnapshotOverrideForTests = sessionSnapshotOverrideForTests.withPlayerLifecycleState(PlayerLifecycleState.DEAD);
 				sessionSnapshot = sessionSnapshotOverrideForTests.withTickCount(tickCount);
-				eventBuffer.append(tickCount, "player.died", Map.of(
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.died", Map.of(
 					"mode", sessionSnapshot.mode().name(),
 					"dimensionId", sessionSnapshot.dimensionId()
 				));
 			}
 			else {
-				sessionSnapshot = sessionRuntime.onPlayerDied(tickCount, eventBuffer);
+				sessionSnapshot = sessionRuntime.onPlayerDied(tickCount, eventBus);
 			}
 			enforcePlayerLifecycle(MinecraftClient.getInstance());
 		}
@@ -1974,23 +2023,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public void onPlayerRespawned() {
-		localDamageTracker.onLifecycleReset(tickCount);
-		physicalObserver().reset();
-		if (itemOfferObserver != null) itemOfferObserver.reset();
-		if (slowMiningObserver != null) slowMiningObserver.reset();
+		lifecycleDispatcher.dispatch(LifecycleBoundary.RESPAWNED, tickCount);
 		lastKnownPlayerHealth = null;
 		if (sessionSnapshotOverrideForTests != null && sessionSnapshot.requiresRespawn()) {
 			sessionSnapshotOverrideForTests = sessionSnapshotOverrideForTests.withPlayerLifecycleState(PlayerLifecycleState.ALIVE);
 			sessionSnapshot = sessionSnapshotOverrideForTests.withTickCount(tickCount);
-			eventBuffer.append(tickCount, "player.respawned", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.respawned", Map.of(
 				"mode", sessionSnapshot.mode().name(),
 				"dimensionId", sessionSnapshot.dimensionId()
 			));
 		}
 		else {
-			sessionSnapshot = sessionRuntime.onPlayerRespawned(tickCount, eventBuffer);
+			sessionSnapshot = sessionRuntime.onPlayerRespawned(tickCount, eventBus);
 		}
 		deathBoundaryApplied = false;
+		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		drainEventPipeline();
 	}
@@ -2007,7 +2054,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		eventBuffer.append(tickCount, "social.player_joined_game", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.player_joined_game", Map.of(
 			"player", playerName
 		));
 		forwardSyntheticPresenceMessage(playerName + " joined the game");
@@ -2024,7 +2071,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		eventBuffer.append(tickCount, "social.player_left_game", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.player_left_game", Map.of(
 			"player", playerName
 		));
 		forwardSyntheticPresenceMessage(playerName + " left the game");
@@ -2032,7 +2079,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public SemanticEventQueryResult recentEvents(Long sinceSeqNo) {
-		return eventBuffer.query(sinceSeqNo);
+		return eventBus.query(sinceSeqNo);
 	}
 
 	public Optional<PrimaryInteractionPlayer> primaryInteractionPlayer() {
@@ -2068,7 +2115,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = activeJobRuntime.taskSnapshot();
 		missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 		debugRecorder.recordCollectResourceProbe(activeJobRuntime.collectResourceDebugSnapshot());
-		eventBuffer.append(tickCount, "task.submitted", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.submitted", Map.of(
 			"type", spec.type().name(),
 			"resourceKind", spec.resourceKind().name(),
 			"quantity", spec.quantity(),
@@ -2090,7 +2137,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = activeJobRuntime.taskSnapshot();
 		missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 		debugRecorder.recordCollectResourceProbe(activeJobRuntime.collectResourceDebugSnapshot());
-		eventBuffer.append(tickCount, "mission.submitted", Map.of(
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "mission.submitted", Map.of(
 			"missionId", ledger.missionId(),
 			"missionType", ledger.missionType().name(),
 			"activeStepId", ledger.activeStepId() == null ? "" : ledger.activeStepId(),
@@ -2143,7 +2190,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = activeJobRuntime.taskSnapshot();
 		missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 		debugRecorder.recordCollectResourceProbe(activeJobRuntime.collectResourceDebugSnapshot());
-		eventBuffer.append(tickCount, "task.submitted", submittedPayload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.submitted", submittedPayload);
 		return taskSnapshot;
 	}
 
@@ -2392,7 +2439,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		for (ActionGraphCoordinatorEvent event : actionGraphCoordinator.drainEvents()) {
 			LinkedHashMap<String, Object> payload = new LinkedHashMap<>(event.payload());
 			payload.put("executionId", event.executionId());
-			eventBuffer.append(tickCount, event.type(), payload);
+			eventBus.from("ActionGraphCoordinator").publish(tickCount, event.type(), payload);
 		}
 	}
 
@@ -2571,6 +2618,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		recordPlannerOutcome(response, previousGoal, activeGoal());
 	}
 
+	void appendEventForTests(String type, Map<String, Object> payload) {
+		eventBus.from("test").publish(tickCount, type, payload);
+	}
+
+	void overrideActionGraphResolutionExecutorForTests(java.util.concurrent.Executor executor) {
+		actionGraphCoordinator.overrideResolutionExecutorForTests(executor);
+	}
+
+	DialogueRuntime dialogueRuntimeForTests() {
+		return dialogueRuntime;
+	}
+
 	void overrideSessionSnapshotForTests(SessionSnapshot sessionSnapshot) {
 		sessionSnapshotOverrideForTests = sessionSnapshot;
 		this.sessionSnapshot = sessionSnapshot == null ? SessionSnapshot.initial() : sessionSnapshot;
@@ -2582,11 +2641,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	void injectNearbyPlayerForTests(String playerName, Vec3d pos) {
-		nearbyPlayerTracker.injectPlayerNearby(playerName, pos, tickCount, eventBuffer);
+		nearbyPlayerTracker.injectPlayerNearby(playerName, pos, tickCount, eventBus);
 	}
 
 	void disconnectNearbyPlayerForTests(String playerName) {
-		nearbyPlayerTracker.injectPlayerDisconnect(playerName, tickCount, eventBuffer);
+		nearbyPlayerTracker.injectPlayerDisconnect(playerName, tickCount, eventBus);
 	}
 
 	void injectGoalForTests(GoalSnapshot goalSnapshot) {
@@ -2733,19 +2792,22 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void drainInteractionEvidence(MinecraftClient client) {
-		int missing = droppedInteractionBatches.getAndSet(0);
-		if (missing > 0) eventBuffer.append(tickCount,"interaction.history_gap",Map.of("missingBatches",missing,"recovery","Inspect current inventory/container and read the persistent logbook."));
-		ObservedInteractions batch;
-		while ((batch = pendingInteractions.poll()) != null) {
-			if (client == null || client.getServer() != batch.server()) continue;
-			for (var entry : batch.entries()) eventBuffer.append(tickCount,"interaction." + entry.action(),Map.of("observed",entry));
-		}
+		int missing = pendingInteractions.takeDroppedCount();
+		if (missing > 0) eventBus.from("InteractionLogbookRecorder").publish(tickCount,"interaction.history_gap",Map.of("missingBatches",missing,"recovery","Inspect current inventory/container and read the persistent logbook."));
+		pendingInteractions.drain(batch -> {
+			if (client == null || client.getServer() != batch.server()) return;
+			for (var entry : batch.entries()) eventBus.from("InteractionLogbookRecorder").publish(tickCount,"interaction." + entry.action(),Map.of("observed",entry));
+		});
 	}
 
 	private void stopWorkOutsideTravelBounds(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null || !activeTaskInProgress()) return;
-		var pos = client.player.getBlockPos();
-		if (ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.permitsMovement(client.world,pos.getX(),pos.getY(),pos.getZ(),pos.getX(),pos.getY(),pos.getZ(),false)) return;
+		if (client == null || client.player == null || client.world == null) return;
+		stopWorkOutsideTravelBounds(client.world, client.player.getBlockPos());
+	}
+
+	private void stopWorkOutsideTravelBounds(Object world, BlockPos pos) {
+		if (!activeTaskInProgress()) return;
+		if (ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.permitsMovement(world,pos.getX(),pos.getY(),pos.getZ(),pos.getX(),pos.getY(),pos.getZ(),false)) return;
 		var job = activeJobRuntime.current();
 		cancelTask("travel_restriction_violated");
 		var evidence = new LinkedHashMap<String,Object>();
@@ -2754,7 +2816,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		evidence.put("actorPosition", Map.of("x",pos.getX(),"y",pos.getY(),"z",pos.getZ()));
 		evidence.put("bounds", ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.snapshot());
 		evidence.put("cause", "Observed outside restriction; displacement cause is not inferred. No recovery movement started.");
-		var event = eventBuffer.append(tickCount,"work.travel_restriction_violated",evidence);
+		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount,"work.travel_restriction_violated",evidence,
+			job.isIdle() || job.jobId() == null || job.jobId().isBlank() ? null
+				: EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 		dialogueRuntime.queueTaskWakeup(null,tickCount,event.seqNo());
 	}
 
@@ -2781,8 +2845,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					Map.of("physicalEffect", "Executor tracking ended or was replaced; this does not prove completion or reverse observed effects.")));
 			} else if (work.phase().equals("EATING")) {
 				long since = ((Number) work.details().get("afterEventSequence")).longValue();
-				eventBuffer.query(since).events().stream().filter(event -> event.type().equals("food.eaten") || event.type().equals("food.eat_failed"))
-					.findFirst().ifPresent(event -> recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(work.handle(), "",
+				foodOutcomes.firstAfter(since).ifPresent(event -> recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(work.handle(), "",
 						event.type().equals("food.eaten") ? ai.moeru.airicraft.agent.work.WorkSnapshot.State.SUCCEEDED : ai.moeru.airicraft.agent.work.WorkSnapshot.State.FAILED,
 						work.label(), "FINISHED", false, event.tick(), event.payload())));
 			}
@@ -2793,7 +2856,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void recordWork(ai.moeru.airicraft.agent.work.WorkSnapshot work) {
 		if (workHistory.observe(work)) {
-			var event = eventBuffer.append(tickCount, "work.changed", work.payload());
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "work.changed", work.payload(), EventCause.work(work.handle().id()));
 			if (work.state().terminal() || work.state() == ai.moeru.airicraft.agent.work.WorkSnapshot.State.PAUSED || work.phase().equals("CHECK_OUTPUT"))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, event.seqNo());
 		}
@@ -2820,7 +2883,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var args = new com.google.gson.JsonObject();
 				args.addProperty("workId", work.handle().id());
 				args.addProperty("reason", "planner_clear_queue");
-				String result = executeWorkTool(new PlannerToolCall("abort-" + call.id(), "cancel_work", args, null, null));
+				String result = executeWorkTool(new PlannerToolCall("abort-" + call.id(), "cancel_work", args, null));
 				if (result.startsWith("TOOL_ERROR:")) return CompletableFuture.completedFuture(result);
 				results.add(result);
 			}
@@ -2866,7 +2929,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var work = new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", eating
 					? ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING : ai.moeru.airicraft.agent.work.WorkSnapshot.State.SUCCEEDED,
 					call.name(), eating ? "EATING" : "RETURNED", eating, tickCount,
-					Map.of("result", text, "afterEventSequence", eventBuffer.latestSeqNo()));
+					Map.of("result", text, "afterEventSequence", eventBus.latestSeqNo()));
 				recordWork(work);
 				receipt.putAll(work.summary());
 				dialogueRuntime.observeAcceptedWork(work);
@@ -3618,14 +3681,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return future;
 	}
 
-	private void emitPlannerToolNarration(PlannerToolCall toolCall) {
-		if (toolCall == null || toolCall.narration() == null || toolCall.narration().isBlank()) {
+	private void sayInChat(String text) {
+		if (text == null || text.isBlank()) {
 			return;
 		}
-		chatService.send(MinecraftClient.getInstance(), toolCall.narration(), tickCount);
+		chatService.send(MinecraftClient.getInstance(), text, tickCount);
 	}
 
 	private void beforePlannerToolExecution(PlannerToolCall toolCall) {
+		// Talking between inspect_world and a placement must not expire the placement's fresh read.
+		if (toolCall != null && ai.moeru.airicraft.agent.llm.SayToolProvider.SAY.equals(toolCall.name())) return;
 		worldReadLedger.advanceToolCall();
 	}
 
@@ -3747,7 +3812,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 		if (actionGraphCoordinator.hasNonterminal() && legacyIntentWouldMutateGraphBoundary(response.intent().type())) {
-			eventBuffer.append(tickCount, "player.action_rejected", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.action_rejected", Map.of(
 				"reason", "active_action_graph_in_progress",
 				"intentType", response.intent().type().name(),
 				"source", source == null || source.isBlank() ? "planner_response" : source
@@ -3755,7 +3820,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 		if (sessionSnapshot.requiresRespawn() && intentRequiresLivingPlayer(response.intent().type())) {
-			eventBuffer.append(tickCount, "player.action_rejected", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.action_rejected", Map.of(
 				"reason", "player_dead",
 				"intentType", response.intent().type().name(),
 				"source", source == null || source.isBlank() ? "planner_response" : source
@@ -3764,7 +3829,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		if (survivalReflexRuntime.snapshot().state() == SurvivalReflexState.ACTIVE
 			&& intentRequiresLivingPlayer(response.intent().type())) {
-			eventBuffer.append(tickCount, "player.action_rejected", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.action_rejected", Map.of(
 				"reason", "reflex_active",
 				"intentType", response.intent().type().name(),
 				"source", source == null || source.isBlank() ? "planner_response" : source
@@ -4445,7 +4510,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 
-		chatIngestService.ingestSystemMessage(plainTextMessage, tickCount, eventBuffer);
+		chatIngestService.ingestSystemMessage(plainTextMessage, tickCount, eventBus);
 		drainEventPipeline();
 	}
 
@@ -4493,7 +4558,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (response.text() != null && !response.text().isBlank()) {
 			payload.put("replyText", response.text());
 		}
-		eventBuffer.append(tickCount, "planner.response_applied", payload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "planner.response_applied", payload);
 
 		if (isDirectGoalIntent(response.intent()) && currentGoal.isPresent()) {
 			java.util.LinkedHashMap<String, Object> goalPayload = new java.util.LinkedHashMap<>();
@@ -4502,7 +4567,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				goalPayload.put("targetPlayer", currentGoal.get().targetPlayer());
 			}
 			goalPayload.put("source", currentGoal.get().source());
-			eventBuffer.append(tickCount, "planner.goal_set", goalPayload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "planner.goal_set", goalPayload);
 			return;
 		}
 
@@ -4519,7 +4584,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				goalPayload.put("source", "planner_response");
 				goalPayload.put("alreadyClear", true);
 			}
-			eventBuffer.append(tickCount, "planner.goal_cleared", goalPayload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "planner.goal_cleared", goalPayload);
 		}
 	}
 
@@ -4539,7 +4604,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				activeGoal,
 				taskSnapshot,
 				missionExecutionSnapshot,
-				plannerEventBuffer
+				PlannerFeedPublisher.wrap(plannerEventBuffer)
 			);
 		}
 	}
@@ -4556,11 +4621,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean jobIdle = isIdleForIdleIdeaScheduling(activeJobRuntime.current());
 		if (dialogueRuntime.continuePlannerGoal(tickCount, jobIdle && activeGoal.isEmpty() && !actionGraphCoordinator.hasNonterminal(), sessionSnapshot,
 			primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null),
-			activeGoal, taskSnapshot, missionExecutionSnapshot, plannerEventBuffer)) {
+			activeGoal, taskSnapshot, missionExecutionSnapshot, PlannerFeedPublisher.wrap(plannerEventBuffer))) {
 			idleIdeaScheduler.reset();
 			return;
 		}
-		long nowMs = System.currentTimeMillis();
+		long nowMs = clock.millis();
 		idleIdeaScheduler.tick(jobIdle, tickCount, nowMs).ifPresent(trigger -> {
 			String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 			dialogueRuntime.onPlannerTrigger(
@@ -4570,7 +4635,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				activeGoal,
 				taskSnapshot,
 				missionExecutionSnapshot,
-				plannerEventBuffer
+				PlannerFeedPublisher.wrap(plannerEventBuffer)
 			);
 		});
 	}
@@ -4979,7 +5044,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		lastSmeltingOutputReadyPollTick = tickCount;
 		for (SmeltingOutputReadyEvent event : smeltingPlannerService.pollTrackedOutputReady(client, smeltingProcessManager, tickCount)) {
-			eventBuffer.append(tickCount, "smelting.output_ready", Map.of(
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "smelting.output_ready", Map.of(
 				"processId", event.processId(),
 				"optionId", event.optionId(),
 				"station", event.stationKey().compact(),
@@ -4995,7 +5060,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (changes == null) {
 			return;
 		}
-		long timestampMs = System.currentTimeMillis();
+		long timestampMs = clock.millis();
 		if (changes.clearAll()) {
 			eventPolicyState.clear();
 		}
@@ -5053,7 +5118,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			payload.put("effect", effect);
 		}
 		payload.put("reason", reason == null || reason.isBlank() ? "rule rejected" : reason);
-		eventBuffer.append(tickCount, "policy.rule_rejected", payload);
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "policy.rule_rejected", payload);
 	}
 
 	private static String normalizeRuleId(String ruleId) {
@@ -5064,55 +5129,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return trimmed.isEmpty() ? null : trimmed;
 	}
 
+	static Map<String, EventRoutingProfile> eventRoutingProfilesForTests() {
+		return createEventRoutingProfiles();
+	}
+
 	private static Map<String, EventRoutingProfile> createEventRoutingProfiles() {
-		LinkedHashMap<String, EventRoutingProfile> profiles = new LinkedHashMap<>();
-		profiles.put("social.player_spoke", new EventRoutingProfile("social.player_spoke", false, PlannerTriggerType.CHAT, false));
-		profiles.put("social.player_addressed_agent", new EventRoutingProfile("social.player_addressed_agent", false, PlannerTriggerType.CHAT, true));
-		profiles.put("social.local_controller_spoke", new EventRoutingProfile("social.local_controller_spoke", false, PlannerTriggerType.CHAT, true));
-		profiles.put("social.system_message", new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false));
-		profiles.put("social.item_offered", new EventRoutingProfile("social.item_offered", true, PlannerTriggerType.SYSTEM, false));
-		profiles.put("pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false));
-		profiles.put("crafting.item_crafted", new EventRoutingProfile("crafting.item_crafted", true, PlannerTriggerType.CRAFT, false));
-		profiles.put("smelting.output_ready", new EventRoutingProfile("smelting.output_ready", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("combat.damage_taken", new EventRoutingProfile("combat.damage_taken", true, PlannerTriggerType.DAMAGE, false));
-		profiles.put("player.physical", new EventRoutingProfile("player.physical", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("reflex.threat_detected", new EventRoutingProfile("reflex.threat_detected", true, null, true));
-		profiles.put("reflex.started", new EventRoutingProfile("reflex.started", true, null, true));
-		profiles.put("reflex.action_changed", new EventRoutingProfile("reflex.action_changed", true, null, true));
-		profiles.put("reflex.resolved", new EventRoutingProfile("reflex.resolved", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("reflex.hold_released", new EventRoutingProfile("reflex.hold_released", true, null, true));
-		profiles.put("reflex.actuator_failed", new EventRoutingProfile("reflex.actuator_failed", true, null, true));
-		profiles.put("lighting.torch_placed", new EventRoutingProfile("lighting.torch_placed", true, null, true));
-		profiles.put("planner.stale_response_rejected", new EventRoutingProfile("planner.stale_response_rejected", true, null, true));
-		profiles.put("player.died", new EventRoutingProfile("player.died", true, null, true));
-		profiles.put("player.actions_cancelled", new EventRoutingProfile("player.actions_cancelled", true, null, true));
-		profiles.put("player.action_rejected", new EventRoutingProfile("player.action_rejected", true, null, true));
-		profiles.put("player.respawn_requested", new EventRoutingProfile("player.respawn_requested", true, null, true));
-		profiles.put("player.respawn_request_failed", new EventRoutingProfile("player.respawn_request_failed", true, null, true));
-		profiles.put("player.respawned", new EventRoutingProfile("player.respawned", true, null, true));
-		profiles.put("session.world_loaded", new EventRoutingProfile("session.world_loaded", true, null, false));
-		profiles.put("session.world_unloaded", new EventRoutingProfile("session.world_unloaded", true, null, false));
-		profiles.put("session.connection_lost", new EventRoutingProfile("session.connection_lost", true, null, false));
-		profiles.put("session.lan_opened", new EventRoutingProfile("session.lan_opened", true, null, false));
-		profiles.put("social.player_joined_game", new EventRoutingProfile("social.player_joined_game", true, null, false));
-		profiles.put("social.player_left_game", new EventRoutingProfile("social.player_left_game", true, null, false));
-		profiles.put("social.player_joined_nearby", new EventRoutingProfile("social.player_joined_nearby", true, null, false));
-		profiles.put("social.player_left_nearby", new EventRoutingProfile("social.player_left_nearby", true, null, false));
-		profiles.put("follow.target_acquired", new EventRoutingProfile("follow.target_acquired", true, null, false));
-		profiles.put("follow.target_lost", new EventRoutingProfile("follow.target_lost", true, null, false));
-		profiles.put("follow.stuck", new EventRoutingProfile("follow.stuck", true, null, false));
-		profiles.put("planner.goal_set", new EventRoutingProfile("planner.goal_set", true, null, false));
-		profiles.put("planner.goal_cleared", new EventRoutingProfile("planner.goal_cleared", true, null, false));
-		profiles.put("planner.degraded_entered", new EventRoutingProfile("planner.degraded_entered", true, null, false));
-		profiles.put("planner.degraded_cleared", new EventRoutingProfile("planner.degraded_cleared", true, null, false));
-		profiles.put("planner.reset_requested", new EventRoutingProfile("planner.reset_requested", true, null, true));
-		profiles.put("task.blocked", new EventRoutingProfile("task.blocked", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("task.mining_opportunity", new EventRoutingProfile("task.mining_opportunity", true, null, true));
-		profiles.put("action_graph.goal_suspended", new EventRoutingProfile("action_graph.goal_suspended", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("action_graph.goal_terminal", new EventRoutingProfile("action_graph.goal_terminal", true, PlannerTriggerType.SYSTEM, true));
-		profiles.put("policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened"));
-		profiles.put("policy.rule_rejected", EventRoutingProfile.rawOnly("policy.rule_rejected"));
-		return Map.copyOf(profiles);
+		return EventCatalog.defaults().routingProfiles();
 	}
 
 	private boolean suppressPlannerTriggersForCollectResourceProgress() {
@@ -5142,14 +5164,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 
 		if (current.state() == TaskExecutionState.RUNNING) {
-			eventBuffer.append(tickCount, "task.started", payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.started", payload);
 			return;
 		}
 		if (current.state() == TaskExecutionState.PAUSED_BY_SESSION_GATE) {
-			eventBuffer.append(tickCount, "task.paused_by_session_gate", payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.paused_by_session_gate", payload);
 		}
 		if (current.state() == TaskExecutionState.PAUSED_BY_REFLEX) {
-			eventBuffer.append(tickCount, "task.paused_by_reflex", payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.paused_by_reflex", payload);
 		}
 	}
 
@@ -5205,7 +5227,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			default -> null;
 		};
 		if (eventType != null) {
-			eventBuffer.append(tickCount, eventType, payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, eventType, payload);
 		}
 
 		refreshWorkHistory();
@@ -5218,7 +5240,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				|| current.state() == TaskState.CANCELLED
 		) {
 			dialogueRuntime.queueTaskWakeup(current.mission() == null ? current.taskId() : current.mission().missionId(),
-				tickCount, eventBuffer.latestSeqNo());
+				tickCount, eventBus.latestSeqNo());
 		}
 	}
 
@@ -5369,10 +5391,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (event.goal().targetPlayer() != null && !event.goal().targetPlayer().isBlank()) {
 				payload.put("targetPlayer", event.goal().targetPlayer());
 			}
-			eventBuffer.append(tickCount, eventType, payload);
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, eventType, payload);
 		}
 
-		dialogueRuntime.queueTaskWakeup(event.taskId(), tickCount, eventBuffer.latestSeqNo());
+		dialogueRuntime.queueTaskWakeup(event.taskId(), tickCount, eventBus.latestSeqNo());
 	}
 
 	private void handleInternalTaskWarning(String warning) {
@@ -5386,7 +5408,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			activeGoal(),
 			taskSnapshot,
 			missionExecutionSnapshot,
-			eventBuffer
+			eventBus
 		);
 	}
 
@@ -5730,13 +5752,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		idleIdeaScheduler.recordActivity();
 		String primaryInteractionPlayer = primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null);
 		dialogueRuntime.onPlannerTrigger(
-			PlannerTrigger.pending(type, speaker, message, tickCount, System.currentTimeMillis()),
+			PlannerTrigger.pending(type, speaker, message, tickCount, clock.millis()),
 			sessionSnapshot,
 			primaryInteractionPlayer,
 			activeGoal(),
 			taskSnapshot,
 			missionExecutionSnapshot,
-			plannerEventBuffer
+			PlannerFeedPublisher.wrap(plannerEventBuffer)
 		);
 	}
 

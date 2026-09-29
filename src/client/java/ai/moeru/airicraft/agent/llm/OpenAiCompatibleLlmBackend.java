@@ -118,10 +118,9 @@ public final class OpenAiCompatibleLlmBackend implements LlmBackend {
 			List<PlannerToolCall> toolCalls = parseToolCalls(message);
 			if (!toolCalls.isEmpty()) {
 				Airicraft.LOGGER.info(
-					"Planner parsed tool_calls names={} count={} firstNarration={}",
+					"Planner parsed tool_calls names={} count={}",
 					summarizeToolCallNames(toolCalls),
-					toolCalls.size(),
-					summarizeForLog(toolCalls.getFirst().narration())
+					toolCalls.size()
 				);
 				return PlannerResponse.toolCalls(toolCalls, rawAssistantContent);
 			}

@@ -35,13 +35,12 @@ public final class PlannerGoalToolProvider implements PlannerToolProvider {
 	@Override public boolean isReadTool(String name) { return "inspect_planner_goal".equals(name); }
 
 	@Override public List<Map<String, Object>> openAiTools() {
-		var narration = propForProvider("narration", optionalStringForProvider("Optional short visible narration."));
 		var objective = propForProvider("objective", stringForProvider("Concrete longer-term objective, durable constraints and observable completion conditions, up to 2048 characters. Do not store current inventory, health, or temporary progress as facts in the objective."));
 		var id = propForProvider("goalId", stringForProvider("Exact current planner goal id."));
 		var tools = List.of(
-			toolForProvider("set_planner_goal", "Start a persistent planner goal. Requires no active planner goal. Jobs are individual steps toward this objective.", propertiesForProvider(narration, objective, propForProvider("constraints", optionalStringForProvider("Durable user restrictions; empty if none.")), propForProvider("completionCriteria", optionalStringForProvider("Observable completion conditions."))), List.of("objective")),
-			toolForProvider("change_planner_goal", "Replace the active objective, preserving the reason. Returns a new goal id. Does not cancel a running action; cancel that separately when necessary.", propertiesForProvider(narration, id, objective, propForProvider("reason", stringForProvider("Why the objective changed."))), List.of("goalId", "objective", "reason")),
-			toolForProvider("finish_planner_goal", "End the planner goal explicitly with verified success or a reason for giving up. Stops automatic goal continuation; does not cancel a running action.", propertiesForProvider(narration, id,
+			toolForProvider("set_planner_goal", "Start a persistent planner goal. Requires no active planner goal. Jobs are individual steps toward this objective.", propertiesForProvider(objective, propForProvider("constraints", optionalStringForProvider("Durable user restrictions; empty if none.")), propForProvider("completionCriteria", optionalStringForProvider("Observable completion conditions."))), List.of("objective")),
+			toolForProvider("change_planner_goal", "Replace the active objective, preserving the reason. Returns a new goal id. Does not cancel a running action; cancel that separately when necessary.", propertiesForProvider(id, objective, propForProvider("reason", stringForProvider("Why the objective changed."))), List.of("goalId", "objective", "reason")),
+			toolForProvider("finish_planner_goal", "End the planner goal explicitly with verified success or a reason for giving up. Stops automatic goal continuation; does not cancel a running action.", propertiesForProvider(id,
 				propForProvider("status", Map.of("type", "string", "enum", List.of("success", "give_up"))),
 				propForProvider("outcome", stringForProvider("Concrete completion evidence, or why progress cannot continue. Up to 2048 characters."))), List.of("goalId", "status", "outcome")),
 			toolForProvider("block_planner_goal", "Pause goal continuation until a relevant event or user guidance permits reassessment. A failed attempt alone is not a blocked objective.", propertiesForProvider(id,
@@ -52,7 +51,7 @@ public final class PlannerGoalToolProvider implements PlannerToolProvider {
 			toolForProvider("resume_planner_goal", "Explicitly resume a blocked objective after evaluating fresh evidence.", propertiesForProvider(id, propForProvider("reason", stringForProvider("Observed change that permits another attempt."))), List.of("goalId", "reason")),
 			toolForProvider("record_decision", "Store or replace one of at most 16 named planning decisions. Never store inventory or geometry observations here. Replacement retains the preceding reason.", propertiesForProvider(id,
 				propForProvider("name", stringForProvider("Stable decision name, at most 64 characters.")), propForProvider("decision", stringForProvider("Chosen strategy or design.")), propForProvider("reason", stringForProvider("Why this choice replaces the previous one."))), List.of("goalId", "name", "decision", "reason")),
-			toolForProvider("inspect_planner_goal", "Read the current world-persisted planner objective, identity, status, and outcome.", propertiesForProvider(narration), List.of())
+			toolForProvider("inspect_planner_goal", "Read the current world-persisted planner objective, identity, status, and outcome.", propertiesForProvider(), List.of())
 		);
 		return controller ? tools : tools.stream().filter(tool -> ((Map<?,?>) tool.get("function")).get("name").equals("inspect_planner_goal")).toList();
 	}
@@ -78,7 +77,7 @@ public final class PlannerGoalToolProvider implements PlannerToolProvider {
 			case "inspect_planner_goal" -> List.of();
 			default -> throw new JsonParseException("unknown planner goal tool");
 		};
-		for (String key : args.keySet()) if (!fields.contains(key) && !key.equals("narration") && !(name.equals("set_planner_goal") && List.of("constraints", "completionCriteria").contains(key))) throw new JsonParseException("unknown argument: " + key);
+		for (String key : args.keySet()) if (!fields.contains(key) && !(name.equals("set_planner_goal") && List.of("constraints", "completionCriteria").contains(key))) throw new JsonParseException("unknown argument: " + key);
 		for (String key : fields) if (key.equals("reconsiderEvents")) {
 			if (!args.has(key) || !args.get(key).isJsonArray() || args.getAsJsonArray(key).size() > 8) throw new JsonParseException("reconsiderEvents must be an array of at most 8 event types");
 		} else text(args, key);

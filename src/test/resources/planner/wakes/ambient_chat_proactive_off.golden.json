@@ -1,0 +1,28 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "nice weather",
+        "normalizedMessage": "nice weather",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    }
+  ],
+  "requests": [],
+  "scenario": "ambient_chat_proactive_off",
+  "wakeAudit": []
+}

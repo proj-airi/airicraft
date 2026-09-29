@@ -215,7 +215,7 @@ class PlannerDelegationTest {
 		assertEquals(OpenAiCompatibleChatClient.canonicalRequestMessages(a),
 			OpenAiCompatibleChatClient.canonicalRequestMessages(LlmConversation.of(b.messages().subList(0, a.messages().size()))));
 	}
-	private static PlannerToolCall call(String name, String args) { return new PlannerToolCall(UUID.randomUUID().toString(), name, JsonParser.parseString(args).getAsJsonObject(), null, null); }
+	private static PlannerToolCall call(String name, String args) { return new PlannerToolCall(UUID.randomUUID().toString(), name, JsonParser.parseString(args).getAsJsonObject(), null); }
 	private static PlannerResponse response(PlannerToolCall call) { return PlannerResponse.toolCalls(List.of(call), null); }
 	private static PlannerOrchestrator orchestrator(LlmBackend backend, PlannerToolRegistry registry, PlannerLifecycleListener listener) {
 		var config = AgentConfig.LlmConfig.defaults();
@@ -223,7 +223,7 @@ class PlannerDelegationTest {
 			new PlannerContextAggregator(Clock.systemUTC(), 65536, 128, PlannerVisionMode.EXTERNAL_SUMMARY, registry),
 			CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, "low", 1, 0, 0, 0,
 			Clock.systemUTC(), NoopObservability.INSTANCE, listener, new AgentDebugRecorder(), PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP, registry, PlannerToolExecutionObserver.NO_OP);
+			PlannerChatSink.NO_OP, registry, PlannerToolExecutionObserver.NO_OP);
 	}
 	private static final class Backend implements LlmBackend {
 		final List<LlmConversation> calls = new CopyOnWriteArrayList<>();

@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.dialogue;
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import ai.moeru.airicraft.agent.events.SemanticEventBuffer;
+import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -30,7 +31,7 @@ import ai.moeru.airicraft.agent.llm.PlannerResponse;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import ai.moeru.airicraft.agent.llm.PlannerToolCatalog;
 import ai.moeru.airicraft.agent.llm.PlannerToolExecutionObserver;
-import ai.moeru.airicraft.agent.llm.PlannerToolNarrationSink;
+import ai.moeru.airicraft.agent.llm.PlannerChatSink;
 import ai.moeru.airicraft.agent.llm.PlannerToolRegistry;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
@@ -79,9 +80,43 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DialogueRuntimeTest {
+	@Test void wakeAuditRecordsRoutedAndAttentionSubmissionsAndIncorporatedDrops() {
+		var backend = new BlockingLlmBackend();
+		var runtime = newDialogueRuntime(backend);
+		var events = new SemanticEventBuffer(32);
+		var audit = new java.util.ArrayList<java.util.Map<String, Object>>();
+		runtime.configureWakeAudit((tick, kind, fields) -> {
+			var entry = new java.util.LinkedHashMap<String, Object>(fields);
+			entry.put("kind", kind);
+			audit.add(entry);
+		});
+		try {
+			var event = events.append(1, "work.changed", java.util.Map.of());
+			runtime.configureDecisionContext(() -> new ai.moeru.airicraft.agent.llm.PlannerDecisionContext(
+				"world", 2, 20, "controller", "idle", java.util.Map.of(), events.query(null)));
+			backend.injectMockResponse(new PlannerResponse("Hello", new PlannerIntent("none", null, null)));
+			runtime.onPlannerTrigger(PlannerTrigger.direct(PlannerTriggerType.CHAT, "Alex", "hello", 2, 100),
+				SessionSnapshot.initial(), "Alex", Optional.empty(), null, null, events);
+			awaitResponse(runtime, events, Duration.ofSeconds(1));
+			runtime.queueTaskWakeup(null, 3, event.seqNo());
+			runtime.poll(3, events);
+			runtime.observeAcceptedWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(
+				new ai.moeru.airicraft.agent.work.WorkHandle("OPERATION:test"), "",
+				ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING, "run_policy", "POLICY", true, 4, java.util.Map.of()));
+			runtime.queueTaskAttention(4, events.append(4, "task.notice", java.util.Map.of("message", "stalled")).seqNo());
+			runtime.poll(4, events);
+			assertEquals(List.of("W1", "W2", "W3"), audit.stream().map(e -> e.get("path")).toList());
+			assertEquals(List.of("submitted", "dropped", "submitted"), audit.stream().map(e -> e.get("kind")).toList());
+			assertEquals("G5.incorporated", audit.get(1).get("gate"));
+			assertEquals(event.seqNo(), audit.get(1).get("eventSequence"));
+			assertEquals(List.of("DIRECT_GUIDANCE"), audit.getFirst().get("origins"));
+		} finally { runtime.shutdown(); }
+	}
+
 	@org.junit.jupiter.params.ParameterizedTest
 	@org.junit.jupiter.params.provider.ValueSource(strings = {"run_policy", "mine_blocks"})
 	void routineProgressDoesNotWakeAcceptedWorkButDamageStillDoes(String label) {
@@ -127,7 +162,7 @@ class DialogueRuntimeTest {
 		response.complete(new PlannerResponse("", new PlannerToolCall("next", "run_policy", com.google.gson.JsonParser.parseString("""
 			{"source":"function* main(p) { return {crafted:true}; }", "input":{},
 			 "guard":{"parentResult":{"gathered":true},"inventoryMin":{},"blocks":[]}}
-			""").getAsJsonObject(), null, null), null));
+			""").getAsJsonObject(), null), null));
 		runtime.poll(11, events);
 		assertTrue(executed.isEmpty());
 		assertFalse(runtime.plannerConversationDebugSnapshot().messages().stream().anyMatch(m -> m.text().contains("crafted:true")));
@@ -783,6 +818,28 @@ class DialogueRuntimeTest {
 		runtime.shutdown();
 	}
 
+	@Test void plannerFeedWritesStayOutOfRawLog() {
+		var backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
+		var runtime = newDialogueRuntime(backend);
+		var raw = new ai.moeru.airicraft.agent.events.AgentEventBus(
+			ai.moeru.airicraft.agent.events.EventCatalog.defaults(), new ai.moeru.airicraft.agent.events.AgentEventLog(32),
+			System::currentTimeMillis, true);
+		var planner = new SemanticEventBuffer(32);
+		try {
+			for (long tick = 1; tick <= 3; tick++) {
+				backend.injectTimeout();
+				runtime.onPlayerChat("Alice", "@agent follow me", tick, SessionSnapshot.initial(), "Alice", Optional.empty(), raw);
+				awaitFailureProcessed(runtime, raw, tick, Duration.ofSeconds(1));
+			}
+			assertTrue(runtime.isDegraded());
+			runtime.onPlannerTrigger(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "system", "progress", 50, 1000),
+				SessionSnapshot.initial(), "Alice", Optional.empty(), null, null, ai.moeru.airicraft.agent.events.PlannerFeedPublisher.wrap(planner));
+			assertFalse(raw.containsType("planner.degraded_blocked"));
+			var blocked = planner.query(null).events().stream().filter(event -> event.type().equals("planner.degraded_blocked")).findFirst().orElseThrow();
+			assertEquals("DialogueCore", blocked.source());
+		} finally { runtime.shutdown(); }
+	}
+
 	@Test
 	void degradedDirectChatEmitsBlockedEventAndVisibleResetReminder() {
 		OpenAiCompatibleLlmBackend backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
@@ -1049,6 +1106,7 @@ class DialogueRuntimeTest {
 			MissionExecutionSnapshot.idle(),
 			eventBuffer
 		);
+		runtime.queueTaskWakeup(null, 11L, 0L);
 		runtime.onPlannerTrigger(
 			PlannerTrigger.pending(PlannerTriggerType.CHAT, "Alice", "@agent stop, come back", 12L, 1200L),
 			SessionSnapshot.initial(),
@@ -1060,6 +1118,14 @@ class DialogueRuntimeTest {
 		);
 
 		assertTrue(eventBuffer.containsType("planner.internal_task_update_superseded"));
+		var notice = eventBuffer.query(null).events().stream()
+			.filter(event -> "task.notice".equals(event.type())).findFirst().orElseThrow();
+		var superseded = eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type())).findFirst().orElseThrow();
+		assertEquals(EventCause.event(notice.seqNo()), superseded.cause());
+		assertNull(eventBuffer.query(null).events().stream()
+			.filter(event -> "planner.internal_task_update_superseded".equals(event.type()))
+			.skip(1).findFirst().orElseThrow().cause());
 		latestResponse.complete(new PlannerResponse("Coming back.", new PlannerIntent("reply_only", null, null)));
 		firstResponse.complete(new PlannerResponse("Gathering wood.", new PlannerIntent("reply_only", null, null)));
 
@@ -1141,8 +1207,8 @@ class DialogueRuntimeTest {
 		craftArgs.addProperty("recipeId", "minecraft:oak_planks");
 		craftArgs.addProperty("times", 1);
 		backend.injectMockResponse(PlannerResponse.toolCalls(List.of(
-			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null, null),
-			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null, null)
+			new PlannerToolCall("call_nav", PlannerToolCatalog.NAVIGATE_TO, navigateArgs, null),
+			new PlannerToolCall("call_craft", PlannerToolCatalog.CRAFT_RECIPE, craftArgs, null)
 		), null));
 		backend.injectMockResponse(new PlannerResponse(
 			"I will do one step at a time.",
@@ -1380,7 +1446,7 @@ class DialogueRuntimeTest {
 		throw new AssertionError("Timed out waiting for dialogue response");
 	}
 
-	private static void awaitFailureProcessed(DialogueRuntime runtime, SemanticEventBuffer eventBuffer, long tick, Duration timeout) {
+	private static void awaitFailureProcessed(DialogueRuntime runtime, ai.moeru.airicraft.agent.events.EventStream eventBuffer, long tick, Duration timeout) {
 		Instant deadline = Instant.now().plus(timeout);
 		long pollTick = tick + 100L;
 		while (Instant.now().isBefore(deadline)) {
@@ -1453,35 +1519,7 @@ class DialogueRuntimeTest {
 
 	private static DialogueRuntime newDialogueRuntime(LlmBackend backend, CurrentViewVisionTool visionTool,
 		PlannerVisionMode visionMode, ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore goal) {
-		AgentConfig.LlmConfig config = AgentConfig.LlmConfig.defaults();
-		Clock clock = Clock.systemDefaultZone();
-		PlannerOrchestrator orchestrator = new PlannerOrchestrator(
-			new PlannerExecutor(backend),
-			new PlannerCompactionService(new OpenAiCompatibleChatClient(config)),
-			new PlannerContextAggregator(
-				clock,
-				config.plannerCompactionTriggerTokens(),
-				config.plannerPendingSemanticEventCap(),
-				visionMode
-			),
-			visionTool,
-			CurrentInventoryTool.disabled(),
-			visionMode,
-			config.visionImageDetail(),
-			config.plannerSessionMaxConcurrentAttempts(),
-			config.plannerSessionCoalesceStepMillis(),
-			config.plannerSessionCoalesceMinMillis(),
-			config.plannerSessionCoalesceMaxMillis(),
-			clock,
-			NoopObservability.INSTANCE,
-			PlannerLifecycleListener.NO_OP,
-			new AgentDebugRecorder(),
-			PlannerActionToolExecutor.DISABLED,
-			PlannerToolNarrationSink.NO_OP,
-			PlannerToolRegistry.empty(),
-			PlannerToolExecutionObserver.NO_OP
-		);
-		return new DialogueRuntime(orchestrator, 8, clock, goal);
+		return DialogueWakeFixture.create(backend, visionTool, visionMode, goal, Clock.systemDefaultZone());
 	}
 
 	private static TaskSnapshot activeTask(
