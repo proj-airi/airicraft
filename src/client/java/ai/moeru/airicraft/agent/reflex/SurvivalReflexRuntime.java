@@ -5,6 +5,7 @@ import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
+import ai.moeru.airicraft.agent.reflex.neural.NeuralCombatController;
 import ai.moeru.airicraft.agent.tasks.MinecraftUnderwaterEscapeController;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeNavigator;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeSearch;
@@ -46,6 +47,7 @@ public final class SurvivalReflexRuntime {
 	private final CameraController cameraController;
 	private final BaritoneFacade baritone;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
+	private final NeuralCombatController neural;
 	private final Map<String, ObservedThreat> observedThreats = new LinkedHashMap<>();
 	private final List<SurvivalReflexEvent> pendingEvents = new ArrayList<>();
 
@@ -124,6 +126,7 @@ public final class SurvivalReflexRuntime {
 			this.movementController,
 			this.cameraController
 		);
+		this.neural = NeuralCombatController.create();
 	}
 
 	public SurvivalReflexSnapshot snapshot() {
@@ -155,6 +158,8 @@ public final class SurvivalReflexRuntime {
 		if (combatRecovery == CombatRecovery.REACH_DRY_GROUND) evidence.put("movementRecovery", underwaterEscape.snapshot());
 		evidence.put("shieldGuard", shieldGuard);
 		evidence.put("secureEscapeTicks", secureEscapeTicks);
+		evidence.put("neuralPolicy", neural.active());
+		evidence.put("neuralDecision", neural.lastDecision());
 		evidence.put("mobRoutesTick", mobRoutesTick);
 		evidence.put("mobRoutes", Map.copyOf(mobRoutes));
 		return evidence;
@@ -348,6 +353,8 @@ public final class SurvivalReflexRuntime {
 		aggroQuery = null;
 		resetSecurityProgress();
 		underwaterEscape.reset(client);
+		neural.reset();
+		neural.release(client);
 		long epoch = snapshot.safetyEpoch();
 		snapshot = new SurvivalReflexSnapshot(
 			SurvivalReflexState.IDLE, null, null, epoch, null, null, null, List.of(),
@@ -381,6 +388,7 @@ public final class SurvivalReflexRuntime {
 		long nextEpoch = snapshot.safetyEpoch() + 1L;
 		combatStalemate = null;
 		resetSecurityProgress();
+		neural.reset();
 		InterruptedWork work = interruptedWork == null ? InterruptedWork.none() : interruptedWork;
 		String holdId = work.hasInterruptedWork() ? UUID.randomUUID().toString() : null;
 		snapshot = new SurvivalReflexSnapshot(
@@ -576,6 +584,20 @@ public final class SurvivalReflexRuntime {
 			return;
 		}
 		equipBestCombatItem(client, player);
+		// Neural policy drives tactics when a trained spec is deployed; the rule
+		// reflex keeps owning lifecycle (begin/resolve/eating/stalemate) and the
+		// creeper-fuse escape override.
+		if (escapingCreeper == null && neural.active()) {
+			try {
+				neural.tick(client, player, movementController, cameraController, tick);
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+			}
+			catch (RuntimeException exception) {
+				recordActuatorFailure("neural_combat", exception, tick);
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
+			}
+			return;
+		}
 		if (blockShieldThreat(client, player, threats, tick)) {
 			if (usePositioning) reposition(client, threats, tick, true);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
@@ -992,6 +1014,8 @@ public final class SurvivalReflexRuntime {
 		foodUnavailableReported = false;
 		releaseShield(client);
 		underwaterEscape.reset(client);
+		neural.reset();
+		neural.release(client);
 		stopCombatNavigation();
 		movementController.stop(client);
 		SurvivalReflexState nextState = keepSafetyHold || snapshot.holdId() != null
