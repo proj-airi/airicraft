@@ -324,9 +324,9 @@ These observations do not change production decisions.
                    observe = { wake: [...refs], current: {...}, events: [...] }   (evidence only)
 ```
 
-`*` Reflex inputs move to the bus only if Phase 5 chooses to. The reflex keeps
-its direct tick sampling for latency. It publishes its outputs through the
-bus.
+`*` Reflex inputs stay off the bus (decided in Phase 5, plan F13). The reflex
+keeps its direct tick sampling for latency. It publishes its outputs through
+the bus.
 
 ### 4.4 Event catalog, bus and log
 
@@ -493,9 +493,9 @@ and G9; G8 stays in the orchestrator (session mechanics).
   is awaiting an accepted-reply record, a side-effect tool or compaction.
 - **Supersession.** A `DIRECT` wake increments the guidance revision. Pending
   `HIGH`, `NORMAL` and `LOW` wakes from older revisions, or older missions,
-  are dropped and recorded as `planner.wake_superseded`, which renames
-  `planner.internal_task_update_superseded`. Their events stay in the log and
-  are observed anyway.
+  are dropped and recorded as `planner.internal_task_update_superseded` (the
+  id stays: event ids are frozen, Phase 5 plan F14). Their events stay in the
+  log and are observed anyway.
 - **Idle hook (Cortico `onIdle`).** It runs when no waking wake is pending,
   the planner is idle and work is idle. Ordered generators each keep their
   own cadence: delegation continuation, then the safety-hold decision
@@ -1015,12 +1015,20 @@ Plan: [`plans/2026-09-29-planner-event-system-phase-4.md`](../plans/2026-09-29-p
 
 ### Phase 5: priority refinements
 
-- [ ] `PREEMPT` for safety-epoch changes: cancel an unexternalized in-flight
-  turn instead of paying for it and then rejecting it as stale.
-- [ ] Supersede budget (Java scheduler). Add the autonomous-wake leaky bucket
-  and the per-category notice budgets to the bundled JS rules, each tuned from
-  metrics. These are rule edits and need no Java changes.
-- [ ] Update `AGENTS.md` (behavior notes, key files), the docs index, and
+Plan: [`plans/2026-09-29-planner-event-system-phase-5.md`](../plans/2026-09-29-planner-event-system-phase-5.md).
+
+- [x] `PREEMPT` for safety-epoch changes: cancel an unexternalized in-flight
+  turn instead of paying for it and then rejecting it as stale. A reflex
+  start's wake preempts; a hold change within the same epoch does not, and
+  a turn is never preempted after a side-effect tool. The OpenAI-compatible
+  backend now cancels a discarded call, as Codex already did.
+- [x] Supersede budget (Java scheduler), which also times the coalesce window
+  in ticks. The autonomous-wake leaky bucket is in the bundled JS rules; the
+  per-category notice budgets were already there (Phase 4). The defaults are
+  set to catch storms; tuning from a model evaluation batch is still to do.
+- [x] A bounded pending set, and every wake path (W1–W7, W9) admitted and
+  audited by the scheduler or, for W9, by the tool queue that owns it.
+- [x] Update `AGENTS.md` (behavior notes, key files), the docs index, and
   ADR-0003 (final).
 
 ### Phase 6: planner-authored rules

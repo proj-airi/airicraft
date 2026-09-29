@@ -1,6 +1,7 @@
 # Planner perception, attention, and wakes
 
-Status: accepted (2026-09-26); implementation begins with Phase 0 characterization.
+Status: accepted (2026-09-26); implemented through Phase 5 (2026-09-29). Phase 6, planner-authored rules, is the
+remaining step.
 
 ## Context
 
@@ -48,3 +49,19 @@ Phase 0 must measure current behavior before refactoring: inventory guard,
 wake audits, reviewed golden transcripts, defect probes, baseline metrics,
 and a real-sandbox GraalJS spike. Acceptance of this design is not evidence
 that the proposed runtime budget is met. Later phases depend on those results.
+
+## Implementation (Phases 1–5)
+
+- One event log and one sequence space; the catalog decides what `observe` shows. Wakes reference evidence
+  (`observe.wake`) instead of carrying prose (Phases 1–3).
+- Honest perception: Java sensors hand line-of-sight candidates to the GraalJS salience module, which publishes
+  `perception.*` events; percepts wake debounced (Phase 4).
+- Preemption (O3): a reflex start's new safety epoch preempts a running turn that has externalized nothing; after a
+  side-effect tool the turn is rejected on completion instead. A hold change within the same epoch never preempts,
+  since the planner's own tools can cause one. Both planner backends cancel a discarded call (Phase 5).
+- Budgets: the supersede budget and the coalesce window are Java, in the wake scheduler, counted in ticks; the
+  autonomous-wake leaky bucket and the notice budgets live in the bundled GraalJS modules (O7), and the constitution
+  and clamp keep protected wakes out of their reach (Phase 5).
+- Reflex inputs stay tick-sampled outside the bus; the reflex publishes only its outputs.
+
+The perception cost budget is still to be measured on a real machine; that work follows the refactor.

@@ -20,7 +20,18 @@ Earlier phases deferred two items to this one: Phase 2 Task 9 Steps 2 and 3
 
 ## Status (2026-09-29)
 
-Proposed; not started. The decisions below need the user's confirmation.
+Decisions confirmed by the user on 2026-09-29. Slices 5a–5e are implemented on `claude/hopeful-gauss-1gjr8v`,
+with the revisions below.
+
+- **Goldens:** one existing golden changed, in its own commit: `addressed_chat_while_turn_in_flight`, whose
+  superseding request now goes out at tick 2 instead of 22, because the golden backend cancels like both production
+  backends. New goldens: `safety_epoch_preempts_turn`, `chat_spam_supersede_budget`, `tool_queue_review` and
+  `autonomous_wake_budget`.
+- **Verification:** `./gradlew build` passes, with 1,854 root, 96 wrapper and 20 JourneyMap tests. The known
+  JourneyMap timing test failed once under the full build and passed on its own. The evaluator (46), Python (117) and
+  dashboard (11) suites pass. `RuleDifferentialTest` still passes its 5,000 cases.
+- **Tuning:** replaying the two recorded runs through the Phase 5 module changes no decision (59 replayed, 41 of
+  them pickups and crafts), so the bucket never engaged. The model evaluation batch (Task 9 Step 3) is the user's.
 
 **Out of scope, by the user's decision (2026-09-29):** the perception
 performance work. This covers the P9 budget measured on a real machine and
@@ -42,6 +53,33 @@ What Phases 1–4 already provide, and what is missing (on `dev`, 8dee6095):
 | Per-category notice budgets | **Done in Phase 4** (P6): `cooldown` and `hourlyCap` in `salience/default.js`, with drops recorded with a reason. |
 | A bounded pending set | **Missing.** The scheduler's task-wake and debounced queues have no bound. |
 | Metrics to tune from | **Partial.** The Phase 0 baseline records request rates per scenario, not autonomous wake decisions. The Phase 4 notice walk measured 10.4–10.8 percept wake decisions per minute. `attentionReplay` can re-decide recorded runs through a new module in order. No model-driven recorded run is available in this container. |
+
+## Revisions during implementation (2026-09-29)
+
+- **The golden backend cancels, like production** (a separate **[golden diff]** commit). Without it, a superseded
+  call held the only attempt slot until its scripted response timed out.
+- **`stale_safety_response_rejected` did not change.** Its scenario raises the epoch without a reflex wake, so it still
+  shows the rejection on completion. `safety_epoch_preempts_turn` pins preemption. The side-effect and hold-only
+  cases are orchestrator unit tests rather than runtime goldens.
+- **F8, split between the scheduler and the orchestrator.** The scheduler decides whether direct guidance
+  supersedes (the budget) and times the coalesce window in ticks. The orchestrator keeps the queued triggers and holds
+  them until the scheduler releases the window from the dialogue poll. Every existing "planner busy" check keeps
+  working unchanged, and there is no second trigger queue. The orchestrator's millisecond window and its constructor
+  settings are gone.
+- **Queued guidance starts the next turn.** With the budget, a player's line can wait behind a turn. A turn ending
+  through a terminal tool or the tool queue did not start queued triggers (only an accepted reply did), so the line
+  would wait for an unrelated wake. Now queued *direct guidance* starts the next turn on either path. Queued
+  autonomous triggers still wait to join a turn: starting them produced a wake with no new evidence.
+- **Chat entry points go through the scheduler.** `onPlayerChat` and `onContextTrigger` submitted directly; they now
+  offer a trigger like every other wake.
+- **W9 stays in the orchestrator, and so does the `onPlannerTrigger` entry.** W9 is the tool queue's own
+  continuation. It never carries direct guidance and fires only when no turn is running, so neither the supersede
+  budget nor preemption applies to it; routing it through the scheduler would only add indirection.
+  `onPlannerTrigger` is the dialogue's single way into the scheduler, since it binds the dialogue's host. W9 gets its
+  first golden.
+- **`chat_spam_supersede_budget` records up to the queued line.** When the queued line's turn starts depends on
+  provider threads, so the golden stops before it, and a count assertion checks that the line is answered next.
+- **The wake ledger subcommand is `summarize`.** Its metrics gain a `priority` section.
 
 ## Decisions
 
@@ -86,7 +124,7 @@ implementation. Each has a recommendation.
 
 ### Task 1: Per-generation cancellation
 
-- [ ] **Step 1: Track the HTTP future of each call.**
+- [x] **Step 1: Track the HTTP future of each call.** Revised: the backend interrupts the thread running the generation, which aborts the exchange on both paths.
   - `OpenAiCompatibleChatClient` registers each call's `sendAsync` future
     under its generation. The non-streaming path moves to `sendAsync` with a
     timed `get`.
@@ -95,11 +133,11 @@ implementation. Each has a recommendation.
     `true`.
   - `PlannerExecutor.discardGeneration` then cancels the attempt future and
     ends its flight span (the existing Codex path).
-- [ ] **Step 2: A cancelled call is a discard, not a failure.** Cancellation
+- [x] **Step 2: A cancelled call is a discard, not a failure.** Cancellation
   surfaces as `CancellationException`. It is recorded as a discarded attempt
   and never reaches `finishFailedPlannerResult`, the degradation counter or
   a repair retry.
-- [ ] **Step 3: Tests.**
+- [x] **Step 3: Tests.**
   - A local HTTP server streams one SSE line per 100 ms. Discarding the
     generation closes the connection within 200 ms, and no result is
     applied.
@@ -114,7 +152,7 @@ The goldens use the recording test backend and stay byte-identical.
 
 ### Task 2: What a turn has externalized
 
-- [ ] **Step 1:** In the orchestrator, add `preemptStaleTurn()`. It returns
+- [x] **Step 1:** In the orchestrator, add `preemptStaleTurn()`. It returns
   one of:
   - `PREEMPTED(phase)`;
   - `NOT_STALE`;
@@ -127,9 +165,9 @@ The goldens use the recording test backend and stay byte-identical.
   - `pendingToolExecution`;
   - a per-generation flag, set when a side-effect tool's result is
     committed (`isSideEffectTool`, which already exists).
-- [ ] **Step 2:** A turn is preempted only when its request's safety epoch
+- [x] **Step 2:** A turn is preempted only when its request's safety epoch
   is below the current one (F2). Hold-only changes return `NOT_STALE`.
-- [ ] **Step 3:** Preempting reuses the stale-rejection steps:
+- [x] **Step 3:** Preempting reuses the stale-rejection steps:
   - `commitRecordedToolExchanges`, which covers read tools;
   - `discardGeneration`, which now cancels on both backends;
   - `turnJournal.markSuperseded`, `finishGeneration(…, true)`, clearing
@@ -139,20 +177,21 @@ The goldens use the recording test backend and stay byte-identical.
 
 ### Task 3: The scheduler's `PREEMPT` delivery
 
-- [ ] **Step 1:** `Wake` gains a `delivery` field (default `IMMEDIATE`).
+- [x] **Step 1:** `Wake` gains a `delivery` field (default `IMMEDIATE`).
   `EmbodiedAgentRuntime.processSurvivalReflexEvents` queues the
   `reflex.started` task wake with `PREEMPT`.
-- [ ] **Step 2:** In `WakeScheduler.releaseTaskWake`, when the head is
+- [x] **Step 2:** In `WakeScheduler.releaseTaskWake`, when the head is
   `PREEMPT` and the planner is in flight:
   - the scheduler calls `host.preemptInFlight()`;
   - on `PREEMPTED`, it records the wake-audit kind `preempted` (gate
     `preempt.safety_epoch`) and delivers the wake in the same call;
   - otherwise it records gate `preempt.<outcome>` once and waits, as
     today.
-- [ ] **Step 3:** The runtime publishes `planner.turn_preempted` (a new
+- [x] **Step 3:** The runtime publishes `planner.turn_preempted` (a new
   catalog entry, and the event inventory updated) and `planner_wake`.
-- [ ] **Step 4: Goldens.**
-  - **[golden diff]** `stale_safety_response_rejected` now shows
+- [x] **Step 4: Goldens.**
+  - Revised: this golden did not change (see the revisions). As planned:
+    **[golden diff]** `stale_safety_response_rejected` now shows
     `planner.turn_preempted` at the epoch change, not a rejection at
     completion. Its scenario raises the epoch, so preemption applies. The
     held response is never applied.
@@ -160,10 +199,11 @@ The goldens use the recording test backend and stay byte-identical.
     - `safety_epoch_preempts_turn`: the reflex starts during a first
       model call, which is preempted; the `reflex.started` wake is
       delivered in the same tick.
+    - Revised: the next two are orchestrator unit tests.
     - `side_effect_tool_not_preempted`: after a side-effect tool, the
       follow-up is rejected on completion, as today.
     - `hold_change_not_preempted`: same epoch, new hold.
-- [ ] **Step 5:** Orchestrator unit tests cover:
+- [x] **Step 5:** Orchestrator unit tests cover:
   - every `preemptStaleTurn` outcome;
   - a read tool before preemption keeps its result as evidence.
 
@@ -175,11 +215,11 @@ Commits:
 
 ### Task 4: Coalescing moves to the scheduler (F8)
 
-- [ ] **Step 1:** `TriggerHost` gains `supersedeInFlight()`, which returns
+- [x] **Step 1 (revised: `canSupersede()` and a supersede flag on delivery; the orchestrator holds the queue until released):** `TriggerHost` gains `supersedeInFlight()`, which returns
   whether a replaceable turn was cancelled. The orchestrator exposes it
   (the body of today's supersede branch in `submit`), and `submit` loses
   that branch.
-- [ ] **Step 2:** `WakeScheduler` gains a coalesce hold for `DIRECT`
+- [x] **Step 2:** `WakeScheduler` gains a coalesce hold for `DIRECT`
   wakes:
   - it is armed after a supersede;
   - `readyAt = tick + clampTicks((n−1) × step)`;
@@ -189,9 +229,9 @@ Commits:
   The orchestrator's coalesce fields, `armCoalesceWindow` and
   `computeCoalesceWindowMs` are removed. The debug snapshot reads the
   scheduler's hold instead.
-- [ ] **Step 3:** The millisecond settings are converted to ticks once, when
+- [x] **Step 3:** The millisecond settings are converted to ticks once, when
   the runtime is built, rounding up. `agent.yml` keeps its keys.
-- [ ] **Step 4:** Goldens are expected to stay identical. Run the golden
+- [x] **Step 4:** Goldens are expected to stay identical. Run the golden
   suite 50 times. Any rounding diff is split out as a **[golden diff]**
   commit with its explanation.
 
@@ -199,14 +239,14 @@ Commit: `refactor(attention): coalesce direct guidance in the scheduler`.
 
 ### Task 5: Supersede budget (F7)
 
-- [ ] **Step 1:** The scheduler keeps the ticks of recent supersedes, at most
+- [x] **Step 1:** The scheduler keeps the ticks of recent supersedes, at most
   3 within 600 ticks. Over budget, it skips `supersedeInFlight()` and
   delivers the `DIRECT` batch. The orchestrator queues the batch behind the
   in-flight turn, as it does for any batch that is not replacing one.
   Audit gate `supersede.budget`.
-- [ ] **Step 2:** `clearTaskWakes` and lifecycle boundaries clear the
+- [x] **Step 2:** `clearTaskWakes` and lifecycle boundaries clear the
   window.
-- [ ] **Step 3:** New golden `chat_spam_supersede_budget`: four addressed
+- [x] **Step 3:** New golden `chat_spam_supersede_budget`: four addressed
   chat lines at ticks 1, 40, 80 and 120, each arriving while a held turn is
   in flight. Three supersede; the fourth waits for the turn to finish and
   is delivered next.
@@ -215,13 +255,13 @@ Commit: `feat(attention): supersede budget for direct guidance`.
 
 ### Task 6: W9 and the adapter (F9)
 
-- [ ] **Step 1:** Add `PlannerOrchestrator.configureReviewWakeSink(...)`.
+- [x] **Step 1 (revised: W9 stays in the orchestrator; see the revisions):** Add `PlannerOrchestrator.configureReviewWakeSink(...)`.
   `tickToolQueue` builds today's request and wake fields, then hands them
   to the sink instead of calling `submit`. `DialogueRuntime` wires the sink
   to the scheduler, which audits W9 and delivers at once.
-- [ ] **Step 2:** Remove `DialogueRuntime.onPlannerTrigger`. Callers,
+- [x] **Step 2 (revised: `onPlannerTrigger` stays as the single entry; the direct-submit chat paths go through it):** Remove `DialogueRuntime.onPlannerTrigger`. Callers,
   including tests, use `offerTrigger` through the dialogue's host.
-- [ ] **Step 3:** New golden `tool_queue_review`: a FIFO of two tools with a
+- [x] **Step 3:** New golden `tool_queue_review`: a FIFO of two tools with a
   `report_to_me` checkpoint. W9 is recorded with `review: checkpoint`, then
   with `review: fifo_empty`.
 
@@ -231,23 +271,23 @@ Commit: `refactor(attention): admit W9 through the scheduler and drop the trigge
 
 ### Task 7: Autonomous-wake leaky bucket (F10)
 
-- [ ] **Step 1:** In `attention/default.js`:
+- [x] **Step 1:** In `attention/default.js`:
   - after deciding a wake, apply `lib.leakyBucket(state.autonomous, {capacity: 10, leakPerTick: 0.01, cost: 1}, input.tick)`
     to every non-protected `NORMAL` or `LOW` wake;
   - when it is not accepted, return `none('budget.autonomous_wakes', 'autonomous wake budget spent (level L of 10)')`;
   - the protected set comes from each event's `profile.bypass`, which the
     module already receives.
-- [ ] **Step 2:** `RuleDifferentialTest` runs each case from `{}` state; it
+- [x] **Step 2:** `RuleDifferentialTest` runs each case from `{}` state; it
   keeps passing unchanged. New `AttentionBudgetRulesTest`:
   - it threads state through 40 `pickup.item_picked_up` events at one per
     tick, while idle;
   - the first 10 wake and the rest are `NONE` with the budget rule id;
   - after 1,000 quiet ticks, the bucket accepts again;
   - protected types in the same storm are never muted.
-- [ ] **Step 3:** New golden `autonomous_wake_budget`: the pickup storm
+- [x] **Step 3:** New golden `autonomous_wake_budget`: the pickup storm
   through the real runtime. It shows the muted decisions in the decision log
   and every pickup still present in `observe.events`.
-- [ ] **Step 4:** `docs/attention-rules.md` documents the bucket: where it
+- [x] **Step 4:** `docs/attention-rules.md` documents the bucket: where it
   lives, its defaults, how to retune or remove it in an override, and that
   the fallback does not budget.
 
@@ -255,20 +295,20 @@ Commit: `feat(rules): autonomous-wake leaky bucket in the bundled attention modu
 
 ### Task 8: Bounded pending set (F12)
 
-- [ ] **Step 1:** Bound the task wakes at 64 and the held debounced wakes at
+- [x] **Step 1:** Bound the task wakes at 64 and the held debounced wakes at
   32. Overflow drops the lowest urgency first (oldest among equals), never
   an attention, `CRITICAL` or `DIRECT` wake. Audit gate `pending.bounded`.
-- [ ] **Step 2:** `WakeSchedulerTest` covers the overflow order and the
+- [x] **Step 2:** `WakeSchedulerTest` covers the overflow order and the
   protected wakes surviving it.
 
 Commit: `feat(attention): bound the pending wake set`.
 
 ### Task 9: Tuning (F11)
 
-- [ ] **Step 1:** Replay the recorded runs available (the Phase 2 stub runs
+- [x] **Step 1:** Replay the recorded runs available (the Phase 2 stub runs
   and any model runs the user provides) through the Phase 5 module. Review
   every `budget.autonomous_wakes` difference.
-- [ ] **Step 2:** Run the synthetic storms (pickups, and a chat line every
+- [x] **Step 2:** Run the synthetic storms (pickups, and a chat line every
   20 ticks) in the harness. Record when each budget engages.
 - [ ] **Step 3 (needs a model; the user's call):** run one evaluation batch
   of all `scenarios/*` on the Phase 5 head.
@@ -277,63 +317,63 @@ Commit: `feat(attention): bound the pending wake set`.
   - Count `budget.autonomous_wakes`, `supersede.budget` and `preempted`
     in the wake ledger.
   - Adjust the defaults only when a scenario shows a cause, and record it.
-- [ ] **Step 4:** Add `budget`, `supersede` and `preempt` counts to
+- [x] **Step 4:** Add `budget`, `supersede` and `preempt` counts to
   `scripts/wake_ledger.py summarize`, with a Python test.
 
 ## Slice 5e: docs, verification, PR
 
 ### Task 10: Docs
 
-- [ ] **Step 1:** `docs/attention-rules.md`: `PREEMPT`, the supersede
+- [x] **Step 1:** `docs/attention-rules.md`: `PREEMPT`, the supersede
   budget, the coalesce hold, the leaky bucket, and the bounded pending set.
-- [ ] **Step 2:** `AGENTS.md`: behaviour notes (preemption, budgets) and
+- [x] **Step 2:** `AGENTS.md`: behaviour notes (preemption, budgets) and
   key files.
-- [ ] **Step 3:** The README's docs links.
-- [ ] **Step 4:** `CONTEXT.md`:
+- [x] **Step 3:** The README's docs links.
+- [x] **Step 4:** `CONTEXT.md`:
   - **Delivery** covers preemption;
   - add **Supersede budget** and **Autonomous-wake budget**.
-- [ ] **Step 5:** **ADR-0003 (final):**
+- [x] **Step 5:** **ADR-0003 (final):**
   - change the status to "implemented through Phase 5";
   - record F2–F5 (preemption scope) and F7/F10 (where budgets live);
   - note that planner-authored rules (Phase 6) are the remaining step.
-- [ ] **Step 6:** In the spec:
+- [x] **Step 6:** In the spec:
   - tick the Phase 5 checklist;
   - record F13 (reflex inputs stay off the bus) and F14 (the id stays);
   - fix the `planner.wake_superseded` text.
-- [ ] **Step 7:** Update this plan's status and revisions.
+- [x] **Step 7:** Update this plan's status and revisions.
 
 ### Task 11: Verification
 
-- [ ] **Step 1:** `./gradlew build`, and the evaluator, Python and
+- [x] **Step 1:** `./gradlew build`, and the evaluator, Python and
   dashboard suites.
-- [ ] **Step 2:** Golden repeat 50×.
-- [ ] **Step 3:** Live smoke with the stub endpoint in an evaluator client.
+- [x] **Step 2:** Golden repeat 50×.
+- [ ] **Step 3 (after the PR, with the user):** Live smoke with the stub endpoint in an evaluator client.
   1. A slow held response is in flight, and a reflex is triggered through
      the evaluator (drowning or a spawned zombie).
   2. `planner.turn_preempted` appears in the same tick.
   3. The stub sees the connection close.
   4. The `reflex.started` wake is delivered next.
-- [ ] **Step 4:** Open the PR against `dev`.
+- [x] **Step 4:** Open the PR against `dev`. The live test follows the PR (user, 2026-09-29).
 
 ## Exit criteria
 
-- [ ] Existing goldens change only in 5b's named **[golden diff]** commit
+- [x] Existing goldens change only in 5b's named **[golden diff]** commit
   (plus any F8 rounding commit). Every new golden is reviewed. A 50× repeat
   passes.
-- [ ] `RuleDifferentialTest` passes 5,000 cases unchanged, and the budget
+- [x] `RuleDifferentialTest` passes 5,000 cases unchanged, and the budget
   rules test passes.
-- [ ] Preemption:
+- [x] Preemption:
   - a stale, unexternalized turn is cancelled in the same tick as the epoch
     change, on both backends;
   - a turn after a side-effect tool is never preempted;
   - a hold-only change never preempts.
-- [ ] Discarding an OpenAI-compatible generation closes its HTTP stream.
-- [ ] A chat line every 20 ticks can supersede at most 3 times per 30 s.
-- [ ] A pickup storm is muted after 10 wakes, with every pickup still
+- [x] Discarding an OpenAI-compatible generation closes its HTTP stream.
+- [x] A chat line every 20 ticks can supersede at most 3 times per 30 s.
+- [x] A pickup storm is muted after 10 wakes, with every pickup still
   observed. Protected wakes are never muted.
-- [ ] Every wake path (W1–W7, W9) goes through `WakeScheduler`. `submit`
-  no longer supersedes on its own.
-- [ ] Docs and ADR-0003 are final for Phase 5.
+- [x] Every wake path (W1–W7) goes through `WakeScheduler`, and W9 through the tool queue that owns it (revised).
+  `submit` no longer supersedes on its own.
+- [x] Docs and ADR-0003 are final for Phase 5.
 - [ ] (Needs a model; the user's call) One evaluation batch shows no scenario
   worse than its Phase 0 baseline, and zero budget hits on those
   scenarios.
