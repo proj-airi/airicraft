@@ -94,7 +94,7 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 
 	private void airicraft$reloadWorldList() {
 		if (list != null) {
-			((WorldListWidgetInvoker) list).airicraft$load();
+			list.reloadWorldList();
 		}
 		if (searchBox != null && list != null) {
 			list.updateFilter(searchBox.getValue());

@@ -182,6 +182,7 @@ def hotswapJvmArgs = { Provider<RegularFile> propertiesFile ->
 
 loom {
 	splitEnvironmentSourceSets()
+	accessWidenerPath = file('src/main/resources/airicraft.accesswidener')
 	runs {
 		client {
 			programArgs "--username", devPlayerName.get()

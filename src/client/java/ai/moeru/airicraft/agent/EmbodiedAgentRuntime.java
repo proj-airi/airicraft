@@ -989,10 +989,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (!stack.isEmpty()) metrics.merge("inventory:" + BuiltInRegistries.ITEM.getKey(stack.getItem()), (double) stack.getCount(), Double::sum);
 		}
 		if (minecraft.gameMode != null) {
-			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
-			var target = breaking.airicraft$currentBreakingPos();
-			if (breaking.airicraft$breakingBlock() && target != null)
-				metrics.put("block:" + target.asLong(), (double) breaking.airicraft$currentBreakingProgress());
+			var gameMode = minecraft.gameMode;
+			var target = gameMode.destroyBlockPos;
+			if (gameMode.isDestroying() && target != null)
+				metrics.put("block:" + target.asLong(), (double) gameMode.destroyProgress);
 		}
 		if (minecraft.crosshairPickEntity instanceof net.minecraft.world.entity.LivingEntity target)
 			metrics.put("damage:" + target.getStringUUID(), -(double) target.getHealth());
@@ -1023,9 +1023,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			slowMiningObserver.observe(tickCount, null, 0);
 			return;
 		}
-		var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
-		var pos = breaking.airicraft$currentBreakingPos();
-		if (!breaking.airicraft$breakingBlock() || pos == null) {
+		var gameMode = minecraft.gameMode;
+		var pos = gameMode.destroyBlockPos;
+		if (!gameMode.isDestroying() || pos == null) {
 			slowMiningObserver.observe(tickCount, null, 0);
 			return;
 		}
@@ -1057,7 +1057,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		payload.put("block", blockId);
 		payload.put("position", Map.of("x", pos.getX(), "y", pos.getY(), "z", pos.getZ()));
 		payload.put("heldItem", heldId);
-		payload.put("breakProgress", breaking.airicraft$currentBreakingProgress());
+		payload.put("breakProgress", gameMode.destroyProgress);
 		payload.put("elapsedTicks", slowMiningObserver.elapsedTicks(tickCount));
 		payload.put("estimatedBreakTicks", estimatedTicks);
 		payload.put("bestCarriedToolByBaseSpeed", Map.of("item", bestItem, "slot", bestSlot));

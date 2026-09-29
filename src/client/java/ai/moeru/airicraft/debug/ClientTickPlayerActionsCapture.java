@@ -1,8 +1,8 @@
 package ai.moeru.airicraft.debug;
 
-import ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
@@ -86,15 +86,16 @@ final class ClientTickPlayerActionsCapture {
 	}
 
 	private static ClientTickPlayerActionsSnapshot.BreakProgress breakProgress(Minecraft minecraft) {
-		if (minecraft == null || !(minecraft.gameMode instanceof ClientPlayerInteractionManagerAccessor accessor)) {
+		if (minecraft == null || minecraft.gameMode == null) {
 			return null;
 		}
-		BlockPos position = accessor.airicraft$currentBreakingPos();
+		MultiPlayerGameMode gameMode = minecraft.gameMode;
+		BlockPos position = gameMode.destroyBlockPos;
 		if (position == null) {
 			return null;
 		}
-		float progress = accessor.airicraft$currentBreakingProgress();
-		if (!accessor.airicraft$breakingBlock() && progress <= 0.0F) {
+		float progress = gameMode.destroyProgress;
+		if (!gameMode.isDestroying() && progress <= 0.0F) {
 			return null;
 		}
 		int stage = Math.clamp((int) Math.floor(progress * 10.0F), 0, 9);

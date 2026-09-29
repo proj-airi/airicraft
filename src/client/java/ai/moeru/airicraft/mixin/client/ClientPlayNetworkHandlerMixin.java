@@ -68,7 +68,7 @@ public class ClientPlayNetworkHandlerMixin {
 			return;
 		}
 		airicraft$healthBeforeUpdate = player.getHealth();
-		airicraft$healthInitializedBeforeUpdate = ((ClientPlayerEntityAccessor) player).airicraft$isHealthInitialized();
+		airicraft$healthInitializedBeforeUpdate = player.flashOnSetHealth;
 	}
 
 	@Inject(

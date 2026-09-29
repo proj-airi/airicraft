@@ -16,6 +16,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -24,6 +25,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(MultiPlayerGameMode.class)
 public class ClientPlayerInteractionManagerMixin {
+	@Shadow
+	private float destroyProgress;
+
+	@Shadow
+	private boolean isDestroying;
+
 	@Unique
 	private String airicraft$breakingBlockId;
 
@@ -45,8 +52,7 @@ public class ClientPlayerInteractionManagerMixin {
 			cir.setReturnValue(false);
 			return;
 		}
-		ClientPlayerInteractionManagerAccessor accessor = (ClientPlayerInteractionManagerAccessor) (Object) this;
-		if (!accessor.airicraft$breakingBlock()) {
+		if (!isDestroying) {
 			ClientTickPlayerActionEvents.recordStart("attack");
 		}
 	}
@@ -56,12 +62,11 @@ public class ClientPlayerInteractionManagerMixin {
 		if (!Boolean.TRUE.equals(cir.getReturnValue()) || pos == null) {
 			return;
 		}
-		ClientPlayerInteractionManagerAccessor accessor = (ClientPlayerInteractionManagerAccessor) (Object) this;
 		ClientTickPlayerActionEvents.recordBreakProgress(
 			pos.getX(),
 			pos.getY(),
 			pos.getZ(),
-			accessor.airicraft$currentBreakingProgress()
+			destroyProgress
 		);
 	}
 

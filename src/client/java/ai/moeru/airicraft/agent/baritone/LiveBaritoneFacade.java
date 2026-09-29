@@ -220,10 +220,9 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 		String breakingTarget = null;
 		float progress = 0;
 		if (gameMode != null) {
-			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) gameMode;
-			if (breaking.airicraft$breakingBlock()) {
-				breakingTarget = breaking.airicraft$currentBreakingPos().toShortString();
-				progress = breaking.airicraft$currentBreakingProgress();
+			if (gameMode.isDestroying()) {
+				breakingTarget = gameMode.destroyBlockPos.toShortString();
+				progress = gameMode.destroyProgress;
 			}
 		}
 		return Optional.of(new NavigationProgress(player.getX(), player.getY(), player.getZ(), supported, breakingTarget, progress));
