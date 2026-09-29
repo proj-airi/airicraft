@@ -85,6 +85,18 @@ reflex:
   defendMinHealthRatio: 0.5
   threatCooldownTicks: 60
 
+# Honest noticing: what the companion could actually see (no X-ray), budgeted per client tick.
+# Blocks are scanned within radius; entities enter perception within entityEnterRange (with line of
+# sight) and leave beyond entityExitRange. Reload applies changes.
+perception:
+  enabled: true
+  radius: 12
+  positionsPerTick: 256
+  raycastsPerTick: 16
+  candidatesPerStep: 50
+  entityEnterRange: 16
+  entityExitRange: 20
+
 # Wait this many seconds after going idle before the first automatic idle thought.
 # Set to 0 to disable automatic idle thoughts.
 idleInitialDelaySeconds: 30

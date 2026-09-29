@@ -169,6 +169,35 @@ class AgentConfigLoaderTest {
 	}
 
 	@Test
+	void fromMapReadsAndClampsPerceptionBudgets() {
+		AgentConfig parsed = AgentConfigLoader.fromMap(Map.of(
+			"perception", Map.of(
+				"enabled", false,
+				"radius", 99,
+				"positionsPerTick", 0,
+				"raycastsPerTick", 8,
+				"candidatesPerStep", 20,
+				"entityEnterRange", 24,
+				"entityExitRange", 10
+			)
+		), AgentConfig.defaults());
+
+		assertFalse(parsed.perception().enabled());
+		assertEquals(32, parsed.perception().radius());
+		assertEquals(1, parsed.perception().positionsPerTick());
+		assertEquals(8, parsed.perception().raycastsPerTick());
+		assertEquals(20, parsed.perception().candidatesPerStep());
+		assertEquals(24, parsed.perception().entityEnterRange());
+		assertEquals(24, parsed.perception().entityExitRange(), "exit range never falls below the enter range");
+	}
+
+	@Test
+	void missingPerceptionSectionUsesDefaults() {
+		assertEquals(AgentConfig.PerceptionConfig.defaults(), AgentConfigLoader.fromMap(Map.of(), AgentConfig.defaults()).perception());
+		assertEquals(AgentConfig.PerceptionConfig.defaults(), AgentConfig.defaults().withCharacter(null).perception());
+	}
+
+	@Test
 	void fromMapReadsPlannerCoalesceFields() {
 		AgentConfig parsed = AgentConfigLoader.fromMap(Map.of(
 			"plannerPendingSemanticEventCap", 256,

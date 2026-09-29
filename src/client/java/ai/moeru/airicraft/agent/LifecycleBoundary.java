@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent;
 
-enum LifecycleBoundary {
+public enum LifecycleBoundary {
 	WORLD_LEFT,
 	WORLD_LOADED,
 	AWAITING_RESPAWN,

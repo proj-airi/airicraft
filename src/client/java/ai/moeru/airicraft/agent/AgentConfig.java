@@ -9,7 +9,8 @@ public record AgentConfig(
 	IdleConfig idle,
 	ReflexConfig reflex,
 	ObservabilityConfig observability,
-	CharacterCard character
+	CharacterCard character,
+	PerceptionConfig perception
 ) {
 	public AgentConfig {
 		llm = llm == null ? LlmConfig.defaults() : llm;
@@ -17,6 +18,19 @@ public record AgentConfig(
 		reflex = reflex == null ? ReflexConfig.defaults() : reflex;
 		observability = observability == null ? ObservabilityConfig.defaults() : observability;
 		character = character == null ? CharacterCard.defaults() : character;
+		perception = perception == null ? PerceptionConfig.defaults() : perception;
+	}
+
+	public AgentConfig(
+		boolean verificationEnabled,
+		boolean verificationAutoRunAll,
+		LlmConfig llm,
+		IdleConfig idle,
+		ReflexConfig reflex,
+		ObservabilityConfig observability,
+		CharacterCard character
+	) {
+		this(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, character, null);
 	}
 
 	public AgentConfig(
@@ -27,12 +41,12 @@ public record AgentConfig(
 		ReflexConfig reflex,
 		ObservabilityConfig observability
 	) {
-		this(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, null);
+		this(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, null, null);
 	}
 
 	/** The character comes from its own file, not agent.yml; loaders attach it here. */
 	public AgentConfig withCharacter(CharacterCard nextCharacter) {
-		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, nextCharacter);
+		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, nextCharacter, perception);
 	}
 
 	public AgentConfig(
@@ -589,6 +603,33 @@ public record AgentConfig(
 
 		public static ReflexConfig defaults() {
 			return new ReflexConfig(true, 100, 0.5D, 60);
+		}
+	}
+
+	/**
+	 * Budgets for the noticing sensors (spec 4.5, section 5). Radius and ranges are in blocks; the per-tick caps
+	 * bound block positions scanned, raycasts and candidates handed to one salience step.
+	 */
+	public record PerceptionConfig(
+		boolean enabled,
+		int radius,
+		int positionsPerTick,
+		int raycastsPerTick,
+		int candidatesPerStep,
+		int entityEnterRange,
+		int entityExitRange
+	) {
+		public PerceptionConfig {
+			radius = Math.max(1, Math.min(32, radius));
+			positionsPerTick = Math.max(1, Math.min(4096, positionsPerTick));
+			raycastsPerTick = Math.max(1, Math.min(256, raycastsPerTick));
+			candidatesPerStep = Math.max(1, Math.min(200, candidatesPerStep));
+			entityEnterRange = Math.max(1, Math.min(64, entityEnterRange));
+			entityExitRange = Math.max(entityEnterRange, Math.min(96, entityExitRange));
+		}
+
+		public static PerceptionConfig defaults() {
+			return new PerceptionConfig(true, 12, 256, 16, 50, 16, 20);
 		}
 	}
 

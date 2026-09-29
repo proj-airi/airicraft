@@ -149,7 +149,20 @@ public final class AgentConfigLoader {
 			readBoolean(observabilityRoot, "captureOutputs", defaults.observability().captureOutputs(), strict),
 			readBoolean(observabilityRoot, "captureImages", defaults.observability().captureImages(), strict)
 		);
-		return new AgentConfig(defaults.verificationEnabled(), defaults.verificationAutoRunAll(), llm, idle, reflex, observability);
+		warnIfMalformedObject(root, "perception", strict);
+		Map<String, Object> perceptionRoot = readObjectMap(root, "perception", strict);
+		AgentConfig.PerceptionConfig perceptionDefaults = defaults.perception();
+		AgentConfig.PerceptionConfig perception = new AgentConfig.PerceptionConfig(
+			readBoolean(perceptionRoot, "enabled", perceptionDefaults.enabled(), strict),
+			readInt(perceptionRoot, "radius", perceptionDefaults.radius()),
+			readInt(perceptionRoot, "positionsPerTick", perceptionDefaults.positionsPerTick()),
+			readInt(perceptionRoot, "raycastsPerTick", perceptionDefaults.raycastsPerTick()),
+			readInt(perceptionRoot, "candidatesPerStep", perceptionDefaults.candidatesPerStep()),
+			readInt(perceptionRoot, "entityEnterRange", perceptionDefaults.entityEnterRange()),
+			readInt(perceptionRoot, "entityExitRange", perceptionDefaults.entityExitRange())
+		);
+		return new AgentConfig(defaults.verificationEnabled(), defaults.verificationAutoRunAll(), llm, idle, reflex, observability,
+			null, perception);
 	}
 
 	private static void ensureFile(Path path) throws IOException {
