@@ -534,6 +534,10 @@ public final class PlannerOrchestrator {
 		return List.copyOf(drained);
 	}
 
+	/**
+	 * {@link #submit(PlannerRequest, boolean)} allowing a supersede. A caller that lets direct guidance supersede owns
+	 * ending the coalesce window ({@link #releaseCoalesceHold()}); in the runtime that is the wake scheduler.
+	 */
 	public boolean submit(PlannerRequest request) {
 		return submit(request, true);
 	}

@@ -124,7 +124,7 @@ be overridden:
   commands are handled before the planner, so a player can always stop the agent.
 - **Coalescing.** After a supersede, the scheduler holds the new turn for `clamp((n−1) × step, min, max)` from
   `plannerSessionCoalesce{Step,Min,Max}Millis` (defaults 10/10/100 ms), rounded up to ticks (1/1/2), so lines typed
-  together start one turn.
+  together start one turn. With a single queued line there is nothing to coalesce, and the new turn starts at once.
 - **Pending bound.** At most 64 pending task wakes and 32 held debounced wakes; overflow drops the least urgent,
   oldest first, and never an attention, preempting, critical or direct wake (audit gate `pending.bounded`).
 
