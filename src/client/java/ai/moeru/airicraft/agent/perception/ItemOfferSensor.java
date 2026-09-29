@@ -15,6 +15,8 @@ public final class ItemOfferSensor implements Sensor {
 	public static final String ID = "item";
 
 	private final ItemOfferObserver observer = new ItemOfferObserver();
+	/** Item entities reported as offers, so noticing does not report the same drop again. */
+	private final java.util.LinkedHashSet<java.util.UUID> offered = new java.util.LinkedHashSet<>();
 	private final BoundarySignal boundaries;
 	private ClientWorld world;
 
@@ -51,10 +53,17 @@ public final class ItemOfferSensor implements Sensor {
 		for (var payload : observer.observe(context.tick(), client.world.getRegistryKey().getValue().toString(),
 			client.player.getUuid(), new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ()), players, items)) {
 			sink.publish("social.item_offered", payload);
+			offered.add(java.util.UUID.fromString(String.valueOf(payload.get("itemEntityUuid"))));
+			while (offered.size() > 256) offered.remove(offered.iterator().next());
 		}
 	}
 
 	@Override public void onBoundary(LifecycleBoundary boundary, long tick) {
 		observer.reset();
+		if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) offered.clear();
+	}
+
+	public Set<java.util.UUID> offeredItems() {
+		return Set.copyOf(offered);
 	}
 }

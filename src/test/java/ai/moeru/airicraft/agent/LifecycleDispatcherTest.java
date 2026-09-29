@@ -91,12 +91,17 @@ class LifecycleDispatcherTest {
 			expected.put("slow", all);
 			expected.put("food", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			expected.put("salience", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN, LifecycleBoundary.SHUTDOWN));
+			expected.put("notable_blocks", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			expected.put("dropped_items", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			expected.put("entities", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN, LifecycleBoundary.SHUTDOWN));
+			expected.put("environment", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			expected.put("nearby", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			// Order matters: nearby publishes social.player_left_nearby and must stay last.
 			assertEquals(List.copyOf(expected.keySet()), List.copyOf(table.keySet()));
 			assertEquals(expected, table);
 			// The migrated observers are sensors under the same participant ids.
-			assertEquals(List.of("damage", "physical", "item", "nearby"), List.copyOf(harness.runtime.sensorTimings().keySet()));
+			assertEquals(List.of("damage", "physical", "item", "notable_blocks", "dropped_items", "entities", "environment", "nearby"),
+				List.copyOf(harness.runtime.sensorTimings().keySet()));
 		}
 	}
 

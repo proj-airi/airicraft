@@ -255,6 +255,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final LifecycleDispatcher lifecycleDispatcher = new LifecycleDispatcher();
 	private final ai.moeru.airicraft.agent.perception.SensorRegistry sensorRegistry = new ai.moeru.airicraft.agent.perception.SensorRegistry();
 	private ai.moeru.airicraft.agent.perception.SaliencePolicy saliencePolicy;
+	private ai.moeru.airicraft.agent.perception.ItemOfferSensor itemOfferSensor;
+	/** Noticing sensors, sampled together before each salience step. */
+	private static final List<String> NOTICING_SENSORS = List.of(ai.moeru.airicraft.agent.perception.NotableBlockSensor.ID,
+		ai.moeru.airicraft.agent.perception.DroppedItemSensor.ID, ai.moeru.airicraft.agent.perception.EntityNoticeSensor.ID,
+		ai.moeru.airicraft.agent.perception.EnvironmentSensor.ID);
 	private ai.moeru.airicraft.agent.events.SlowMiningObserver slowMiningObserver;
 	private final NearbyPlayerTracker nearbyPlayerTracker;
 	private final PrimaryInteractionResolver primaryInteractionResolver = new PrimaryInteractionResolver(200L);
@@ -448,7 +453,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		registerSensor(new DamageSensor(localDamageTracker));
 		registerSensor(new ai.moeru.airicraft.agent.perception.PhysicalSensor(this::physicalTaskContext,
 			() -> this.config.reflex().lowAirTicks(), sensorBoundaries));
-		registerSensor(new ai.moeru.airicraft.agent.perception.ItemOfferSensor(sensorBoundaries));
+		this.itemOfferSensor = new ai.moeru.airicraft.agent.perception.ItemOfferSensor(sensorBoundaries);
+		registerSensor(itemOfferSensor);
 		lifecycleDispatcher.register("slow", EnumSet.allOf(LifecycleBoundary.class),
 			(boundary, tick) -> { if (slowMiningObserver != null) slowMiningObserver.reset(); });
 		lifecycleDispatcher.register("food", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
@@ -458,6 +464,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		// Queued candidates belong to the world and the life they were seen in.
 		lifecycleDispatcher.register("salience", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN,
 			LifecycleBoundary.SHUTDOWN), (boundary, tick) -> saliencePolicy.clear());
+		registerSensor(new ai.moeru.airicraft.agent.perception.NotableBlockSensor(() -> saliencePolicy.blockInterests()));
+		registerSensor(new ai.moeru.airicraft.agent.perception.DroppedItemSensor(() -> itemOfferSensor.offeredItems(),
+			this::ownMiningDrop));
+		registerSensor(new ai.moeru.airicraft.agent.perception.EntityNoticeSensor(() -> survivalReflexRuntime.snapshot().threats().stream()
+			.map(threat -> threat.uuid()).collect(java.util.stream.Collectors.toSet())));
+		registerSensor(new ai.moeru.airicraft.agent.perception.EnvironmentSensor());
 		registerSensor(new ai.moeru.airicraft.agent.perception.SocialPresenceSensor(nearbyPlayerTracker, eventBus));
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
 			config,
@@ -542,7 +554,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionRuntime.onWorldLeave(tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
-		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow", "food", "salience"));
+		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow", "food", "salience",
+			"notable_blocks", "dropped_items", "entities", "environment"));
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("nearby"));
@@ -807,7 +820,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	/** Runs the salience rules over waiting candidates and publishes the percepts they choose. */
 	private void tickSalience(MinecraftClient client) {
-		if (!config.perception().enabled() || saliencePolicy.pendingCount() == 0) return;
+		if (!config.perception().enabled()) return;
+		for (String id : NOTICING_SENSORS) sampleSensor(id, client);
+		if (saliencePolicy.pendingCount() == 0) return;
 		for (var percept : saliencePolicy.step(tickCount, salienceContext(client), config.perception().candidatesPerStep())) {
 			eventBus.from(ai.moeru.airicraft.agent.perception.SaliencePolicy.SOURCE).publish(tickCount, percept.type(), percept.payload());
 		}
@@ -836,6 +851,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		context.put("inventory", inventory);
 		return context;
+	}
+
+	/**
+	 * A drop the running mining or collect job produced: young, close, while such a job runs. The job collects
+	 * it; noticing it again would only restate its own progress.
+	 */
+	private java.util.function.Predicate<ai.moeru.airicraft.agent.perception.DroppedItemNoticer.Item> ownMiningDrop() {
+		ActiveJob job = activeJobRuntime.current();
+		boolean mining = job != null && !job.status().terminal() && (job.type() == ActiveJobType.MINE_BLOCKS
+			|| job.type() == ActiveJobType.ENSURE_BLOCKS_IN_INVENTORY || job.type() == ActiveJobType.COLLECT_RESOURCE);
+		if (!mining) return item -> false;
+		var client = MinecraftClient.getInstance();
+		if (client == null || client.player == null) return item -> false;
+		var feet = client.player.getPos();
+		return item -> item.age() < 200 && feet.squaredDistanceTo(item.x(), item.y(), item.z()) <= 36.0;
 	}
 
 	/** Selects the salience rule module; the controller passes the config override or the bundled module. */
@@ -1293,7 +1323,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		autoLanOpenState.clear();
-		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow", "food", "salience"));
+		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow", "food", "salience",
+			"notable_blocks", "dropped_items", "entities", "environment"));
 		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("nearby"));
 		eventPipeline.clearForShutdown();
 		primaryInteractionResolver.clear();
