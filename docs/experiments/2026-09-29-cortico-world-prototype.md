@@ -202,6 +202,19 @@ untouched.
   20 and 44 s of quiet. This is the "dead-air generator" from the early brainstorm, with bounded cost built in. It is
   a fixed schedule, not chosen by the model.
 
+## Running with a live model
+
+`e2e/run.ts` switches from the scripted client to a real model when these are set in the process environment:
+
+- `CORTICO_LLM_BASE_URL`: an endpoint that speaks the OpenAI **Responses** API (Cortico's `openai-responses-compat`
+  provider; for example OpenAI or OpenRouter). A plain Chat Completions endpoint will not work.
+- `CORTICO_LLM_MODEL`: the model name.
+- `CORTICO_LLM_API_KEY`: the key. Cortico reads provider secrets from the process environment by name; nothing is
+  written to disk.
+
+Not yet run: this session had no credentials. Resuming needs the client built and a world joined again, since a new
+session starts from a fresh container (see "Verified so far" for the recipe).
+
 ## Measurements
 
 Dead-air ratio; wakes per minute; LLM tokens and cost per minute; tool calls per wake; latency from reflex event to

@@ -29,13 +29,18 @@ const stagePort = 6122;
 const deployDir = resolve(here, '../../../.cortico-experiment/deployments/e2e');
 rmSync(deployDir, { recursive: true, force: true });
 mkdirSync(deployDir, { recursive: true });
-// Core refuses to run without a configured model; the scripted client replaces the real one, so this endpoint is never called.
+// Live model mode: CORTICO_LLM_BASE_URL (an OpenAI Responses-compatible endpoint), CORTICO_LLM_MODEL and
+// CORTICO_LLM_API_KEY in the environment. Otherwise the scripted client is used and the endpoint below is never called.
+// Cortico reads the key from the process environment by name; nothing is written to disk.
+const liveModel = process.env.CORTICO_LLM_BASE_URL && process.env.CORTICO_LLM_MODEL;
 mkdirSync(resolve(deployDir, 'providers/scripted'), { recursive: true });
 writeFileSync(resolve(deployDir, 'providers/scripted/config.json'), JSON.stringify({
   kind: 'openai-responses-compat',
-  baseUrl: 'http://127.0.0.1:1/v1',
-  spec: { model: 'scripted', thinking: false, contextWindow: 128000 },
+  baseUrl: liveModel ? process.env.CORTICO_LLM_BASE_URL : 'http://127.0.0.1:1/v1',
+  ...(liveModel ? { secret: 'CORTICO_LLM_API_KEY' } : {}),
+  spec: { model: liveModel ? process.env.CORTICO_LLM_MODEL : 'scripted', thinking: false, contextWindow: 128000 },
 }));
+console.log(`[e2e] model: ${liveModel ? `live (${process.env.CORTICO_LLM_MODEL})` : 'scripted'}`);
 writeFileSync(resolve(deployDir, 'config.json'), JSON.stringify({
   displayName: 'E2E',
   activeProvider: 'scripted',
@@ -77,7 +82,7 @@ const script = (frame: string) => {
 const definition = withWorlds(cormini, [AIRICRAFT, AIRI_STAGE]);
 const loaded = loadDeployment(definition, deployDir, corticoRoot, resolve(corticoRoot, 'bots/cormini'));
 const llm = createScriptedLlm(script, (turn) => { turns.push(turn); console.log('[turn]', JSON.stringify({ frame: turn.frame.slice(0, 160), calls: turn.calls.map((c) => c.name) })); });
-const bot = createBot(loaded, { ...definition, build: (l, worlds) => ({ ...definition.build(l, worlds), llm }) });
+const bot = createBot(loaded, liveModel ? definition : { ...definition, build: (l, worlds) => ({ ...definition.build(l, worlds), llm }) });
 await bot.start();
 
 // Stage stand-in (skipped with E2E_NO_STAND_IN=1 when a real stage connects): records frames, "plays" each utterance
