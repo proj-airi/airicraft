@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent;
 
+import ai.moeru.airicraft.agent.attention.Delivery;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -143,6 +145,25 @@ class WakeCharacterizationTest {
 			assertTrue(outcomes.stream().anyMatch(outcome -> outcome.startsWith("submitted:W9")), outcomes.toString());
 			assertTrue(h.backend.requests().size() >= 2, "the review wakes the planner");
 			h.transcript("tool_queue_review").assertMatchesGolden("tool_queue_review");
+		}
+	}
+	/** Phase 5: a pickup storm spends the autonomous-wake budget; the muted pickups stay evidence. */
+	@Test void autonomous_wake_budget() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			for (int pickup = 0; pickup < 20; pickup++) {
+				h.runtime.onPlayerPickedUpItem("minecraft:oak_log", 1);
+				h.tick(1);
+			}
+			h.tick(10);
+			var pickups = h.runtime.attentionDecisionLog().query(null).decisions().stream()
+				.filter(decision -> decision.type().equals("pickup.item_picked_up")).toList();
+			assertEquals(20, pickups.size());
+			assertEquals(10, pickups.stream().filter(decision -> decision.delivery() != Delivery.NONE).count(), "a burst of 10");
+			assertTrue(pickups.subList(10, 20).stream().allMatch(decision -> "budget.autonomous_wakes".equals(decision.ruleId())));
+			assertEquals(20, h.runtime.recentEvents(null).events().stream().filter(event -> event.type().equals("pickup.item_picked_up")).count(),
+				"every pickup stays in the log for observe");
+			h.transcript("autonomous_wake_budget").assertMatchesGolden("autonomous_wake_budget");
 		}
 	}
 	@Test void damage_outside_reflex() {

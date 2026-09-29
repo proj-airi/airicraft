@@ -1,0 +1,733 @@
+{
+  "events": [
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 3,
+      "tick": 2,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 4,
+      "tick": 3,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 5,
+      "tick": 4,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 6,
+      "tick": 5,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 7,
+      "tick": 6,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 8,
+      "tick": 7,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 9,
+      "tick": 8,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 10,
+      "tick": 9,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 11,
+      "tick": 10,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 12,
+      "tick": 11,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 13,
+      "tick": 12,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 14,
+      "tick": 13,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 15,
+      "tick": 14,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 16,
+      "tick": 15,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 17,
+      "tick": 16,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 18,
+      "tick": 17,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 19,
+      "tick": 18,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 20,
+      "tick": 19,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 21,
+      "tick": 20,
+      "type": "pickup.item_picked_up"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 2,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "There is no primary interaction player right now.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 2,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 1
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 2,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 3,
+            "tick": 2,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 4,
+            "tick": 3,
+            "type": "pickup.item_picked_up"
+          }
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 4,
+        "tick": 3,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 4,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 3
+    },
+    {
+      "discarded": false,
+      "generation": 3,
+      "index": 3,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 4,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 5,
+            "tick": 4,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 6,
+            "tick": 5,
+            "type": "pickup.item_picked_up"
+          }
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 6,
+        "tick": 5,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 6,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 5
+    },
+    {
+      "discarded": false,
+      "generation": 4,
+      "index": 4,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 6,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 7,
+            "tick": 6,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 8,
+            "tick": 7,
+            "type": "pickup.item_picked_up"
+          }
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 8,
+        "tick": 7,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 8,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 7
+    },
+    {
+      "discarded": false,
+      "generation": 5,
+      "index": 5,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Plan retained; continue requested."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 8,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 9,
+            "tick": 8,
+            "type": "pickup.item_picked_up"
+          },
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 10,
+            "tick": 9,
+            "type": "pickup.item_picked_up"
+          }
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 10,
+        "tick": 9,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 10,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 9
+    }
+  ],
+  "scenario": "autonomous_wake_budget",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 1
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 2,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 2
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 3,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 3
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 4
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 5,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 5
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 6,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 6
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 7,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 7
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 8,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 8
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 9,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 9
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 10,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 10
+    }
+  ]
+}
