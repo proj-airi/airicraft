@@ -583,6 +583,10 @@ public final class DialogueRuntime {
 				return activePlanner().queuedTriggerCount();
 			}
 
+			@Override public void releaseCoalesceHold() {
+				planners().forEach(PlannerOrchestrator::releaseCoalesceHold);
+			}
+
 			@Override public void deliver(List<PlannerTrigger> delivered) {
 				deliver(delivered, false);
 			}

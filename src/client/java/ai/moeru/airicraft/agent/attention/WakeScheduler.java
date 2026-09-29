@@ -86,6 +86,10 @@ public final class WakeScheduler {
 		default int queuedTriggerCount() {
 			return 1;
 		}
+
+		/** The coalesce window closed at once (a single queued trigger): the planner starts the combined turn now. */
+		default void releaseCoalesceHold() {
+		}
 	}
 
 	/** A debounced wake is released once no other has arrived for this many ticks (spec section 5). */
@@ -285,7 +289,7 @@ public final class WakeScheduler {
 		host.deliver(batch, supersede);
 		// Every batch delivered into an open window (or opening one) re-arms it from this tick, as it grows.
 		if (supersede) supersedes.addLast(trigger.tick());
-		if (supersede || coalescing()) armCoalesce(trigger.tick(), host.queuedTriggerCount());
+		if (supersede || coalescing()) armCoalesce(trigger.tick(), host);
 	}
 
 	private boolean withinSupersedeBudget(long tick) {
@@ -293,10 +297,23 @@ public final class WakeScheduler {
 		return supersedes.size() < SUPERSEDE_BUDGET;
 	}
 
-	/** {@code clamp((n-1) x step, min, max)} from the settings, rounded up to whole ticks. */
-	private void armCoalesce(long tick, int queued) {
-		long window = Math.max(coalesceMinMillis, Math.min(coalesceMaxMillis, (long) Math.max(0, queued - 1) * coalesceStepMillis));
+	/**
+	 * {@code clamp((n-1) x step, min, max)} from the settings, rounded up to whole ticks. With a single queued trigger
+	 * there is nothing to coalesce, and the planner starts at once.
+	 */
+	private void armCoalesce(long tick, TriggerHost host) {
+		int queued = host.queuedTriggerCount();
+		if (queued <= 1) {
+			coalesceReadyAt = -1L;
+			host.releaseCoalesceHold();
+			return;
+		}
+		long window = Math.max(coalesceMinMillis, Math.min(coalesceMaxMillis, (long) (queued - 1) * coalesceStepMillis));
 		coalesceReadyAt = tick + (window + MILLIS_PER_TICK - 1) / MILLIS_PER_TICK;
+		if (window == 0L) {
+			coalesceReadyAt = -1L;
+			host.releaseCoalesceHold();
+		}
 	}
 
 	/**

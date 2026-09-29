@@ -170,7 +170,9 @@ class WakeSchedulerTest {
 	private static final class Superseding extends Triggers {
 		boolean replaceable = true;
 		int queued;
+		int released;
 		@Override public boolean canSupersede() { return replaceable; }
+		@Override public void releaseCoalesceHold() { released++; }
 		@Override public int queuedTriggerCount() { return queued; }
 		@Override public void deliver(List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers, boolean supersede) {
 			queued += triggers.size();
@@ -203,10 +205,19 @@ class WakeSchedulerTest {
 		assertFalse(scheduler.releaseCoalesce(21));
 		assertTrue(scheduler.releaseCoalesce(22));
 
+		var single = new WakeScheduler();
+		var alone = new Superseding();
+		single.offerTrigger(chat(30), alone);
+		assertFalse(single.coalescing(), "a single queued trigger has nothing to coalesce");
+		assertEquals(1, alone.released, "the planner starts at once, as before the move");
+
 		var zero = new WakeScheduler();
 		zero.configureCoalescing(0, 0, 0);
-		zero.offerTrigger(chat(30), new Superseding());
-		assertTrue(zero.releaseCoalesce(30), "a zero window ends on the same tick");
+		var host0 = new Superseding();
+		host0.queued = 3;
+		zero.offerTrigger(chat(40), host0);
+		assertFalse(zero.coalescing());
+		assertEquals(1, host0.released, "a zero window closes at once");
 	}
 
 	@Test void theSupersedeBudgetQueuesDirectGuidanceOverThreeIn600Ticks() {
