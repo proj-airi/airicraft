@@ -143,6 +143,7 @@ untouched.
   experiments/cortico-world/          # outside the Gradle build
     worlds/airicraft/                 # Cortico World extension
     worlds/airi-stage/                # stage World (from PR 2634)
+    e2e/                              # Cortico Core + both Worlds + a scripted model, against a live client
     patches/airi/*.patch              # stage-side changes on the pinned AIRI commit
     pins.json                         # Cortico and AIRI commit SHAs
   scripts/cortico-experiment          # setup: clone pins into .cortico-experiment/ (gitignored),
@@ -151,17 +152,50 @@ untouched.
 
 - **When to fork after all:** the AIRI patch outgrows a few hundred lines or needs constant rebasing, or the work is
   ready to go upstream (which needs a fork branch for the PR anyway).
-- **Testing here:** the adapters can be built and tested against a mock bridge. The stage and a live Minecraft client
-  cannot be exercised from this session.
+- **Testing here:** everything runs in the session container, including a real Minecraft client (recipe under
+  "Running it"). Unit tests use an in-process mock bridge and a socket stand-in for the stage; `e2e/run.ts` runs
+  Cortico Core against the live client.
 
 ## Slices (each with an exit check)
 
 0. **Baseline.** From an existing recording, measure today's stall: idle gaps, wakes per minute, tokens per minute.
-1. **Text loop.** Cortico terminal World + `airicraft` World. Exit: the persona plays and keeps herself present
-   between tool completions; no Java change.
-2. **Speech out.** Add the stage sink. Exit: spoken lines with correct interrupt/finish reporting.
-3. **Input.** Viewer text and voice into the persona.
-4. **Soak.** 30+ minutes with simulated or bilibili chat. Compare with slice 0.
+   *Not done.*
+1. **Text loop.** Cortico + `airicraft` World. Exit: the persona plays and keeps itself present between tool
+   completions; no Java change. *Plumbing done and verified live with a scripted model; behavior with a real model
+   not yet measured (no model endpoint in the session).*
+2. **Speech out.** Stage World and stage patch. *World done (10 tests). Stage side: patch applies; running it in a
+   browser is in progress. The stage does not yet send `speech_end`.*
+3. **Input.** Viewer text and voice into the persona. *Text path exists in the patch; voice routing omitted.*
+4. **Soak.** 30+ minutes with simulated or bilibili chat. Compare with slice 0. *Not done.*
+
+## Verified so far (session container, live client)
+
+- **Recipe.** JDK 25 for the Gradle JVM (Oracle tarball, outside the repo), `git submodule update --init`, then
+  `./gradlew build -x test` (Maven Central rate-limits parallel downloads with HTTP 429 through the proxy; a retry loop
+  with `--max-workers=1` got through in one extra pass, and Gradle caches what it fetched). Client:
+  `xvfb-run -a -s "-screen 0 1280x720x24" scripts/codex-driver` with `LIBGL_ALWAYS_SOFTWARE=1` (Mesa llvmpipe). A
+  world from `scenarios/<id>/world.zip` unzipped into `run/saves/<name>` shows up in `airicraft worlds list`; the CLI is
+  `wrapper/build/install/airicraft/bin/airicraft`.
+- **Bridge shapes match the adapter.** 72 driver tools in OpenAI function format; the events feed answers with
+  `oldestSeqNo`, `latestSeqNo`, `truncated`, `events`; `POST /v1/agent/tools` runs real tools (`inspect_inventory`,
+  `observe`, `navigate_to`).
+- **A credential leak found by running it.** The mod announces its debug dashboard URL, including a viewer token, as a
+  `social.system_message`. The first World version forwarded it to the persona as event text. It is now archived and
+  tokens are redacted from all event text.
+- **The embedded planner's own tools are hidden** from the persona by default (goal, decision, event-policy, `say`,
+  `report_to_me`): the persona owns objectives, speech and wake policy.
+- **Cortico Core boots with both Worlds mounted** through its real extension path (`withWorlds`, config-enabled), tools
+  and prompts included.
+- **End to end with a scripted model, against the live client:** audience chat wakes the persona (`flush`); its
+  `airi_speak` reaches the stage stand-in and `ac_inspect_inventory` / `ac_navigate_to` run in the game; the job's
+  final state (`work.changed`, top-level, SUCCEEDED) wakes it again; perception events (a biome change) arrive;
+  playback results (`airi.speech_ended`, `speak`-tagged, `piggyback`) ride along with the next wake instead of
+  causing one.
+- **Cortico already has a presence mechanism: the persona heartbeat** (`bots/cormini/persona/heartbeat.ts`). A
+  baseline interval (`tick.intervalMinutes`) injects `[system] quiet for N seconds`; consecutive quiet ticks back off
+  exponentially (x2, capped at x8) and any external event resets it. In the run (baseline 12 s) wakes came at about 8,
+  20 and 44 s of quiet. This is the "dead-air generator" from the early brainstorm, with bounded cost built in. It is
+  a fixed schedule, not chosen by the model.
 
 ## Measurements
 
