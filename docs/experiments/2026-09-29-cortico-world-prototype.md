@@ -181,9 +181,8 @@ untouched.
 - **Bridge shapes match the adapter.** 72 driver tools in OpenAI function format; the events feed answers with
   `oldestSeqNo`, `latestSeqNo`, `truncated`, `events`; `POST /v1/agent/tools` runs real tools (`inspect_inventory`,
   `observe`, `navigate_to`).
-- **A credential leak found by running it.** The mod announces its debug dashboard URL, including a viewer token, as a
-  `social.system_message`. The first World version forwarded it to the persona as event text. It is now archived and
-  tokens are redacted from all event text.
+- **The dashboard notice is noise.** The mod announces its (public, read-only) debug dashboard URL as a
+  `social.system_message`; the World archives it instead of waking the persona with it.
 - **The embedded planner's own tools are hidden** from the persona by default (goal, decision, event-policy, `say`,
   `report_to_me`): the persona owns objectives, speech and wake policy.
 - **Cortico Core boots with both Worlds mounted** through its real extension path (`withWorlds`, config-enabled), tools

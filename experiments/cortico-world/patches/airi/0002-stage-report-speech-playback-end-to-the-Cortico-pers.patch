@@ -1,0 +1,137 @@
+From db39a2e1435927335c54f54e0622fd6d6bb183f7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 29 Sep 2026 20:27:59 +0000
+Subject: [PATCH] stage: report speech playback end to the Cortico persona
+
+The stage remembers which speak ids belong to a stage turn and, when the speech
+pipeline ends or cancels that turn, sends speech_end frames (interrupted when
+cancelled). The persona then learns that its utterance finished or was cut off.
+Adds the speech_end frame to the shared schema and an optional id on speak.
+---
+ .../stage-ui/src/components/scenes/Stage.vue  |  6 +++++
+ packages/stage-ui/src/stores/cortico.ts       | 22 +++++++++++++++++++
+ .../packages/server-sdk-shared/src/cortico.ts | 13 +++++++++++
+ 3 files changed, 41 insertions(+)
+
+diff --git a/packages/stage-ui/src/components/scenes/Stage.vue b/packages/stage-ui/src/components/scenes/Stage.vue
+index 30a6f94..d8417b9 100644
+--- a/packages/stage-ui/src/components/scenes/Stage.vue
++++ b/packages/stage-ui/src/components/scenes/Stage.vue
+@@ -46,6 +46,7 @@ import { useLlmStreamingControlStore } from '../../stores/ai/chat-llm/streaming-
+ import { useAudioContext, useSpeakingStore } from '../../stores/audio'
+ import { useBackgroundStore } from '../../stores/background'
+ import { useChatStore } from '../../stores/chat'
++import { useCorticoStore } from '../../stores/cortico'
+ import { useAiriCardStore } from '../../stores/modules'
+ import { useSpeechStore } from '../../stores/modules/speech'
+ import { useSettingsPresenceBubble } from '../../stores/presence-bubble'
+@@ -602,12 +603,17 @@ speechPipeline.on('onSpecial', (segment) => {
+   }
+ })
+ 
++const corticoStore = useCorticoStore()
++
+ speechPipeline.on('onTurnEnd', (turnId) => {
+   streamingControl.completeTurn(turnId)
++  // Lets an external Cortico persona know its utterances finished playing.
++  corticoStore.reportSpeechTurn(turnId, false)
+ })
+ 
+ speechPipeline.on('onTurnCancel', ({ turnId }) => {
+   streamingControl.cancelTurn(turnId)
++  corticoStore.reportSpeechTurn(turnId, true)
+ })
+ 
+ function resetSpeakingState() {
+diff --git a/packages/stage-ui/src/stores/cortico.ts b/packages/stage-ui/src/stores/cortico.ts
+index a2c900c..6bd6f9a 100644
+--- a/packages/stage-ui/src/stores/cortico.ts
++++ b/packages/stage-ui/src/stores/cortico.ts
+@@ -43,6 +43,8 @@ export const useCorticoStore = defineStore('cortico', () => {
+   let socket: WebSocket | null = null
+   let turnContext: ChatStreamEventContext | null = null
+   let turnComposed = false
++  /** `speak` utterance ids by stage turn, reported to the persona when that turn's playback ends. */
++  const spokenByTurn = new Map<string, string[]>()
+ 
+   function ensureTurn(): ChatStreamEventContext {
+     if (!turnContext) {
+@@ -137,6 +139,10 @@ export const useCorticoStore = defineStore('cortico', () => {
+           })
+         }
+         void emitLiteral(frame.text)
++        if (frame.id) {
++          const turnId = ensureTurn().turnId
++          spokenByTurn.set(turnId, [...(spokenByTurn.get(turnId) ?? []), frame.id])
++        }
+         break
+       }
+       case 'act': {
+@@ -223,6 +229,21 @@ export const useCorticoStore = defineStore('cortico', () => {
+     }
+   }
+ 
++  /**
++   * Tells the persona how playback of a stage turn ended: through the speech pipeline's turn end, or cut off by its
++   * turn cancel. Unknown turns (not from the persona) are ignored.
++   */
++  function reportSpeechTurn(turnId: string, interrupted: boolean) {
++    const ids = spokenByTurn.get(turnId)
++    if (!ids)
++      return
++    spokenByTurn.delete(turnId)
++    if (!socket || !connected.value)
++      return
++    for (const id of ids)
++      socket.send(JSON.stringify({ type: 'speech_end', id, ...(interrupted ? { interrupted: true } : {}) }))
++  }
++
+   function disconnect() {
+     // Detach before closing so the socket's own onclose can't clear state.
+     const ws = socket
+@@ -319,6 +340,7 @@ export const useCorticoStore = defineStore('cortico', () => {
+     connect,
+     disconnect,
+     send,
++    reportSpeechTurn,
+     queryMemory,
+     setLeader,
+   }
+diff --git a/server/packages/server-sdk-shared/src/cortico.ts b/server/packages/server-sdk-shared/src/cortico.ts
+index d47f7cb..092f5f3 100644
+--- a/server/packages/server-sdk-shared/src/cortico.ts
++++ b/server/packages/server-sdk-shared/src/cortico.ts
+@@ -66,6 +66,16 @@ export const CorticoMemoryQuerySchema = v.object({
+   type: v.literal('memory_query'),
+ })
+ 
++/**
++ * Playback of one `speak` utterance ended. `interrupted` means it was cut off (a new message, or speech stopped)
++ * rather than played through.
++ */
++export const CorticoSpeechEndSchema = v.object({
++  type: v.literal('speech_end'),
++  id: v.pipe(v.string(), v.minLength(1)),
++  interrupted: v.optional(v.boolean()),
++})
++
+ export const CorticoClientFrameSchema = v.union([
+   CorticoHelloSchema,
+   CorticoMessageSchema,
+@@ -73,6 +83,7 @@ export const CorticoClientFrameSchema = v.union([
+   CorticoProviderSchema,
+   CorticoSessionsSchema,
+   CorticoMemoryQuerySchema,
++  CorticoSpeechEndSchema,
+ ])
+ 
+ export type CorticoClientFrame = v.InferOutput<typeof CorticoClientFrameSchema>
+@@ -90,6 +101,8 @@ export interface CorticoDeltaFrame {
+ /** `airi_speak` tool invocation: text to voice and show as the reply. */
+ export interface CorticoSpeakFrame {
+   type: 'speak'
++  /** Identifies the utterance in the `speech_end` report. */
++  id?: string
+   text: string
+   /** Target chat session the reply belongs to. */
+   sessionId?: string

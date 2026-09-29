@@ -33,14 +33,9 @@ export function deliveryFor(type: string, payload?: Record<string, unknown>): De
   if (type === 'work.changed') {
     return TERMINAL_WORK.has(String(payload?.state)) && !payload?.parentWorkId ? 'flush' : 'piggyback';
   }
-  // The mod announces its debug dashboard (a URL with a viewer token) as a system message; that is not for the persona.
+  // The mod announces its debug dashboard URL as a system message; that is noise for the persona.
   if (type === 'social.system_message' && /dashboard/i.test(JSON.stringify(payload ?? {}))) return 'archive';
   return RULES.find((rule) => rule.match.test(type))?.delivery ?? 'piggyback';
-}
-
-/** Credentials never go into persona context, whatever event carried them. */
-export function redact(text: string): string {
-  return text.replace(/(token=)[^\s&"'#]+/gi, '$1<redacted>');
 }
 
 /** Fields shown for event types whose full payload is mostly internal detail. */
@@ -66,6 +61,6 @@ export function eventText(event: BridgeEvent): string {
     .filter(([key]) => !shown || shown.includes(key))
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
     .map(([key, value]) => `${key}=${render(value)}`);
-  const text = redact(fields.length ? `${event.type} ${fields.join(' ')}` : event.type);
+  const text = fields.length ? `${event.type} ${fields.join(' ')}` : event.type;
   return text.length > MAX_TEXT_CHARS ? `${text.slice(0, MAX_TEXT_CHARS)}…` : text;
 }

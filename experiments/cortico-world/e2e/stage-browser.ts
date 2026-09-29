@@ -35,6 +35,7 @@ try {
   await page.waitForFunction((text) => document.body.innerText.includes(text), reply, { timeout: 60000 });
   seen = true;
 } catch { /* reported below */ }
+await page.waitForTimeout(8000); // let playback reports arrive
 await page.screenshot({ path: shot });
 console.log('reply visible in chat:', seen);
 console.log(frames.join('\n'));

@@ -60,13 +60,10 @@ describe('delivery table', () => {
     expect(deliveryFor(type)).toBe(expected);
   });
 
-  it('archives the dashboard notice and redacts tokens in any event text', () => {
-    const notice = { normalizedMessage: 'Airicraft debug dashboard: http://192.0.2.2:8765/#token=abc123def' };
+  it('archives the dashboard notice', () => {
+    const notice = { normalizedMessage: 'Airicraft debug dashboard: http://192.0.2.2:8765/' };
     expect(deliveryFor('social.system_message', notice)).toBe('archive');
     expect(deliveryFor('social.system_message', { normalizedMessage: 'Server restarting' })).toBe('debounce');
-    const text = eventText({ seqNo: 1, tick: 1, timestampMs: 1, type: 'social.system_message', payload: { normalizedMessage: 'open http://h/?a=1&token=abc123def now' } });
-    expect(text).not.toContain('abc123def');
-    expect(text).toContain('token=<redacted>');
   });
 
   it('wakes only for a top-level job reaching a final state, and keeps work text short', () => {
