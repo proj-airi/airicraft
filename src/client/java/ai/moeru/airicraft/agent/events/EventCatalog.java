@@ -44,6 +44,13 @@ public final class EventCatalog {
 			// objective
 			new EventTypeSpec("objective.changed", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("objective.changed")),
 
+			// perception
+			new EventTypeSpec("perception.block_noticed", false, EventFamily.PERCEPT, Set.of("SaliencePolicy"), EventVisibility.PLANNER, new EventRoutingProfile("perception.block_noticed", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("perception.entity_lost", false, EventFamily.PERCEPT, Set.of("SaliencePolicy"), EventVisibility.PLANNER, new EventRoutingProfile("perception.entity_lost", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("perception.entity_noticed", false, EventFamily.PERCEPT, Set.of("SaliencePolicy"), EventVisibility.PLANNER, new EventRoutingProfile("perception.entity_noticed", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("perception.environment_changed", false, EventFamily.PERCEPT, Set.of("SaliencePolicy"), EventVisibility.PLANNER, new EventRoutingProfile("perception.environment_changed", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("perception.item_noticed", false, EventFamily.PERCEPT, Set.of("SaliencePolicy"), EventVisibility.PLANNER, new EventRoutingProfile("perception.item_noticed", true, PlannerTriggerType.SYSTEM, false)),
+
 			// pickup
 			new EventTypeSpec("pickup.item_picked_up", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false)),
 
@@ -101,8 +108,8 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.threat_detected", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.threat_detected", true, null, true)),
 
 			// rules
-			new EventTypeSpec("rules.reverted", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.reverted")),
-			new EventTypeSpec("rules.step_failed", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.step_failed")),
+			new EventTypeSpec("rules.reverted", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy", "SaliencePolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.reverted")),
+			new EventTypeSpec("rules.step_failed", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy", "SaliencePolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.step_failed")),
 
 			// session
 			new EventTypeSpec("session.connection_lost", false, EventFamily.INTERNAL, Set.of("SessionRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("session.connection_lost", true, null, false)),

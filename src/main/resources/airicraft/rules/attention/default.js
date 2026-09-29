@@ -4,7 +4,7 @@
 // types from being silenced. These rules must decide exactly like the Java ReferenceAttentionPolicy.
 //
 // input:  {tick, seed, attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle,
-//          activeJobTerminal, pendingCraftToolResult}, plannerRules: [{index, ruleId, effect, reason, match}],
+//          activeJobTerminal, pendingCraftToolResult, activeJobTargets}, plannerRules: [{index, ruleId, effect, reason, match}],
 //          events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled, evidence}]}
 // output: {decisions: [{seqNo, emitSemantic, ruleMatch, policy, wake: {delivery, urgency, ruleId, reason}}], state}
 (lib => {
@@ -50,7 +50,12 @@
 
   const none = (ruleId, reason) => ({delivery: 'NONE', urgency: 'LOW', ruleId, reason});
   const wake = (urgency, ruleId) => ({delivery: 'IMMEDIATE', urgency, ruleId, reason: ''});
+  const debounce = (urgency, ruleId) => ({delivery: 'DEBOUNCE', urgency, ruleId, reason: ''});
   const running = (attention, type) => attention.activeJobType === type && !attention.activeJobTerminal;
+  // A running job works on this block or item: a percept about exactly that work belongs to the job.
+  const owns = (attention, id) => attention.activeJobType != null && !attention.activeJobTerminal && id != null
+    && (attention.activeJobTargets || []).includes(String(id));
+  const idleForNotices = attention => attention.activeJobType == null || attention.activeJobIdle;
 
   // Ownership and social rules for a trigger-eligible event (the trigger factories' former early returns).
   function gate(event, attention) {
@@ -83,6 +88,15 @@
       case 'task.blocked':
       case 'action_graph.goal_suspended':
         return wake('HIGH', 'catalog.trigger');
+      case 'perception.block_noticed':
+      case 'perception.item_noticed':
+      case 'perception.entity_noticed':
+      case 'perception.entity_lost':
+        return owns(attention, event.fields.blockId) || owns(attention, event.fields.itemId)
+          ? none('ownership.active_job_target', 'the running job is working on this') : debounce('LOW', 'percept.notice');
+      case 'perception.environment_changed':
+        return event.fields.change === 'dusk' && idleForNotices(attention) ? debounce('LOW', 'percept.dusk_idle')
+          : none('percept.environment_evidence', 'environment changes are evidence; only dusk wakes, and only while idle');
       default:
         return none('catalog.no_trigger', 'no trigger is defined for this type');
     }

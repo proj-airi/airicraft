@@ -45,6 +45,8 @@ public final class WakePresenter {
 			case "task.blocked" -> createTaskBlockedTrigger(event);
 			case "action_graph.goal_suspended" -> createActionGraphSuspendedTrigger(event);
 			case "action_graph.goal_terminal" -> createActionGraphTerminalTrigger(event);
+			case "perception.block_noticed", "perception.item_noticed", "perception.entity_noticed", "perception.entity_lost",
+				"perception.environment_changed" -> createPerceptionTrigger(event);
 			default -> null;
 		};
 	}
@@ -219,6 +221,19 @@ public final class WakePresenter {
 				+ " Decide whether to collect or acknowledge the items using current world evidence.",
 			event.tick(), event.timestampMs(), "item_offer:" + event.payload().get("playerUuid"),
 			new com.google.gson.Gson().toJsonTree(event.payload()));
+	}
+
+	/** A noticed thing. With a decision context the model reads the event itself; this text is the fallback view. */
+	private PlannerTrigger createPerceptionTrigger(SemanticEvent event) {
+		var payload = event.payload();
+		Object subject = payload.get("blockId") != null ? payload.get("blockId")
+			: payload.get("itemId") != null ? payload.get("itemId")
+			: payload.get("entityType") != null ? payload.get("entityType") : payload.get("change");
+		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
+			"Noticed (" + event.type() + "): " + new com.google.gson.Gson().toJson(payload)
+				+ ". This is an observation, not a request; act on it only if it serves the current situation.",
+			event.tick(), event.timestampMs(), "perception:" + event.type() + ":" + subject,
+			new com.google.gson.Gson().toJsonTree(payload));
 	}
 
 	private PlannerTrigger createPhysicalTrigger(SemanticEvent event) {

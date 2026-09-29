@@ -85,6 +85,28 @@ public final class ActiveJobRuntime {
 		return activeJob;
 	}
 
+	/**
+	 * Block and item ids the running job is working on (mined block ids, and a collect job's accepted items), so
+	 * attention can leave a percept about exactly that work to the job. Empty when idle or terminal.
+	 */
+	public List<String> activeTargetIds() {
+		if (activeJob == null || activeJob.status().terminal()) return List.of();
+		var ids = new java.util.LinkedHashSet<String>();
+		GoalSnapshot goal = activeJob.directGoal();
+		GoalMineSpec spec = goal == null ? null : goal.mineSpec();
+		switch (activeJob.type()) {
+			case MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY -> { if (spec != null) ids.addAll(spec.blockIds()); }
+			case COLLECT_RESOURCE -> {
+				if (activeJob.taskSpec() != null) {
+					ids.addAll(collectResourceTaskHandler.targetBlockIds(activeJob.taskSpec()));
+					ai.moeru.airicraft.agent.tasks.ResourceGatheringCatalog.entry(activeJob.taskSpec().resourceKind()).ifPresent(entry -> ids.addAll(entry.acceptedItemIds()));
+				}
+			}
+			default -> { }
+		}
+		return List.copyOf(ids);
+	}
+
 	public void updateBlockAcquisitions(BlockAcquisitionIndex blockAcquisitions) {
 		collectResourceTaskHandler.updateBlockAcquisitions(blockAcquisitions);
 	}

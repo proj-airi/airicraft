@@ -81,6 +81,23 @@ class ReferenceAttentionPolicyTest {
 				Delivery.IMMEDIATE, Urgency.HIGH, AttentionStage.RULES, "catalog.trigger"),
 			new Row("smelting output", "smelting.output_ready", Map.of(), IDLE, AttentionEvidence.NONE,
 				Delivery.IMMEDIATE, Urgency.HIGH, AttentionStage.RULES, "catalog.trigger"),
+			// Phase 4 percepts: a running job owns percepts about its own targets; otherwise they debounce.
+			new Row("noticed vein, idle", "perception.block_noticed", Map.of("blockId", "minecraft:diamond_ore"), IDLE, NEAR,
+				Delivery.DEBOUNCE, Urgency.LOW, AttentionStage.RULES, "percept.notice"),
+			new Row("noticed vein owned by the mining job", "perception.block_noticed", Map.of("blockId", "minecraft:diamond_ore"),
+				new AttentionState(false, false, false, "MINE_BLOCKS", false, false, false, java.util.List.of("minecraft:diamond_ore")), NEAR,
+				Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "ownership.active_job_target"),
+			new Row("noticed item owned by a collect job", "perception.item_noticed", Map.of("itemId", "minecraft:diamond"),
+				new AttentionState(false, false, false, "COLLECT_RESOURCE", false, false, false, java.util.List.of("minecraft:diamond")), NEAR,
+				Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "ownership.active_job_target"),
+			new Row("a terminal job owns nothing", "perception.item_noticed", Map.of("itemId", "minecraft:diamond"),
+				new AttentionState(false, false, false, "COLLECT_RESOURCE", false, true, false, java.util.List.of("minecraft:diamond")), NEAR,
+				Delivery.DEBOUNCE, Urgency.LOW, AttentionStage.RULES, "percept.notice"),
+			new Row("dusk while idle", "perception.environment_changed", Map.of("change", "dusk"), IDLE, NEAR,
+				Delivery.DEBOUNCE, Urgency.LOW, AttentionStage.RULES, "percept.dusk_idle"),
+			new Row("dusk while working", "perception.environment_changed", Map.of("change", "dusk"), state(false, false, false, "MINE_BLOCKS", false), NEAR, Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "percept.environment_evidence"),
+			new Row("rain is evidence only", "perception.environment_changed", Map.of("change", "rain_started"), IDLE, NEAR,
+				Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "percept.environment_evidence"),
 		};
 		for (var row : rows) {
 			var decision = ReferenceAttentionPolicy.gate(event(row.type(), row.payload()), row.state(), row.evidence());

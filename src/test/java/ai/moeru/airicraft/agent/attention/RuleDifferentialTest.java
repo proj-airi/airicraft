@@ -26,6 +26,10 @@ class RuleDifferentialTest {
 	private static final String[] PLAYERS = {null, "Alex", "Steve"};
 	private static final String[] ITEMS = {null, "minecraft:oak_log", "minecraft:diamond"};
 	private static final String[] STATES = {null, "FAILED", "SUCCEEDED", ""};
+	private static final String[] BLOCKS = {null, "minecraft:diamond_ore", "minecraft:chest"};
+	private static final String[] CHANGES = {null, "dusk", "dawn", "rain_started"};
+	private static final List<List<String>> TARGETS = List.of(List.of(), List.of("minecraft:diamond_ore"),
+		List.of("minecraft:oak_log", "minecraft:diamond"));
 
 	@Test void bundledRulesDecideExactlyLikeTheReference() throws Exception {
 		RuleEngine.shared(RuleModule.bundledAttention()).awaitReady(Duration.ofSeconds(60));
@@ -37,13 +41,16 @@ class RuleDifferentialTest {
 		for (int round = 0; round < 5_000; round++) {
 			var profile = profiles.get(random.nextInt(profiles.size()));
 			var state = new AttentionState(random.nextBoolean(), random.nextBoolean(), random.nextBoolean(),
-				JOBS[random.nextInt(JOBS.length)], random.nextBoolean(), random.nextInt(4) == 0, random.nextBoolean());
+				JOBS[random.nextInt(JOBS.length)], random.nextBoolean(), random.nextInt(4) == 0, random.nextBoolean(),
+				TARGETS.get(random.nextInt(TARGETS.size())));
 			var evidence = new AttentionEvidence(random.nextBoolean(), random.nextInt(4) == 0, random.nextBoolean());
 			var payload = new HashMap<String, Object>();
 			put(payload, "player", PLAYERS[random.nextInt(PLAYERS.length)]);
 			put(payload, "actor", random.nextInt(3) == 0 ? "self" : null);
 			put(payload, "itemId", ITEMS[random.nextInt(ITEMS.length)]);
 			put(payload, "state", STATES[random.nextInt(STATES.length)]);
+			put(payload, "blockId", BLOCKS[random.nextInt(BLOCKS.length)]);
+			put(payload, "change", CHANGES[random.nextInt(CHANGES.length)]);
 			if (random.nextInt(5) == 0) payload.put("amount", 3.5F);
 			var event = new SemanticEvent(round + 1, round, round * 50L, profile.eventType(), Map.copyOf(payload));
 			var rules = rules(random, profile.eventType());
