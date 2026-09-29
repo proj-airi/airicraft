@@ -1569,6 +1569,12 @@ class PlannerOrchestratorTest {
 				orchestrator.onAcceptedReplyRecorded();
 				orchestrator.submit(requestAt(20, 2000, "Alice", "Continue"));
 				assertFalse(awaitCompaction(orchestrator).succeeded());
+				// The failed compaction did not hold the turn back; it is retried when the next turn starts.
+				awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
+				assertEquals(1, server.requestCount());
+				backend.succeed(1, replyOnly("Continued"));
+				awaitResult(orchestrator);
+				orchestrator.onAcceptedReplyRecorded();
 				orchestrator.submit(requestAt(30, 3000, "Alice", "Continue"));
 				assertFalse(awaitCompaction(orchestrator).succeeded());
 				assertEquals(2, server.requestCount());
