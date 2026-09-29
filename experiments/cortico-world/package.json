@@ -1,0 +1,17 @@
+{
+  "name": "airicraft-cortico-world-experiment",
+  "private": true,
+  "type": "module",
+  "description": "Exploratory: airicraft as a Cortico World. Not part of the Gradle build.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

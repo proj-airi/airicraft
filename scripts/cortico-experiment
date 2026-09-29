@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Exploratory: fetch the pinned Cortico (and AIRI) checkouts used by experiments/cortico-world.
+# Third-party code is never vendored; it lives in the ignored .cortico-experiment/ directory.
+set -euo pipefail
+
+usage() {
+	printf '%s\n' \
+		'Usage: scripts/cortico-experiment <command>' \
+		'' \
+		'  setup [cortico|airi|all]  Fetch pinned checkouts (default: cortico), apply patches, install dependencies.' \
+		'  test                      Run the World tests against the pinned Cortico.' \
+		'  env                       Print the environment used to run Cortico with the airicraft World.' \
+		'' \
+		'Pins live in experiments/cortico-world/pins.json.'
+}
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+exp_dir="$repo_root/experiments/cortico-world"
+work_dir="$repo_root/.cortico-experiment"
+
+pin() { node -e "const p=require('$exp_dir/pins.json'); console.log(p['$1']['$2'])"; }
+
+fetch_pinned() {
+	local name="$1" dir="$work_dir/$1" repo sha
+	repo="$(pin "$name" repo)"
+	sha="$(pin "$name" sha)"
+	mkdir -p "$dir"
+	if [[ ! -d "$dir/.git" ]]; then
+		git -C "$dir" init -q
+		git -C "$dir" remote add origin "$repo"
+	fi
+	if [[ "$(git -C "$dir" rev-parse -q --verify HEAD 2>/dev/null || true)" != "$sha" ]]; then
+		if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+			echo "error: $dir has local changes; refusing to move it to $sha" >&2
+			exit 1
+		fi
+		GIT_LFS_SKIP_SMUDGE=1 git -C "$dir" fetch -q --depth 1 origin "$sha"
+		git -C "$dir" checkout -q --detach FETCH_HEAD
+	fi
+	echo "$name pinned at $sha"
+}
+
+apply_patches() {
+	local name="$1" patch_dir="$exp_dir/patches/$1" dir="$work_dir/$1"
+	compgen -G "$patch_dir/*.patch" >/dev/null || return 0
+	if git -C "$dir" log -1 --format=%s | grep -q '^cortico-experiment patches'; then return 0; fi
+	git -C "$dir" -c user.name=experiment -c user.email=experiment@invalid am -q "$patch_dir"/*.patch
+	echo "$name: patches applied"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+	setup)
+		target="${2:-cortico}"
+		[[ "$target" == cortico || "$target" == all ]] && {
+			fetch_pinned cortico
+			(cd "$work_dir/cortico" && pnpm install --frozen-lockfile --ignore-scripts)
+		}
+		[[ "$target" == airi || "$target" == all ]] && {
+			fetch_pinned airi
+			apply_patches airi
+		}
+		(cd "$exp_dir" && pnpm install)
+		;;
+	test)
+		[[ -d "$work_dir/cortico" ]] || { echo "run: scripts/cortico-experiment setup" >&2; exit 1; }
+		(cd "$exp_dir" && CORTICO_SRC="$work_dir/cortico/src" pnpm test)
+		;;
+	env)
+		printf 'CORTICO_SRC=%s\nCORTICO_EXTENSIONS_DIR=%s\n' "$work_dir/cortico/src" "$work_dir/extensions"
+		;;
+	-h|--help|help|"")
+		usage
+		;;
+	*)
+		usage >&2
+		exit 2
+		;;
+esac

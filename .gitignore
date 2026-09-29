@@ -63,3 +63,8 @@ eval-output
 
 /automatic_playtest/
 /hosted_playtest/
+
+# cortico world experiment (pinned third-party checkouts and generated files)
+.cortico-experiment/
+experiments/cortico-world/node_modules/
+experiments/cortico-world/worlds/*/node_modules/

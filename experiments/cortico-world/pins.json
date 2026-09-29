@@ -1,0 +1,14 @@
+{
+  "cortico": {
+    "repo": "https://github.com/Pal-AI-Lab/Cortico.git",
+    "sha": "c68c489d79a2480983c899a1dd34b20f1b167406"
+  },
+  "airi": {
+    "repo": "https://github.com/moeru-ai/airi.git",
+    "sha": "752c7527b7c99f61e403d7f8d4ddb11b0f1155a0",
+    "reference": {
+      "pull": 2634,
+      "head": "25981381d0daa58b998b61b9ff181de62abcf13f"
+    }
+  }
+}

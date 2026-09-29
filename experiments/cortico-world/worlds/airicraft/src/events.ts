@@ -1,0 +1,51 @@
+/**
+ * Maps airicraft semantic events onto Cortico events: which ones reach the persona and how they wake it.
+ * The producer chooses the trigger mode (Cortico's rule); this table mirrors the intent of airicraft's own
+ * attention rules (reflex start preempts, direct chat and outcomes flush, percepts debounce).
+ */
+import type { PushOptions } from 'cortico/core/types.ts';
+import type { BridgeEvent } from './bridge.ts';
+
+export type Delivery = NonNullable<PushOptions['trigger']> | 'archive';
+
+interface Rule {
+  match: RegExp;
+  delivery: Delivery;
+}
+
+/** First match wins. Anything unmatched is delivered without waking (`piggyback`). */
+const RULES: readonly Rule[] = [
+  { match: /^reflex\.started$/, delivery: 'preempt' },
+  { match: /^(player\.died|player\.respawned|reflex\.resolved|reflex\.hold_released)$/, delivery: 'flush' },
+  { match: /^(action_graph\.goal_terminal|action_graph\.goal_suspended|task\.(blocked|failed|completed))$/, delivery: 'flush' },
+  { match: /^(smelting\.output_ready|session\.(world_loaded|world_unloaded|connection_lost))$/, delivery: 'flush' },
+  { match: /^social\.player_addressed_agent$/, delivery: 'flush' },
+  { match: /^(social\.player_spoke|social\.system_message|social\.item_offered|social\.player_(joined|left)_)/, delivery: 'debounce' },
+  { match: /^(perception\.|combat\.damage_taken|pickup\.|crafting\.|follow\.)/, delivery: 'debounce' },
+  // Bookkeeping that only matters as history.
+  { match: /^(action_graph\.|mission\.|planner\.|rules\.|policy\.event_intervened$|social\.local_controller_spoke$)/, delivery: 'archive' },
+];
+
+export function deliveryFor(type: string): Delivery {
+  return RULES.find((rule) => rule.match.test(type))?.delivery ?? 'piggyback';
+}
+
+const MAX_VALUE_CHARS = 120;
+const MAX_TEXT_CHARS = 600;
+
+function render(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return text.length > MAX_VALUE_CHARS ? `${text.slice(0, MAX_VALUE_CHARS)}…` : text;
+}
+
+/**
+ * Event text states only what the mod reported: the type and its payload fields. Nothing is inferred.
+ * Richer per-type phrasing can replace this without touching delivery.
+ */
+export function eventText(event: BridgeEvent): string {
+  const fields = Object.entries(event.payload ?? {})
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key}=${render(value)}`);
+  const text = fields.length ? `${event.type} ${fields.join(' ')}` : event.type;
+  return text.length > MAX_TEXT_CHARS ? `${text.slice(0, MAX_TEXT_CHARS)}…` : text;
+}

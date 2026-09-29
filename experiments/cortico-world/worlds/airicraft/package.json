@@ -1,0 +1,15 @@
+{
+  "name": "cortico-world-airicraft",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cortico World: the airicraft Fabric mod as the Minecraft body (exploratory)",
+  "keywords": ["cortico-world", "cortico"],
+  "engines": { "node": ">=22" },
+  "main": "./src/index.ts",
+  "cortico": { "kind": "world", "api": 5 },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  }
+}
