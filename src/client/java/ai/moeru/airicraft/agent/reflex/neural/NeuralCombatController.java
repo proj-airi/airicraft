@@ -110,7 +110,12 @@ public final class NeuralCombatController {
 	/** Convenience loader used by the reflex runtime ctor. */
 	public static NeuralCombatController create() {
 		NeuralCombatController c = new NeuralCombatController();
-		c.configure(configDir());
+		try {
+			c.configure(configDir());
+		}
+		catch (Throwable ignored) {
+			// no Fabric runtime (unit tests) or unreadable config: stay inert
+		}
 		return c;
 	}
 
