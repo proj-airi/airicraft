@@ -301,9 +301,6 @@ final class PlannerDebugOverlay {
 		TaskSnapshot task = runtimeSnapshot == null ? null : runtimeSnapshot.task();
 		TaskExecutionSnapshot taskExecution = runtimeSnapshot == null ? null : runtimeSnapshot.taskExecution();
 		PlannerContextDebugSnapshot context = plannerSnapshot == null ? null : plannerSnapshot.context();
-		long coalesceRemainingMs = plannerSnapshot != null && plannerSnapshot.coalescePending()
-			? Math.max(0L, plannerSnapshot.coalesceReadyAtMs() - nowMs)
-			: 0L;
 
 		addStateSection(lines, "runtime/session");
 		addStateLine(lines, "enabled: " + overlayEnabled);
@@ -332,10 +329,8 @@ final class PlannerDebugOverlay {
 		addStateSection(lines, "retry/coalesce");
 		addStateLine(lines, "retryPending: " + plannerBool(plannerSnapshot, PlannerOrchestratorDebugSnapshot::retryPending));
 		addStateLine(lines, "retryReadyAtMs: " + plannerLong(plannerSnapshot, PlannerOrchestratorDebugSnapshot::retryReadyAtMs));
+		// The coalesce window is timed in ticks by the wake scheduler (agent debug state: wakeScheduler.coalesceReadyAt).
 		addStateLine(lines, "coalescePending: " + plannerBool(plannerSnapshot, PlannerOrchestratorDebugSnapshot::coalescePending));
-		addStateLine(lines, "coalesceWindowMs: " + plannerLong(plannerSnapshot, PlannerOrchestratorDebugSnapshot::coalesceWindowMs));
-		addStateLine(lines, "coalesceReadyAtMs: " + plannerLong(plannerSnapshot, PlannerOrchestratorDebugSnapshot::coalesceReadyAtMs));
-		addStateLine(lines, "coalesceRemainingMs: " + coalesceRemainingMs);
 
 		addStateSection(lines, "tool/compaction");
 		addStateLine(lines, "toolInFlight: " + plannerBool(plannerSnapshot, PlannerOrchestratorDebugSnapshot::toolInFlight));

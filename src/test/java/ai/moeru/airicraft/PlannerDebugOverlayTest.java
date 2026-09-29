@@ -47,8 +47,6 @@ class PlannerDebugOverlayTest {
 
 		assertTrue(lines.contains("enabled: true"));
 		assertTrue(lines.contains("coalescePending: true"));
-		assertTrue(lines.contains("coalesceWindowMs: 20"));
-		assertTrue(lines.contains("coalesceRemainingMs: 15"));
 		assertTrue(lines.contains("queuedTriggerCount: 3"));
 	}
 
@@ -79,9 +77,7 @@ class PlannerDebugOverlayTest {
 				0L,
 				false,
 				0L,
-				false,
-				0L,
-				0L
+				false
 			),
 			0L
 		);
@@ -423,9 +419,7 @@ class PlannerDebugOverlayTest {
 			1L,
 			false,
 			0L,
-			coalescePending,
-			coalesceReadyAtMs,
-			coalesceWindowMs
+			coalescePending
 		);
 	}
 

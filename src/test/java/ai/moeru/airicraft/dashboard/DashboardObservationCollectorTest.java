@@ -50,7 +50,7 @@ class DashboardObservationCollectorTest {
 			ai.moeru.airicraft.agent.llm.PlannerTriggerBatch.of(List.of()), "tool-result", 7, "hold-7");
 		var planner = new ai.moeru.airicraft.agent.llm.PlannerOrchestratorDebugSnapshot(true, "external_summary",
 			true, true, false, false, false, false, request, null, null, 2, "TOOL_FOLLOW_UP", 1, 0, 0,
-			false, 0, false, 0, 0);
+			false, 0, false);
 		var store = new DashboardObservationStore(1024L * 1024L);
 		store.advanceClock(10, false, true);
 		var first = DashboardObservationCollector.plannerPayload(store, planner, 10, 100);

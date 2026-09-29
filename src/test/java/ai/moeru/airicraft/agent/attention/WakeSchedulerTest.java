@@ -132,7 +132,7 @@ class WakeSchedulerTest {
 			"superseded:12:new_user_guidance", "superseded:13:mission_changed", "deliver:14"), host.log);
 	}
 
-	private static final class Triggers implements WakeScheduler.TriggerHost {
+	private static class Triggers implements WakeScheduler.TriggerHost {
 		boolean blocked, workHolds;
 		long incorporatedThrough;
 		final List<String> log = new ArrayList<>();
@@ -146,6 +146,66 @@ class WakeSchedulerTest {
 			log.add("deliver:" + String.join(",", triggers.stream().map(trigger -> trigger.wake() == null
 				? trigger.type().name() : String.valueOf(trigger.wake().seqNo())).toList()));
 		}
+	}
+
+	/** A planner with a replaceable turn in flight until something supersedes it. */
+	private static final class Superseding extends Triggers {
+		boolean replaceable = true;
+		int queued;
+		@Override public boolean canSupersede() { return replaceable; }
+		@Override public int queuedTriggerCount() { return queued; }
+		@Override public void deliver(List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers, boolean supersede) {
+			queued += triggers.size();
+			log.add((supersede ? "supersede:" : "queue:") + triggers.getLast().tick());
+			if (supersede) replaceable = false;
+		}
+	}
+
+	private static ai.moeru.airicraft.agent.llm.PlannerTrigger chat(long tick) {
+		return ai.moeru.airicraft.agent.llm.PlannerTrigger.direct(ai.moeru.airicraft.agent.llm.PlannerTriggerType.CHAT, "Alex", "hi", tick, tick * 50);
+	}
+
+	@Test void aSupersedeOpensACoalesceWindowTimedInTicks() {
+		var scheduler = new WakeScheduler();
+		var host = new Superseding();
+		host.queued = 1; // the running turn's trigger
+		scheduler.offerTrigger(chat(10), host);
+		assertEquals(List.of("supersede:10"), host.log);
+		assertTrue(scheduler.coalescing());
+		assertFalse(scheduler.releaseCoalesce(10), "10 ms rounds up to one tick");
+		assertTrue(scheduler.releaseCoalesce(11));
+		assertFalse(scheduler.coalescing());
+
+		// Each batch delivered into the window re-arms it with the queue's size, clamped to the maximum (100 ms: 2 ticks).
+		host.replaceable = true;
+		host.queued = 1;
+		scheduler.offerTrigger(chat(20), host);
+		for (int index = 0; index < 15; index++) scheduler.offerTrigger(chat(20), host);
+		assertEquals("queue:20", host.log.getLast(), "inside the window, direct guidance joins the held turn");
+		assertFalse(scheduler.releaseCoalesce(21));
+		assertTrue(scheduler.releaseCoalesce(22));
+
+		var zero = new WakeScheduler();
+		zero.configureCoalescing(0, 0, 0);
+		zero.offerTrigger(chat(30), new Superseding());
+		assertTrue(zero.releaseCoalesce(30), "a zero window ends on the same tick");
+	}
+
+	@Test void theSupersedeBudgetQueuesDirectGuidanceOverThreeIn600Ticks() {
+		var scheduler = new WakeScheduler();
+		var host = new Superseding();
+		for (long tick : new long[]{1, 40, 80, 120}) {
+			host.replaceable = true;
+			scheduler.offerTrigger(chat(tick), host);
+			scheduler.releaseCoalesce(tick + 5);
+		}
+		assertEquals(List.of("supersede:1", "supersede:40", "supersede:80", "queued:supersede.budget", "queue:120"), host.log);
+		host.replaceable = true;
+		scheduler.offerTrigger(chat(601), host);
+		assertEquals("supersede:601", host.log.getLast(), "the first supersede left the 600-tick window");
+		scheduler.releaseCoalesce(700);
+		scheduler.clearTaskWakes();
+		assertTrue(((List<?>) scheduler.debugState().get("recentSupersedes")).isEmpty(), "resets clear the budget window");
 	}
 
 	private static ai.moeru.airicraft.agent.llm.PlannerTrigger percept(long seqNo, long tick, String urgency) {

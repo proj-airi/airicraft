@@ -502,23 +502,9 @@ public final class DialogueRuntime {
 	) {
 		long timestampMs = clock.millis();
 		appendTurn(new DialogueTurn(senderName, plainTextMessage, tick, timestampMs));
-		submitPlannerTrigger(
-			new PlannerRequest(
-				tick,
-				timestampMs,
-				sessionSnapshot.mode(),
-				primaryInteractionPlayer,
-				activeGoal.orElse(null),
-				activeTask,
-				missionExecution,
-				senderName,
-				plainTextMessage,
-				null
-			),
-			eventBuffer,
-			timestampMs,
-			true
-		);
+		// Through the scheduler like every other wake: it decides supersession and times the coalesce window.
+		onPlannerTrigger(PlannerTrigger.pending(PlannerTriggerType.CHAT, senderName, plainTextMessage, tick, timestampMs),
+			sessionSnapshot, primaryInteractionPlayer, activeGoal, activeTask, missionExecution, eventBuffer);
 	}
 
 	public void onContextTrigger(
@@ -532,22 +518,8 @@ public final class DialogueRuntime {
 		EventStream eventBuffer
 	) {
 		long timestampMs = clock.millis();
-		submitPlannerTrigger(
-			PlannerRequest.ofTrigger(
-				tick,
-				timestampMs,
-				sessionSnapshot.mode(),
-				primaryInteractionPlayer,
-				activeGoal.orElse(null),
-				triggerType,
-				senderName,
-				plainTextMessage,
-				null
-			),
-			eventBuffer,
-			timestampMs,
-			triggerType == PlannerTriggerType.CHAT && senderName != null && !"system".equalsIgnoreCase(senderName)
-		);
+		onPlannerTrigger(PlannerTrigger.pending(triggerType, senderName, plainTextMessage, tick, timestampMs),
+			sessionSnapshot, primaryInteractionPlayer, activeGoal, null, null, eventBuffer);
 	}
 
 	public void onPlannerTrigger(
@@ -603,7 +575,19 @@ public final class DialogueRuntime {
 				auditTrigger(audited, kind, gate);
 			}
 
+			@Override public boolean canSupersede() {
+				return activePlanner().canSupersede();
+			}
+
+			@Override public int queuedTriggerCount() {
+				return activePlanner().queuedTriggerCount();
+			}
+
 			@Override public void deliver(List<PlannerTrigger> delivered) {
+				deliver(delivered, false);
+			}
+
+			@Override public void deliver(List<PlannerTrigger> delivered, boolean supersede) {
 				PlannerTrigger last = delivered.getLast();
 				boolean direct = delivered.stream().anyMatch(PlannerTrigger::maySupersedeLaunchedTurn);
 				submitPlannerTrigger(
@@ -621,6 +605,7 @@ public final class DialogueRuntime {
 					plannerEventBuffer,
 					last.timestampMs(),
 					direct,
+					supersede,
 					(kind, gate) -> delivered.forEach(each -> auditTrigger(each, kind, gate))
 				);
 			}
@@ -722,6 +707,8 @@ public final class DialogueRuntime {
 			for (var event : events.events()) delegation.recordEvent(event.seqNo(), event.type(), event.payload());
 			delegationEventCursor = events.latestSeqNo();
 		}
+		// The scheduler's coalesce window after a supersede has ended: the held triggers start one combined turn.
+		if (wakeScheduler.releaseCoalesce(tick)) planners().forEach(PlannerOrchestrator::releaseCoalesceHold);
 		PlannerOrchestrator owner = activePlanner();
 		PlannerExecutionResult result = owner.poll();
 		if (delegation != null && delegation.active() && result != null && !result.succeeded())
@@ -836,9 +823,10 @@ public final class DialogueRuntime {
 		PlannerRequest request,
 		EventStream eventBuffer,
 		long timestampMs,
-		boolean directUserGuidance
+		boolean directUserGuidance,
+		WakeOutcome outcome
 	) {
-		submitPlannerTrigger(request, eventBuffer, timestampMs, directUserGuidance, WakeOutcome.NONE);
+		submitPlannerTrigger(request, eventBuffer, timestampMs, directUserGuidance, false, outcome);
 	}
 
 	private void submitPlannerTrigger(
@@ -846,6 +834,7 @@ public final class DialogueRuntime {
 		EventStream eventBuffer,
 		long timestampMs,
 		boolean directUserGuidance,
+		boolean supersede,
 		WakeOutcome outcome
 	) {
 		if (externalDriverActive) {
@@ -876,9 +865,14 @@ public final class DialogueRuntime {
 		// Record before submit: the orchestrator writes its own submission entry synchronously, and the
 		// wake ledger attributes audits by timeline order. A disabled planner discards the request.
 		outcome.record(activePlanner().isEnabled() ? "submitted" : "dropped", activePlanner().isEnabled() ? null : "G8.planner_disabled");
-		boolean submitted = activePlanner().submit(request);
+		boolean submitted = activePlanner().submit(request, supersede);
 		if (submitted && safetyHoldId != null) lastSupervisedHold = safetyHoldId + ":" + reflexActive;
 		pendingTimeoutVisibleReply = directUserGuidance && submitted;
+	}
+
+	/** The coalesce window's settings ({@code plannerSessionCoalesce*Millis}); the scheduler times it in ticks. */
+	public void configureCoalescing(long stepMillis, long minMillis, long maxMillis) {
+		wakeScheduler.configureCoalescing(stepMillis, minMillis, maxMillis);
 	}
 
 	public void queueTaskAttention(long tick, long eventSequence) {

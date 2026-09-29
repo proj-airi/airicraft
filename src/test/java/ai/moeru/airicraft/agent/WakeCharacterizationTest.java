@@ -101,6 +101,35 @@ class WakeCharacterizationTest {
 			h.transcript("safety_epoch_preempts_turn").assertMatchesGolden("safety_epoch_preempts_turn");
 		}
 	}
+	/** Phase 5: direct guidance supersedes at most three times per 600 ticks; the fourth supersede waits for the turn. */
+	@Test void chat_spam_supersede_budget() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			var holds = new java.util.ArrayList<java.util.concurrent.CompletableFuture<ai.moeru.airicraft.agent.llm.PlannerResponse>>();
+			holds.add(h.backend.holdNext());
+			h.chat("Alex", "@agent line 0");
+			h.backend.awaitRequests(1, Duration.ofSeconds(1));
+			for (int line = 1; line <= 4; line++) {
+				h.tick(40 - 1);
+				holds.add(h.backend.holdNext());
+				h.chat("Alex", "@agent line " + line);
+				h.tick(1);
+				if (line < 4) h.backend.awaitRequests(line + 1, Duration.ofSeconds(1));
+			}
+			assertEquals(4, h.backend.requests().size(), "three supersedes, then the running turn is left alone");
+			for (int line = 0; line < 3; line++) assertTrue(holds.get(line).isCancelled(), "superseded turn " + line);
+			assertFalse(holds.get(3).isDone(), "the third supersede's turn keeps running");
+			assertTrue(auditOutcomes(h).contains("queued:W1:supersede.budget"), auditOutcomes(h).toString());
+			h.transcript("chat_spam_supersede_budget").assertMatchesGolden("chat_spam_supersede_budget");
+			// The queued line starts the next turn once the running one ends (its tick depends on provider threads).
+			holds.get(3).complete(new ai.moeru.airicraft.agent.llm.PlannerResponse("Working on it.", List.of(), null));
+			long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+			while (h.backend.requests().size() < 5 && System.nanoTime() < deadline) h.tick(1);
+			assertEquals(5, h.backend.requests().size(), "the queued line is answered next");
+			assertTrue(h.backend.requests().getLast().request().request().triggerBatch().triggers().stream()
+				.anyMatch(trigger -> "@agent line 4".equals(trigger.text())));
+		}
+	}
 	@Test void damage_outside_reflex() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerHealthUpdated(true, 20, 16); h.tick(10);

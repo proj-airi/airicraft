@@ -71,6 +71,21 @@ public final class WakeScheduler {
 
 		/** Submits the triggers to the planner as one batch; the host records each one's final audit outcome. */
 		void deliver(List<PlannerTrigger> triggers);
+
+		/** As {@link #deliver(List)}; {@code supersede} lets direct guidance replace the running turn. */
+		default void deliver(List<PlannerTrigger> triggers, boolean supersede) {
+			deliver(triggers);
+		}
+
+		/** Direct guidance delivered now would supersede a replaceable running turn. */
+		default boolean canSupersede() {
+			return false;
+		}
+
+		/** Triggers queued behind the running or superseded turn: the coalesce window grows with them. */
+		default int queuedTriggerCount() {
+			return 1;
+		}
 	}
 
 	/** A debounced wake is released once no other has arrived for this many ticks (spec section 5). */
@@ -79,6 +94,18 @@ public final class WakeScheduler {
 	public static final int DEBOUNCE_MAX_HOLD_TICKS = 100;
 
 	private record Held(PlannerTrigger trigger, long heldAt) {}
+
+	/** At most this many supersedes within {@link #SUPERSEDE_WINDOW_TICKS}; later direct guidance queues (spec 4.7). */
+	public static final int SUPERSEDE_BUDGET = 3;
+	public static final int SUPERSEDE_WINDOW_TICKS = 600;
+	private static final long MILLIS_PER_TICK = 50L;
+
+	private long coalesceStepMillis = 10L;
+	private long coalesceMinMillis = 10L;
+	private long coalesceMaxMillis = 100L;
+	/** The tick the coalesce window after a supersede ends, or -1 without one. */
+	private volatile long coalesceReadyAt = -1L;
+	private final Deque<Long> supersedes = new ConcurrentLinkedDeque<>();
 
 	/** Routine progress that accepted or queued work already consumes (G4). */
 	private static final Set<PlannerTriggerType> ROUTINE_PROGRESS =
@@ -108,6 +135,29 @@ public final class WakeScheduler {
 	public void clearTaskWakes() {
 		taskWakes.clear();
 		debounced.clear();
+		supersedes.clear();
+	}
+
+	/** The coalesce window's settings from {@code agent.yml}, in milliseconds; timed here in ticks, rounded up. */
+	public void configureCoalescing(long stepMillis, long minMillis, long maxMillis) {
+		coalesceStepMillis = Math.max(0L, stepMillis);
+		coalesceMinMillis = Math.max(0L, minMillis);
+		coalesceMaxMillis = Math.max(coalesceMinMillis, maxMillis);
+	}
+
+	/** A supersede's coalesce window is open: the superseded planner is holding its queued triggers. */
+	public boolean coalescing() {
+		return coalesceReadyAt >= 0L;
+	}
+
+	/**
+	 * Ends the coalesce window once its tick has come. Returns whether the planner should now start the combined
+	 * turn ({@code releaseCoalesceHold}).
+	 */
+	public boolean releaseCoalesce(long tick) {
+		if (coalesceReadyAt < 0L || tick < coalesceReadyAt) return false;
+		coalesceReadyAt = -1L;
+		return true;
 	}
 
 	public boolean hasDebouncedWakes() {
@@ -208,7 +258,26 @@ public final class WakeScheduler {
 		}
 		var batch = takeDebounced(host, "debounce.piggyback");
 		batch.add(trigger);
-		host.deliver(batch);
+		boolean supersede = false;
+		if (direct && !coalescing() && host.canSupersede()) {
+			if (withinSupersedeBudget(trigger.tick())) supersede = true;
+			else host.audit(trigger, "queued", "supersede.budget");
+		}
+		host.deliver(batch, supersede);
+		// Every batch delivered into an open window (or opening one) re-arms it from this tick, as it grows.
+		if (supersede) supersedes.addLast(trigger.tick());
+		if (supersede || coalescing()) armCoalesce(trigger.tick(), host.queuedTriggerCount());
+	}
+
+	private boolean withinSupersedeBudget(long tick) {
+		while (!supersedes.isEmpty() && tick - supersedes.peekFirst() >= SUPERSEDE_WINDOW_TICKS) supersedes.removeFirst();
+		return supersedes.size() < SUPERSEDE_BUDGET;
+	}
+
+	/** {@code clamp((n-1) x step, min, max)} from the settings, rounded up to whole ticks. */
+	private void armCoalesce(long tick, int queued) {
+		long window = Math.max(coalesceMinMillis, Math.min(coalesceMaxMillis, (long) Math.max(0, queued - 1) * coalesceStepMillis));
+		coalesceReadyAt = tick + (window + MILLIS_PER_TICK - 1) / MILLIS_PER_TICK;
 	}
 
 	/**
@@ -276,6 +345,8 @@ public final class WakeScheduler {
 		var state = new LinkedHashMap<String, Object>();
 		state.put("pending", pending);
 		state.put("debounced", held);
+		state.put("coalesceReadyAt", coalesceReadyAt);
+		state.put("recentSupersedes", List.copyOf(supersedes));
 		String gate = lastDeferredAuditGate;
 		state.put("retainedBy", pending.isEmpty() || gate == null ? null : gate);
 		return state;
