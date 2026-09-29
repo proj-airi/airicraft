@@ -40,6 +40,10 @@ Mojang-mappings migration), CI green.
 - **G12, docs.** `read_rules_docs` is `docs.md` plus `lib.js`, the protected and constitution types read from the live
   catalog, and the bundled attention module, so the list cannot go stale. A test checks it against
   `docs/attention-rules.md`.
+- **Verification.** `./gradlew build` passes: 1,896 root, 96 wrapper, 51 navigation and 20 JourneyMap tests (the
+  known JourneyMap timing test failed once under load and passed alone). Evaluator, Python (117) and dashboard (11)
+  suites pass; the three golden classes repeated 15 times and the three new scenarios 20 times, all passing.
+  `RuleDifferentialTest` is unchanged. The live playtest is the user's.
 - **Goldens.** Wake tests settle a rules edit by draining on the tick thread (`WakeScenarioHarness.settle`, with
   `PlannerRules.inFlight()`), so an edit's warm-up never changes a tick count.
 
