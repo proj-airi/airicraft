@@ -15,14 +15,23 @@ import java.util.Objects;
  * @param seqNo the causal event's sequence number, or 0 for a reason without one
  * @param type the causal event's type, or {@code null}
  * @param urgency lowercase urgency, or {@code null}
+ * @param debounced the attention policy chose {@code DEBOUNCE}: the scheduler holds it; never rendered
  */
-public record WakeRef(String reason, long seqNo, String type, String urgency) {
+public record WakeRef(String reason, long seqNo, String type, String urgency, boolean debounced) {
 	public static final String EVENT = "event";
 	private static final List<String> URGENCY_ORDER = List.of("critical", "direct", "high", "normal", "low", "self");
 
 	public WakeRef {
 		Objects.requireNonNull(reason, "reason");
 		urgency = urgency == null ? null : urgency.toLowerCase(Locale.ROOT);
+	}
+
+	public WakeRef(String reason, long seqNo, String type, String urgency) {
+		this(reason, seqNo, type, urgency, false);
+	}
+
+	public WakeRef debounce(boolean debounce) {
+		return new WakeRef(reason, seqNo, type, urgency, debounce);
 	}
 
 	public static WakeRef event(long seqNo, String type, String urgency) {

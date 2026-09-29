@@ -48,7 +48,7 @@ public final class WakeScheduler {
 		void deliver(Wake wake);
 	}
 
-	/** Facts and delivery for trigger wakes (W1, W4-W7), which carry their prompt text until Phase 3. */
+	/** Facts and delivery for trigger wakes (W1, W4-W7). */
 	public interface TriggerHost {
 		/** An active planner goal is blocked: only direct guidance wakes it outside the task-wake path. */
 		boolean blockedGoal();
@@ -56,11 +56,21 @@ public final class WakeScheduler {
 		/** Accepted or queued tool work consumes routine progress while no safety hold or reflex is active. */
 		boolean workHoldsRoutineWakes();
 
+		/** The active role's decision cursor has passed {@code seqNo}: an observation already carried it. */
+		boolean incorporated(long seqNo);
+
 		void audit(PlannerTrigger trigger, String kind, String gate);
 
-		/** Submits the trigger to the planner; the host records its final audit outcome. */
-		void deliver(PlannerTrigger trigger);
+		/** Submits the triggers to the planner as one batch; the host records each one's final audit outcome. */
+		void deliver(List<PlannerTrigger> triggers);
 	}
+
+	/** A debounced wake is released once no other has arrived for this many ticks (spec section 5). */
+	public static final int DEBOUNCE_QUIET_TICKS = 10;
+	/** ...or once the oldest held wake has waited this long. */
+	public static final int DEBOUNCE_MAX_HOLD_TICKS = 100;
+
+	private record Held(PlannerTrigger trigger, long heldAt) {}
 
 	/** Routine progress that accepted or queued work already consumes (G4). */
 	private static final Set<PlannerTriggerType> ROUTINE_PROGRESS =
@@ -68,6 +78,9 @@ public final class WakeScheduler {
 
 	/** Concurrent so debug readers on other threads can copy it while the tick thread schedules. */
 	private final Deque<Wake> taskWakes = new ConcurrentLinkedDeque<>();
+	/** Debounced trigger wakes waiting for quiet; concurrent for the same reason. */
+	private final Deque<Held> debounced = new ConcurrentLinkedDeque<>();
+	private long lastDebouncedAt;
 	private Wake lastDeferredAudit;
 	private volatile String lastDeferredAuditGate;
 
@@ -83,8 +96,14 @@ public final class WakeScheduler {
 		return !taskWakes.isEmpty();
 	}
 
+	/** Clears every pending wake: task wakes and held debounced wakes (resets, degradation, world boundaries). */
 	public void clearTaskWakes() {
 		taskWakes.clear();
+		debounced.clear();
+	}
+
+	public boolean hasDebouncedWakes() {
+		return !debounced.isEmpty();
 	}
 
 	/** Removes every pending task wake, oldest first, so the caller can record each as superseded. */
@@ -138,8 +157,10 @@ public final class WakeScheduler {
 	}
 
 	/**
-	 * Admits a trigger wake (G4) and delivers it at once. Direct guidance is never held back here; a blocked goal
-	 * holds every other trigger, and accepted or queued work holds routine progress and idle think.
+	 * Admits a trigger wake (G4) and delivers it. Direct guidance is never held back here; a blocked goal holds
+	 * every other trigger, and accepted or queued work holds routine progress and idle think. A debounced wake is
+	 * held until quiet ({@link #releaseDebounced}); any wake delivered meanwhile takes the held ones with it, so they
+	 * share one batch.
 	 */
 	public void offerTrigger(PlannerTrigger trigger, TriggerHost host) {
 		if (trigger == null) return;
@@ -154,7 +175,55 @@ public final class WakeScheduler {
 			host.audit(trigger, "dropped", "G4.accepted_work");
 			return;
 		}
-		host.deliver(trigger);
+		if (!direct && debounces(trigger)) {
+			debounced.addLast(new Held(trigger, trigger.tick()));
+			lastDebouncedAt = trigger.tick();
+			host.audit(trigger, "debounced", "debounce.hold");
+			return;
+		}
+		var batch = takeDebounced(host, "debounce.piggyback");
+		batch.add(trigger);
+		host.deliver(batch);
+	}
+
+	/**
+	 * Releases the held debounced wakes as one batch once {@link #DEBOUNCE_QUIET_TICKS} passed without a new one, or
+	 * the oldest waited {@link #DEBOUNCE_MAX_HOLD_TICKS}. Wakes whose event an observation already carried, and
+	 * wakes a newly blocked goal holds, are dropped on the way. Returns whether anything was delivered.
+	 */
+	public boolean releaseDebounced(long tick, TriggerHost host) {
+		if (debounced.isEmpty()) return false;
+		boolean quiet = tick - lastDebouncedAt >= DEBOUNCE_QUIET_TICKS;
+		if (!quiet && tick - debounced.peekFirst().heldAt() < DEBOUNCE_MAX_HOLD_TICKS) return false;
+		var batch = takeDebounced(host, quiet ? "debounce.quiet" : "debounce.max_hold");
+		if (batch.isEmpty()) return false;
+		host.deliver(batch);
+		return true;
+	}
+
+	/** Protected urgencies are never delayed, whatever a rule asked for (Stage C). */
+	private static boolean debounces(PlannerTrigger trigger) {
+		var wake = trigger.wake();
+		if (wake == null || !wake.debounced()) return false;
+		return !List.of("critical", "direct", "high").contains(wake.urgency());
+	}
+
+	private List<PlannerTrigger> takeDebounced(TriggerHost host, String gate) {
+		var batch = new ArrayList<PlannerTrigger>();
+		while (!debounced.isEmpty()) {
+			PlannerTrigger held = debounced.removeFirst().trigger();
+			if (held.wake() != null && held.wake().seqNo() > 0 && host.incorporated(held.wake().seqNo())) {
+				host.audit(held, "dropped", "debounce.incorporated");
+			}
+			else if (host.blockedGoal()) {
+				host.audit(held, "dropped", "G4.blocked_goal");
+			}
+			else {
+				host.audit(held, "released", gate);
+				batch.add(held);
+			}
+		}
+		return batch;
 	}
 
 	/** Pending task wakes in release order and the gate retaining the head, for debug state and the dashboard. */
@@ -170,8 +239,17 @@ public final class WakeScheduler {
 			entry.put("missionId", wake.missionId());
 			pending.add(entry);
 		}
+		var held = new ArrayList<Map<String, Object>>();
+		for (Held entry : debounced) {
+			var item = new LinkedHashMap<String, Object>();
+			item.put("heldAt", entry.heldAt());
+			item.put("seqNo", entry.trigger().wake() == null ? 0L : entry.trigger().wake().seqNo());
+			item.put("type", entry.trigger().wake() == null ? null : entry.trigger().wake().type());
+			held.add(item);
+		}
 		var state = new LinkedHashMap<String, Object>();
 		state.put("pending", pending);
+		state.put("debounced", held);
 		String gate = lastDeferredAuditGate;
 		state.put("retainedBy", pending.isEmpty() || gate == null ? null : gate);
 		return state;

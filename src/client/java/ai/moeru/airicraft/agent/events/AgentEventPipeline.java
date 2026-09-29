@@ -184,7 +184,8 @@ public final class AgentEventPipeline {
 
 		WakeDecision wake = outcome.wake();
 		PlannerTrigger trigger = wake.wakes() ? triggerFactory.create(event, profile) : null;
-		if (trigger != null) trigger = trigger.withWake(ai.moeru.airicraft.agent.llm.WakeRef.event(event.seqNo(), event.type(), wake.urgency().name()));
+		if (trigger != null) trigger = trigger.withWake(ai.moeru.airicraft.agent.llm.WakeRef.event(event.seqNo(), event.type(), wake.urgency().name())
+			.debounce(wake.delivery() == Delivery.DEBOUNCE));
 		attentionLog.record(new AttentionDecision(event.seqNo(), event.tick(), event.type(), emitSemantic, wake.delivery(),
 			wake.urgency(), wake.stage(), wake.ruleId(), wake.wakes() && trigger == null ? "invalid_payload" : wake.reason(),
 			trigger != null, new AttentionDecision.Inputs(

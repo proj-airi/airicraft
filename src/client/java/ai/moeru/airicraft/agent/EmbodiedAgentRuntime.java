@@ -660,6 +660,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		dialogueRuntime.updateGameplayWorkIdle(!policyActive() && !actionGraphCoordinator.hasNonterminal()
 			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current()) && activeGoal().isEmpty()
 			&& !playerItemUseController.eating());
+		dialogueRuntime.releaseDebouncedWakes(tickCount, sessionSnapshot,
+			primaryInteractionResolver.current().map(PrimaryInteractionPlayer::name).orElse(null), activeGoal(), taskSnapshot,
+			missionExecutionSnapshot, eventBus);
 		DialogueResponse completedDialogueResponse = dialogueRuntime.poll(
 			tickCount,
 			eventBus,
