@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The planner's authorship of its own rule modules (spec 4.12). An edit is checked off the tick (the candidate loads,
@@ -84,12 +83,45 @@ public final class PlannerRules {
 	private final Host host;
 	private final ExecutorService worker = Executors.newSingleThreadExecutor(
 		Thread.ofPlatform().daemon().name("airicraft-rules-authoring").factory());
-	private final ConcurrentLinkedQueue<Runnable> applyQueue = new ConcurrentLinkedQueue<>();
+	private final ConcurrentLinkedQueue<Activation> applyQueue = new ConcurrentLinkedQueue<>();
 	private final java.util.concurrent.atomic.AtomicInteger inFlight = new java.util.concurrent.atomic.AtomicInteger();
 
 	public PlannerRules(RulesStore store, Host host) {
 		this.store = Objects.requireNonNull(store, "store");
 		this.host = Objects.requireNonNull(host, "host");
+	}
+
+	/**
+	 * An accepted edit waiting for the tick. Exactly one of the tick (which applies it), the timeout and {@link #close}
+	 * wins the state, so a warmed engine is either adopted or disposed, never both and never left behind.
+	 */
+	private static final class Activation {
+		private static final int PENDING = 0;
+		private static final int CLAIMED = 1;
+		private static final int CANCELLED = 2;
+		private final java.util.concurrent.atomic.AtomicInteger state = new java.util.concurrent.atomic.AtomicInteger(PENDING);
+		private final RuleEngine detached;
+		private final Runnable action;
+		private final Runnable onCancel;
+
+		Activation(RuleEngine detached, Runnable action, Runnable onCancel) {
+			this.detached = detached;
+			this.action = action;
+			this.onCancel = onCancel;
+		}
+
+		/** The tick's turn: applies the edit unless it was already cancelled. */
+		void run() {
+			if (state.compareAndSet(PENDING, CLAIMED)) action.run();
+		}
+
+		/** Disposes the warmed engine of an edit that will not be applied; false if the tick already claimed it. */
+		boolean cancel() {
+			if (!state.compareAndSet(PENDING, CANCELLED)) return false;
+			if (detached != null) detached.close();
+			onCancel.run();
+			return true;
+		}
 	}
 
 	public RulesStore store() {
@@ -98,8 +130,8 @@ public final class PlannerRules {
 
 	/** Runs activations that passed their checks; the runtime calls it every tick, on the tick thread. */
 	public void drain() {
-		Runnable task;
-		while ((task = applyQueue.poll()) != null) task.run();
+		Activation activation;
+		while ((activation = applyQueue.poll()) != null) activation.run();
 	}
 
 	/**
@@ -178,6 +210,11 @@ public final class PlannerRules {
 			.whenComplete((result, failure) -> inFlight.decrementAndGet());
 	}
 
+	/** Accepted edits waiting for the next tick. */
+	int pendingActivations() {
+		return applyQueue.size();
+	}
+
 	/** Edits still being checked or waiting for the tick; a test harness keeps ticking while this is above zero. */
 	public int inFlight() {
 		return inFlight.get();
@@ -250,7 +287,7 @@ public final class PlannerRules {
 		try {
 			diff = hook == RuleModule.Hook.ATTENTION
 				? RuleDryRun.attention(host.decisions(), host.events(), RuleEngine.shared(host.running(hook)), detached)
-				: RuleDryRun.salience(host.salienceSteps(), detached);
+				: RuleDryRun.salience(host.salienceSteps(), RuleEngine.shared(host.running(hook)), detached);
 		}
 		catch (RuntimeException exception) {
 			if (owned) detached.close();
@@ -273,15 +310,7 @@ public final class PlannerRules {
 
 	private CompletableFuture<Map<String, Object>> apply(Request request, Prepared prepared) {
 		var done = new CompletableFuture<Map<String, Object>>();
-		var cancelled = new AtomicBoolean();
-		done.orTimeout(APPLY_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).whenComplete((result, failure) -> {
-			if (failure != null) cancelled.set(true);
-		});
-		applyQueue.add(() -> {
-			if (cancelled.get() || done.isDone()) {
-				if (prepared.detached() != null) prepared.detached().close();
-				return;
-			}
+		var activation = new Activation(prepared.detached(), () -> {
 			try {
 				done.complete(activate(request, prepared));
 			}
@@ -289,13 +318,21 @@ public final class PlannerRules {
 				if (prepared.detached() != null) prepared.detached().close();
 				done.completeExceptionally(failure);
 			}
+		}, () -> done.completeExceptionally(new Refused("rules_unavailable", "the rules service was shut down before your edit was applied", Map.of())));
+		// Without a tick the queue is never drained, so the timeout disposes of the engine itself.
+		done.orTimeout(APPLY_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).whenComplete((result, failure) -> {
+			if (failure != null && activation.cancel()) applyQueue.remove(activation);
 		});
-		return done.exceptionallyCompose(failure -> {
+		var settled = done.exceptionallyCompose(failure -> {
 			Throwable cause = failure instanceof java.util.concurrent.TimeoutException || failure.getCause() instanceof java.util.concurrent.TimeoutException
 				? new Refused("rules_update_timeout", "the game did not tick for " + APPLY_TIMEOUT.toSeconds() + " s; the edit was not applied", Map.of())
 				: failure;
 			return CompletableFuture.failedFuture(cause);
 		});
+		// Queue last: everything that hangs off the future is registered by now, so the tick thread completes the
+		// whole chain (the tool result included) inside its drain, not this worker thread afterwards.
+		applyQueue.add(activation);
+		return settled;
 	}
 
 	/** Tick thread: rechecks what may have changed while the candidate was being checked, then switches. */
@@ -336,7 +373,10 @@ public final class PlannerRules {
 		return result;
 	}
 
+	/** Stops the worker and refuses every edit still waiting for a tick, disposing of its warmed engine. */
 	public void close() {
 		worker.shutdownNow();
+		Activation activation;
+		while ((activation = applyQueue.poll()) != null) activation.cancel();
 	}
 }

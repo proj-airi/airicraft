@@ -41,7 +41,7 @@
     },
     {
       "payload": {
-        "changed": 1,
+        "changed": 2,
         "hook": "attention",
         "kind": "update",
         "previousVersion": 0,
@@ -87,7 +87,7 @@
     },
     {
       "payload": {
-        "changed": 2,
+        "changed": 3,
         "hook": "attention",
         "kind": "rollback",
         "previousVersion": 1,
@@ -196,7 +196,7 @@
         {
           "kind": "TOOL_RESULT",
           "role": "tool",
-          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":1,\"hook\":\"attention\",\"kind\":\"update\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":0,\"replay\":{\"byType\":{\"social.player_spoke\":{\"changed\":1}},\"changed\":1,\"examples\":[{\"now\":\"no wake (mine.default)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake, not shown (chat.addressed_routed_separately)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":3,\"skipped\":1,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"1a3d9a88bba5bfed\"}"
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":1,\"hook\":\"attention\",\"kind\":\"update\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":0,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":1}},\"changed\":2,\"examples\":[{\"now\":\"no wake (mine.default)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (catalog.semantic)\"},{\"now\":\"no wake (mine.default)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake, not shown (chat.addressed_routed_separately)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":3,\"skipped\":1,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"1a3d9a88bba5bfed\"}"
         }
       ],
       "observe": {
@@ -206,7 +206,7 @@
         "events": [
           {
             "payload": {
-              "changed": 1,
+              "changed": 2,
               "hook": "attention",
               "kind": "update",
               "previousVersion": 0,
@@ -294,7 +294,7 @@
         {
           "kind": "TOOL_RESULT",
           "role": "tool",
-          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_spoke\":{\"changed\":2}},\"changed\":2,\"examples\":[{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"37ce24db38862922\"}"
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":2}},\"changed\":3,\"examples\":[{\"now\":\"no wake (catalog.semantic)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"37ce24db38862922\"}"
         }
       ],
       "observe": {
@@ -304,7 +304,7 @@
         "events": [
           {
             "payload": {
-              "changed": 2,
+              "changed": 3,
               "hook": "attention",
               "kind": "rollback",
               "previousVersion": 1,

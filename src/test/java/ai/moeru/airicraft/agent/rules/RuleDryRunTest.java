@@ -132,23 +132,25 @@ class RuleDryRunTest {
 		} }))
 		""";
 
-	private static List<ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord> recordedSteps(int count) throws Exception {
-		var old = engine(new RuleModule("config:emit.js", EMIT, RuleModule.Hook.SALIENCE));
+	/** Steps whose recorded outputs and states are deliberately from another module: only their inputs are used. */
+	private static List<ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord> recordedSteps(int count) {
 		var steps = new ArrayList<ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord>();
-		String state = "{}";
 		for (int index = 0; index < count; index++) {
 			var input = com.google.gson.JsonParser.parseString(
 				"{\"tick\":" + index + ",\"seed\":" + index + ",\"context\":{},\"candidates\":[{\"id\":\"c" + index + "\",\"kind\":\"item\"}]}").getAsJsonObject();
-			var result = old.step(input.toString(), state);
-			steps.add(new ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord(index, "config:emit.js", input, state, result.percepts(), result.drops()));
-			state = result.stateJson();
+			steps.add(new ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord(index, "planner:salience/v0", input,
+				"{\"foreign\":true}", com.google.gson.JsonParser.parseString("[{\"type\":\"perception.block_noticed\",\"payload\":{},\"candidateIds\":[\"old\"]}]").getAsJsonArray(),
+				new com.google.gson.JsonArray()));
 		}
 		return steps;
 	}
 
+	private static RuleEngine salienceEngine(String name, String source) throws Exception {
+		return engine(new RuleModule(name, source, RuleModule.Hook.SALIENCE));
+	}
+
 	@Test void aSalienceModuleThatDropsEverythingLosesItsPercepts() throws Exception {
-		var steps = recordedSteps(5);
-		var diff = RuleDryRun.salience(steps, engine(new RuleModule("planner:salience/v1", DROP, RuleModule.Hook.SALIENCE)));
+		var diff = RuleDryRun.salience(recordedSteps(5), salienceEngine("config:emit.js", EMIT), salienceEngine("planner:salience/v1", DROP));
 		assertEquals(5, diff.replayed());
 		assertEquals(5, diff.changed());
 		assertEquals(5, diff.lost());
@@ -157,21 +159,58 @@ class RuleDryRunTest {
 		assertEquals(5, diff.toMap().get("perceptsLost"));
 	}
 
-	@Test void theSameSalienceModuleChangesNothingAndThreadsItsState() throws Exception {
-		var steps = recordedSteps(4);
-		var diff = RuleDryRun.salience(steps, engine(new RuleModule("planner:salience/v1", EMIT, RuleModule.Hook.SALIENCE)));
+	@Test void theRunningModuleIsReplayedToo_soRecordedOutputsFromOtherVersionsDoNotDistortTheDiff() throws Exception {
+		// The recorded steps say block percepts; the running module never emits any, and neither does the candidate.
+		var diff = RuleDryRun.salience(recordedSteps(4), salienceEngine("config:emit.js", EMIT), salienceEngine("planner:salience/v1", EMIT));
 		assertEquals(4, diff.replayed());
 		assertEquals(0, diff.changed());
+		assertEquals(0, diff.lost());
+	}
+
+	@Test void aCandidateStartsFromAnEmptyStateNotTheRecordedOne() throws Exception {
+		var strict = "(lib => ({ step(input, state) { if (state.foreign !== undefined) throw Error('foreign state'); return {state: {n: (state.n || 0) + 1}, percepts: [], drops: []}; } }))";
+		var diff = RuleDryRun.salience(recordedSteps(3), salienceEngine("config:emit.js", EMIT), salienceEngine("planner:salience/v1", strict));
+		assertFalse(diff.failed(), String.valueOf(diff.firstFailure()));
+		assertEquals(3, diff.replayed());
+	}
+
+	@Test void aChangedCandidateOrPayloadIsAChangeEvenWithTheSameTypeCounts() throws Exception {
+		var other = "(lib => ({ step(input, state) { return {state, percepts: input.candidates.map(c => ({type: 'perception.item_noticed', payload: {coal: true}, candidateIds: [c.id]}))}; } }))";
+		var diff = RuleDryRun.salience(recordedSteps(3), salienceEngine("config:emit.js", EMIT), salienceEngine("planner:salience/v1", other));
+		assertEquals(3, diff.changed());
+		assertEquals(3, diff.gained());
+		assertEquals(3, diff.lost());
+		assertEquals(Map.of("changed", 3, "gained", 3, "lost", 3), diff.byType().get("perception.item_noticed"));
+	}
+
+	@Test void aStepTheRunningModuleCannotRunIsSkippedNotCompared() throws Exception {
+		var broken = salienceEngine("config:broken.js", "(lib => ({ step() { throw Error('old'); } }))");
+		var diff = RuleDryRun.salience(recordedSteps(2), broken, salienceEngine("planner:salience/v1", EMIT));
+		assertEquals(0, diff.replayed());
+		assertEquals(2, diff.skipped());
+		assertFalse(diff.failed());
 	}
 
 	@Test void aSalienceModuleThatThrowsFailsTheDryRun() throws Exception {
-		var diff = RuleDryRun.salience(recordedSteps(2), engine(new RuleModule("planner:salience/v1",
-			"(lib => ({ step() { throw Error('bad'); } }))", RuleModule.Hook.SALIENCE)));
+		var diff = RuleDryRun.salience(recordedSteps(2), salienceEngine("config:emit.js", EMIT),
+			salienceEngine("planner:salience/v1", "(lib => ({ step() { throw Error('bad'); } }))"));
 		assertTrue(diff.failed());
 		assertEquals(2, diff.newFailures());
 	}
 
 	@Test void noRecordedStepsReplaysNothing() throws Exception {
-		assertEquals(0, RuleDryRun.salience(List.of(), engine(new RuleModule("planner:salience/v1", EMIT, RuleModule.Hook.SALIENCE))).replayed());
+		assertEquals(0, RuleDryRun.salience(List.of(), salienceEngine("config:emit.js", EMIT), salienceEngine("planner:salience/v1", EMIT)).replayed());
+	}
+
+	@Test void aModuleThatOnlyRenamesTheRuleIdIsAChange() throws Exception {
+		for (long seq = 1; seq <= 3; seq++) record(seq, "pickup.item_picked_up", true, true);
+		String template = MUTE_PICKUPS.replace("'NONE'", "'IMMEDIATE'").replace("'LOW'", "'NORMAL'");
+		var was = engine(new RuleModule("config:a.js", template.replace("mine.quiet", "a.rule"), RuleModule.Hook.ATTENTION));
+		var now = engine(new RuleModule("planner:attention/v1", template.replace("mine.quiet", "b.rule"), RuleModule.Hook.ATTENTION));
+		var diff = RuleDryRun.attention(decisions, events, was, now);
+		assertEquals(3, diff.changed(), "the wake is the same, the deciding rule is not");
+		assertEquals(0, diff.lost());
+		assertEquals(0, diff.gained());
+		assertEquals(Map.of("changed", 3), diff.byType().get("pickup.item_picked_up"));
 	}
 }

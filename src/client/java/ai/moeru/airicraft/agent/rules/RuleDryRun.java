@@ -129,8 +129,10 @@ public final class RuleDryRun {
 			}
 			boolean oldWakes = old.wake().wakes();
 			boolean newWakes = now.wake().wakes();
+			// The rule id is part of the decision (as in AttentionReplay), so a module that only renames it shows up.
 			boolean differs = oldWakes != newWakes || old.wake().delivery() != now.wake().delivery()
-				|| old.wake().urgency() != now.wake().urgency() || old.emitSemantic() != now.emitSemantic();
+				|| old.wake().urgency() != now.wake().urgency() || old.emitSemantic() != now.emitSemantic()
+				|| !old.wake().ruleId().equals(now.wake().ruleId());
 			if (!differs) continue;
 			tally.changed++;
 			tally.type(event.type(), "changed", 1);
@@ -160,17 +162,30 @@ public final class RuleDryRun {
 	}
 
 	/**
-	 * Re-runs the latest recorded salience steps through {@code newEngine}, threading its own state from the first
-	 * step's recorded state, and compares its percepts and drops with what the recorded module produced.
+	 * Re-runs the latest recorded salience steps' inputs through the running module and the candidate, each from an
+	 * empty state that it threads itself (the recorded outputs and states came from whichever versions ran then, so
+	 * they are not used). Percepts are compared whole, by candidate ids and payload, not only by type. A step the running
+	 * module cannot run is skipped, not compared.
 	 */
-	public static Diff salience(List<SaliencePolicy.StepRecord> steps, RuleEngine newEngine) {
+	public static Diff salience(List<SaliencePolicy.StepRecord> steps, RuleEngine oldEngine, RuleEngine newEngine) {
 		var tally = new Tally();
 		List<SaliencePolicy.StepRecord> recent = steps.size() > SALIENCE_STEPS ? steps.subList(steps.size() - SALIENCE_STEPS, steps.size()) : steps;
-		String state = recent.isEmpty() ? "{}" : recent.getFirst().stateBefore();
+		String oldState = "{}";
+		String newState = "{}";
 		for (SaliencePolicy.StepRecord recorded : recent) {
-			RuleStepResult result;
+			String input = recorded.input().toString();
+			RuleStepResult before = null;
 			try {
-				result = newEngine.step(recorded.input().toString(), state);
+				before = oldEngine.step(input, oldState);
+				oldState = before.stateJson();
+			}
+			catch (RuleException exception) {
+				// Not the candidate's fault: a cold or failing running module leaves nothing to compare with.
+			}
+			RuleStepResult after;
+			try {
+				after = newEngine.step(input, newState);
+				newState = after.stateJson();
 			}
 			catch (RuleException exception) {
 				tally.replayed++;
@@ -178,44 +193,72 @@ public final class RuleDryRun {
 				if (tally.firstFailure == null) tally.firstFailure = exception.code() + ": " + exception.getMessage();
 				continue;
 			}
-			state = result.stateJson();
+			if (before == null) {
+				tally.skipped++;
+				continue;
+			}
 			tally.replayed++;
-			Map<String, Integer> was = typeCounts(recorded.percepts());
-			Map<String, Integer> now = typeCounts(result.percepts());
-			boolean differs = !was.equals(now) || !recorded.drops().equals(result.drops());
-			if (!differs) continue;
+			Map<String, Integer> was = perceptCounts(before.percepts());
+			Map<String, Integer> now = perceptCounts(after.percepts());
+			boolean dropsDiffer = !perceptCounts(before.drops()).equals(perceptCounts(after.drops()));
+			if (was.equals(now) && !dropsDiffer) continue;
 			tally.changed++;
-			var types = new TreeMap<String, Integer>(was);
-			now.keySet().forEach(type -> types.putIfAbsent(type, 0));
-			for (String type : types.keySet()) {
-				int delta = now.getOrDefault(type, 0) - was.getOrDefault(type, 0);
-				if (delta != 0) tally.type(type, "changed", 1);
+			int gained = 0;
+			int lost = 0;
+			var perType = new TreeMap<String, int[]>();
+			for (var entry : now.entrySet()) {
+				int delta = entry.getValue() - was.getOrDefault(entry.getKey(), 0);
 				if (delta > 0) {
-					tally.gained += delta;
-					tally.type(type, "gained", delta);
+					gained += delta;
+					perType.computeIfAbsent(perceptType(entry.getKey()), ignored -> new int[2])[0] += delta;
 				}
-				else if (delta < 0) {
-					tally.lost -= delta;
-					tally.type(type, "lost", -delta);
+			}
+			for (var entry : was.entrySet()) {
+				int delta = entry.getValue() - now.getOrDefault(entry.getKey(), 0);
+				if (delta > 0) {
+					lost += delta;
+					perType.computeIfAbsent(perceptType(entry.getKey()), ignored -> new int[2])[1] += delta;
 				}
+			}
+			tally.gained += gained;
+			tally.lost += lost;
+			for (var entry : perType.entrySet()) {
+				tally.type(entry.getKey(), "changed", 1);
+				if (entry.getValue()[0] > 0) tally.type(entry.getKey(), "gained", entry.getValue()[0]);
+				if (entry.getValue()[1] > 0) tally.type(entry.getKey(), "lost", entry.getValue()[1]);
 			}
 			var example = new LinkedHashMap<String, Object>();
 			example.put("tick", recorded.tick());
-			example.put("was", was + ", " + recorded.drops().size() + " dropped");
-			example.put("now", now + ", " + result.drops().size() + " dropped");
+			example.put("was", summarize(before));
+			example.put("now", summarize(after));
 			tally.example(example);
 		}
 		return tally.diff("salience");
 	}
 
-	private static Map<String, Integer> typeCounts(JsonArray percepts) {
+	private static String summarize(RuleStepResult result) {
+		var types = new TreeMap<String, Integer>();
+		perceptCounts(result.percepts()).forEach((identity, count) -> types.merge(perceptType(identity), count, Integer::sum));
+		return types + ", " + result.drops().size() + " dropped";
+	}
+
+	/** Percepts (or drops) by identity: the whole element as JSON, so a different candidate or payload is a different one. */
+	private static Map<String, Integer> perceptCounts(JsonArray elements) {
 		var counts = new TreeMap<String, Integer>();
-		for (JsonElement element : percepts) {
-			if (!element.isJsonObject()) continue;
-			JsonObject object = element.getAsJsonObject();
-			String type = object.has("type") && object.get("type").isJsonPrimitive() ? object.get("type").getAsString() : "?";
-			counts.merge(type, 1, Integer::sum);
-		}
+		for (JsonElement element : elements) counts.merge(element.toString(), 1, Integer::sum);
 		return counts;
+	}
+
+	private static String perceptType(String identity) {
+		try {
+			JsonElement parsed = com.google.gson.JsonParser.parseString(identity);
+			if (parsed.isJsonObject() && parsed.getAsJsonObject().has("type") && parsed.getAsJsonObject().get("type").isJsonPrimitive()) {
+				return parsed.getAsJsonObject().get("type").getAsString();
+			}
+		}
+		catch (RuntimeException ignored) {
+			// Fall through: an element that is not an object has no type.
+		}
+		return "?";
 	}
 }

@@ -236,4 +236,19 @@ class PlannerRulesTest {
 		assertEquals("salience", host.payloads.getFirst().get("hook"));
 		assertTrue(host.payloads.getFirst().containsKey("perceptsLost"));
 	}
+
+	@Test void closingRefusesEditsStillWaitingForATickAndDisposesTheirEngines() throws Exception {
+		host.pickups(2);
+		var future = edit(RuleModule.Hook.ATTENTION, MUTE_PICKUPS);
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);
+		// The check runs off the tick; with no drain the accepted edit waits in the queue.
+		while (rules.pendingActivations() == 0 && System.nanoTime() < deadline) Thread.sleep(20);
+		assertEquals(1, rules.pendingActivations());
+		rules.close();
+		assertEquals(0, rules.pendingActivations());
+		rules.drain();
+		assertTrue(host.activated.isEmpty(), "a closed service applies nothing");
+		assertEquals(0, store.activeNumber(RuleModule.Hook.ATTENTION));
+		assertEquals("rules_unavailable", refusal(future).code());
+	}
 }

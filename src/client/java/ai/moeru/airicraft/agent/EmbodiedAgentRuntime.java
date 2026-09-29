@@ -1329,6 +1329,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public void shutdown() {
+		plannerRules.close();
 		initialized = false;
 		tickCount = 0L;
 		worldLoadTick = -1L;
