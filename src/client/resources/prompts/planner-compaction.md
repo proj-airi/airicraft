@@ -18,3 +18,4 @@ Prefer compressing assistant chatter, tool chatter, and stale notices.
 Do not rewrite or quote the whole transcript.
 Do not keep stale relative-time phrases such as "4 seconds ago"; convert them into stable facts or timeline notes.
 Keep each list item short and concrete.
+Summarize only the conversation above. Newer messages that arrive while you work are kept as they are after your checkpoint, so do not guess at them.

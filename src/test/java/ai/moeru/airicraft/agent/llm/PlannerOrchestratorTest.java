@@ -1511,6 +1511,50 @@ class PlannerOrchestratorTest {
 		}
 	}
 
+	@Test
+	void plannerKeepsTakingEventsWhileCompactionRunsAndOnlyTheSummarizedPastIsReplaced() throws Exception {
+		try (CompactionTestServer server = CompactionTestServer.start()) {
+			var release = server.holdResponses();
+			var config = new AgentConfig.LlmConfig("http://127.0.0.1:" + server.port(), "test-key", "test-model",
+				"https://api.openai.com/v1", "", "", 15_000, 10_000, 8, 65_536, "low", false);
+			var backend = new RecordingBackend();
+			var orchestrator = newCompactionOrchestrator(config, backend);
+			try {
+				orchestrator.submit(requestAt(10, 1000, "Alice", "FIRST-EVENT"));
+				backend.awaitCalls(1, Duration.ofSeconds(1));
+				backend.responses.get(0).complete(LlmCallResult.of(replyOnly("Noted"), new LlmUsageSnapshot(60000, 10, 60010)));
+				awaitResult(orchestrator);
+				orchestrator.onAcceptedReplyRecorded();
+
+				// The context is past the early threshold, so the compaction starts by itself and stays in flight.
+				orchestrator.submit(requestAt(20, 2000, "Alice", "SECOND-EVENT"));
+				assertTrue(orchestrator.debugSnapshot().compactionInFlight(), "Compaction should start early, in the background");
+
+				// The planner is not stalled behind it: the next event reaches the model right away.
+				awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
+				assertTrue(orchestrator.debugSnapshot().compactionInFlight(), "The summary is still being written");
+				backend.succeed(1, replyOnly("Handled"));
+				awaitResult(orchestrator);
+				orchestrator.onAcceptedReplyRecorded();
+				assertTrue(orchestrator.debugSnapshot().compactionInFlight());
+
+				release.countDown();
+				assertTrue(awaitCompaction(orchestrator).succeeded());
+
+				orchestrator.submit(requestAt(30, 3000, "Alice", "THIRD-EVENT"));
+				awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(2));
+				String prompt = backend.conversation(2).messages().toString();
+				assertTrue(prompt.contains("Context checkpoint"), "The summary stands in for the past");
+				assertFalse(prompt.contains("FIRST-EVENT"), "What was summarized is replaced");
+				assertTrue(prompt.contains("SECOND-EVENT"), "What arrived during the compaction is kept as it was");
+				assertTrue(prompt.contains("THIRD-EVENT"));
+			} finally {
+				release.countDown();
+				orchestrator.shutdown();
+			}
+		}
+	}
+
 	@Test void temporaryCompactionFailureCanRetryOnNextTrigger() throws Exception {
 		try (CompactionTestServer server = CompactionTestServer.start(503, "temporarily unavailable")) {
 			var config = new AgentConfig.LlmConfig("http://127.0.0.1:" + server.port(), "test-key", "test-model",
@@ -4454,6 +4498,13 @@ class PlannerOrchestratorTest {
 	private static final class CompactionTestServer implements AutoCloseable {
 		private final HttpServer server;
 		private int requestCount;
+		private volatile java.util.concurrent.CountDownLatch gate;
+
+		/** Holds every response until the returned latch is counted down. */
+		private java.util.concurrent.CountDownLatch holdResponses() {
+			gate = new java.util.concurrent.CountDownLatch(1);
+			return gate;
+		}
 
 		private CompactionTestServer(HttpServer server) {
 			this.server = server;
@@ -4493,6 +4544,15 @@ class PlannerOrchestratorTest {
 
 		private void handle(HttpExchange exchange, int status, String responseBody) throws IOException {
 			requestCount++;
+			var held = gate;
+			if (held != null) {
+				try {
+					held.await(10, java.util.concurrent.TimeUnit.SECONDS);
+				}
+				catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+				}
+			}
 			writeResponse(exchange, status, responseBody);
 		}
 

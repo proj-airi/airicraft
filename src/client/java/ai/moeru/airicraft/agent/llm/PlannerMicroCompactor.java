@@ -150,7 +150,16 @@ public final class PlannerMicroCompactor implements AutoCloseable {
 			|| value.getAsString().isBlank() || value.getAsString().length() > max) throw new IllegalArgumentException("Invalid " + key);
 		return value.getAsString();
 	}
-	/** Full compaction, reset or world change owns the next context epoch. Never join the worker. */
+	/** After a full compaction, forget findings for inspections the summary replaced. A pending request is left to finish. */
+	void retainOnly(LlmConversation conversation) {
+		var live = new HashSet<String>();
+		for (var message : conversation.messages()) {
+			if (message.toolCallId() != null) live.add(message.toolCallId());
+		}
+		replacements.keySet().removeIf(source -> source.id() != null && !live.contains(source.id()));
+		attempted.removeIf(source -> source.id() != null && !live.contains(source.id()));
+	}
+	/** Reset or world change owns the next context epoch. Never join the worker. */
 	public void reset() {
 		if (inFlight != null) inFlight.cancel(true);
 		inFlight = null; batch = List.of(); replacements.clear(); attempted.clear(); lastOutput = null;

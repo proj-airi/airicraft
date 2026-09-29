@@ -66,9 +66,10 @@ class PlannerMicroCompactorTest {
 		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 		context.configureMicroCompaction(new PlannerMicroCompactor(c -> future));
 		context.retainConversation(observation("q", "inspect_world", "RAW_WALL"));
-		var fullCompactionInput = context.buildCompactionConversation();
+		var fullCompaction = context.beginCompaction();
+		var fullCompactionInput = fullCompaction.conversation();
 		if (microFirst) { future.complete(summary("q")); context.refreshMicroCompaction(); }
-		context.applyCheckpoint(new CompactionCheckpoint("now", "overworld", "repair", List.of(), List.of("Full checkpoint wall evidence"), List.of(), List.of(), List.of(), List.of()));
+		context.applyCheckpoint(new CompactionCheckpoint("now", "overworld", "repair", List.of(), List.of("Full checkpoint wall evidence"), List.of(), List.of(), List.of(), List.of()), fullCompaction.cut());
 		future.complete(summary("q")); context.refreshMicroCompaction();
 		assertTrue(context.retainedToolContext().messages().toString().contains("Full checkpoint wall evidence"));
 		assertFalse(context.retainedToolContext().messages().toString().contains("RAW_WALL"));
@@ -81,8 +82,7 @@ class PlannerMicroCompactorTest {
 		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 		context.configureMicroCompaction(new PlannerMicroCompactor(c -> future));
 		context.retainConversation(observation("q", "inspect_world", "RAW_WALL"));
-		context.buildCompactionConversation();
-		context.onCompactionFailure();
+		context.beginCompaction();
 		assertTrue(context.retainedToolContext().messages().toString().contains("RAW_WALL"));
 		future.complete(summary("q")); context.refreshMicroCompaction();
 		assertTrue(context.retainedToolContext().messages().toString().contains("West wall intact"));

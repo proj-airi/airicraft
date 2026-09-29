@@ -8,8 +8,8 @@ import java.time.format.FormatStyle;
 import java.util.Locale;
 
 public final class PlannerContextPolicy {
-	static final int RETAINED_USER_TURNS = 4;
-	static final int RETAINED_MESSAGE_CAP = 12;
+	/** Background compaction starts at this share of the token budget so its summary lands before the budget does. */
+	static final double EARLY_COMPACTION_RATIO = 0.75;
 	private static final long TIME_BEACON_WINDOW_MILLIS = 30L * 60L * 1000L;
 	private static final DateTimeFormatter TIME_BEACON_FORMATTER = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
 		.withLocale(Locale.ENGLISH);
@@ -19,6 +19,10 @@ public final class PlannerContextPolicy {
 
 	public static boolean shouldInjectTimeBeacon(long lastTimeBeaconAtMs, long nowMs) {
 		return lastTimeBeaconAtMs < 0L || nowMs - lastTimeBeaconAtMs >= TIME_BEACON_WINDOW_MILLIS;
+	}
+
+	public static int earlyCompactionTokens(int budgetTokens) {
+		return Math.max(1, (int) (budgetTokens * EARLY_COMPACTION_RATIO));
 	}
 
 	public static boolean shouldCompact(LlmUsageSnapshot usage, int thresholdTokens) {

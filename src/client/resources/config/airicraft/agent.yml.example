@@ -59,7 +59,9 @@ visionRequestTimeoutMillis: 10000
 # Number of recent dialogue turns retained in planner context.
 maxRecentConversationTurns: 8
 
-# Trigger a context compaction checkpoint once the planner input prompt reaches this many tokens.
+# Token budget for the planner input prompt. Compaction runs in the background and never pauses the planner: it
+# starts at 75% of this budget so the checkpoint lands before the budget does. Events that arrive meanwhile are
+# kept as they are; the checkpoint replaces only the history that existed when the compaction started.
 plannerCompactionTriggerTokens: 65536
 
 # Maximum number of raw semantic events allowed to remain pending before planner auto-flush is triggered.

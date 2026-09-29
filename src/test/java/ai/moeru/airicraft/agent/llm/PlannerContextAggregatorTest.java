@@ -37,6 +37,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlannerContextAggregatorTest {
@@ -261,7 +262,8 @@ class PlannerContextAggregatorTest {
 		aggregator.recordUsage(new LlmUsageSnapshot(70_000, 200, 70_200));
 
 		assertTrue(aggregator.compactionPending());
-		LlmConversation compactionConversation = aggregator.buildCompactionConversation();
+		CompactionRequest compaction = aggregator.beginCompaction();
+		LlmConversation compactionConversation = compaction.conversation();
 		LlmChatMessage lastMessage = compactionConversation.messages().get(compactionConversation.messages().size() - 1);
 		assertEquals(LlmMessageKind.TASK, lastMessage.kind());
 		assertTrue(lastMessage.content().startsWith("COMPACTION TASK:"));
@@ -276,11 +278,105 @@ class PlannerContextAggregatorTest {
 			java.util.List.of("keep following"),
 			java.util.List.of("Alice asked for follow"),
 			java.util.List.of()
-		));
+		), compaction.cut());
 
 		assertFalse(aggregator.compactionPending());
 		LlmConversation afterCheckpoint = freezeSnapshot(aggregator, requestAt(32 * 60_000L, "Alice", "@agent status")).plannerConversation();
 		assertEquals(LlmMessageKind.CHECKPOINT, afterCheckpoint.messages().get(1).kind());
+	}
+
+	private static PlannerContextAggregator fixedPrefixAggregator() {
+		PlannerToolRegistry registry = PlannerToolRegistry.empty();
+		registry.freezeToolPrefix();
+		return new PlannerContextAggregator(Clock.systemUTC(), 65_536, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
+	}
+
+	private static LlmChatMessage toolCall(String id) {
+		return LlmChatMessage.assistantToolCall("", new PlannerToolCall(id, "inspect_world", new com.google.gson.JsonObject(), null));
+	}
+
+	private static CompactionCheckpoint checkpoint(String fact) {
+		return new CompactionCheckpoint("today", "world", "goal", List.of(), List.of(fact), List.of(), List.of(), List.of(), List.of());
+	}
+
+	private static List<String> texts(LlmConversation conversation) {
+		return conversation.messages().stream().map(LlmChatMessage::content).toList();
+	}
+
+	@Test
+	void summaryReplacesOnlyWhatExistedWhenCompactionStartedAndKeepsLaterMessages() {
+		PlannerContextAggregator aggregator = fixedPrefixAggregator();
+		LlmChatMessage system = LlmChatMessage.system("system");
+		LlmConversation abc = LlmConversation.of(List.of(system, LlmChatMessage.user("A", LlmMessageKind.USER_TURN),
+			toolCall("b"), LlmChatMessage.tool("b", "B"), LlmChatMessage.assistant("C")));
+		aggregator.retainConversation(abc);
+
+		CompactionRequest request = aggregator.beginCompaction();
+		assertEquals(List.of("system", "A", "", "B", "C", request.conversation().messages().getLast().content()), texts(request.conversation()));
+
+		// The planner carries on while the summary is being written.
+		LlmConversation withD = LlmConversation.of(java.util.stream.Stream.concat(abc.messages().stream(),
+			java.util.stream.Stream.of(LlmChatMessage.user("D", LlmMessageKind.NOTICE))).toList());
+		aggregator.retainConversation(withD);
+
+		aggregator.applyCheckpoint(checkpoint("summary of ABC"), request.cut());
+
+		List<String> retained = texts(aggregator.retainedToolContext());
+		assertEquals(3, retained.size(), retained.toString());
+		assertEquals("system", retained.get(0));
+		assertTrue(retained.get(1).contains("summary of ABC"));
+		assertEquals("D", retained.get(2));
+	}
+
+	@Test
+	void turnStillHoldingTheReplacedPrefixIsRebasedWhenItWritesBack() {
+		PlannerContextAggregator aggregator = fixedPrefixAggregator();
+		LlmConversation abc = LlmConversation.of(List.of(LlmChatMessage.system("system"),
+			LlmChatMessage.user("A", LlmMessageKind.USER_TURN), toolCall("b"), LlmChatMessage.tool("b", "B")));
+		aggregator.retainConversation(abc);
+		CompactionRequest request = aggregator.beginCompaction();
+		aggregator.applyCheckpoint(checkpoint("summary of AB"), request.cut());
+
+		// A turn that began before the summary landed appends to its own, older copy of the conversation.
+		LlmConversation stale = abc.withAppended(toolCall("d")).withAppended(LlmChatMessage.tool("d", "D"));
+		LlmConversation written = aggregator.retainConversation(stale);
+
+		assertEquals(4, written.messages().size(), texts(written).toString());
+		assertTrue(written.messages().get(1).content().contains("summary of AB"));
+		assertEquals("D", written.messages().getLast().content());
+		assertFalse(texts(written).contains("A"));
+		assertEquals(written, aggregator.retainedToolContext());
+		// Writing the rebased conversation again changes nothing.
+		assertEquals(written, aggregator.retainConversation(written));
+	}
+
+	@Test
+	void compactionNeverSplitsAToolCallFromItsResult() {
+		PlannerContextAggregator aggregator = fixedPrefixAggregator();
+		aggregator.retainConversation(LlmConversation.of(List.of(LlmChatMessage.system("system"),
+			LlmChatMessage.user("A", LlmMessageKind.USER_TURN), toolCall("done"), LlmChatMessage.tool("done", "B"),
+			toolCall("running"))));
+
+		List<String> covered = texts(aggregator.beginCompaction().conversation());
+
+		assertEquals("B", covered.get(covered.size() - 2), "The call still waiting for its result is left out of the summary");
+		assertFalse(covered.stream().anyMatch(text -> text.contains("running")));
+	}
+
+	@Test
+	void nothingIsCompactedBeforeAnythingIsRetained() {
+		PlannerContextAggregator aggregator = fixedPrefixAggregator();
+		aggregator.retainConversation(LlmConversation.of(List.of(LlmChatMessage.system("system"))));
+		assertNull(aggregator.beginCompaction());
+	}
+
+	@Test
+	void usageCrossesTheEarlyThresholdBeforeTheTokenBudget() {
+		PlannerContextAggregator aggregator = new PlannerContextAggregator(Clock.systemUTC(), 1_000, PlannerVisionMode.EXTERNAL_SUMMARY);
+		aggregator.recordUsage(new LlmUsageSnapshot(700, 10, 710));
+		assertFalse(aggregator.compactionPending());
+		aggregator.recordUsage(new LlmUsageSnapshot(760, 10, 770));
+		assertTrue(aggregator.compactionPending(), "Compaction starts early so the summary lands before the budget does");
 	}
 
 	@Test
@@ -348,7 +444,7 @@ class PlannerContextAggregatorTest {
 			"Idle context must include the accepted reply, not just the last submitted request");
 
 		var checkpoint = new CompactionCheckpoint("today", "cave", "smelt iron", List.of(), List.of("Three raw iron gathered"), List.of(), List.of(), List.of(), List.of());
-		aggregator.applyCheckpoint(checkpoint);
+		aggregator.applyCheckpoint(checkpoint, aggregator.beginCompaction().cut());
 
 		retained = aggregator.currentRetainedConversation(clock.millis());
 		assertTrue(retained.messages().stream().anyMatch(message -> message.content().contains("Three raw iron gathered")),

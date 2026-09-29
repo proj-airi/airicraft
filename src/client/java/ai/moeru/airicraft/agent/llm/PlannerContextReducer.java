@@ -249,25 +249,6 @@ final class PlannerContextReducer {
 		);
 	}
 
-	private static void stripDanglingToolEntries(ArrayList<PlannerContextEntry> retained) {
-		while (!retained.isEmpty()) {
-			PlannerContextEntryType head = retained.get(0).type();
-			if (head == PlannerContextEntryType.TOOL_REQUEST || head == PlannerContextEntryType.TOOL_RESULT) {
-				retained.remove(0);
-				continue;
-			}
-			break;
-		}
-		while (!retained.isEmpty()) {
-			PlannerContextEntryType tail = retained.get(retained.size() - 1).type();
-			if (tail == PlannerContextEntryType.TOOL_REQUEST) {
-				retained.remove(retained.size() - 1);
-				continue;
-			}
-			break;
-		}
-	}
-
 	static PlannerContextState updateUsage(PlannerContextState state, LlmUsageSnapshot usage, int thresholdTokens) {
 		boolean compactionPending = state.compactionPending() || PlannerContextPolicy.shouldCompact(usage, thresholdTokens);
 		return updateObservedUsage(state, usage, compactionPending);
@@ -286,31 +267,16 @@ final class PlannerContextReducer {
 		);
 	}
 
-	static PlannerContextState clearCompactionPending(PlannerContextState state, CompactionCheckpoint checkpoint, long compactedAtMs) {
-		ArrayList<PlannerContextEntry> retained = new ArrayList<>();
-		int retainedUserTurns = 0;
-		for (int index = state.acceptedHistoryTape().size() - 1; index >= 0; index--) {
-			PlannerContextEntry entry = state.acceptedHistoryTape().get(index);
-			if (
-				entry.type() != PlannerContextEntryType.USER_TURN
-				&& entry.type() != PlannerContextEntryType.ASSISTANT_TURN
-				&& entry.type() != PlannerContextEntryType.TOOL_REQUEST
-				&& entry.type() != PlannerContextEntryType.TOOL_RESULT
-			) {
-				continue;
-			}
-			retained.add(0, entry);
-			if (entry.type() == PlannerContextEntryType.USER_TURN) {
-				retainedUserTurns++;
-			}
-			if (retainedUserTurns >= PlannerContextPolicy.RETAINED_USER_TURNS || retained.size() >= PlannerContextPolicy.RETAINED_MESSAGE_CAP) {
-				break;
-			}
-		}
-		stripDanglingToolEntries(retained);
-
+	/** Replaces the first {@code coveredEntries} of history with the checkpoint; entries recorded since stay. */
+	static PlannerContextState applyCompaction(
+		PlannerContextState state,
+		CompactionCheckpoint checkpoint,
+		int coveredEntries,
+		long compactedAtMs
+	) {
+		List<PlannerContextEntry> tape = state.acceptedHistoryTape();
 		return new PlannerContextState(
-			List.copyOf(retained),
+			List.copyOf(tape.subList(Math.min(Math.max(coveredEntries, 0), tape.size()), tape.size())),
 			checkpoint,
 			state.lastAcceptedAmbientContext(),
 			compactedAtMs,

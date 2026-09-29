@@ -74,6 +74,8 @@ public final class PlannerOrchestrator {
 	private PlannerRequest pendingSubmitRequest;
 	private PendingToolExecution pendingToolExecution;
 	private CompactionExecutionResult lastCompactionResult;
+	/** What the compaction now running will replace; set when it starts, consumed when it completes. */
+	private CompactionRequest.Cut compactionCut;
 	private boolean awaitingAcceptedReplyRecord;
 	private JsonElement pendingAcceptedAssistantRawContent;
 	private volatile boolean captureInFlight;
@@ -217,7 +219,6 @@ public final class PlannerOrchestrator {
 	public boolean hasInFlight() {
 		return enabled && (coalescePending
 			|| sessionCoordinator.hasInFlight()
-			|| compactionService.hasInFlight()
 			|| pendingToolExecution != null);
 	}
 
@@ -544,11 +545,11 @@ public final class PlannerOrchestrator {
 
 	/**
 	 * Whether a direct-guidance batch submitted now would supersede the running turn: one is in flight and
-	 * replaceable, and no compaction, accepted-reply record or side-effect tool holds it. The wake scheduler asks
+	 * replaceable, and no accepted-reply record or side-effect tool holds it. The wake scheduler asks
 	 * before it decides (supersede budget) and times the coalesce window that follows.
 	 */
 	public boolean canSupersede() {
-		if (!enabled || compactionService.hasInFlight()) return false;
+		if (!enabled) return false;
 		sessionCoordinator.drainCompletedResults();
 		return !awaitingAcceptedReplyRecord && !pendingSideEffectToolExecution() && sessionCoordinator.hasReplaceableActiveSession();
 	}
@@ -591,9 +592,6 @@ public final class PlannerOrchestrator {
 		if (!enabled) {
 			return discardSubmittedRequest();
 		}
-		if (compactionService.hasInFlight()) {
-			return true;
-		}
 		sessionCoordinator.drainCompletedResults();
 		if (awaitingAcceptedReplyRecord) {
 			return true;
@@ -621,9 +619,8 @@ public final class PlannerOrchestrator {
 		contextAggregator.refreshMicroCompaction();
 		tickToolQueue();
 		if (plannerExecutor.hasInFlight()) recordConversationSources();
-		if (compactionService.hasInFlight()) {
-			return pollCompaction();
-		}
+		pollCompaction();
+		startCompactionIfNeeded(false);
 
 		if (pendingToolExecution != null) {
 			PlannerExecutionResult toolContinuation = pollToolContinuation();
@@ -652,16 +649,15 @@ public final class PlannerOrchestrator {
 		return finishSuccessfulPlannerResult(plannerResult);
 	}
 
-	private PlannerExecutionResult pollCompaction() {
+	/** Compaction runs beside the planner; its result is applied whenever it arrives and never holds a turn back. */
+	private void pollCompaction() {
+		if (!compactionService.hasInFlight()) {
+			return;
+		}
 		CompactionExecutionResult compactionResult = compactionService.poll();
-		if (compactionResult == null) {
-			return null;
+		if (compactionResult != null) {
+			completeCompaction(compactionResult);
 		}
-		completeCompaction(compactionResult);
-		if (compactionResult.succeeded() && pendingSubmitRequest != null && contextAggregator.hasQueuedTriggers()) {
-			startQueuedWorkIfPossible();
-		}
-		return null;
 	}
 
 	private PlannerExecutionResult pollToolContinuation() {
@@ -1123,7 +1119,7 @@ public final class PlannerOrchestrator {
 		}
 		// Routine reviews are explicitly placed in the plan, with FIFO exhaustion as the fallback.
 		if (toolQueue.reports.isEmpty() || toolQueue.seed == null || sessionCoordinator.hasInFlight()
-			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || compactionService.hasInFlight() || coalescePending) return;
+			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || coalescePending) return;
 		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
 		long now = clock.millis();
 		PlannerRequest seed = toolQueue.seed;
@@ -1289,12 +1285,12 @@ public final class PlannerOrchestrator {
 	}
 
 	public boolean startDebugCompaction() {
-		if (!enabled || !isConfigured() || hasInFlight() || fullCompactionWaitingForMicro()
+		if (!enabled || !isConfigured() || compactionService.hasInFlight() || fullCompactionWaitingForMicro()
 			|| plannerExecutor.managesConversationHistory()) {
 			return false;
 		}
 		lastCompactionResult = null;
-		return compactionService.submit(contextAggregator.buildCompactionConversation());
+		return startCompaction();
 	}
 
 	public CompactionExecutionResult pollDebugCompaction() {
@@ -1315,6 +1311,7 @@ public final class PlannerOrchestrator {
 		cancelPendingTool();
 		sessionCoordinator.reset();
 		compactionService.reset();
+		compactionCut = null;
 		clearRuntimeState("reset");
 	}
 
@@ -1363,10 +1360,7 @@ public final class PlannerOrchestrator {
 		if (awaitingAcceptedReplyRecord) {
 			return true;
 		}
-		if (contextAggregator.compactionPending()) {
-			return startCompactionIfIdle();
-		}
-
+		startCompactionIfNeeded(true);
 		return startTriggeredPlannerTurn();
 	}
 
@@ -1401,6 +1395,7 @@ public final class PlannerOrchestrator {
 		cancelPendingTool();
 		sessionCoordinator.pause();
 		compactionService.reset();
+		compactionCut = null;
 		if (activeGeneration > 0L) {
 			turnJournal.markSuperseded(activeGeneration);
 		}
@@ -1415,20 +1410,36 @@ public final class PlannerOrchestrator {
 		lifecycleListener.onReset("PLANNER OFF");
 	}
 
-	private boolean startCompactionIfIdle() {
-		if (sessionCoordinator.hasInFlight() || pendingToolExecution != null || compactionService.hasInFlight()) {
-			return true;
+	/**
+	 * Starts a compaction in the background once the context has grown large enough. The planner keeps taking events
+	 * meanwhile; the summary replaces only the history that existed when it started. A failed compaction is retried on
+	 * the next trigger, not on every poll, and never blocks planning.
+	 */
+	private void startCompactionIfNeeded(boolean retryFailure) {
+		if (!enabled || !contextAggregator.compactionPending() || compactionService.hasInFlight()
+			|| fullCompactionWaitingForMicro()) {
+			return;
 		}
-		if (fullCompactionWaitingForMicro()) return true;
-		// The HTTP adapter prefixes errors with their status. Validation/auth failures cannot
-		// recover by resending this history. Preserve it and the visible failure until explicit
-		// debug compaction or reset; timeouts, rate limits and server errors remain retryable.
-		if (lastCompactionResult != null && lastCompactionResult.failureType() == LlmFailureType.PROVIDER_ERROR
-			&& lastCompactionResult.failureMessage() != null
-			&& lastCompactionResult.failureMessage().matches("(?s)^Provider returned HTTP (400|401|403|404|405|413|415|422)(?:\\D.*|$)")) {
+		if (lastCompactionResult != null && !lastCompactionResult.succeeded()) {
+			// The HTTP adapter prefixes errors with their status. Validation/auth failures cannot
+			// recover by resending this history. Preserve the visible failure until explicit
+			// debug compaction or reset; timeouts, rate limits and server errors remain retryable.
+			if (!retryFailure || lastCompactionResult.failureType() == LlmFailureType.PROVIDER_ERROR
+				&& lastCompactionResult.failureMessage() != null
+				&& lastCompactionResult.failureMessage().matches("(?s)^Provider returned HTTP (400|401|403|404|405|413|415|422)(?:\\D.*|$)")) {
+				return;
+			}
+		}
+		startCompaction();
+	}
+
+	private boolean startCompaction() {
+		CompactionRequest request = contextAggregator.beginCompaction();
+		if (request == null || !compactionService.submit(request.conversation())) {
 			return false;
 		}
-		return compactionService.submit(contextAggregator.buildCompactionConversation());
+		compactionCut = request.cut();
+		return true;
 	}
 
 	private boolean fullCompactionWaitingForMicro() {
@@ -1439,7 +1450,7 @@ public final class PlannerOrchestrator {
 		if (coalescePending && !coalesceReleased) {
 			return true;
 		}
-		if (sessionCoordinator.hasInFlight() || pendingToolExecution != null || compactionService.hasInFlight()) {
+		if (sessionCoordinator.hasInFlight() || pendingToolExecution != null) {
 			return true;
 		}
 		dropSupersededGenerationBeforeTriggeredSubmit();
@@ -1899,12 +1910,16 @@ public final class PlannerOrchestrator {
 		recordConversationSources();
 		if (compactionResult.succeeded()) {
 			contextAggregator.recordObservedUsage(compactionResult.usage());
-			contextAggregator.applyCheckpoint(compactionResult.checkpoint());
+			if (compactionCut != null) {
+				contextAggregator.applyCheckpoint(compactionResult.checkpoint(), compactionCut);
+			}
+			compactionCut = null;
+			// Observations kept after the cut are deltas against state the summary now stands for.
 			decisionRefreshPending = true;
 			return;
 		}
+		compactionCut = null;
 		Airicraft.LOGGER.warn("Planner compaction failed message={}", summarizeForLog(compactionResult.failureMessage()));
-		contextAggregator.onCompactionFailure();
 	}
 
 	private void cancelPendingTool() {

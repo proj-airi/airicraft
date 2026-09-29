@@ -5,9 +5,12 @@ import com.google.gson.JsonElement;
 
 import java.time.Clock;
 import java.time.ZoneId;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public final class PlannerContextAggregator {
 
@@ -26,6 +29,9 @@ public final class PlannerContextAggregator {
 
 	private PlannerContextState state = PlannerContextState.initial();
 	private PlannerContextSnapshot lastFrozenSnapshot;
+	/** Finished compactions, oldest first. Kept so a conversation still holding a replaced prefix is rebased when it is written back. */
+	private final ArrayDeque<CompactionRewrite> compactionRewrites = new ArrayDeque<>();
+	private static final int MAX_COMPACTION_REWRITES = 8;
 
 	public PlannerContextAggregator(Clock clock, int compactionTriggerTokens, PlannerVisionMode visionMode) {
 		this(clock, compactionTriggerTokens, visionMode, PlannerToolRegistry.empty());
@@ -348,12 +354,45 @@ public final class PlannerContextAggregator {
 		return buildPlannerFollowUpConversation(lastFrozenSnapshot, (JsonElement) null, toolResult, imageAttachment);
 	}
 
-	public LlmConversation buildCompactionConversation() {
-		return composeConversation(
-			clock.millis(),
-			List.of(),
-			List.of(LlmChatMessage.user(PlannerPromptPolicy.compactionInstruction(), LlmMessageKind.TASK))
+	/**
+	 * Freezes what a compaction will summarize: everything accepted so far. The planner keeps running while it works;
+	 * {@link #applyCheckpoint} replaces just this part and keeps what was recorded afterwards. Null when there is nothing
+	 * to compact yet.
+	 */
+	public CompactionRequest beginCompaction() {
+		LlmChatMessage task = LlmChatMessage.user(PlannerPromptPolicy.compactionInstruction(), LlmMessageKind.TASK);
+		if (toolRegistry.hasFixedPrefix() && !backendManagedHistory && retainedConversation != null) {
+			List<LlmChatMessage> retained = retainedConversation.messages();
+			int end = lastSelfContainedIndex(retained);
+			if (end < 0) {
+				return null;
+			}
+			ArrayList<LlmChatMessage> covered = new ArrayList<>(retained.subList(0, end + 1));
+			covered.add(task);
+			return new CompactionRequest(LlmConversation.of(covered), new CompactionRequest.Cut(0, retained.get(end)));
+		}
+		return new CompactionRequest(
+			composeConversation(clock.millis(), List.of(), List.of(task)),
+			new CompactionRequest.Cut(state.acceptedHistoryTape().size(), null)
 		);
+	}
+
+	/** The last message after which no tool call is left waiting for its result; a summary must not split an exchange. */
+	private static int lastSelfContainedIndex(List<LlmChatMessage> messages) {
+		Set<String> open = new HashSet<>();
+		int last = -1;
+		for (int index = 0; index < messages.size(); index++) {
+			LlmChatMessage message = messages.get(index);
+			message.toolCalls().forEach(call -> open.add(call.id()));
+			if (message.toolCallId() != null) {
+				open.remove(message.toolCallId());
+			}
+			boolean systemPrompt = index == 0 && "system".equals(message.role());
+			if (open.isEmpty() && !message.hasToolCalls() && !systemPrompt) {
+				last = index;
+			}
+		}
+		return last;
 	}
 
 	public void recordAgentTurn(DialogueTurn turn, JsonElement rawAssistantContent) {
@@ -392,29 +431,77 @@ public final class PlannerContextAggregator {
 	public void recordUsage(LlmUsageSnapshot usage) {
 		state = backendManagedHistory
 			? PlannerContextReducer.updateObservedUsage(state, usage, false)
-			: PlannerContextReducer.updateUsage(state, usage, compactionTriggerTokens);
+			: PlannerContextReducer.updateUsage(state, usage, PlannerContextPolicy.earlyCompactionTokens(compactionTriggerTokens));
 	}
 
 	public void recordObservedUsage(LlmUsageSnapshot usage) {
 		state = PlannerContextReducer.updateObservedUsage(state, usage, state.compactionPending());
 	}
 
-	public void applyCheckpoint(CompactionCheckpoint checkpoint) {
-		if (microCompactor != null) microCompactor.reset();
-		state = PlannerContextReducer.clearCompactionPending(state, checkpoint, clock.millis());
-		if (toolRegistry.hasFixedPrefix()) retainedConversation = LlmConversation.of(List.of(
-			LlmChatMessage.system(systemPrompt()), LlmChatMessage.user(checkpoint.renderMessage(), LlmMessageKind.CHECKPOINT)));
-		lastFrozenSnapshot = null;
+	/**
+	 * Swaps the summary in for the history it covered. Messages recorded while the compaction ran, including those of
+	 * a turn still in flight, stay as they are.
+	 */
+	public void applyCheckpoint(CompactionCheckpoint checkpoint, CompactionRequest.Cut cut) {
+		Objects.requireNonNull(cut, "cut");
+		state = PlannerContextReducer.applyCompaction(state, checkpoint, cut.historyEntries(), clock.millis());
+		if (cut.anchor() == null || retainedConversation == null) {
+			return;
+		}
+		compactionRewrites.addLast(new CompactionRewrite(cut.anchor(), LlmChatMessage.user(checkpoint.renderMessage(), LlmMessageKind.CHECKPOINT)));
+		if (compactionRewrites.size() > MAX_COMPACTION_REWRITES) {
+			compactionRewrites.removeFirst();
+		}
+		retainedConversation = rebase(retainedConversation);
+		if (microCompactor != null) microCompactor.retainOnly(retainedConversation);
 	}
 
-	public void onCompactionFailure() {
-		lastFrozenSnapshot = null;
+	/** Replaces the prefix of an older conversation that finished compactions have already summarized. */
+	private LlmConversation rebase(LlmConversation conversation) {
+		for (CompactionRewrite rewrite : compactionRewrites) {
+			conversation = rewrite.applyTo(conversation);
+		}
+		return conversation;
+	}
+
+	private record CompactionRewrite(LlmChatMessage anchor, LlmChatMessage checkpoint) {
+		LlmConversation applyTo(LlmConversation conversation) {
+			List<LlmChatMessage> messages = conversation.messages();
+			if (messages.contains(checkpoint)) {
+				return conversation;
+			}
+			int at = indexOfAnchor(messages);
+			if (at < 0) {
+				return conversation;
+			}
+			ArrayList<LlmChatMessage> rebased = new ArrayList<>();
+			if ("system".equals(messages.getFirst().role())) {
+				rebased.add(messages.getFirst());
+			}
+			rebased.add(checkpoint);
+			rebased.addAll(messages.subList(at + 1, messages.size()));
+			return LlmConversation.of(rebased);
+		}
+
+		/** A tool result is found by its call id, which micro-compaction keeps; any other message by identity. */
+		private int indexOfAnchor(List<LlmChatMessage> messages) {
+			for (int index = 0; index < messages.size(); index++) {
+				LlmChatMessage message = messages.get(index);
+				if (anchor.toolCallId() != null
+					? "tool".equals(message.role()) && anchor.toolCallId().equals(message.toolCallId())
+					: message == anchor) {
+					return index;
+				}
+			}
+			return -1;
+		}
 	}
 
 	public void clear() {
 		if (microCompactor != null) microCompactor.reset();
 		state = PlannerContextState.initial();
 		retainedConversation = null;
+		compactionRewrites.clear();
 		lastFrozenSnapshot = null;
 	}
 
@@ -427,6 +514,7 @@ public final class PlannerContextAggregator {
 	public boolean microCompactionInFlight() { return microCompactor != null && microCompactor.hasInFlight(); }
 	public void closeMicroCompaction() { if (microCompactor != null) microCompactor.close(); }
 	public LlmConversation retainConversation(LlmConversation conversation) {
+		conversation = rebase(conversation);
 		if (microCompactor != null) conversation = microCompactor.update(conversation);
 		if (toolRegistry.hasFixedPrefix() && !backendManagedHistory) retainedConversation = conversation;
 		return conversation;
@@ -493,7 +581,7 @@ public final class PlannerContextAggregator {
 
 	private LlmConversation followUpBase(PlannerContextSnapshot snapshot) {
 		if (!backendManagedHistory) {
-			return withCurrentSystemPrompt(snapshot.plannerConversation());
+			return withCurrentSystemPrompt(rebase(snapshot.plannerConversation()));
 		}
 		return LlmConversation.of(List.of(LlmChatMessage.system(systemPrompt())));
 	}
