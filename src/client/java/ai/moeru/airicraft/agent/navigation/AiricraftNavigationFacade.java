@@ -171,10 +171,10 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		String breakingTarget = null;
 		float progress = 0;
 		if (motor.breaking() != null && minecraft.gameMode != null) {
-			var accessor = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
-			if (accessor.airicraft$breakingBlock()) {
-				breakingTarget = accessor.airicraft$currentBreakingPos().toShortString();
-				progress = accessor.airicraft$currentBreakingProgress();
+			var gameMode = minecraft.gameMode;
+			if (gameMode.isDestroying()) {
+				breakingTarget = gameMode.destroyBlockPos.toShortString();
+				progress = gameMode.destroyProgress;
 			}
 		}
 		return Optional.of(new NavigationProgress(player.getX(), player.getY(), player.getZ(), body.supported(), breakingTarget, progress));

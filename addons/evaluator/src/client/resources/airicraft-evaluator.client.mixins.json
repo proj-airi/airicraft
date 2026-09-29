@@ -6,8 +6,7 @@
 		"LevelSummaryMixin",
 		"SelectWorldScreenEvaluationControlsMixin",
 		"WorldEntryFrozenLoadMixin",
-		"WorldListWidgetEvaluationFilterMixin",
-		"WorldListWidgetInvoker"
+		"WorldListWidgetEvaluationFilterMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

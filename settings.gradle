@@ -43,7 +43,7 @@ includeBuild(actionPlanAdvisorDir) {
 }
 
 def includeAllCompat = gradle.startParameter.projectProperties.getOrDefault("airicraft.includeCompat", "true") == "true"
-def includeEvaluator = gradle.startParameter.projectProperties.get("airicraft.includeEvaluator") == "true"
+def includeEvaluator = gradle.startParameter.projectProperties.getOrDefault("airicraft.includeEvaluator", "true") == "true"
 
 if (includeEvaluator) {
 	include("addons:evaluator")
