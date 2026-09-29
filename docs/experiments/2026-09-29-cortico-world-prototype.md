@@ -118,6 +118,42 @@ Cortico's reference persona with a streamer prompt. Character from airicraft's c
 Known losses: AIRI's persona memory and its plugin-hub connectors (YouTube, Discord, ...) do not carry over. Only what
 Cortico already has as Worlds does (e.g. `bilibili` livestream chat).
 
+## Where the code lives (no fork yet)
+
+Goal: keep everything on this branch, modify neither upstream repo's history, and keep the Gradle build and CI
+untouched.
+
+- **Cortico: unmodified.** Worlds load as extensions (`docs/extensions.md`): an npm package exporting a
+  `WorldDefinition`, loaded from `extensions/` or from `CORTICO_EXTENSIONS_DIR`, installable from a local directory.
+  Both new Worlds (`airicraft`, and the stage World adapted from PR 2634's `world.ts` without the spark/channel code)
+  live in this repo and are linked in. `worlds.<id>.enabled` in the deployment config turns them on for the reference
+  persona, so no bot change either.
+- **AIRI: unmodified base plus a small patch.** The stage only emits `output:gen-ai:chat:*` toward modules
+  (`context-bridge.ts`) and does not consume them to speak, so a stage-side change is unavoidable: the speech/act
+  replay store from PR 2634 (`stores/cortico.ts`), the `enabled` early-returns, and a toggle. The bridge package,
+  channel/spark client, memory-page rewrite, i18n and vendor patch are not needed, because Cortico's own launcher hosts
+  the persona. The patch is kept as `git format-patch` files against a pinned AIRI commit.
+- **Not a submodule.** A submodule pointer must name a commit reachable on some remote, so a patched AIRI needs a fork
+  to host it; PR head refs are also fragile if the PR is rebased. AIRI is a ~5.7k-file pnpm monorepo, which would make
+  every clone heavier. This repo's precedent for third-party artifacts is to fetch them into an ignored cache and never
+  vendor them (`.airicraft-compat/`).
+- **Layout.**
+
+  ```
+  experiments/cortico-world/          # outside the Gradle build
+    worlds/airicraft/                 # Cortico World extension
+    worlds/airi-stage/                # stage World (from PR 2634)
+    patches/airi/*.patch              # stage-side changes on the pinned AIRI commit
+    pins.json                         # Cortico and AIRI commit SHAs
+  scripts/cortico-experiment          # setup: clone pins into .cortico-experiment/ (gitignored),
+                                      # apply patches, link extensions; run
+  ```
+
+- **When to fork after all:** the AIRI patch outgrows a few hundred lines or needs constant rebasing, or the work is
+  ready to go upstream (which needs a fork branch for the PR anyway).
+- **Testing here:** the adapters can be built and tested against a mock bridge. The stage and a live Minecraft client
+  cannot be exercised from this session.
+
 ## Slices (each with an exit check)
 
 0. **Baseline.** From an existing recording, measure today's stall: idle gaps, wakes per minute, tokens per minute.
