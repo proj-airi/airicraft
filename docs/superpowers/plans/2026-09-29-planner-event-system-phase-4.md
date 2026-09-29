@@ -27,6 +27,7 @@ What Phases 1–3 already provide, and what is missing:
 | Sensor-shaped observers | `ItemOfferObserver` and `PhysicalEventObserver` are already pure cores fed by an adapter in `EmbodiedAgentRuntime`. `LocalDamageTracker` and `NearbyPlayerTracker` are callback- and poll-driven. `ChatIngestService` is callback-only. |
 | A deterministic in-world fixture | **Exists** for navigation: `NavigationCourseFixtureService` builds courses at Y=200 through the integrated server, and `scripts/navigation-baseline` drives them without a model. |
 | A negative evaluator check | **Missing.** There is `event_contains` but nothing like `event_absent`. |
+| Delta-first `current` state | **Partly.** For the OpenAI-compatible backend, `PlannerSnapshotPresentation` already sends each observation after the first as an RFC 6902 JSON Patch of `current`. A full baseline goes only on the first observation, a world change, an event gap, or after compaction; history keeps the canonical full JSON. **Gaps:** the Codex backend renders every observation in full (`CodexPlannerResponseCodec`); inventory deltas read as raw ops (`replace /inventory/minecraft:oak_log 13`) without the `+4`; nothing forces a periodic baseline; and an explicit `observe` call gets a delta like any other. |
 | A perception tick budget | **Missing.** The spec's Phase 4 item says "within the budget set in Phase 0", but Phase 0 only measured the rule engine (steady-state step p99 1.462 ms for 20 events and 50 candidates). This plan sets the budget (P9). |
 
 ## Decisions
@@ -36,8 +37,8 @@ implementation. Each has a recommendation.
 
 | # | Question | Decision | Why |
 |---|---|---|---|
-| P1 | One PR or several? | **One PR, six slices, each with its own commits.** 4a and 4b must leave every golden unchanged. 4c–4e may change goldens only in new scenarios. | Same shape as Phase 3 (R1). The user asked for one PR per phase. |
-| P2 | Which new sensors? | **`NotableBlockSensor`, `DroppedItemSensor`, `EntityNoticeSensor` (seen only), `EnvironmentSensor`.** Defer `InventoryDeltaSensor` and the *heard* modality. | `current.inventory` already gives totals on every observe, and pickups and crafts are events, so an inventory-delta event would bring back the duplication Phase 3 removed (D2). *Heard* needs a sound model; a distance-only guess through walls would break the no-X-ray rule. The client does receive sound packets, so a later phase can add honest hearing from them. |
+| P1 | One PR or several? | **One PR, seven slices, each with its own commits.** 4a and 4b must leave every golden unchanged. 4c–4e may change goldens only in new scenarios. 4f changes presentation only, which the goldens do not record. | Same shape as Phase 3 (R1). The user asked for one PR per phase. |
+| P2 | Which new sensors, and how are inventory changes reported? | **Sensors: `NotableBlockSensor`, `DroppedItemSensor`, `EntityNoticeSensor` (seen only), `EnvironmentSensor`.** No `InventoryDeltaSensor` event. Instead, **state is delta-first** (P15): an observation reports what changed in `current`, with inventory changes rendered as deltas and resulting totals (`oak_log +4 (13)`). The full snapshot is sent on explicit request or periodically. Defer the *heard* modality. | Decided with the user on 2026-09-29: sending the full snapshot on every observation wastes tokens, and a delta is the better semantic fit. The delta belongs to the state presentation, not to a new event: an `inventory.changed` event would repeat the same change a second time in the same observation (the D2 pattern Phase 3 removed). Pickups and crafts stay as events, for attribution. *Heard* needs a sound model; a distance-only guess through walls would break the no-X-ray rule. The client does receive sound packets, so a later phase can add honest hearing from them. |
 | P3 | How does Java avoid flooding salience with every visible block? | **The salience module declares its interests on load:** `interests: {blocks: [ids or #tags]}`. Java only raycasts blocks in that set. Entities and items are all candidates, capped per tick. | Keeps honesty in Java and taste in JS (spec 4.5) without scanning every stone face. An override that wants copper ore adds it to `interests`. |
 | P4 | Salience contract | **`step(input, state, lib)` returns `{percepts: [{type, payload, candidateIds}], drops: [{candidateId, reason}], state}`.** The input carries `tick`, `seed`, `candidates` (at most 50 per step, the rest carried to the next tick), and a `context` holding the goal objective and constraints, `wanted` item ids (active job and graph targets, plus item ids named in the goal), inventory counts, and the active job type and targets. The kernel passes `percepts` and `drops` through, and `RuleStepResult` gains both, empty for attention. | One kernel, two hook points (spec 4.12). `wanted` is how contextual garbage works: cobblestone stops being garbage while a furnace job wants it. |
 | P5 | Salience failure | **Candidates are not marked noticed and are offered again next tick, for at most 20 ticks, then dropped.** `rules.step_failed` is published, and after three consecutive failures an override reverts to the bundled module, as for attention. There is no Java mirror of the salience rules. | Noticing is not safety-critical, so O13's "never leave the agent unable to wake" is already met by the attention constitution. A Java mirror would double the code for no safety gain. |
@@ -49,6 +50,7 @@ implementation. Each has a recommendation.
 | P11 | Offer deduplication | **`DroppedItemSensor` shares the item-entity read with `ItemOfferSensor`, and marks a candidate `offered: true` when that uuid produced `social.item_offered`.** The salience module drops it with reason `offer_percept`. | One physical drop never produces both an offer and a noticed item (spec section 5). |
 | P12 | Verification without a model | **Notice courses in the evaluator plus `scripts/perception-baseline`:** a model-free `navigate_to` walk past fixtures, checking events (exposed vein noticed, enclosed vein never noticed, valuable drop noticed, garbage dropped with a reason). Add the `event_absent` check type. The model scenarios `notice-diamond` and `notice-drop` are saved from the same fixtures as world archives; running them needs a model and is the user's call. | The same approach as the navigation baseline: deterministic and runnable here. The spec's scenarios still exist for the model run. |
 | P13 | Replay | **Recorded runs write `salience-steps.jsonl`** (input candidates, context and state, capped as in the step). `./gradlew attentionReplay` replays them through a module and diffs percepts and drops. | Spec 7 lists replay for rules. Salience needs its own recording, because candidates are not events. |
+| P15 | Delta-first state (P2) | **One shared delta presentation for both backends.** Move the projection out of `PlannerSnapshotPresentation` into a presenter that `PlannerReferences` and `CodexPlannerResponseCodec` both call. Rules: <br>• **Baseline (full `current`)** on the first observation, a world change, an event gap, after compaction (all as today), plus: when the planner calls `observe` itself (an explicit request; the automatic decision-context observation stays a delta), and at least every 20 observations or 6,000 ticks since the last baseline (periodic). Also send a baseline whenever the rendered delta would be longer than the full state. <br>• **Semantic deltas:** inventory changes render as `Inventory: oak_log +4 (13), cobblestone −3 (none left)`, and vitals as `health 20 → 14`. Everything else stays JSON Patch, which already names the changed fields. <br>• **Noise:** `physical.velocity` and sub-block position changes are not reported as deltas (only block position changes are); the baseline still carries them. <br>• `inspect_inventory` stays the explicit inventory request. The `observe` schema is frozen, so "full on request" uses the explicit call rather than a new argument. | The user's direction for P2. It fixes the Codex gap and makes deltas readable. It adds the two re-anchors the current design lacks: the planner can ask, and the snapshot comes back on a schedule. The size guard stops a large change set from costing more than the snapshot. |
 | P14 | What becomes planner-visible | **New catalog types** `perception.block_noticed`, `perception.entity_noticed`, `perception.entity_lost`, `perception.item_noticed` and `perception.environment_changed`: family `PERCEPT`, visibility `PLANNER`, trigger-eligible. `update_event_policy` can mute them by `eventType`, and by `itemId` for items; its schema is frozen. | Spec 4.4 and 8: new percepts get a new namespace, and event ids are frozen. |
 
 ## Ground rules
@@ -184,9 +186,28 @@ implementation. Each has a recommendation.
   the feet (connected-light mode, with hysteresis). Dimension changes stay
   `session.*` events.
 
-## Slice 4f: verification and docs
+## Slice 4f: delta-first state (P15)
 
-### Task 10
+### Task 10: one delta presenter for both backends
+
+- [ ] Extract the baseline and delta logic from `PlannerSnapshotPresentation`
+  into a shared presenter. `PlannerReferences.presentMessages` and
+  `CodexPlannerResponseCodec` both use it. Replaying the same accepted
+  history still gives the same presentation (request-local, as today).
+- [ ] Baseline rules: an explicit `observe` call, the periodic baseline, and
+  the size guard, on top of today's triggers. Unit tests for each trigger,
+  and one pinning that the automatic decision-context observation stays a
+  delta.
+- [ ] Semantic inventory and vitals deltas in `PlannerInputText`; velocity
+  and sub-block position noise dropped from deltas. Tests with before and
+  after states.
+- [ ] Prompt-size check (as R10 in Phase 3), measured on the presented text
+  of all golden requests for both backends: Phase 3 vs Phase 4. Record it
+  here. Commit: `feat(observe): delta-first state for both backends`.
+
+## Slice 4g: verification and docs
+
+### Task 11
 
 - [ ] Notice courses in the evaluator (`NoticeCourses`,
   `NoticeCourseFixtureService`), the `event_absent` check, and
@@ -219,6 +240,8 @@ implementation. Each has a recommendation.
   unchanged.
 - [ ] Wakes per minute during the baseline walk are recorded as the
   over-waking metric (spec risk), for Phase 5's bucket tuning.
+- [ ] Both backends present `current` as deltas between baselines, and the
+  prompt-size check shows fewer presented characters than Phase 3.
 
 ## Risks
 
@@ -233,5 +256,9 @@ implementation. Each has a recommendation.
   would be X-ray. Mitigations: the exposed-face and line-of-sight tests are
   in the pure cores with tests, and the enclosed-vein course is a hard
   negative check.
+- **The model loses track of state between baselines.** A delta assumes
+  the model kept the previous state in mind. Mitigations: the periodic
+  baseline, full state on an explicit `observe`, a baseline after
+  compaction, and resulting totals in every inventory delta.
 - **Model behaviour on new events** (diverting to every diamond). This is
   only measurable with a model; the saved scenarios exist for that run.
