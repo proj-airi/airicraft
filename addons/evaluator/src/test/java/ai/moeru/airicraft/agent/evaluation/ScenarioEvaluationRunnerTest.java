@@ -91,6 +91,58 @@ class ScenarioEvaluationRunnerTest {
 		assertTrue(context.triggers.isEmpty());
 	}
 
+	private static EvaluationScenario noticeScenario() {
+		return scenario(List.of(
+			new EvaluationCheck("event_contains", Map.of("eventType", "perception.block_noticed", "payload", Map.of("blockId", "minecraft:diamond_ore"))),
+			new EvaluationCheck("event_absent", Map.of("eventType", "perception.block_noticed", "payload", Map.of("blockId", "minecraft:emerald_ore")))
+		), new EvaluationBudget(4, 200, 0, 5));
+	}
+
+	@Test
+	void eventAbsentHoldsUntilTheGoalOrBudgetEnds() {
+		ScenarioEvaluationRunner honest = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		honest.start(noticeScenario(), 0, 0);
+		honest.onTick(context);
+		assertEquals(EvaluationStatus.RUNNING, honest.report(context.tick).status(), "the vein has not been noticed yet");
+		context.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:diamond_ore"));
+		context.tick = 6;
+		honest.onTick(context);
+		assertEquals(EvaluationStatus.RUNNING, honest.report(context.tick).status(), "the sealed ore could still be noticed");
+		context.goal = Optional.of(new PlannerGoalStore.Goal("goal-1", "Walk the corridor", PlannerGoalStore.Status.SUCCEEDED, "Arrived"));
+		context.tick = 7;
+		honest.onTick(context);
+		assertEquals(EvaluationStatus.PASSED, honest.report(context.tick).status());
+
+		ScenarioEvaluationRunner timed = new ScenarioEvaluationRunner();
+		FakeContext window = new FakeContext();
+		window.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:diamond_ore"));
+		timed.start(noticeScenario(), 0, 0);
+		for (int tick = 0; tick < 200; tick++) { window.tick = tick; window.latestEventSeqNo = tick; timed.onTick(window); }
+		assertEquals(EvaluationStatus.RUNNING, timed.report(window.tick).status());
+		window.tick = 200;
+		timed.onTick(window);
+		assertEquals(EvaluationStatus.PASSED, timed.report(window.tick).status(), "the absence held for the whole budget");
+	}
+
+	@Test
+	void aForbiddenEventFailsEvenAfterThePositiveChecksPassed() {
+		ScenarioEvaluationRunner xray = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		xray.start(noticeScenario(), 0, 0);
+		xray.onTick(context);
+		context.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:diamond_ore"));
+		context.tick = 100;
+		xray.onTick(context);
+		assertEquals(EvaluationStatus.RUNNING, xray.report(context.tick).status());
+		context.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:emerald_ore"));
+		context.tick = 120;
+		xray.onTick(context);
+		EvaluationReport report = xray.report(context.tick);
+		assertEquals(EvaluationStatus.FAILED, report.status(), "a sealed ore that was noticed fails the run");
+		assertTrue(report.message().startsWith("Invariant violated: event seen but must be absent"), report.message());
+	}
+
 	@Test
 	void failsWhenNeitherPlannerNorExternalDriverIsAvailable() {
 		ScenarioEvaluationRunner runner = new ScenarioEvaluationRunner();
@@ -395,6 +447,7 @@ class ScenarioEvaluationRunnerTest {
 	}
 
 	private static final class FakeContext implements ScenarioEvaluationRunner.Context {
+		private final List<Map<String, String>> events = new java.util.ArrayList<>();
 		private long tick;
 		private int inventoryCount;
 		private boolean plannerInFlight;
@@ -493,7 +546,13 @@ class ScenarioEvaluationRunnerTest {
 
 		@Override
 		public boolean eventContains(String eventType) {
-			return false;
+			return events.stream().anyMatch(event -> event.get("type").equals(eventType));
+		}
+
+		@Override
+		public boolean eventMatches(String eventType, Map<String, String> payload) {
+			return events.stream().anyMatch(event -> event.get("type").equals(eventType)
+				&& payload.entrySet().stream().allMatch(field -> field.getValue().equals(event.get(field.getKey()))));
 		}
 
 		@Override

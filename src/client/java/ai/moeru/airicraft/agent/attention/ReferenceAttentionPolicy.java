@@ -120,6 +120,14 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 				: WakeDecision.none(AttentionStage.RULES, "graph.terminal_not_failed", "only failed graph outcomes wake");
 			case "smelting.output_ready", "task.blocked", "action_graph.goal_suspended" ->
 				WakeDecision.immediate(Urgency.HIGH, AttentionStage.RULES, "catalog.trigger", "");
+			case "perception.block_noticed", "perception.item_noticed", "perception.entity_noticed", "perception.entity_lost" ->
+				state.activeJobOwns(event.payload().get("blockId")) || state.activeJobOwns(event.payload().get("itemId"))
+					? WakeDecision.none(AttentionStage.RULES, "ownership.active_job_target", "the running job is working on this")
+					: WakeDecision.debounce(Urgency.LOW, AttentionStage.RULES, "percept.notice", "");
+			case "perception.environment_changed" -> "dusk".equals(stringValue(event.payload().get("change"))) && state.idleForNotices()
+				? WakeDecision.debounce(Urgency.LOW, AttentionStage.RULES, "percept.dusk_idle", "")
+				: WakeDecision.none(AttentionStage.RULES, "percept.environment_evidence",
+					"environment changes are evidence; only dusk wakes, and only while idle");
 			default -> WakeDecision.none(AttentionStage.RULES, "catalog.no_trigger", "no trigger is defined for this type");
 		};
 	}

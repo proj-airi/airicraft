@@ -9,6 +9,8 @@ import java.util.Objects;
 import java.util.Optional;
 
 public final class ScenarioEvaluationRunner {
+	/** Checks that must hold for the whole run: a violation fails at once, and passing waits for the goal or budget to end. */
+	private static final java.util.Set<String> INVARIANT_CHECKS = java.util.Set.of("event_absent");
 	private EvaluationScenario scenario;
 	private EvaluationStatus status = EvaluationStatus.IDLE;
 	private String message;
@@ -75,7 +77,15 @@ public final class ScenarioEvaluationRunner {
 
 		if (!context.externalDriverActive()) plannerTurns = Math.toIntExact(context.gameplayDecisionCount() - startDecisionCount);
 		latestCheckResults = evaluateChecks(context);
-		if (checksPassed(latestCheckResults) && scenario.hasDeterministicChecks()) {
+		Optional<EvaluationCheckResult> violation = latestCheckResults.stream()
+			.filter(result -> INVARIANT_CHECKS.contains(result.type()) && !result.passed()).findFirst();
+		if (violation.isPresent()) {
+			finish(EvaluationStatus.FAILED, "Invariant violated: " + violation.get().message(), true, context.tick());
+			return;
+		}
+		boolean outcomeHolds = scenario.hasDeterministicChecks() && checksPassed(latestCheckResults);
+		// An invariant can only be violated later, so a scenario with one passes when the goal or the budget ends.
+		if (outcomeHolds && !hasInvariants()) {
 			finish(EvaluationStatus.PASSED, "Expected outcome reached", false, context.tick());
 			return;
 		}
@@ -84,6 +94,10 @@ public final class ScenarioEvaluationRunner {
 			var goal = context.plannerGoal();
 			if (goal.isPresent() && (goal.get().status() == PlannerGoalStore.Status.SUCCEEDED
 				|| goal.get().status() == PlannerGoalStore.Status.GIVEN_UP)) {
+				if (outcomeHolds) {
+					finish(EvaluationStatus.PASSED, "Expected outcome held until planner goal " + goal.get().status(), false, context.tick());
+					return;
+				}
 				finish(scenario.hasDeterministicChecks() ? EvaluationStatus.FAILED : EvaluationStatus.NEEDS_REVIEW,
 					"Planner goal " + goal.get().status() + ": " + goal.get().outcome()
 						+ "; expected outcome not verified", true, context.tick());
@@ -99,7 +113,10 @@ public final class ScenarioEvaluationRunner {
 		}
 
 		if (budgetExhausted(context)) {
-			if (scenario.hasDeterministicChecks()) {
+			if (outcomeHolds) {
+				finish(EvaluationStatus.PASSED, "Expected outcome held for the whole evaluation budget", false, context.tick());
+			}
+			else if (scenario.hasDeterministicChecks()) {
 				finish(EvaluationStatus.FAILED, "Evaluation budget exhausted before expected outcome", true, context.tick());
 			}
 			else {
@@ -174,6 +191,10 @@ public final class ScenarioEvaluationRunner {
 		return List.copyOf(results);
 	}
 
+	private static String payloadDescription(Map<String, String> payload) {
+		return payload == null || payload.isEmpty() ? "" : " with " + new java.util.TreeMap<>(payload);
+	}
+
 	private EvaluationCheckResult evaluateCheck(Context context, EvaluationCheck check) {
 		return switch (check.type()) {
 			case "inventory_contains" -> {
@@ -217,9 +238,17 @@ public final class ScenarioEvaluationRunner {
 			}
 			case "event_contains" -> {
 				String eventType = check.string("eventType");
-				yield context.eventContains(eventType)
-					? EvaluationCheckResult.passed(check, "event seen: " + eventType)
-					: EvaluationCheckResult.failed(check, "event not seen: " + eventType);
+				Map<String, String> payload = check.stringMap("payload");
+				yield context.eventMatches(eventType, payload)
+					? EvaluationCheckResult.passed(check, "event seen: " + eventType + payloadDescription(payload))
+					: EvaluationCheckResult.failed(check, "event not seen: " + eventType + payloadDescription(payload));
+			}
+			case "event_absent" -> {
+				String eventType = check.string("eventType");
+				Map<String, String> payload = check.stringMap("payload");
+				yield context.eventMatches(eventType, payload)
+					? EvaluationCheckResult.failed(check, "event seen but must be absent: " + eventType + payloadDescription(payload))
+					: EvaluationCheckResult.passed(check, "event absent: " + eventType + payloadDescription(payload));
 			}
 			case "last_chat_contains" -> {
 				String text = check.string("text");
@@ -245,6 +274,10 @@ public final class ScenarioEvaluationRunner {
 			case "external_judge", "subjective" -> EvaluationCheckResult.failed(check, "external review required");
 			default -> EvaluationCheckResult.failed(check, "unsupported check type: " + check.type());
 		};
+	}
+
+	private boolean hasInvariants() {
+		return scenario.checks().stream().anyMatch(check -> INVARIANT_CHECKS.contains(check.type()));
 	}
 
 	private boolean checksPassed(List<EvaluationCheckResult> results) {
@@ -433,6 +466,11 @@ public final class ScenarioEvaluationRunner {
 		int playerBlockZ();
 
 		boolean eventContains(String eventType);
+
+		/** An event of {@code eventType} whose payload has every {@code payload} field with that string value. */
+		default boolean eventMatches(String eventType, Map<String, String> payload) {
+			return (payload == null || payload.isEmpty()) && eventContains(eventType);
+		}
 
 		String lastChatText();
 

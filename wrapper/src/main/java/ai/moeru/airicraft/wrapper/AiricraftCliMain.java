@@ -2707,10 +2707,21 @@ public final class AiricraftCliMain {
 				if (retainedBy != null) view.put("attentionRetainedBy", retainedBy);
 				view.put("attentionRules", map(attention.get("rules")));
 			}
+			Map<String, Object> perception = map(payload.get("perception"));
+			if (!perception.isEmpty()) {
+				LinkedHashMap<String, Object> salience = new LinkedHashMap<>();
+				copy(salience, perception, "module", "ready", "blockInterests", "pending", "steps", "percepts", "drops", "expired",
+					"failures", "reverts", "stepP99Micros", "maxStepMicros", "lastFailure");
+				view.put("perceptionSalience", salience);
+			}
 			if (verbose) {
 				if (!attention.isEmpty()) {
 					view.put("attentionCountsByRule", map(attention.get("countsByRule")));
 					view.put("attentionLatest", maps(attention.get("latest")));
+				}
+				if (!perception.isEmpty()) {
+					view.put("perceptionSensors", map(perception.get("sensors")));
+					view.put("perceptionRecent", maps(perception.get("recent")));
 				}
 				copy(view, dialogueState, "lastResponse");
 				copy(view, chatProbe, "lastAttemptText", "lastEmissionText");

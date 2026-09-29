@@ -19,17 +19,15 @@ class LifecycleDispatcherTest {
 			var field = EmbodiedAgentRuntime.class.getDeclaredField("slowMiningObserver");
 			field.setAccessible(true);
 			field.set(harness.runtime, observer);
-			var itemMethod = EmbodiedAgentRuntime.class.getDeclaredMethod("observeItemOffers", net.minecraft.client.MinecraftClient.class);
-			itemMethod.setAccessible(true);
-			var physicalMethod = EmbodiedAgentRuntime.class.getDeclaredMethod("observePhysicalEvents", net.minecraft.client.MinecraftClient.class);
-			physicalMethod.setAccessible(true);
+			var sample = EmbodiedAgentRuntime.class.getDeclaredMethod("sampleSensor", String.class, net.minecraft.client.MinecraftClient.class);
+			sample.setAccessible(true);
 
 			observer.observe(1, "stone", 100);
-			itemMethod.invoke(harness.runtime, new Object[] { null });
+			sample.invoke(harness.runtime, "item", null);
 			assertTrue(observer.observe(41, "stone", 100));
 
 			observer.observe(50, "granite", 100);
-			physicalMethod.invoke(harness.runtime, new Object[] { null });
+			sample.invoke(harness.runtime, "physical", null);
 			assertFalse(observer.observe(90, "granite", 100));
 		}
 	}
@@ -92,10 +90,18 @@ class LifecycleDispatcherTest {
 			expected.put("item", all);
 			expected.put("slow", all);
 			expected.put("food", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			expected.put("salience", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN, LifecycleBoundary.SHUTDOWN));
+			expected.put("notable_blocks", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			expected.put("dropped_items", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
+			expected.put("entities", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN, LifecycleBoundary.SHUTDOWN));
+			expected.put("environment", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			expected.put("nearby", Set.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN));
 			// Order matters: nearby publishes social.player_left_nearby and must stay last.
 			assertEquals(List.copyOf(expected.keySet()), List.copyOf(table.keySet()));
 			assertEquals(expected, table);
+			// The migrated observers are sensors under the same participant ids.
+			assertEquals(List.of("damage", "physical", "item", "notable_blocks", "dropped_items", "entities", "environment", "nearby"),
+				List.copyOf(harness.runtime.sensorTimings().keySet()));
 		}
 	}
 

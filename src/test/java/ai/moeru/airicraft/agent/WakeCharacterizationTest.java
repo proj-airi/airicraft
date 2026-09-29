@@ -138,6 +138,108 @@ class WakeCharacterizationTest {
 			h.transcript(name).assertMatchesGolden(name);
 		}
 	}
+	/** The {@code observe.wake} of the request's decision-context observation, as JSON text. */
+	private static String wake(ai.moeru.airicraft.agent.wakes.RecordingPlannerBackend.Request request) {
+		var messages = request.request().conversation().messages();
+		for (int index = messages.size() - 1; index >= 0; index--) {
+			String content = messages.get(index).content();
+			if (content != null && content.startsWith("{") && content.contains("\"worldSessionId\"")) {
+				var observation = com.google.gson.JsonParser.parseString(content).getAsJsonObject();
+				return observation.has("wake") ? observation.get("wake").toString() : "";
+			}
+		}
+		return "";
+	}
+
+	private static String decisionRule(WakeScenarioHarness h, String type) {
+		return h.runtime.attentionDecisionLog().latest(64).stream().filter(decision -> decision.type().equals(type))
+			.reduce((first, second) -> second).map(decision -> decision.delivery() + ":" + decision.ruleId()).orElse("none");
+	}
+
+	@Test void percept_block_idle() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.candidate(WakeScenarioHarness.block("minecraft:diamond_ore", 3, 40, 7, 7.5));
+			h.candidate(WakeScenarioHarness.block("minecraft:diamond_ore", 4, 40, 7, 6.2));
+			h.tick(9);
+			assertEquals("DEBOUNCE:percept.notice", decisionRule(h, "perception.block_noticed"));
+			assertTrue(h.backend.requests().isEmpty(), "held until 10 quiet ticks");
+			h.tick(3);
+			assertEquals(1, h.backend.requests().size());
+			assertTrue(wake(h.backend.requests().getFirst()).contains("perception.block_noticed"), wake(h.backend.requests().getFirst()));
+			h.transcript("percept_block_idle").assertMatchesGolden("percept_block_idle");
+		}
+	}
+
+	@Test void percept_owned_by_mining() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.runtime.execute(new ai.moeru.airicraft.agent.llm.PlannerToolCall("mine", "mine_blocks",
+				com.google.gson.JsonParser.parseString("{\"blockIds\":[\"minecraft:diamond_ore\"],\"quantity\":3}").getAsJsonObject(), null)).join();
+			h.tick(1);
+			h.event("perception.block_noticed", Map.of("blockId", "minecraft:diamond_ore", "count", 1));
+			h.tick(20);
+			assertEquals("NONE:ownership.active_job_target", decisionRule(h, "perception.block_noticed"));
+			assertTrue(h.backend.requests().isEmpty(), "the mining job owns a percept about its own target");
+			h.event("perception.block_noticed", Map.of("blockId", "minecraft:emerald_ore", "count", 1));
+			h.tick(20);
+			assertEquals("DEBOUNCE:percept.notice", decisionRule(h, "perception.block_noticed"));
+			assertEquals(1, h.backend.requests().size(), "another ore still wakes while the job runs");
+			h.transcript("percept_owned_by_mining").assertMatchesGolden("percept_owned_by_mining");
+		}
+	}
+
+	@Test void percept_batch() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.candidate(WakeScenarioHarness.block("minecraft:diamond_ore", 3, 40, 7, 7));
+			h.tick(5);
+			h.candidate(WakeScenarioHarness.block("minecraft:spawner", 30, 40, 7, 9));
+			h.tick(5);
+			h.candidate(WakeScenarioHarness.block("minecraft:chest", -20, 40, 7, 11));
+			h.tick(20);
+			assertEquals(1, h.backend.requests().size(), "three percepts within the quiet window make one wake");
+			String wake = wake(h.backend.requests().getFirst());
+			assertTrue(wake.contains("minecraft") || wake.contains("perception.block_noticed"), wake);
+			assertEquals(3, com.google.gson.JsonParser.parseString(wake).getAsJsonArray().size(), wake);
+			h.transcript("percept_batch").assertMatchesGolden("percept_batch");
+		}
+	}
+
+	@Test void percept_offer_dedup() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.event("social.item_offered", Map.of("player", "Alex", "playerUuid", "alex", "itemEntityUuid", "item-1",
+				"itemId", "minecraft:bread", "count", 3, "position", Map.of("x", 1, "y", 64, "z", 1)));
+			h.candidate(new ai.moeru.airicraft.agent.perception.PerceptCandidate("item:item-1", "item", Map.of("itemId", "minecraft:bread",
+				"count", 3, "x", 1, "y", 64, "z", 1, "distance", 2, "attribution", "thrown_by_player", "offered", true, "itemEntityUuid", "item-1")));
+			h.tick(20);
+			assertEquals(1, h.backend.requests().size());
+			String wake = wake(h.backend.requests().getFirst());
+			assertTrue(wake.contains("social.item_offered") && !wake.contains("perception.item_noticed"), wake);
+			assertTrue(h.runtime.recentEvents(null).events().stream().noneMatch(event -> event.type().equals("perception.item_noticed")),
+				"one physical drop is one offer, not also a noticed item");
+			h.transcript("percept_offer_dedup").assertMatchesGolden("percept_offer_dedup");
+		}
+	}
+
+	@Test void percept_protected_not_debounced() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.candidate(WakeScenarioHarness.block("minecraft:diamond_ore", 3, 40, 7, 7));
+			h.tick(3);
+			assertTrue(h.backend.requests().isEmpty());
+			h.chat("Alex", "@agent what is over there?");
+			h.backend.awaitRequests(1, Duration.ofSeconds(1));
+			assertEquals(1, h.backend.requests().size(), "direct chat is never delayed");
+			assertTrue(wake(h.backend.requests().getFirst()).contains("perception.block_noticed"),
+				"the held percept rides along in the same batch");
+			h.tick(20);
+			assertEquals(1, h.backend.requests().size(), "the percept is not delivered twice");
+			h.transcript("percept_protected_not_debounced").assertMatchesGolden("percept_protected_not_debounced");
+		}
+	}
+
 	@Test void pickup_during_mining_job() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1);

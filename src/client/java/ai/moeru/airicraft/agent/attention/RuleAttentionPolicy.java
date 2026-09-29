@@ -40,7 +40,8 @@ import java.util.function.Supplier;
 public final class RuleAttentionPolicy implements AttentionPolicy {
 	public static final String SOURCE = "RuleAttentionPolicy";
 	static final int REVERT_AFTER_FAILURES = 3;
-	private static final List<String> MATCH_FIELDS = List.of("player", "speaker", "actor", "itemId", "damageTypeId", "attackerName", "state");
+	private static final List<String> MATCH_FIELDS = List.of("player", "speaker", "actor", "itemId", "damageTypeId", "attackerName", "state",
+		"blockId", "change");
 
 	private final Supplier<AttentionState> state;
 	private final Function<SemanticEvent, AttentionEvidence> evidence;
@@ -184,6 +185,9 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 		attention.addProperty("activeJobIdle", snapshot.activeJobIdle());
 		attention.addProperty("activeJobTerminal", snapshot.activeJobTerminal());
 		attention.addProperty("pendingCraftToolResult", snapshot.pendingCraftToolResult());
+		var targets = new JsonArray();
+		snapshot.activeJobTargets().forEach(targets::add);
+		attention.add("activeJobTargets", targets);
 		input.add("attention", attention);
 		var plannerRules = new JsonArray();
 		for (int index = 0; index < rules.size(); index++) {

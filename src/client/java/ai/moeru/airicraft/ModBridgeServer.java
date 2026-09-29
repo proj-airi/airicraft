@@ -2021,6 +2021,7 @@ public final class ModBridgeServer {
 			response.put("eventPipeline", agentRuntime().debugEventPipelineState());
 			response.put("eventBus", agentRuntime().debugEventBusState());
 			response.put("attention", agentRuntime().debugAttentionState());
+			response.put("perception", agentRuntime().debugPerceptionState());
 			response.put("timelineTail", agentRuntime().debugTimeline(null).entries());
 			return response;
 		});

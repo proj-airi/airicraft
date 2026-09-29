@@ -91,7 +91,7 @@ class EventInventoryTest {
 			else prefixes.add(entry.get("prefix").getAsString());
 		}
 		data.getAsJsonArray("notEventTypes").forEach(value -> exact.add(value.getAsString()));
-		var pattern = Pattern.compile("\"((?:social|pickup|crafting|smelting|combat|player|reflex|lighting|planner|session|follow|task|work|food|action_graph|mission|objective|policy|interaction|inventory|container|survival)\\.[a-z_]+)\"");
+		var pattern = Pattern.compile("\"((?:social|pickup|crafting|smelting|combat|player|reflex|lighting|planner|session|follow|task|work|food|action_graph|mission|objective|policy|interaction|inventory|container|survival|perception)\\.[a-z_]+)\"");
 		Set<String> missing = new TreeSet<>();
 		try (var paths = Files.walk(Path.of(System.getProperty("user.dir"), "src/client/java/ai/moeru/airicraft/agent"))) {
 			for (var path : paths.filter(p -> p.toString().endsWith(".java")).toList()) {

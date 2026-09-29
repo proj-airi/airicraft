@@ -217,6 +217,7 @@ public final class DashboardObservationCollector {
 		payload.put("eventPipeline", runtime.debugEventPipelineState());
 		payload.put("eventBus", runtime.debugEventBusState());
 		payload.put("attention", runtime.debugAttentionState());
+		payload.put("perception", runtime.debugPerceptionState());
 		payload.put("taskProgressProbe", runtime.debugCollectResourceState());
 		payload.put("chatProbe", runtime.debugChatState());
 		payload.put("observability", runtime.observabilityDebugSnapshot());

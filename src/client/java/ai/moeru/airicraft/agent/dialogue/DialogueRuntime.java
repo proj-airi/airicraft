@@ -559,7 +559,34 @@ public final class DialogueRuntime {
 		MissionExecutionSnapshot missionExecution,
 		EventStream plannerEventBuffer
 	) {
-		wakeScheduler.offerTrigger(trigger, new WakeScheduler.TriggerHost() {
+		wakeScheduler.offerTrigger(trigger, triggerHost(sessionSnapshot, primaryInteractionPlayer, activeGoal, activeTask,
+			missionExecution, plannerEventBuffer));
+	}
+
+	/** Releases held debounced wakes once they are quiet (once per tick, from the runtime). */
+	public boolean releaseDebouncedWakes(
+		long tick,
+		SessionSnapshot sessionSnapshot,
+		String primaryInteractionPlayer,
+		Optional<GoalSnapshot> activeGoal,
+		TaskSnapshot activeTask,
+		MissionExecutionSnapshot missionExecution,
+		EventStream plannerEventBuffer
+	) {
+		if (!wakeScheduler.hasDebouncedWakes()) return false;
+		return wakeScheduler.releaseDebounced(tick, triggerHost(sessionSnapshot, primaryInteractionPlayer, activeGoal, activeTask,
+			missionExecution, plannerEventBuffer));
+	}
+
+	private WakeScheduler.TriggerHost triggerHost(
+		SessionSnapshot sessionSnapshot,
+		String primaryInteractionPlayer,
+		Optional<GoalSnapshot> activeGoal,
+		TaskSnapshot activeTask,
+		MissionExecutionSnapshot missionExecution,
+		EventStream plannerEventBuffer
+	) {
+		return new WakeScheduler.TriggerHost() {
 			@Override public boolean blockedGoal() {
 				return plannerGoal != null && plannerGoal.blocked();
 			}
@@ -568,30 +595,36 @@ public final class DialogueRuntime {
 				return (acceptedWork != null || activePlanner().hasQueuedToolWork()) && safetyHoldId == null && !reflexActive;
 			}
 
+			@Override public boolean incorporated(long seqNo) {
+				return activePlanner().hasIncorporatedDecisionEvent(seqNo);
+			}
+
 			@Override public void audit(PlannerTrigger audited, String kind, String gate) {
 				auditTrigger(audited, kind, gate);
 			}
 
-			@Override public void deliver(PlannerTrigger delivered) {
+			@Override public void deliver(List<PlannerTrigger> delivered) {
+				PlannerTrigger last = delivered.getLast();
+				boolean direct = delivered.stream().anyMatch(PlannerTrigger::maySupersedeLaunchedTurn);
 				submitPlannerTrigger(
 					new PlannerRequest(
-						delivered.tick(),
-						delivered.timestampMs(),
+						last.tick(),
+						last.timestampMs(),
 						sessionSnapshot.mode(),
 						primaryInteractionPlayer,
 						activeGoal.orElse(null),
 						activeTask,
 						missionExecution,
-						PlannerTriggerBatch.of(List.of(delivered)),
+						PlannerTriggerBatch.of(delivered),
 						null
 					),
 					plannerEventBuffer,
-					delivered.timestampMs(),
-					delivered.maySupersedeLaunchedTurn(),
-					(kind, gate) -> auditTrigger(delivered, kind, gate)
+					last.timestampMs(),
+					direct,
+					(kind, gate) -> delivered.forEach(each -> auditTrigger(each, kind, gate))
 				);
 			}
-		});
+		};
 	}
 
 	public void onPlayerChat(

@@ -81,7 +81,7 @@ public final class ClientRuntimeController {
 		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(cameraController);
 		this.baritoneFacade = navigationBackend(config);
 		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()),
-			AttentionRuleSource.load());
+			AttentionRuleSource.load(), ai.moeru.airicraft.agent.perception.SalienceRuleSource.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
 		this.dashboardObservationCollector = new DashboardObservationCollector(
@@ -410,11 +410,13 @@ public final class ClientRuntimeController {
 		AgentConfig nextAgentConfig;
 		IdleIdeasConfig nextIdleIdeasConfig;
 		RuleModule nextAttentionRules;
+		RuleModule nextSalienceRules;
 		try {
 			nextConfig = AiricraftConfigLoader.loadStrict();
 			nextAgentConfig = AgentConfigLoader.loadStrict().withCharacter(CharacterCardLoader.loadStrict());
 			nextIdleIdeasConfig = IdleIdeasLoader.loadStrict();
 			nextAttentionRules = AttentionRuleSource.loadStrict();
+			nextSalienceRules = ai.moeru.airicraft.agent.perception.SalienceRuleSource.loadStrict();
 		}
 		catch (ConfigLoadException exception) {
 			throw new BridgeUnavailableException("invalid_config", exception.getMessage());
@@ -431,7 +433,7 @@ public final class ClientRuntimeController {
 			baritoneFacade.cancel();
 			baritoneFacade = nextFacade;
 		}
-		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig, nextAttentionRules);
+		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig, nextAttentionRules, nextSalienceRules);
 		nextRuntime.updateIdleIdeasConfig(nextIdleIdeasConfig);
 		MinecraftClient client = MinecraftClient.getInstance();
 		if (client != null) {
@@ -492,7 +494,8 @@ public final class ClientRuntimeController {
 		return airicraft ? airicraftBackend : baritoneBackend;
 	}
 
-	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig, RuleModule attentionRules) {
+	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig, RuleModule attentionRules,
+		RuleModule salienceRules) {
 		var miningOpportunityPolicy = new ai.moeru.airicraft.agent.tasks.MiningOpportunityPolicyState();
 		var miningOpportunityJournal = new ai.moeru.airicraft.agent.tasks.MiningOpportunityJournal();
 		SmeltingProcessManager smeltingProcessManager = new SmeltingProcessManager();
@@ -532,6 +535,7 @@ public final class ClientRuntimeController {
 		);
 		runtime.setPlannerEnabled(plannerEnabled);
 		runtime.useAttentionRules(attentionRules);
+		runtime.useSalienceRules(salienceRules);
 		return runtime;
 	}
 

@@ -20,6 +20,10 @@ public record WakeDecision(Delivery delivery, Urgency urgency, AttentionStage st
 		return new WakeDecision(Delivery.IMMEDIATE, urgency, stage, ruleId, reason);
 	}
 
+	public static WakeDecision debounce(Urgency urgency, AttentionStage stage, String ruleId, String reason) {
+		return new WakeDecision(Delivery.DEBOUNCE, urgency, stage, ruleId, reason);
+	}
+
 	public boolean wakes() {
 		return delivery != Delivery.NONE;
 	}

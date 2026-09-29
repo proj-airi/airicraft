@@ -25,6 +25,31 @@ class RuleEngineTest {
 		assertSame(engine, RuleEngine.shared(RuleModule.bundledAttention()), "one warm engine per module");
 	}
 
+	@Test void bundledSalienceModuleDeclaresInterestsAndReturnsPerceptsAndDrops() throws Exception {
+		RuleEngine engine = RuleEngine.shared(RuleModule.bundledSalience());
+		engine.awaitReady(WARM);
+		assertTrue(engine.interests().getAsJsonArray("blocks").toString().contains("minecraft:diamond_ore"));
+		RuleStepResult result = engine.step("{\"tick\":1,\"seed\":1,\"context\":{},\"candidates\":["
+			+ "{\"id\":\"item:a\",\"kind\":\"item\",\"itemId\":\"minecraft:dirt\",\"count\":1}]}", "{}");
+		assertEquals(0, result.decisions().size());
+		assertEquals(0, result.percepts().size());
+		assertEquals("garbage", result.drops().get(0).getAsJsonObject().get("reason").getAsString());
+	}
+
+	@Test void overridesOfDifferentHooksStayWarmSideBySide() throws Exception {
+		RuleEngine attention = RuleEngine.shared(new RuleModule("config:attention-side.js", "(lib => ({ step(i, s) { return {state: s}; } }))"));
+		RuleEngine salience = RuleEngine.shared(new RuleModule("config:salience-side.js",
+			"(lib => ({ interests: {blocks: ['minecraft:chest']}, step(i, s) { return {state: s}; } }))", RuleModule.Hook.SALIENCE));
+		attention.awaitReady(WARM);
+		salience.awaitReady(WARM);
+		assertNotNull(attention.step(EMPTY, "{}"), "a salience override must not close the attention override");
+		assertEquals("[\"minecraft:chest\"]", salience.interests().getAsJsonArray("blocks").toString());
+		RuleEngine.validate(new RuleModule("config:salience-valid.js", "(lib => ({ step(i, s) { return {percepts: [], state: s}; } }))",
+			RuleModule.Hook.SALIENCE), WARM);
+		assertEquals("load_failed", assertThrows(RuleException.class, () -> RuleEngine.validate(new RuleModule("config:bad-interests.js",
+			"(lib => ({ interests: 'blocks', step(i, s) { return {state: s}; } }))", RuleModule.Hook.SALIENCE), WARM)).code());
+	}
+
 	@Test void stepsAreDeterministicWithAFrozenClockAndSeededRandom() throws Exception {
 		RuleEngine engine = warm("""
 			// A leading comment must not break loading.

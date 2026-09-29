@@ -69,6 +69,14 @@ final class CodexPlannerResponseCodec {
 	}
 
 	JsonArray turnInput(LlmConversation conversation) {
+		return turnInput(conversation, new ai.moeru.airicraft.agent.llm.ObservationPresenter());
+	}
+
+	/**
+	 * The turn's input items. The thread keeps earlier turns, so {@code presenter} carries the state of the last
+	 * observation a completed turn sent; this turn's observations are deltas against it (spec P15).
+	 */
+	JsonArray turnInput(LlmConversation conversation, ai.moeru.airicraft.agent.llm.ObservationPresenter presenter) {
 		JsonArray input = new JsonArray();
 		var observeCallIds = PlannerObservation.callIds(conversation.messages());
 		for (LlmChatMessage message : conversation.messages()) {
@@ -76,7 +84,7 @@ final class CodexPlannerResponseCodec {
 				continue;
 			}
 			String rendered = "tool".equals(message.role()) && observeCallIds.contains(message.toolCallId())
-				? renderObservation(message.content())
+				? renderObservation(message.content(), presenter, !PlannerObservation.isRuntimeCall(message.toolCallId()))
 				: renderMessage(message);
 			if (!rendered.isBlank()) {
 				JsonObject text = new JsonObject();
@@ -258,10 +266,10 @@ final class CodexPlannerResponseCodec {
 		return value;
 	}
 
-	private static String renderObservation(String content) {
+	private static String renderObservation(String content, ai.moeru.airicraft.agent.llm.ObservationPresenter presenter, boolean explicit) {
 		String rendered;
 		try {
-			rendered = PlannerInputText.observation(JsonParser.parseString(content).getAsJsonObject());
+			rendered = PlannerInputText.observation(presenter.present(JsonParser.parseString(content).getAsJsonObject(), explicit));
 		}
 		catch (JsonParseException | IllegalStateException exception) {
 			rendered = content;

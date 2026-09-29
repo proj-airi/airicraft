@@ -44,7 +44,7 @@ public final class RuleEngine implements AutoCloseable {
 	private static final String[] WARMUP_JOBS = {"null", "\"MINE_BLOCKS\"", "\"COLLECT_RESOURCE\"", "\"IDLE\""};
 	private static final ExecutorService WARMUP = Executors.newSingleThreadExecutor(
 		Thread.ofPlatform().daemon().name("airicraft-rules-warmup").factory());
-	/** The bundled module plus at most one override stay warm; replaced overrides are closed. */
+	/** The bundled modules plus at most one override per hook stay warm; replaced overrides are closed. */
 	private static final Map<String, RuleEngine> SHARED = new LinkedHashMap<>();
 
 	private final RuleModule module;
@@ -52,6 +52,7 @@ public final class RuleEngine implements AutoCloseable {
 	private long rebuilds;
 	private Context context;
 	private Value kernel;
+	private com.google.gson.JsonObject interests = new com.google.gson.JsonObject();
 	private boolean closed;
 
 	private RuleEngine(RuleModule module) {
@@ -65,14 +66,14 @@ public final class RuleEngine implements AutoCloseable {
 		}
 	}
 
-	/** The shared, warming engine for {@code module}; a different override replaces the previous one. */
+	/** The shared, warming engine for {@code module}; a different override for the same hook replaces the previous one. */
 	public static synchronized RuleEngine shared(RuleModule module) {
-		String key = module.origin() + "#" + module.sha();
+		String key = module.hook() + ":" + module.origin() + "#" + module.sha();
 		RuleEngine existing = SHARED.get(key);
 		if (existing != null) return existing;
 		if (!module.bundled()) {
 			SHARED.entrySet().removeIf(entry -> {
-				if (entry.getValue().module.bundled()) return false;
+				if (entry.getValue().module.bundled() || entry.getValue().module.hook() != module.hook()) return false;
 				entry.getValue().close();
 				return true;
 			});
@@ -89,12 +90,19 @@ public final class RuleEngine implements AutoCloseable {
 	public static void validate(RuleModule module, Duration timeout) throws RuleException {
 		try (RuleEngine engine = new RuleEngine(module)) {
 			engine.awaitReady(timeout);
-			engine.step("{\"tick\":0,\"seed\":1,\"attention\":{},\"plannerRules\":[],\"events\":[]}", "{}");
+			engine.step(module.hook() == RuleModule.Hook.SALIENCE
+				? "{\"tick\":0,\"seed\":1,\"context\":{},\"candidates\":[]}"
+				: "{\"tick\":0,\"seed\":1,\"attention\":{},\"plannerRules\":[],\"events\":[]}", "{}");
 		}
 	}
 
 	public RuleModule module() {
 		return module;
+	}
+
+	/** What the module declared it is interested in ({@code {}} while cold or when it declares nothing). */
+	public synchronized com.google.gson.JsonObject interests() {
+		return interests.deepCopy();
 	}
 
 	public boolean ready() {
@@ -169,14 +177,17 @@ public final class RuleEngine implements AutoCloseable {
 		catch (RuntimeException exception) {
 			throw new RuleException("malformed_output", "rule output is not a JSON object");
 		}
-		if (!parsed.has("decisions") || !parsed.get("decisions").isJsonArray()) {
-			throw new RuleException("malformed_output", "rule output has no decisions array");
+		for (String key : new String[] {"decisions", "percepts", "drops"}) {
+			if (!parsed.has(key) || !parsed.get(key).isJsonArray()) {
+				throw new RuleException("malformed_output", "rule output has no " + key + " array");
+			}
 		}
 		String nextState = parsed.has("state") ? parsed.get("state").toString() : "{}";
 		if (nextState.getBytes(StandardCharsets.UTF_8).length > MAX_STATE_BYTES) {
 			throw new RuleException("state_limit", "returned rule state exceeds " + MAX_STATE_BYTES + " bytes");
 		}
-		return new RuleStepResult(parsed.getAsJsonArray("decisions"), nextState, nanos);
+		return new RuleStepResult(parsed.getAsJsonArray("decisions"), parsed.getAsJsonArray("percepts"),
+			parsed.getAsJsonArray("drops"), nextState, nanos);
 	}
 
 	/** How many times a cancelled context was rebuilt. */
@@ -206,7 +217,8 @@ public final class RuleEngine implements AutoCloseable {
 			.resourceLimits(ResourceLimits.newBuilder().statementLimit(STATEMENT_LIMIT, ignored -> true).build()).build();
 		try {
 			Value loadedKernel = built.eval("js", RuleModule.resource("kernel.js"));
-			loadedKernel.invokeMember("load", built.eval("js", RuleModule.resource("lib.js")), built.eval(moduleSource(module)));
+			String declared = loadedKernel.invokeMember("load", built.eval("js", RuleModule.resource("lib.js")), built.eval(moduleSource(module))).asString();
+			com.google.gson.JsonObject declaredInterests = parseInterests(declared);
 			synchronized (this) {
 				if (closed) {
 					built.close(true);
@@ -221,6 +233,7 @@ public final class RuleEngine implements AutoCloseable {
 				}
 				context = built;
 				kernel = loadedKernel;
+				interests = declaredInterests;
 			}
 		}
 		catch (PolyglotException exception) {
@@ -247,13 +260,24 @@ public final class RuleEngine implements AutoCloseable {
 		for (int step = 0; step < WARMUP_STEPS; step++) {
 			try {
 				built.resetLimits();
-				loadedKernel.invokeMember("run", warmupInput(step), "{}");
+				loadedKernel.invokeMember("run", module.hook() == RuleModule.Hook.SALIENCE ? salienceWarmupInput(step) : warmupInput(step), "{}");
 			}
 			catch (PolyglotException exception) {
 				if (exception.isResourceExhausted() || exception.isCancelled()) throw new WarmupCancelled();
 				return;
 			}
 		}
+	}
+
+	private com.google.gson.JsonObject parseInterests(String declared) {
+		try {
+			var parsed = com.google.gson.JsonParser.parseString(declared);
+			if (parsed.isJsonObject()) return parsed.getAsJsonObject();
+		}
+		catch (RuntimeException ignored) {
+		}
+		throw new java.util.concurrent.CompletionException(new RuleException("load_failed",
+			module.origin() + ": interests must be a JSON object"));
 	}
 
 	private static final class WarmupCancelled extends RuntimeException {
@@ -275,6 +299,36 @@ public final class RuleEngine implements AutoCloseable {
 			+ "\",\"player\":\"Alex\",\"state\":\"" + (flag ? "FAILED" : "SUCCEEDED") + "\"},\"profile\":{\"semantic\":true,\"trigger\":" + (step % 6 != 0)
 			+ ",\"bypass\":" + (step % 11 == 0) + "},\"plannerEnabled\":" + (step % 9 != 0) + ",\"evidence\":{\"addressedToAgent\":" + (step % 8 == 0)
 			+ ",\"resetCommand\":false,\"senderWithinChatDistance\":" + flag + "}}]}";
+	}
+
+	private static final String[] WARMUP_BLOCKS = {"minecraft:diamond_ore", "minecraft:deepslate_diamond_ore", "minecraft:spawner", "minecraft:chest"};
+	private static final String[] WARMUP_ITEMS = {"minecraft:diamond", "minecraft:cobblestone", "minecraft:bread", "minecraft:rotten_flesh"};
+	private static final String[] WARMUP_ENTITIES = {"minecraft:player", "minecraft:villager", "minecraft:cow", "minecraft:wolf"};
+
+	/** A representative salience input: a few block, item, entity and environment candidates. */
+	static String salienceWarmupInput(int step) {
+		var candidates = new StringBuilder();
+		for (int index = 0; index < 1 + step % 6; index++) {
+			if (index > 0) candidates.append(',');
+			int x = step % 5 + index, z = index % 2;
+			switch ((step + index) % 4) {
+				case 0 -> candidates.append("{\"id\":\"block:").append(x).append("\",\"kind\":\"block\",\"blockId\":\"")
+					.append(WARMUP_BLOCKS[(step + index) % WARMUP_BLOCKS.length]).append("\",\"x\":").append(x).append(",\"y\":40,\"z\":").append(z)
+					.append(",\"distance\":").append(5 + index).append(",\"exposedFaces\":[\"up\"]}");
+				case 1 -> candidates.append("{\"id\":\"item:").append(step).append('-').append(index).append("\",\"kind\":\"item\",\"itemId\":\"")
+					.append(WARMUP_ITEMS[(step + index) % WARMUP_ITEMS.length]).append("\",\"count\":").append(1 + index)
+					.append(",\"distance\":4,\"offered\":").append(step % 7 == 0).append(",\"attribution\":\"unknown\"}");
+				case 2 -> candidates.append("{\"id\":\"entity:").append(step).append('-').append(index).append("\",\"kind\":\"entity\",\"entityType\":\"")
+					.append(WARMUP_ENTITIES[(step + index) % WARMUP_ENTITIES.length]).append("\",\"distance\":9,\"hostile\":false,\"reflexTracked\":false,\"named\":")
+					.append(step % 3 == 0).append(",\"tamed\":false}");
+				default -> candidates.append("{\"id\":\"environment:").append(step).append("\",\"kind\":\"environment\",\"change\":\"")
+					.append(step % 2 == 0 ? "dusk" : "rain_started").append("\"}");
+			}
+		}
+		return "{\"tick\":" + step + ",\"seed\":" + (step + 1) + ",\"context\":{\"objective\":\"" + (step % 2 == 0 ? "build a furnace" : "")
+			+ "\",\"wanted\":[" + (step % 3 == 0 ? "\"minecraft:cobblestone\"" : "") + "],\"activeJobType\":" + (step % 4 == 0 ? "\"MINE_BLOCKS\"" : "null")
+			+ ",\"activeJobTargets\":[" + (step % 4 == 0 ? "\"minecraft:diamond_ore\"" : "") + "],\"idle\":" + (step % 2 == 1)
+			+ "},\"candidates\":[" + candidates + "]}";
 	}
 
 	/**

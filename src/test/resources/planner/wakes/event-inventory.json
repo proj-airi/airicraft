@@ -209,6 +209,71 @@
       "extraWake": null
     },
     {
+      "type": "perception.block_noticed",
+      "producers": [
+        "SaliencePolicy"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "perception.entity_lost",
+      "producers": [
+        "SaliencePolicy"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "perception.entity_noticed",
+      "producers": [
+        "SaliencePolicy"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "perception.environment_changed",
+      "producers": [
+        "SaliencePolicy"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "perception.item_noticed",
+      "producers": [
+        "SaliencePolicy"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "pickup.item_picked_up",
       "producers": [
         "EmbodiedAgentRuntime"
@@ -708,7 +773,8 @@
     {
       "type": "rules.reverted",
       "producers": [
-        "RuleAttentionPolicy"
+        "RuleAttentionPolicy",
+        "SaliencePolicy"
       ],
       "profile": null,
       "observeVisible": false,
@@ -717,7 +783,8 @@
     {
       "type": "rules.step_failed",
       "producers": [
-        "RuleAttentionPolicy"
+        "RuleAttentionPolicy",
+        "SaliencePolicy"
       ],
       "profile": null,
       "observeVisible": false,

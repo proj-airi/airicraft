@@ -1,0 +1,44 @@
+id: notice-walk
+name: Notice what you pass
+metadata:
+  minecraftVersion: 1.21.8
+  airicraftVersion: dev
+worldArchive: world.zip
+frozen: true
+prompt: >-
+  You are standing at the west end of a dark stone corridor at 0, 201, 561.
+  Walk east through the corridor to 27, 201, 561 and stop there. Pay attention
+  to anything you notice on the way, and when you arrive, say in chat what you
+  noticed. Do not mine, place or pick up anything, and do not use commands or
+  creative-mode shortcuts.
+budget:
+  maxPlannerTurns: 12
+  maxElapsedTicks: 2400
+  maxElapsedMillis: 0
+  heartbeatIntervalTicks: 80
+# Perception checks (Phase 4): the exposed diamond vein and the bread are noticed; the emerald ore
+# sealed inside the wall is never noticed (no X-ray), and the cobblestone is garbage. What the planner
+# chooses to do about them is for the reviewer.
+checks:
+  - type: event_contains
+    eventType: perception.block_noticed
+    payload:
+      blockId: minecraft:diamond_ore
+  - type: event_absent
+    eventType: perception.block_noticed
+    payload:
+      blockId: minecraft:emerald_ore
+  - type: event_contains
+    eventType: perception.item_noticed
+    payload:
+      itemId: minecraft:bread
+  - type: event_absent
+    eventType: perception.item_noticed
+    payload:
+      itemId: minecraft:cobblestone
+evidence:
+  includePlannerJournal: true
+  includeDebugTimeline: true
+  includeRecentEvents: true
+  includeTaskState: true
+  includeWorldSnapshot: true

@@ -1,0 +1,257 @@
+{
+  "events": [
+    {
+      "payload": {
+        "blockId": "minecraft:diamond_ore",
+        "count": 1,
+        "dimension": "minecraft:overworld",
+        "direction": "north",
+        "distance": 7,
+        "evidence": "line_of_sight_to_exposed_face",
+        "exposedFaces": [
+          "up"
+        ],
+        "nearest": {
+          "x": 3,
+          "y": 40,
+          "z": 7
+        },
+        "positions": [
+          {
+            "x": 3,
+            "y": 40,
+            "z": 7
+          }
+        ]
+      },
+      "seqNo": 1,
+      "tick": 2,
+      "type": "perception.block_noticed"
+    },
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 2,
+      "tick": 4,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent what is over there?",
+        "normalizedMessage": "@agent what is over there?",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 4,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent what is over there?",
+        "normalizedMessage": "@agent what is over there?",
+        "player": "Alex"
+      },
+      "seqNo": 4,
+      "tick": 4,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 5,
+      "tick": 4,
+      "type": "objective.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent what is over there?"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "blockId": "minecraft:diamond_ore",
+              "count": 1,
+              "dimension": "minecraft:overworld",
+              "direction": "north",
+              "distance": 7,
+              "evidence": "line_of_sight_to_exposed_face",
+              "exposedFaces": [
+                "up"
+              ],
+              "nearest": {
+                "x": 3,
+                "y": 40,
+                "z": 7
+              },
+              "positions": [
+                {
+                  "x": 3,
+                  "y": 40,
+                  "z": 7
+                }
+              ]
+            },
+            "seqNo": 1,
+            "tick": 2,
+            "type": "perception.block_noticed"
+          },
+          {
+            "payload": {
+              "player": "Alex",
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "seqNo": 2,
+            "tick": 4,
+            "type": "social.player_joined_nearby"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 5,
+            "tick": 4,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 5,
+        "tick": 4,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "perception.block_noticed",
+            "urgency": "low"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 4
+    }
+  ],
+  "scenario": "percept_protected_not_debounced",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [
+        "perception:perception.block_noticed:minecraft:diamond_ore"
+      ],
+      "gate": "debounce.hold",
+      "kind": "debounced",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 2,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 2
+    },
+    {
+      "coalescingKeys": [
+        "perception:perception.block_noticed:minecraft:diamond_ore"
+      ],
+      "gate": "debounce.piggyback",
+      "kind": "released",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 2
+    },
+    {
+      "coalescingKeys": [
+        "perception:perception.block_noticed:minecraft:diamond_ore"
+      ],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 2
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 4
+    }
+  ]
+}

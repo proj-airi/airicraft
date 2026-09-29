@@ -105,11 +105,82 @@ class WakeSchedulerTest {
 
 	private static final class Triggers implements WakeScheduler.TriggerHost {
 		boolean blocked, workHolds;
+		long incorporatedThrough;
 		final List<String> log = new ArrayList<>();
 		@Override public boolean blockedGoal() { return blocked; }
 		@Override public boolean workHoldsRoutineWakes() { return workHolds; }
-		@Override public void audit(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger, String kind, String gate) { log.add(kind + ":" + gate); }
-		@Override public void deliver(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger) { log.add("deliver:" + trigger.type()); }
+		@Override public boolean incorporated(long seqNo) { return seqNo <= incorporatedThrough; }
+		@Override public void audit(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger, String kind, String gate) {
+			log.add(kind + ":" + gate + (trigger.wake() == null ? "" : ":" + trigger.wake().seqNo()));
+		}
+		@Override public void deliver(List<ai.moeru.airicraft.agent.llm.PlannerTrigger> triggers) {
+			log.add("deliver:" + String.join(",", triggers.stream().map(trigger -> trigger.wake() == null
+				? trigger.type().name() : String.valueOf(trigger.wake().seqNo())).toList()));
+		}
+	}
+
+	private static ai.moeru.airicraft.agent.llm.PlannerTrigger percept(long seqNo, long tick, String urgency) {
+		return ai.moeru.airicraft.agent.llm.PlannerTrigger.autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.SYSTEM, "self",
+			"noticed", tick, tick * 50, "perception:" + seqNo)
+			.withWake(ai.moeru.airicraft.agent.llm.WakeRef.event(seqNo, "perception.block_noticed", urgency).debounce(true));
+	}
+
+	@Test void debouncedWakesWaitForQuietAndLeaveAsOneBatch() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		scheduler.offerTrigger(percept(5, 100, "LOW"), host);
+		scheduler.offerTrigger(percept(6, 104, "LOW"), host);
+		assertFalse(scheduler.releaseDebounced(113, host), "only 9 quiet ticks since the last one");
+		scheduler.offerTrigger(percept(7, 113, "LOW"), host);
+		assertFalse(scheduler.releaseDebounced(122, host));
+		assertTrue(scheduler.releaseDebounced(123, host));
+		assertEquals(List.of("debounced:debounce.hold:5", "debounced:debounce.hold:6", "debounced:debounce.hold:7",
+			"released:debounce.quiet:5", "released:debounce.quiet:6", "released:debounce.quiet:7", "deliver:5,6,7"), host.log);
+		assertFalse(scheduler.hasDebouncedWakes());
+	}
+
+	@Test void aSteadyTrickleIsReleasedAfterTheMaximumHold() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		for (long tick = 0; tick <= 100; tick += 5) {
+			scheduler.offerTrigger(percept(tick + 1, tick, "LOW"), host);
+			if (scheduler.releaseDebounced(tick, host)) {
+				assertEquals(100, tick, "released once the first wake has waited 100 ticks");
+				assertTrue(host.log.getLast().startsWith("deliver:1,6,11"));
+				return;
+			}
+		}
+		fail("never released: " + host.log);
+	}
+
+	@Test void anImmediateWakeTakesTheHeldOnesAlongAndProtectedUrgencyIsNeverHeld() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		scheduler.offerTrigger(percept(3, 10, "LOW"), host);
+		scheduler.offerTrigger(percept(4, 11, "HIGH"), host);
+		assertEquals(List.of("debounced:debounce.hold:3", "released:debounce.piggyback:3", "deliver:3,4"), host.log);
+	}
+
+	@Test void heldWakesAlreadyObservedOrBlockedAreDroppedAndResetsClearThem() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		scheduler.offerTrigger(percept(3, 10, "LOW"), host);
+		scheduler.offerTrigger(percept(4, 10, "LOW"), host);
+		host.incorporatedThrough = 3;
+		assertTrue(scheduler.releaseDebounced(20, host));
+		assertEquals(List.of("debounced:debounce.hold:3", "debounced:debounce.hold:4", "dropped:debounce.incorporated:3",
+			"released:debounce.quiet:4", "deliver:4"), host.log);
+		host.log.clear();
+		scheduler.offerTrigger(percept(9, 30, "LOW"), host);
+		host.blocked = true;
+		host.log.clear();
+		assertFalse(scheduler.releaseDebounced(40, host));
+		assertEquals(List.of("dropped:G4.blocked_goal:9"), host.log);
+		host.blocked = false;
+		scheduler.offerTrigger(percept(10, 50, "LOW"), host);
+		scheduler.clearTaskWakes();
+		assertFalse(scheduler.hasDebouncedWakes());
+		assertEquals(List.of(), ((List<?>) scheduler.debugState().get("debounced")));
 	}
 
 	private static ai.moeru.airicraft.agent.llm.PlannerTrigger autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType type, String key) {
