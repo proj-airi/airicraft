@@ -492,6 +492,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				EmbodiedAgentRuntime::integratedServerTick,
 				backendFactory
 			);
+		plannerShell.rulesTools().bind(plannerRules);
 		this.visionService = plannerShell.visionService();
 		this.dialogueRuntime = plannerShell.dialogueRuntime();
 		this.dialogueRuntime.configureWakeAudit((wakeTick, kind, fields) -> {

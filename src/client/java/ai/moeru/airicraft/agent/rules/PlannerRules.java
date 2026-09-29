@@ -85,6 +85,7 @@ public final class PlannerRules {
 	private final ExecutorService worker = Executors.newSingleThreadExecutor(
 		Thread.ofPlatform().daemon().name("airicraft-rules-authoring").factory());
 	private final ConcurrentLinkedQueue<Runnable> applyQueue = new ConcurrentLinkedQueue<>();
+	private final java.util.concurrent.atomic.AtomicInteger inFlight = new java.util.concurrent.atomic.AtomicInteger();
 
 	public PlannerRules(RulesStore store, Host host) {
 		this.store = Objects.requireNonNull(store, "store");
@@ -172,7 +173,14 @@ public final class PlannerRules {
 		catch (Refused refused) {
 			return CompletableFuture.failedFuture(refused);
 		}
-		return CompletableFuture.supplyAsync(() -> prepare(request), worker).thenCompose(prepared -> apply(request, prepared));
+		inFlight.incrementAndGet();
+		return CompletableFuture.supplyAsync(() -> prepare(request), worker).thenCompose(prepared -> apply(request, prepared))
+			.whenComplete((result, failure) -> inFlight.decrementAndGet());
+	}
+
+	/** Edits still being checked or waiting for the tick; a test harness keeps ticking while this is above zero. */
+	public int inFlight() {
+		return inFlight.get();
 	}
 
 	private void guard(RuleModule.Hook hook) {

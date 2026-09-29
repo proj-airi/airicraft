@@ -203,6 +203,7 @@ public final class PlannerShellFactory {
 		});
 		plannerGoal.refreshWorld();
 		var scriptedQueries = ai.moeru.airicraft.agent.llm.WorldQueryScriptToolProvider.forClient(effectiveServerTickSupplier, effectiveWorldReadObserver);
+		var rulesTools = new ai.moeru.airicraft.agent.llm.RulesToolProvider();
 		var sharedProviders = new java.util.ArrayList<>(List.<ai.moeru.airicraft.agent.llm.PlannerToolProvider>of(
 			new ai.moeru.airicraft.agent.work.WorkToolProvider(effectiveActionToolExecutor),
 			new ai.moeru.airicraft.agent.llm.PlannerQueueToolProvider(effectiveActionToolExecutor),
@@ -212,6 +213,7 @@ public final class PlannerShellFactory {
 			scriptedQueries,
 			new ai.moeru.airicraft.agent.llm.SelfToolProvider(scriptedQueries),
 			new ai.moeru.airicraft.agent.llm.PolicyDocsToolProvider(),
+			rulesTools,
 			new WorldFeatureSearchToolProvider(worldFeatureSearchService, result -> effectiveWorldReadObserver.accept(result.observedPositions())),
 			PlaceMemoryToolProvider.forClient(),
 			new ai.moeru.airicraft.agent.memory.InteractionLogbookToolProvider(),
@@ -288,7 +290,7 @@ public final class PlannerShellFactory {
 			thinker.shareGenerationSequence(generations);
 			dialogue.configureDelegation(thinker, handoff);
 		}
-		return new PlannerShellComponents(visionService, dialogue, journal, plannerCallJournal, orchestrator);
+		return new PlannerShellComponents(visionService, dialogue, journal, plannerCallJournal, orchestrator, rulesTools);
 	}
 
 	private static PlannerOrchestrator createOrchestrator(AgentConfig.LlmConfig llm, PlannerToolRegistry tools,
