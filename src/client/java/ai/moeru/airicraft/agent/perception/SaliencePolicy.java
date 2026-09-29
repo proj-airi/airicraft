@@ -24,9 +24,10 @@ import java.util.function.Consumer;
 /**
  * The salience hook (spec 4.12): candidates from the noticing sensors go through a sandboxed GraalJS module that
  * decides which become percepts. At most {@code candidatesPerStep} candidates go into one step, oldest first; the
- * rest wait for the next tick. A failed step publishes {@code rules.step_failed} and keeps its candidates, which are
- * offered again for up to {@link #RETRY_TICKS} ticks and then dropped; after three consecutive failures an override
- * reverts to the bundled module. There is no Java mirror: noticing is not safety-critical, and the attention
+ * rest wait for the next tick. Candidates wait out a cold engine without ageing. A failed step publishes
+ * {@code rules.step_failed} and keeps its candidates, which are offered again for up to {@link #RETRY_TICKS} ticks
+ * after their first failed attempt and then dropped; after three consecutive failures an override reverts to the
+ * bundled module. There is no Java mirror: noticing is not safety-critical, and the attention
  * constitution keeps the agent wakeable without it.
  */
 public final class SaliencePolicy {
@@ -44,7 +45,15 @@ public final class SaliencePolicy {
 	/** One step as the host ran it, for recording and replay: input, state before, and the output. */
 	public record StepRecord(long tick, String module, JsonObject input, String stateBefore, JsonArray percepts, JsonArray drops) {}
 
-	private record Pending(PerceptCandidate candidate, long offeredTick) {}
+	/** A waiting candidate; {@code failedSince} is the tick of its first failed step, or -1 before any. */
+	private static final class Pending {
+		final PerceptCandidate candidate;
+		long failedSince = -1L;
+
+		Pending(PerceptCandidate candidate) { this.candidate = candidate; }
+
+		PerceptCandidate candidate() { return candidate; }
+	}
 
 	private final EventPublisher diagnostics;
 	private final ArrayDeque<Pending> pending = new ArrayDeque<>();
@@ -113,7 +122,7 @@ public final class SaliencePolicy {
 			pending.removeFirst();
 			expired++;
 		}
-		pending.addLast(new Pending(candidate, tick));
+		pending.addLast(new Pending(candidate));
 	}
 
 	public synchronized int pendingCount() {
@@ -131,18 +140,21 @@ public final class SaliencePolicy {
 	 * data the rules may read (goal, wanted items, inventory, the running job).
 	 */
 	public synchronized List<Percept> step(long tick, Map<String, Object> context, int candidatesPerStep) {
-		expire(tick);
 		if (pending.isEmpty()) return List.of();
 		RuleException loadFailure = engine().loadFailure();
-		if (loadFailure != null) {
-			fail(tick, loadFailure);
-			return List.of();
-		}
-		if (!engine().ready()) return List.of();
+		// A warming engine has not attempted anything yet: candidates wait without ageing.
+		if (loadFailure == null && !engine().ready()) return List.of();
+		expire(tick);
+		if (pending.isEmpty()) return List.of();
 		var batch = new ArrayList<Pending>();
 		for (Pending entry : pending) {
 			if (batch.size() >= candidatesPerStep) break;
 			batch.add(entry);
+		}
+		if (loadFailure != null) {
+			failed(batch, tick);
+			fail(tick, loadFailure);
+			return List.of();
 		}
 		JsonObject input = input(tick, context, batch);
 		String stateBefore = ruleState;
@@ -151,7 +163,10 @@ public final class SaliencePolicy {
 			result = engine().step(input.toString(), ruleState);
 		}
 		catch (RuleException exception) {
-			if (!"cold".equals(exception.code())) fail(tick, exception);
+			if (!"cold".equals(exception.code())) {
+				failed(batch, tick);
+				fail(tick, exception);
+			}
 			return List.of();
 		}
 		for (int index = 0; index < batch.size(); index++) pending.removeFirst();
@@ -218,11 +233,18 @@ public final class SaliencePolicy {
 		return result;
 	}
 
+	private static void failed(List<Pending> batch, long tick) {
+		for (Pending entry : batch) if (entry.failedSince < 0) entry.failedSince = tick;
+	}
+
 	private void expire(long tick) {
-		while (!pending.isEmpty() && tick - pending.peekFirst().offeredTick() > RETRY_TICKS) {
-			Pending stale = pending.removeFirst();
+		var stale = pending.iterator();
+		while (stale.hasNext()) {
+			Pending entry = stale.next();
+			if (entry.failedSince < 0 || tick - entry.failedSince <= RETRY_TICKS) continue;
+			stale.remove();
 			expired++;
-			remember(tick, List.of(stale.candidate().id()), "dropped:salience_unavailable");
+			remember(tick, List.of(entry.candidate().id()), "dropped:salience_unavailable");
 		}
 	}
 

@@ -115,7 +115,8 @@ output: {percepts: [{type, payload, candidateIds}], drops: [{candidateId, reason
   `perception.entity_lost` or `perception.environment_changed`; other percepts are rejected and counted.
 - Candidates neither turned into a percept nor dropped are recorded as `dropped:unselected`.
 - At most `perception.candidatesPerStep` candidates (default 50) go into one step, oldest first. A failed step keeps
-  its candidates for up to 20 ticks, and an override that fails 3 steps in a row reverts to the bundled module.
+  its candidates for up to 20 ticks after their first failed step, and an override that fails 3 steps in a row reverts
+  to the bundled module. Candidates wait out the engine's warm-up without ageing.
 - The bundled module notices notable ores, spawners, chests and portals (adjacent blocks form one vein percept),
   players, villagers, named or tamed animals, food animals when their products are wanted, dropped items that are not
   common garbage (unless the goal or a job wants them), and environment changes. It drops offered items (the offer is

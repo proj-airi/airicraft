@@ -70,9 +70,29 @@ class SaliencePolicyTest {
 		events.query(null).events().forEach(event -> types.add(event.type()));
 		assertEquals(List.of("rules.step_failed", "rules.step_failed", "rules.step_failed", "rules.reverted"), types);
 		assertEquals(1, policy.pendingCount());
-		policy.step(30, Map.of(), 10);
+		policy.useModule(module("throws-again", "(lib => ({ step(input, state) { throw Error('still broken'); } }))"));
+		policy.step(21, Map.of(), 10);
+		assertEquals(1, policy.pendingCount(), "20 ticks after its first failed step");
+		policy.step(22, Map.of(), 10);
 		assertEquals(0, policy.pendingCount(), "a candidate waits at most 20 ticks");
 		assertEquals(1L, policy.debugState().get("expired"));
+	}
+
+	@Test void candidatesWaitOutAWarmingEngineWithoutExpiring() throws Exception {
+		// A module no other test has warmed; its engine starts warming on the policy's first step.
+		var module = new RuleModule("config:cold-" + System.nanoTime() + ".js", """
+			(lib => ({ step(input, state) {
+			  return {percepts: input.candidates.map(c => ({type: 'perception.item_noticed', payload: {itemId: c.itemId}, candidateIds: [c.id]})), state};
+			} }))""", RuleModule.Hook.SALIENCE);
+		var policy = new SaliencePolicy(new SemanticEventBuffer(8), module);
+		policy.offer(item("early", "minecraft:bread"), 1);
+		assertEquals(List.of(), policy.step(1, Map.of(), 10));
+		assertEquals(List.of(), policy.step(1 + 5 * SaliencePolicy.RETRY_TICKS, Map.of(), 10));
+		org.junit.jupiter.api.Assumptions.assumeFalse(RuleEngine.shared(module).ready(), "the engine warmed before the late step");
+		RuleEngine.shared(module).awaitReady(WARM);
+		var percepts = policy.step(2 + 5 * SaliencePolicy.RETRY_TICKS, Map.of(), 10);
+		assertEquals(List.of("early"), percepts.getFirst().candidateIds(), "noticed during warm-up, still decided");
+		assertEquals(0L, policy.debugState().get("expired"));
 	}
 
 	@Test void recordsEachStepForReplayAndRefusesAnAttentionModule() throws Exception {
