@@ -24,6 +24,8 @@ public final class RuntimeFlightRecorder {
 	private Long latestTimelineEntryId;
 	private Long latestLlmSequenceId;
 	private Long latestAttentionSeqNo;
+	private Long latestSalienceStep;
+	private boolean salienceStepsTruncated;
 	private boolean eventsTruncated;
 	private boolean timelineTruncated;
 	private boolean llmCallsTruncated;
@@ -41,6 +43,7 @@ public final class RuntimeFlightRecorder {
 		drainTimeline(runtime, collectedAt);
 		drainLlmCalls(runtime::llmFlightRecords, collectedAt);
 		drainAttentionDecisions(runtime.attentionDecisionLog(), collectedAt);
+		drainSalienceSteps(runtime.salienceStepLog(), collectedAt);
 	}
 
 	public Map<String, Object> statusPayload() {
@@ -53,6 +56,7 @@ public final class RuntimeFlightRecorder {
 		status.put("llmCallsTruncated", llmCallsTruncated);
 		status.put("attentionDecisionsLatestSeqNo", latestAttentionSeqNo);
 		status.put("attentionDecisionsTruncated", attentionDecisionsTruncated);
+		status.put("salienceStepsTruncated", salienceStepsTruncated);
 		return status;
 	}
 
@@ -99,6 +103,24 @@ public final class RuntimeFlightRecorder {
 		for (var decision : result.decisions()) {
 			appendJsonl(outputDir.resolve("attention-decisions.jsonl"), Map.of("collectedAt", collectedAt, "decision", decision));
 			latestAttentionSeqNo = decision.seqNo();
+		}
+	}
+
+	/** Salience steps with their input and prior state, so {@code SalienceReplay} can re-run them. */
+	void drainSalienceSteps(ai.moeru.airicraft.agent.perception.SalienceStepLog log, String collectedAt) throws IOException {
+		var result = log.query(latestSalienceStep);
+		salienceStepsTruncated = salienceStepsTruncated || result.truncated();
+		for (var entry : result.entries()) {
+			var step = entry.step();
+			var record = new LinkedHashMap<String, Object>();
+			record.put("tick", step.tick());
+			record.put("module", step.module());
+			record.put("input", step.input());
+			record.put("stateBefore", step.stateBefore());
+			record.put("percepts", step.percepts());
+			record.put("drops", step.drops());
+			appendJsonl(outputDir.resolve("salience-steps.jsonl"), Map.of("collectedAt", collectedAt, "sequence", entry.sequence(), "step", record));
+			latestSalienceStep = entry.sequence();
 		}
 	}
 

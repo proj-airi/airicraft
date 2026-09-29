@@ -84,6 +84,33 @@ class RuntimeFlightRecorderTest {
 		assertEquals(false, writer.statusPayload().get("attentionDecisionsTruncated"));
 	}
 
+	@Test void salienceStepsAreRecordedOnceAndReplayExactlyWithTheBundledModule() throws Exception {
+		var bundled = ai.moeru.airicraft.rules.RuleModule.bundledSalience();
+		ai.moeru.airicraft.rules.RuleEngine.shared(bundled).awaitReady(java.time.Duration.ofSeconds(60));
+		var log = new ai.moeru.airicraft.agent.perception.SalienceStepLog();
+		var policy = new ai.moeru.airicraft.agent.perception.SaliencePolicy(new ai.moeru.airicraft.agent.events.SemanticEventBuffer(8), bundled);
+		policy.recordSteps(log::record);
+		var writer = new RuntimeFlightRecorder(root);
+		policy.offer(new ai.moeru.airicraft.agent.perception.PerceptCandidate("item:a", "item", java.util.Map.of("itemId", "minecraft:bread", "count", 2)), 1);
+		policy.offer(new ai.moeru.airicraft.agent.perception.PerceptCandidate("item:b", "item", java.util.Map.of("itemId", "minecraft:dirt", "count", 2)), 1);
+		policy.step(1, java.util.Map.of(), 50);
+		writer.drainSalienceSteps(log, "tick 1");
+		policy.offer(new ai.moeru.airicraft.agent.perception.PerceptCandidate("item:c", "item", java.util.Map.of("itemId", "minecraft:bread", "count", 1)), 50);
+		policy.step(50, java.util.Map.of(), 50);
+		writer.drainSalienceSteps(log, "tick 50");
+		writer.drainSalienceSteps(log, "unchanged");
+		assertEquals(2, Files.readAllLines(root.resolve("salience-steps.jsonl")).size());
+		assertEquals(false, writer.statusPayload().get("salienceStepsTruncated"));
+
+		var replayed = ai.moeru.airicraft.agent.perception.SalienceReplay.replay(root, bundled, java.time.Duration.ofSeconds(60));
+		assertEquals(2, replayed.get("steps"));
+		assertEquals(0, replayed.get("differing"), "the second step depends on the first step's cooldown state: " + replayed);
+		var silent = new ai.moeru.airicraft.rules.RuleModule("test:silent-salience", "(lib => ({ step(i, s) { return {state: s}; } }))",
+			ai.moeru.airicraft.rules.RuleModule.Hook.SALIENCE);
+		assertEquals(2, ai.moeru.airicraft.agent.perception.SalienceReplay.replay(root, silent, java.time.Duration.ofSeconds(60)).get("differing"),
+			"an override that decides nothing differs in both steps: the noticed bread, then the cooldown drop");
+	}
+
 	private List<com.google.gson.JsonObject> records() throws Exception {
 		return Files.readAllLines(root.resolve("llm-calls.jsonl")).stream()
 			.map(line -> JsonParser.parseString(line).getAsJsonObject().getAsJsonObject("record")).toList();

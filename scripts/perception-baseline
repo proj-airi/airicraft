@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""Check honest noticing on the evaluator's deterministic notice course, without a model.
+
+Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner
+dormant) and join a disposable singleplayer world. For each run, this script:
+
+1. builds the notice_walk course through POST /v1/evaluation/notice-course,
+2. walks the corridor with navigate_to through the external-driver tool route,
+3. waits for the walk to end and for pending percepts to be decided, and
+4. checks the percepts: the exposed diamond vein is noticed, the sealed emerald ore
+   never is (no X-ray), the bread is noticed, and the cobblestone is dropped as garbage.
+
+It also records the perception cost per sensor and the percept wake decisions per
+minute. The report is written as JSON.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+COURSE_ROUTE = "/v1/evaluation/notice-course"
+TOOLS_ROUTE = "/v1/agent/tools"
+TIMELINE_ROUTE = "/v1/agent/debug/timeline"
+EVENTS_ROUTE = "/v1/agent/events/recent"
+STATE_ROUTE = "/v1/agent/debug/state"
+TOOL_RESULT_PREFIX = "Tool result for "
+PERCEPT_RULES = ("percept.notice", "percept.dusk_idle")
+TICKS_PER_MINUTE = 1200
+
+
+class BaselineError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class Bridge:
+    port: int
+    token: str
+
+
+BridgeCall = Callable[[str, str, Any], Any]
+
+
+def default_bridge_state_path() -> Path:
+    configured = os.environ.get("AIRICRAFT_BRIDGE_STATE_FILE")
+    return Path(configured) if configured else Path.home() / ".airicraft" / "bridge-state.json"
+
+
+def read_bridge(path: Path) -> Bridge:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return Bridge(port=int(raw["port"]), token=str(raw["token"]))
+    except (OSError, ValueError, KeyError) as error:
+        raise BaselineError(f"cannot read bridge state {path}: {error}") from error
+
+
+def http_bridge(bridge: Bridge, timeout_seconds: float = 30.0) -> BridgeCall:
+    def call(method: str, path: str, payload: Any = None) -> Any:
+        headers = {"Authorization": f"Bearer {bridge.token}", "Accept": "application/json"}
+        body = None
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{bridge.port}{path}", data=body, headers=headers, method=method
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            raise BaselineError(f"{method} {path} failed with HTTP {error.code}: {detail}") from error
+
+    return call
+
+
+def accepted(response: Any) -> bool:
+    text = str((response or {}).get("result", ""))
+    if text.startswith("TOOL_ERROR:") or text.startswith("TOOL_UNAVAILABLE:"):
+        return False
+    body = text.split(": ", 1)[1] if text.startswith(TOOL_RESULT_PREFIX) and ": " in text else text
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return True
+    return not isinstance(parsed, dict) or bool(parsed.get("accepted", True))
+
+
+def _point(value: dict[str, Any]) -> tuple[int, int, int]:
+    return int(value["x"]), int(value["y"]), int(value["z"])
+
+
+def evaluate(built: dict[str, Any], events: list[dict[str, Any]], recent: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The honesty checks for one run. `recent` is the salience module's recent decisions."""
+    noticed_blocks = [event.get("payload", {}) for event in events if event.get("type") == "perception.block_noticed"]
+    noticed_items = [event.get("payload", {}) for event in events if event.get("type") == "perception.item_noticed"]
+    checks: list[dict[str, Any]] = []
+    for expected in built.get("expectNoticed", []):
+        wanted = {_point(position) for position in expected["positions"]}
+        seen = set()
+        for payload in noticed_blocks:
+            if payload.get("blockId") != expected["blockId"]:
+                continue
+            seen.update(_point(position) for position in payload.get("positions", []))
+        checks.append({"check": f"noticed {expected['blockId']}", "passed": bool(wanted & seen),
+                       "detail": f"{len(wanted & seen)}/{len(wanted)} vein blocks in percepts"})
+    for sealed in built.get("expectNeverNoticed", []):
+        position = _point(sealed["position"])
+        leaked = [payload for payload in noticed_blocks if payload.get("blockId") == sealed["blockId"]]
+        candidate = f"block:{sealed['blockId']}@{position[0]},{position[1]},{position[2]}"
+        offered = [entry for entry in recent if entry.get("candidateId") == candidate]
+        checks.append({"check": f"never noticed sealed {sealed['blockId']}", "passed": not leaked and not offered,
+                       "detail": "no percept and no candidate" if not leaked and not offered
+                       else f"{len(leaked)} percepts, {len(offered)} candidate decisions"})
+    for item in built.get("items", []):
+        percept = [payload for payload in noticed_items if payload.get("itemEntityUuid") == item["uuid"]]
+        if item["expect"] == "noticed":
+            checks.append({"check": f"noticed {item['itemId']}", "passed": bool(percept),
+                           "detail": f"{len(percept)} percepts"})
+        else:
+            outcomes = [entry.get("outcome") for entry in recent if entry.get("candidateId") == f"item:{item['uuid']}"]
+            checks.append({"check": f"{item['itemId']} dropped as {item['expect']}",
+                           "passed": not percept and f"dropped:{item['expect']}" in outcomes,
+                           "detail": f"percepts={len(percept)} decisions={outcomes}"})
+    return checks
+
+
+def percept_wakes(before: dict[str, Any], after: dict[str, Any]) -> int:
+    def counts(state: dict[str, Any]) -> dict[str, int]:
+        return {key: int(value) for key, value in (state.get("attention", {}).get("countsByRule") or {}).items()}
+    start, end = counts(before), counts(after)
+    return sum(end.get(rule, 0) - start.get(rule, 0) for rule in PERCEPT_RULES)
+
+
+def sensor_costs(state: dict[str, Any]) -> dict[str, Any]:
+    perception = state.get("perception", {})
+    sensors = perception.get("sensors") or {}
+    return {
+        "sensors": {sensor: {"meanMicros": round(values.get("meanNanos", 0) / 1000, 1),
+                             "p99Micros": round(values.get("p99Nanos", 0) / 1000, 1),
+                             "maxMicros": round(values.get("maxNanos", 0) / 1000, 1),
+                             "samples": values.get("samples", 0)}
+                    for sensor, values in sensors.items()},
+        "salienceMaxStepMicros": perception.get("maxStepMicros"),
+        "salienceSteps": perception.get("steps"),
+        "salienceFailures": perception.get("failures"),
+    }
+
+
+def run_course(call: BridgeCall, timeout_seconds: float, settle_seconds: float = 1.5, decide_seconds: float = 6.0,
+               poll_seconds: float = 0.5, sleep: Callable[[float], None] = time.sleep,
+               clock: Callable[[], float] = time.monotonic) -> dict[str, Any]:
+    built = call("POST", COURSE_ROUTE, {"action": "build"})
+    sleep(settle_seconds)
+    since = int(call("GET", EVENTS_ROUTE, None).get("latestSeqNo", 0))
+    before = call("GET", STATE_ROUTE, None)
+    cursor = int(call("GET", TIMELINE_ROUTE, None).get("latestEntryId", 0))
+    started = clock()
+    goal = built["goal"]
+    outcome = "rejected"
+    if accepted(call("POST", TOOLS_ROUTE, {"name": "navigate_to", "arguments": {
+            "x": goal["x"], "y": goal["y"], "z": goal["z"], "exactY": goal["exactY"]}})):
+        outcome = "timeout"
+        deadline = clock() + timeout_seconds
+        while clock() < deadline:
+            timeline = call("GET", f"{TIMELINE_ROUTE}?since={cursor}", None)
+            entries = timeline.get("entries") or []
+            done = [entry for entry in entries if entry.get("domain") == "task" and entry.get("action") == "terminal_diagnostics"]
+            if done:
+                outcome = str(done[0].get("correlation", {}).get("terminalState", "")).lower() or "unknown"
+                break
+            if entries:
+                cursor = max(cursor, max(int(entry.get("entryId", cursor)) for entry in entries))
+            sleep(poll_seconds)
+    # Percepts are decided after the debounce and within the salience retry window.
+    sleep(decide_seconds)
+    elapsed = max(clock() - started, 1e-6)
+    events_response = call("GET", f"{EVENTS_ROUTE}?since={since}", None)
+    after = call("GET", STATE_ROUTE, None)
+    recent = (after.get("perception") or {}).get("recent") or []
+    checks = evaluate(built, events_response.get("events") or [], recent)
+    wakes = percept_wakes(before, after)
+    return {
+        "course": built.get("course"),
+        "walk": outcome,
+        "checks": checks,
+        "passed": outcome == "completed" and all(check["passed"] for check in checks),
+        "perceptEvents": [event.get("type") for event in events_response.get("events") or [] if str(event.get("type", "")).startswith("perception.")],
+        "eventsTruncated": bool(events_response.get("truncated")),
+        "perceptWakeDecisions": wakes,
+        "perceptWakesPerMinute": round(wakes / (elapsed * 20 / TICKS_PER_MINUTE), 2),
+        "cost": sensor_costs(after),
+    }
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--runs", type=int, default=3, help="Runs of the course (default 3).")
+    parser.add_argument("--timeout-seconds", type=float, default=120.0, help="Walk timeout per run.")
+    parser.add_argument("--bridge-state", type=Path, default=None, help="Bridge state file.")
+    parser.add_argument("--output", type=Path, default=None,
+                        help="Report path (default run/perception-baseline/<utc>.json).")
+    args = parser.parse_args(argv)
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
+    return args
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    call = http_bridge(read_bridge(args.bridge_state or default_bridge_state_path()))
+    started = dt.datetime.now(dt.timezone.utc)
+    results: list[dict[str, Any]] = []
+    try:
+        for run in range(1, args.runs + 1):
+            result = run_course(call, args.timeout_seconds)
+            result["run"] = run
+            results.append(result)
+            failed = [check["check"] for check in result["checks"] if not check["passed"]]
+            print(f"run {run}: walk={result['walk']} passed={result['passed']}"
+                  + (f" failed={failed}" if failed else ""), flush=True)
+    finally:
+        call("POST", COURSE_ROUTE, {"action": "cleanup"})
+    output = args.output or Path("run/perception-baseline") / f"{started:%Y%m%dT%H%M%SZ}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({"startedAt": started.isoformat(), "results": results}, indent=2) + "\n", encoding="utf-8")
+    print(f"report: {output}")
+    return 0 if all(result["passed"] for result in results) else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except BaselineError as error:
+        print(f"perception-baseline: {error}", file=sys.stderr)
+        sys.exit(3)

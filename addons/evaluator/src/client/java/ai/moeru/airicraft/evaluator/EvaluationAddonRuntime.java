@@ -41,6 +41,7 @@ public final class EvaluationAddonRuntime {
 	private final EvaluationWaypointSeeder waypointSeeder = new EvaluationWaypointSeeder();
 	private final SurvivalSmokeFixtureService survivalFixtures = new SurvivalSmokeFixtureService();
 	private final NavigationCourseFixtureService navigationCourses = new NavigationCourseFixtureService();
+	private final NoticeCourseFixtureService noticeCourses = new NoticeCourseFixtureService();
 
 	private EvaluationScenario scenario;
 	private boolean waypointsSeeded;
@@ -251,6 +252,20 @@ public final class EvaluationAddonRuntime {
 			context.writeJson(200, context.onClientThread(() -> navigationCourses.apply(request)));
 		}
 		catch (NavigationCourseFixtureService.FixtureException exception) {
+			throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+		}
+	}
+
+	public void handleNoticeCourse(BridgeRouteContext context) throws Exception {
+		if (!context.isMethod("POST")) {
+			context.writeJson(405, Map.of("error", "method_not_allowed"));
+			return;
+		}
+		NoticeCourseFixtureService.Request request = context.readJson(NoticeCourseFixtureService.Request.class);
+		try {
+			context.writeJson(200, context.onClientThread(() -> noticeCourses.apply(request)));
+		}
+		catch (NoticeCourseFixtureService.FixtureException exception) {
 			throw new BridgeUnavailableException(exception.code(), exception.getMessage());
 		}
 	}
@@ -530,6 +545,12 @@ public final class EvaluationAddonRuntime {
 		@Override
 		public boolean eventContains(String eventType) {
 			return runtime.semanticEventContains(eventType);
+		}
+
+		@Override
+		public boolean eventMatches(String eventType, Map<String, String> payload) {
+			return payload == null || payload.isEmpty() ? runtime.semanticEventContains(eventType)
+				: runtime.semanticEventMatches(eventType, payload);
 		}
 
 		@Override

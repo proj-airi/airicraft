@@ -174,6 +174,10 @@ public final class ScenarioEvaluationRunner {
 		return List.copyOf(results);
 	}
 
+	private static String payloadDescription(Map<String, String> payload) {
+		return payload == null || payload.isEmpty() ? "" : " with " + new java.util.TreeMap<>(payload);
+	}
+
 	private EvaluationCheckResult evaluateCheck(Context context, EvaluationCheck check) {
 		return switch (check.type()) {
 			case "inventory_contains" -> {
@@ -217,9 +221,17 @@ public final class ScenarioEvaluationRunner {
 			}
 			case "event_contains" -> {
 				String eventType = check.string("eventType");
-				yield context.eventContains(eventType)
-					? EvaluationCheckResult.passed(check, "event seen: " + eventType)
-					: EvaluationCheckResult.failed(check, "event not seen: " + eventType);
+				Map<String, String> payload = check.stringMap("payload");
+				yield context.eventMatches(eventType, payload)
+					? EvaluationCheckResult.passed(check, "event seen: " + eventType + payloadDescription(payload))
+					: EvaluationCheckResult.failed(check, "event not seen: " + eventType + payloadDescription(payload));
+			}
+			case "event_absent" -> {
+				String eventType = check.string("eventType");
+				Map<String, String> payload = check.stringMap("payload");
+				yield context.eventMatches(eventType, payload)
+					? EvaluationCheckResult.failed(check, "event seen but must be absent: " + eventType + payloadDescription(payload))
+					: EvaluationCheckResult.passed(check, "event absent: " + eventType + payloadDescription(payload));
 			}
 			case "last_chat_contains" -> {
 				String text = check.string("text");
@@ -433,6 +445,11 @@ public final class ScenarioEvaluationRunner {
 		int playerBlockZ();
 
 		boolean eventContains(String eventType);
+
+		/** An event of {@code eventType} whose payload has every {@code payload} field with that string value. */
+		default boolean eventMatches(String eventType, Map<String, String> payload) {
+			return (payload == null || payload.isEmpty()) && eventContains(eventType);
+		}
 
 		String lastChatText();
 

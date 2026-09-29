@@ -256,6 +256,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final ai.moeru.airicraft.agent.perception.SensorRegistry sensorRegistry = new ai.moeru.airicraft.agent.perception.SensorRegistry();
 	private ai.moeru.airicraft.agent.perception.SaliencePolicy saliencePolicy;
 	private ai.moeru.airicraft.agent.perception.ItemOfferSensor itemOfferSensor;
+	private final ai.moeru.airicraft.agent.perception.SalienceStepLog salienceStepLog = new ai.moeru.airicraft.agent.perception.SalienceStepLog();
 	/** Noticing sensors, sampled together before each salience step. */
 	private static final List<String> NOTICING_SENSORS = List.of(ai.moeru.airicraft.agent.perception.NotableBlockSensor.ID,
 		ai.moeru.airicraft.agent.perception.DroppedItemSensor.ID, ai.moeru.airicraft.agent.perception.EntityNoticeSensor.ID,
@@ -461,6 +462,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			(boundary, tick) -> foodOutcomes.clear());
 		this.saliencePolicy = new ai.moeru.airicraft.agent.perception.SaliencePolicy(eventBus,
 			ai.moeru.airicraft.rules.RuleModule.bundledSalience());
+		this.saliencePolicy.recordSteps(salienceStepLog::record);
 		// Queued candidates belong to the world and the life they were seen in.
 		lifecycleDispatcher.register("salience", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN,
 			LifecycleBoundary.SHUTDOWN), (boundary, tick) -> saliencePolicy.clear());
@@ -1736,6 +1738,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	public AttentionDecisionLog attentionDecisionLog() { return attentionDecisionLog; }
 
+	public ai.moeru.airicraft.agent.perception.SalienceStepLog salienceStepLog() { return salienceStepLog; }
+
 	public Map<String, Object> debugSystem2() { return dialogueRuntime.system2Snapshot(); }
 
 	public ConversationSourcesDebugSnapshot debugConversationSources() {
@@ -1793,6 +1797,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	public boolean semanticEventContains(String eventType) {
 		return eventType != null && eventBus.containsType(eventType);
+	}
+
+	/** A retained event of {@code eventType} whose payload has every given field with that string value. */
+	public boolean semanticEventMatches(String eventType, Map<String, String> payload) {
+		if (eventType == null) return false;
+		return eventBus.query(null).events().stream().anyMatch(event -> event.type().equals(eventType)
+			&& payload.entrySet().stream().allMatch(field -> field.getValue().equals(String.valueOf(event.payload().get(field.getKey())))));
 	}
 
 	public void prepareForEvaluation() {

@@ -92,6 +92,34 @@ class ScenarioEvaluationRunnerTest {
 	}
 
 	@Test
+	void eventChecksMatchPayloadFieldsAndEventAbsentBlocksAPass() {
+		EvaluationScenario scenario = scenario(List.of(
+			new EvaluationCheck("event_contains", Map.of("eventType", "perception.block_noticed", "payload", Map.of("blockId", "minecraft:diamond_ore"))),
+			new EvaluationCheck("event_absent", Map.of("eventType", "perception.block_noticed", "payload", Map.of("blockId", "minecraft:emerald_ore")))
+		), new EvaluationBudget(4, 200, 0, 5));
+
+		ScenarioEvaluationRunner honest = new ScenarioEvaluationRunner();
+		FakeContext context = new FakeContext();
+		honest.start(scenario, 0, 0);
+		honest.onTick(context);
+		assertEquals(EvaluationStatus.RUNNING, honest.report(context.tick).status(), "the vein has not been noticed yet");
+		context.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:diamond_ore"));
+		context.tick = 6;
+		honest.onTick(context);
+		assertEquals(EvaluationStatus.PASSED, honest.report(context.tick).status());
+
+		ScenarioEvaluationRunner xray = new ScenarioEvaluationRunner();
+		FakeContext leaked = new FakeContext();
+		leaked.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:diamond_ore"));
+		leaked.events.add(Map.of("type", "perception.block_noticed", "blockId", "minecraft:emerald_ore"));
+		xray.start(scenario, 0, 0);
+		xray.onTick(leaked);
+		leaked.tick = 6;
+		xray.onTick(leaked);
+		assertEquals(EvaluationStatus.RUNNING, xray.report(leaked.tick).status(), "a sealed ore that was noticed never passes");
+	}
+
+	@Test
 	void failsWhenNeitherPlannerNorExternalDriverIsAvailable() {
 		ScenarioEvaluationRunner runner = new ScenarioEvaluationRunner();
 		FakeContext context = new FakeContext();
@@ -395,6 +423,7 @@ class ScenarioEvaluationRunnerTest {
 	}
 
 	private static final class FakeContext implements ScenarioEvaluationRunner.Context {
+		private final List<Map<String, String>> events = new java.util.ArrayList<>();
 		private long tick;
 		private int inventoryCount;
 		private boolean plannerInFlight;
@@ -493,7 +522,13 @@ class ScenarioEvaluationRunnerTest {
 
 		@Override
 		public boolean eventContains(String eventType) {
-			return false;
+			return events.stream().anyMatch(event -> event.get("type").equals(eventType));
+		}
+
+		@Override
+		public boolean eventMatches(String eventType, Map<String, String> payload) {
+			return events.stream().anyMatch(event -> event.get("type").equals(eventType)
+				&& payload.entrySet().stream().allMatch(field -> field.getValue().equals(event.get(field.getKey()))));
 		}
 
 		@Override

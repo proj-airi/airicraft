@@ -331,10 +331,20 @@ class AiricraftCliMainTest {
 				"countsByRule", linkedMap("catalog.trigger", 7),
 				"rules", linkedMap("module", "bundled:attention/default.js", "ready", true, "fallbacks", 0),
 				"scheduler", linkedMap("pending", List.of(linkedMap("path", "W2")), "retainedBy", "G5.run_policy")
+			),
+			"perception", linkedMap(
+				"module", "bundled:salience/default.js", "ready", true, "pending", 2, "percepts", 3, "drops", 5,
+				"sensors", linkedMap("notable_blocks", linkedMap("p99Nanos", 41000)),
+				"recent", List.of(linkedMap("candidateId", "item:x", "outcome", "dropped:garbage"))
 			)
 		);
 
 		CliResult result = execute(transport, "agent", "debug", "state");
+		assertTrue(result.output().contains("[perceptionSalience]\n"), result.output());
+		assertTrue(result.output().contains("module: bundled:salience/default.js\n"));
+		assertTrue(result.output().contains("percepts: 3\n"));
+		assertFalse(result.output().contains("dropped:garbage"), "perception decisions are verbose-only");
+		assertTrue(execute(transport, "agent", "debug", "state", "--verbose").output().contains("dropped:garbage"));
 
 		assertEquals(0, result.exitCode());
 		assertTrue(result.output().contains("[activeJob]\n"));
