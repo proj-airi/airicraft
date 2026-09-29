@@ -57,7 +57,7 @@
         "trigger": "SYSTEM",
         "bypass": true
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -71,7 +71,7 @@
         "trigger": "SYSTEM",
         "bypass": true
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -110,7 +110,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -124,7 +124,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -138,7 +138,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -240,7 +240,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -253,7 +253,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -266,7 +266,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -279,7 +279,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -319,7 +319,7 @@
         "trigger": null,
         "bypass": true
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -341,7 +341,7 @@
         "trigger": null,
         "bypass": true
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -807,7 +807,7 @@
         "trigger": "SYSTEM",
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -847,7 +847,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -861,7 +861,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -874,7 +874,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -888,7 +888,7 @@
         "trigger": null,
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -916,7 +916,7 @@
         "trigger": "SYSTEM",
         "bypass": false
       },
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {

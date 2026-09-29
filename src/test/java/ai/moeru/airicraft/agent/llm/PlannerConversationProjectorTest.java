@@ -254,8 +254,6 @@ class PlannerConversationProjectorTest {
 			PlannerSnapshotMode.TRIGGERED,
 			PlannerTriggerBatch.of(List.of()),
 			conversation,
-			0L,
-			0L,
 			PlannerAmbientContext.fromRequest(request),
 			-1L
 		);

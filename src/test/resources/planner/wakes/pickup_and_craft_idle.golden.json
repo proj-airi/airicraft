@@ -70,8 +70,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "You picked up 2x minecraft:oak_log just now."
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -80,13 +79,21 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "pickup.item_picked_up",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 1
     },
@@ -117,22 +124,27 @@
             "type": "crafting.item_crafted"
           }
         ],
-        "notices": [
-          "You crafted 4x minecraft:oak_planks just now."
-        ],
         "serverTick": -1,
         "throughEventSequence": 3,
         "tick": 11,
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 3,
+            "type": "crafting.item_crafted",
+            "urgency": "low"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 11
     }

@@ -96,8 +96,9 @@ public record PlannerTriggerBatch(
 	}
 
 	/**
-	 * Messages preceding an observation: only player chat stays a user turn. Runtime wakeups become notices that the
-	 * observation carries; generic wakeups add nothing because their evidence is already in the observed events.
+	 * Messages preceding an observation: player chat stays a user turn, and task statements (delegation, evaluation,
+	 * tool-queue review) become notices. Event wakes, goal continuation and idle think carry no prose: their reasons are
+	 * {@code observe.wake}, their facts are {@code observe.events}, and their coaching is {@code observe.hints}.
 	 */
 	public List<LlmChatMessage> toObservedMessages() {
 		var messages = new ArrayList<LlmChatMessage>();
@@ -108,11 +109,17 @@ public record PlannerTriggerBatch(
 				chat.append(trigger.speaker() == null || trigger.speaker().isBlank() ? "Someone" : trigger.speaker())
 					.append(": ").append(trigger.text());
 			}
-			else if (!usesGenericWakePrompt(trigger.type()))
+			else if (carriesTaskStatement(trigger))
 				messages.add(LlmChatMessage.user(trigger.text(), LlmMessageKind.NOTICE, trigger.fields()));
 		}
 		if (!chat.isEmpty()) messages.addFirst(LlmChatMessage.user(chat.toString(), LlmMessageKind.USER_TURN));
 		return List.copyOf(messages);
+	}
+
+	private static boolean carriesTaskStatement(PlannerTrigger trigger) {
+		WakeRef ref = WakeRef.of(trigger);
+		return ref != null && !WakeRef.EVENT.equals(ref.reason()) && !"goal_continuation".equals(ref.reason())
+			&& !"idle_think".equals(ref.reason()) && !usesGenericWakePrompt(trigger.type());
 	}
 
 	private static String genericWakePrompt() {

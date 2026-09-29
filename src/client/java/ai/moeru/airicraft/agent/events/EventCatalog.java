@@ -15,8 +15,8 @@ public final class EventCatalog {
 			new EventTypeSpec("action_graph.goal_resumed", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("action_graph.goal_resumed")),
 			new EventTypeSpec("action_graph.goal_runnable", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("action_graph.goal_runnable")),
 			new EventTypeSpec("action_graph.goal_started", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("action_graph.goal_started")),
-			new EventTypeSpec("action_graph.goal_suspended", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("action_graph.goal_suspended", true, PlannerTriggerType.SYSTEM, true)),
-			new EventTypeSpec("action_graph.goal_terminal", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("action_graph.goal_terminal", true, PlannerTriggerType.SYSTEM, true)),
+			new EventTypeSpec("action_graph.goal_suspended", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("action_graph.goal_suspended", true, PlannerTriggerType.SYSTEM, true)),
+			new EventTypeSpec("action_graph.goal_terminal", false, EventFamily.EXECUTION, Set.of("ActionGraphCoordinator", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("action_graph.goal_terminal", true, PlannerTriggerType.SYSTEM, true)),
 
 			// combat
 			new EventTypeSpec("combat.damage_taken", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("combat.damage_taken", true, PlannerTriggerType.DAMAGE, false)),
@@ -25,9 +25,9 @@ public final class EventCatalog {
 			new EventTypeSpec("crafting.item_crafted", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("crafting.item_crafted", true, PlannerTriggerType.CRAFT, false)),
 
 			// follow
-			new EventTypeSpec("follow.stuck", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("follow.stuck", true, null, false)),
-			new EventTypeSpec("follow.target_acquired", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime", "FollowCapability"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("follow.target_acquired", true, null, false)),
-			new EventTypeSpec("follow.target_lost", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime", "FollowCapability"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("follow.target_lost", true, null, false)),
+			new EventTypeSpec("follow.stuck", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("follow.stuck", true, null, false)),
+			new EventTypeSpec("follow.target_acquired", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime", "FollowCapability"), EventVisibility.PLANNER, new EventRoutingProfile("follow.target_acquired", true, null, false)),
+			new EventTypeSpec("follow.target_lost", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime", "FollowCapability"), EventVisibility.PLANNER, new EventRoutingProfile("follow.target_lost", true, null, false)),
 
 			// food
 			new EventTypeSpec("food.eat_failed", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eat_failed")),
@@ -49,16 +49,16 @@ public final class EventCatalog {
 
 			// planner
 			new EventTypeSpec("planner.degraded_blocked", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.degraded_blocked")),
-			new EventTypeSpec("planner.degraded_cleared", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.degraded_cleared", true, null, false)),
-			new EventTypeSpec("planner.degraded_entered", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.degraded_entered", true, null, false)),
-			new EventTypeSpec("planner.goal_cleared", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.goal_cleared", true, null, false)),
-			new EventTypeSpec("planner.goal_set", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.goal_set", true, null, false)),
+			new EventTypeSpec("planner.degraded_cleared", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.PLANNER, new EventRoutingProfile("planner.degraded_cleared", true, null, false)),
+			new EventTypeSpec("planner.degraded_entered", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.PLANNER, new EventRoutingProfile("planner.degraded_entered", true, null, false)),
+			new EventTypeSpec("planner.goal_cleared", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("planner.goal_cleared", true, null, false)),
+			new EventTypeSpec("planner.goal_set", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("planner.goal_set", true, null, false)),
 			new EventTypeSpec("planner.internal_task_update_superseded", false, EventFamily.INTERNAL, Set.of("DialogueRuntime"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.internal_task_update_superseded")),
 			new EventTypeSpec("planner.parse_error", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.parse_error")),
 			new EventTypeSpec("planner.provider_error", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.provider_error")),
-			new EventTypeSpec("planner.reset_requested", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.reset_requested", true, null, true)),
+			new EventTypeSpec("planner.reset_requested", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.PLANNER, new EventRoutingProfile("planner.reset_requested", true, null, true)),
 			new EventTypeSpec("planner.response_applied", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.response_applied")),
-			new EventTypeSpec("planner.stale_response_rejected", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("planner.stale_response_rejected", true, null, true)),
+			new EventTypeSpec("planner.stale_response_rejected", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("planner.stale_response_rejected", true, null, true)),
 			new EventTypeSpec("planner.timeout", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.timeout")),
 			new EventTypeSpec("planner.unknown_intent", false, EventFamily.INTERNAL, Set.of("DialogueCore"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("planner.unknown_intent")),
 
@@ -115,15 +115,15 @@ public final class EventCatalog {
 			new EventTypeSpec("smelting.output_ready", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("smelting.output_ready", true, PlannerTriggerType.SYSTEM, true)),
 
 			// social
-			new EventTypeSpec("social.item_offered", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.item_offered", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("social.item_offered", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.item_offered", true, PlannerTriggerType.SYSTEM, false)),
 			new EventTypeSpec("social.local_controller_spoke", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.local_controller_spoke", false, PlannerTriggerType.CHAT, true)),
 			new EventTypeSpec("social.player_addressed_agent", false, EventFamily.PERCEPT, Set.of("ChatIngestService", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_addressed_agent", false, PlannerTriggerType.CHAT, true)),
-			new EventTypeSpec("social.player_joined_game", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_joined_game", true, null, false)),
-			new EventTypeSpec("social.player_joined_nearby", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "NearbyPlayerTracker"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_joined_nearby", true, null, false)),
-			new EventTypeSpec("social.player_left_game", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_left_game", true, null, false)),
-			new EventTypeSpec("social.player_left_nearby", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "NearbyPlayerTracker"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_left_nearby", true, null, false)),
+			new EventTypeSpec("social.player_joined_game", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_joined_game", true, null, false)),
+			new EventTypeSpec("social.player_joined_nearby", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "NearbyPlayerTracker"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_joined_nearby", true, null, false)),
+			new EventTypeSpec("social.player_left_game", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_left_game", true, null, false)),
+			new EventTypeSpec("social.player_left_nearby", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "NearbyPlayerTracker"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_left_nearby", true, null, false)),
 			new EventTypeSpec("social.player_spoke", false, EventFamily.PERCEPT, Set.of("ChatIngestService", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_spoke", false, PlannerTriggerType.CHAT, false)),
-			new EventTypeSpec("social.system_message", false, EventFamily.PERCEPT, Set.of("ChatIngestService", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("social.system_message", false, EventFamily.PERCEPT, Set.of("ChatIngestService", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false)),
 
 			// task
 			new EventTypeSpec("task.blocked", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("task.blocked", true, PlannerTriggerType.SYSTEM, true)),
@@ -175,6 +175,12 @@ public final class EventCatalog {
 			if (type.startsWith(prefix.id()) && (match == null || prefix.id().length() > match.id().length())) match = prefix;
 		}
 		return match;
+	}
+
+	/** Whether {@code type} may appear in {@code observe.events}; undeclared types never do. */
+	public boolean plannerVisible(String type) {
+		var spec = type == null ? null : find(type);
+		return spec != null && spec.observeVisibility() == EventVisibility.PLANNER;
 	}
 
 	/** G1 entries. Raw-only types are omitted: the pipeline and the policy-bypass check both default to raw-only. */

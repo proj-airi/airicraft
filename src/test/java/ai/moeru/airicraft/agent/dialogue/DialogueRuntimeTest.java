@@ -818,13 +818,13 @@ class DialogueRuntimeTest {
 		runtime.shutdown();
 	}
 
-	@Test void plannerFeedWritesStayOutOfRawLog() {
+	/** D1 fixed: there is one sequence space; dialogue writes while handling a wake land in the raw log. */
+	@Test void d1_FIXED_dialogueWritesLandInTheOneRawLog() {
 		var backend = new OpenAiCompatibleLlmBackend(AgentConfig.LlmConfig.defaults());
 		var runtime = newDialogueRuntime(backend);
 		var raw = new ai.moeru.airicraft.agent.events.AgentEventBus(
 			ai.moeru.airicraft.agent.events.EventCatalog.defaults(), new ai.moeru.airicraft.agent.events.AgentEventLog(32),
 			System::currentTimeMillis, true);
-		var planner = new SemanticEventBuffer(32);
 		try {
 			for (long tick = 1; tick <= 3; tick++) {
 				backend.injectTimeout();
@@ -833,9 +833,8 @@ class DialogueRuntimeTest {
 			}
 			assertTrue(runtime.isDegraded());
 			runtime.onPlannerTrigger(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "system", "progress", 50, 1000),
-				SessionSnapshot.initial(), "Alice", Optional.empty(), null, null, ai.moeru.airicraft.agent.events.PlannerFeedPublisher.wrap(planner));
-			assertFalse(raw.containsType("planner.degraded_blocked"));
-			var blocked = planner.query(null).events().stream().filter(event -> event.type().equals("planner.degraded_blocked")).findFirst().orElseThrow();
+				SessionSnapshot.initial(), "Alice", Optional.empty(), null, null, raw);
+			var blocked = raw.query(null).events().stream().filter(event -> event.type().equals("planner.degraded_blocked")).findFirst().orElseThrow();
 			assertEquals("DialogueCore", blocked.source());
 		} finally { runtime.shutdown(); }
 	}

@@ -70,8 +70,7 @@
           "<time>",
           "Session mode is currently singleplayer LAN host.",
           "There is no primary interaction player right now.",
-          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "Work changed."
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately."
         ],
         "serverTick": 4,
         "stateBaseline": true,
@@ -80,13 +79,21 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 2,
+            "type": "work.changed",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "19d10d152af06afc5db80cfb1f078e1392fa5b584136fcf28c3fd1bb2006178f",
-        "toolsSha": "d9dc5847cc62d148381fb2c03281ecebec409f77cd628840d87c8124c24cc3bf"
+        "systemSha": "08f08cf7fc262ab7b15dcd4792178d50c1f2af72d1519214722cc406ff746007",
+        "toolsSha": "9bb2816b912796d084cf9d9e813280929e6304829de91162a1d6719c72d29038"
       },
       "tick": 2
     }

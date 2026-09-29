@@ -29,7 +29,6 @@ public final class AgentEventPipeline {
 	private final EventView rawEventBuffer;
 	private final AgentEventLog rawEventLog;
 	private final AgentEventBus rawPublisher;
-	private final SemanticEventBuffer plannerEventBuffer;
 	private final EventPolicyState policyState;
 	private final Map<String, EventRoutingProfile> routingProfiles;
 	private final AgentDebugRecorder debugRecorder;
@@ -41,34 +40,31 @@ public final class AgentEventPipeline {
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
 		AgentEventBus rawPublisher,
-		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles
 	) {
-		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, new AgentDebugRecorder(), (event, profile) -> EventPolicyDecision.allow());
+		this(rawEventLog, rawPublisher, policyState, routingProfiles, new AgentDebugRecorder(), (event, profile) -> EventPolicyDecision.allow());
 	}
 
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
 		AgentEventBus rawPublisher,
-		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
 		AgentDebugRecorder debugRecorder
 	) {
-		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, debugRecorder, (event, profile) -> EventPolicyDecision.allow());
+		this(rawEventLog, rawPublisher, policyState, routingProfiles, debugRecorder, (event, profile) -> EventPolicyDecision.allow());
 	}
 
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
 		AgentEventBus rawPublisher,
-		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
 		AgentDebugRecorder debugRecorder,
 		DefaultPolicyResolver defaultPolicyResolver
 	) {
-		this(rawEventLog, rawPublisher, plannerEventBuffer, policyState, routingProfiles, debugRecorder,
+		this(rawEventLog, rawPublisher, policyState, routingProfiles, debugRecorder,
 			AttentionPolicy.routingOnly(Objects.requireNonNull(defaultPolicyResolver, "defaultPolicyResolver")::resolve),
 			new AttentionDecisionLog());
 	}
@@ -76,7 +72,6 @@ public final class AgentEventPipeline {
 	public AgentEventPipeline(
 		AgentEventLog rawEventLog,
 		AgentEventBus rawPublisher,
-		SemanticEventBuffer plannerEventBuffer,
 		EventPolicyState policyState,
 		Map<String, EventRoutingProfile> routingProfiles,
 		AgentDebugRecorder debugRecorder,
@@ -86,16 +81,11 @@ public final class AgentEventPipeline {
 		this.rawEventLog = Objects.requireNonNull(rawEventLog, "rawEventLog");
 		this.rawEventBuffer = rawEventLog;
 		this.rawPublisher = Objects.requireNonNull(rawPublisher, "rawPublisher");
-		this.plannerEventBuffer = Objects.requireNonNull(plannerEventBuffer, "plannerEventBuffer");
 		this.policyState = Objects.requireNonNull(policyState, "policyState");
 		this.routingProfiles = Map.copyOf(Objects.requireNonNull(routingProfiles, "routingProfiles"));
 		this.debugRecorder = Objects.requireNonNull(debugRecorder, "debugRecorder");
 		this.attentionPolicy = Objects.requireNonNull(attentionPolicy, "attentionPolicy");
 		this.attentionLog = Objects.requireNonNull(attentionLog, "attentionLog");
-	}
-
-	public SemanticEventBuffer plannerEventBuffer() {
-		return plannerEventBuffer;
 	}
 
 	public AttentionDecisionLog attentionLog() {
@@ -108,7 +98,6 @@ public final class AgentEventPipeline {
 
 	public void clear() {
 		rawEventLog.clear();
-		plannerEventBuffer.clear();
 		policyState.clear();
 		lastProcessedRawSeqNo = 0L;
 		recordBufferState();
@@ -120,14 +109,12 @@ public final class AgentEventPipeline {
 	 */
 	public void clearForShutdown() {
 		rawEventLog.clearPreservingSequence();
-		plannerEventBuffer.clear();
 		policyState.clear();
 		lastProcessedRawSeqNo = 0L;
 		recordBufferState();
 	}
 
 	public void clearPlannerFeed() {
-		plannerEventBuffer.clear();
 		lastProcessedRawSeqNo = rawEventBuffer.latestSeqNo();
 		recordBufferState();
 	}
@@ -135,7 +122,6 @@ public final class AgentEventPipeline {
 	public void setPlannerEnabled(boolean enabled) {
 		plannerEnabled = enabled;
 		if (!enabled) {
-			plannerEventBuffer.clearPreservingSequence();
 			lastProcessedRawSeqNo = rawEventBuffer.latestSeqNo();
 			recordBufferState();
 		}
@@ -195,12 +181,10 @@ public final class AgentEventPipeline {
 		}
 
 		boolean emitSemantic = outcome.emitSemantic();
-		if (emitSemantic) {
-			plannerEventBuffer.append(event.tick(), event.timestampMs(), event.type(), event.payload(), event.source(), event.cause());
-		}
 
 		WakeDecision wake = outcome.wake();
 		PlannerTrigger trigger = wake.wakes() ? triggerFactory.create(event, profile) : null;
+		if (trigger != null) trigger = trigger.withWake(ai.moeru.airicraft.agent.llm.WakeRef.event(event.seqNo(), event.type(), wake.urgency().name()));
 		attentionLog.record(new AttentionDecision(event.seqNo(), event.tick(), event.type(), emitSemantic, wake.delivery(),
 			wake.urgency(), wake.stage(), wake.ruleId(), wake.wakes() && trigger == null ? "invalid_payload" : wake.reason(),
 			trigger != null, new AttentionDecision.Inputs(
@@ -215,7 +199,6 @@ public final class AgentEventPipeline {
 			decision.effect().name(),
 			emitSemantic,
 			trigger != null,
-			plannerEventBuffer.latestSeqNo(),
 			trigger == null || trigger.type() == null ? null : trigger.type().name()
 		);
 		recordBufferState();
@@ -228,9 +211,7 @@ public final class AgentEventPipeline {
 	private void recordBufferState() {
 		debugRecorder.updateEventPipelineBufferState(
 			rawEventBuffer.latestSeqNo(),
-			plannerEventBuffer.latestSeqNo(),
 			rawEventBuffer.droppedCount(),
-			plannerEventBuffer.droppedCount(),
 			lastProcessedRawSeqNo
 		);
 	}

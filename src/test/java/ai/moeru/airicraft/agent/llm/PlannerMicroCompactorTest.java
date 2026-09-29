@@ -63,7 +63,7 @@ class PlannerMicroCompactorTest {
 	void fullCheckpointWinsRegardlessOfMicroCompletionOrder(boolean microFirst) {
 		var future = new CompletableFuture<String>();
 		var registry = PlannerToolRegistry.empty(); registry.freezeToolPrefix();
-		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, 128, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
+		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 		context.configureMicroCompaction(new PlannerMicroCompactor(c -> future));
 		context.retainConversation(observation("q", "inspect_world", "RAW_WALL"));
 		var fullCompactionInput = context.buildCompactionConversation();
@@ -78,7 +78,7 @@ class PlannerMicroCompactorTest {
 	@Test void failedFullCompactionStillAllowsPendingMicroCompactionToFinish() {
 		var future = new CompletableFuture<String>();
 		var registry = PlannerToolRegistry.empty(); registry.freezeToolPrefix();
-		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, 128, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
+		var context = new PlannerContextAggregator(java.time.Clock.systemUTC(), 65536, PlannerVisionMode.EXTERNAL_SUMMARY, registry);
 		context.configureMicroCompaction(new PlannerMicroCompactor(c -> future));
 		context.retainConversation(observation("q", "inspect_world", "RAW_WALL"));
 		context.buildCompactionConversation();

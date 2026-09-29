@@ -2,12 +2,9 @@ package ai.moeru.airicraft.agent.debug;
 
 public record EventPipelineDebugSnapshot(
 	long rawLatestSeqNo,
-	long plannerLatestSeqNo,
 	long rawDroppedCount,
-	long plannerDroppedCount,
 	long lastProcessedRawSeqNo,
 	long lastRawEventSeqNo,
-	long lastPlannerEventSeqNo,
 	String lastEventType,
 	String lastDecisionEffect,
 	String lastTriggerType,
@@ -15,6 +12,6 @@ public record EventPipelineDebugSnapshot(
 	boolean lastEmitTrigger
 ) {
 	public static EventPipelineDebugSnapshot empty() {
-		return new EventPipelineDebugSnapshot(0L, 0L, 0L, 0L, 0L, 0L, 0L, null, null, null, false, false);
+		return new EventPipelineDebugSnapshot(0L, 0L, 0L, 0L, null, null, null, false, false);
 	}
 }

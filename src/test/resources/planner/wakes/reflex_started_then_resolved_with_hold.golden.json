@@ -65,8 +65,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "Work changed."
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -75,13 +74,21 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 1,
+            "type": "reflex.started",
+            "urgency": "high"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 2
     },
@@ -112,9 +119,7 @@
           }
         ],
         "notices": [
-          "<time>",
-          "Survival reflex resolved just now: safe.",
-          "SURVIVAL UPDATE: reflex resolved cause=unknown reason=safe state=IDLE holdId=hold-1. Review the consolidated safety episode and use continue to retain and resume the plan, or clear_queue to abort and replace it. Automatic reflex policy=ReflexPolicy[combatEnabled=true, drowningEnabled=true, maxThreatDistance=16, requireLineOfSight=true]. Use configure_reflex to read or override it for a deliberate tactic; policy changes do not resume paused work."
+          "<time>"
         ],
         "serverTick": -1,
         "throughEventSequence": 3,
@@ -122,13 +127,21 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "event",
+            "seqNo": 3,
+            "type": "reflex.resolved",
+            "urgency": "critical"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 12
     }

@@ -629,6 +629,16 @@ class EmbodiedAgentRuntimeTest {
 		return (ActiveJobRuntime) field.get(runtime);
 	}
 
+	@Test
+	void awaitingSafetyHoldIsAPendingDecisionInTheObservation() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		assertNull(runtime.currentPlannerDecisionContext().current().get("pendingDecision"));
+		org.junit.jupiter.api.Assertions.assertNotNull(runtime.currentPlannerDecisionContext().current().get("reflexPolicy"));
+		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, "hold-7", null, null));
+		assertEquals(Map.of("holdId", "hold-7", "options", List.of("continue", "clear_queue")),
+			runtime.currentPlannerDecisionContext().current().get("pendingDecision"));
+	}
+
 	private static void setReflexSnapshot(EmbodiedAgentRuntime runtime, SurvivalReflexSnapshot snapshot) throws Exception {
 		Field runtimeField = EmbodiedAgentRuntime.class.getDeclaredField("survivalReflexRuntime");
 		runtimeField.setAccessible(true);
@@ -1619,7 +1629,7 @@ class EmbodiedAgentRuntimeTest {
 		runtime.appendEventForTests("social.item_offered", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
-		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
+		assertEquals(payload, runtime.recentEvents(null).events().getLast().payload());
 		var trigger = triggers.getFirst();
 		assertEquals(PlannerTriggerType.SYSTEM, trigger.type());
 		assertEquals("item_offer:alice-id", trigger.coalescingKey());
@@ -1640,7 +1650,7 @@ class EmbodiedAgentRuntimeTest {
 		runtime.appendEventForTests("player.physical", payload);
 		var triggers = pipeline.drain(runtime::createPlannerTriggerForTests);
 		assertEquals(1, triggers.size());
-		assertEquals(payload, pipeline.plannerEventBuffer().query(null).events().getFirst().payload());
+		assertEquals(payload, runtime.recentEvents(null).events().getLast().payload());
 		var trigger = triggers.getFirst();
 		assertEquals(PlannerTriggerType.SYSTEM,trigger.type());
 		assertEquals("physical:fall",trigger.coalescingKey());
@@ -1650,7 +1660,7 @@ class EmbodiedAgentRuntimeTest {
 		setReflexSnapshot(runtime, reflexSnapshot(SurvivalReflexState.ACTIVE, "hold-1", "nav-1", null));
 		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "started"));
 		assertTrue(pipeline.drain(runtime::createPlannerTriggerForTests).isEmpty());
-		assertEquals(2, pipeline.plannerEventBuffer().query(null).events().size());
+		assertEquals(2, runtime.recentEvents(null).events().stream().filter(event -> event.type().equals("player.physical")).count());
 		setReflexSnapshot(runtime, SurvivalReflexSnapshot.idle());
 		runtime.appendEventForTests("player.physical", Map.of("kind", "burning", "phase", "ended"));
 		assertEquals(1, pipeline.drain(runtime::createPlannerTriggerForTests).size());

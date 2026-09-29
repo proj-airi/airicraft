@@ -10,12 +10,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Pins defects without correcting production behavior. D1/D7/D8 also have dialogue/unit probes. */
 class WakeDefectProbeTest {
-	@Test void d2_CONFIRMED_pickupAppearsInBothNoticesAndObservedEvents() {
+	/** Fixed in Phase 3: the legacy notice channel is gone, so the pickup is evidence exactly once. */
+	@Test void d2_FIXED_pickupAppearsOnlyInObservedEvents() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerPickedUpItem("minecraft:diamond", 1); h.tick(5); h.chat("Alex", "@agent hello"); h.tick(5);
 			var observe = h.transcript("d2").data().getAsJsonArray("requests").get(0).getAsJsonObject().getAsJsonObject("observe");
 			assertTrue(observe.get("events").toString().contains("pickup.item_picked_up"));
-			assertTrue(observe.get("notices").toString().contains("minecraft:diamond"));
+			assertFalse(String.valueOf(observe.get("notices")).contains("minecraft:diamond"));
 		}
 	}
 	@Test void d3_CONFIRMED_ignoreSuppressesWakeButKeepsRawEvidence() {
@@ -32,16 +33,23 @@ class WakeDefectProbeTest {
 			assertTrue(observe.get("events").toString().contains("pickup.item_picked_up"));
 		}
 	}
-	@Test void d4_CONFIRMED_reflexHasTwoWakePathsButIncorporationDropsSecond() {
+	/** Both paths still exist (W1 and a W2 dropped as incorporated), but the model sees the fact once: one request whose
+	 * observe.wake names reflex.resolved once. */
+	@Test void d4_FIXED_reflexResolutionIsOneWakeEntryForOneFact() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1);
 			h.reflex(new ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent("reflex.resolved", Map.of("holdId", "hold-1")));
 			h.tick(5);
-			var audit = h.transcript("d4").data().getAsJsonArray("wakeAudit");
+			var transcript = h.transcript("d4").data();
+			var audit = transcript.getAsJsonArray("wakeAudit");
 			assertEquals(2, audit.size());
 			assertEquals("W1", audit.get(0).getAsJsonObject().get("path").getAsString());
 			assertEquals("G5.incorporated", audit.get(1).getAsJsonObject().get("gate").getAsString());
 			assertEquals(1, h.backend.requests().size());
+			var wake = transcript.getAsJsonArray("requests").get(0).getAsJsonObject().getAsJsonObject("observe").getAsJsonArray("wake");
+			assertEquals(1, wake.size());
+			assertEquals("reflex.resolved", wake.get(0).getAsJsonObject().get("type").getAsString());
+			assertEquals("critical", wake.get(0).getAsJsonObject().get("urgency").getAsString());
 		}
 	}
 	/** REFUTED for direct navigation: both W2 references identify the causal task/work event.

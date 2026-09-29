@@ -28,7 +28,10 @@ public final class RecordingPlannerBackend implements LlmBackend {
 		scripted.add(future);
 		return future;
 	}
-	public boolean held() { return held != null && !held.isDone(); }
+	public boolean held() {
+		var current = held; // read once: the provider thread may clear it between the null check and isDone
+		return current != null && !current.isDone();
+	}
 	public static PlannerResponse yieldResponse() {
 		return new PlannerResponse("", new PlannerToolCall("yield", "continue", new JsonObject(), null), null);
 	}

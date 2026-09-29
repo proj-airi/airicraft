@@ -35,13 +35,19 @@
             "type": "objective.changed"
           }
         ],
+        "hints": [
+          {
+            "hint": "Things you enjoy (pick what fits the moment; not a checklist): exploring caves and ravines; building small cozy things; collecting flowers and odd blocks; visiting villages and watching the animals; decorating the base. Useful survival progress you can also choose, only when its preconditions are met now: Work toward stone-age tools: gather wood logs, craft planks and sticks, build a wooden pickaxe, mine cobblestone, then craft stone tools.; Progress toward iron-age tools: find a cave or strip-mine for iron and coal, build a furnace, smelt iron, craft an iron pickaxe and sword.; Build a minimal shelter so you survive the night. Even a dirt-block hut counts. Pick a flat spot near where you are.; Once a basic shelter exists, briefly ask the player what kind of real home they want and where to put it. Do not over-ask.; Stock up on basic food: kill cows, chickens, or pigs, or harvest crops; cook meat in the furnace.. If torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.",
+            "provenance": "runtime_hint",
+            "reason": "idle_think"
+          }
+        ],
         "notices": [
           "<time>",
           "Session mode is currently singleplayer LAN host.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}",
-          "IDLE THINK: Nothing is running and nobody has asked you for anything lately. This is your free time. Do one small thing you would genuinely enjoy or care about right now, in character: start it with an action tool, or say something to a nearby player if you have something worth saying. Ask the player a question only when you really want their input, and never in back-to-back idle turns.\nThings you enjoy (pick what fits the moment; this is not a checklist):\n- exploring caves and ravines\n- building small cozy things\n- collecting flowers and odd blocks\n- visiting villages and watching the animals\n- decorating the base\nUseful survival progress you can also choose (only when its preconditions are met now):\n- Work toward stone-age tools: gather wood logs, craft planks and sticks, build a wooden pickaxe, mine cobblestone, then craft stone tools.\n- Progress toward iron-age tools: find a cave or strip-mine for iron and coal, build a furnace, smelt iron, craft an iron pickaxe and sword.\n- Build a minimal shelter so you survive the night. Even a dirt-block hut counts. Pick a flat spot near where you are.\n- Once a basic shelter exists, briefly ask the player what kind of real home they want and where to put it. Do not over-ask.\n- Stock up on basic food: kill cows, chickens, or pigs, or harvest crops; cook meat in the furnace.\nIf torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.\nDo not read these lists back to the player.\n"
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -50,13 +56,18 @@
         "toolQueue": {
           "aborting": false,
           "pending": []
-        }
+        },
+        "wake": [
+          {
+            "reason": "idle_think"
+          }
+        ]
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "fe86759a9e39290a05c5f9b2457f1e9190bde5ea4c7e89026ae37acbddb77488",
-        "toolsSha": "0d455198f70198da55753a14125d1980ad5edfd383469920bd645d9260989fc1"
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
       "tick": 601
     }

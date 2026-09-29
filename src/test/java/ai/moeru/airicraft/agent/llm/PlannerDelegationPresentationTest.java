@@ -25,7 +25,9 @@ class PlannerDelegationPresentationTest {
 
 		var continuation = delegation.continuationPrompt();
 		assertEquals(id, continuation.fields().get("delegationId").getAsString());
-		var next = PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self", continuation.text(), 2, 3, "planner_goal", continuation.fields());
+		// As DialogueRuntime sends it: a delegated continuation keeps its task statement under the delegation reason.
+		var next = PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self", continuation.text(), 2, 3, "planner_goal", continuation.fields())
+			.withWake(WakeRef.reason("delegation"));
 		String nextPresented = refs.presentMessages(LlmConversation.of(PlannerTriggerBatch.of(List.of(next)).toObservedMessages()))
 			.get(0).getAsJsonObject().get("content").getAsString();
 		assertTrue(nextPresented.contains(refs.present(id)));

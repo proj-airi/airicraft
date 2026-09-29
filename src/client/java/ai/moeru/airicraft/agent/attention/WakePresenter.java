@@ -11,6 +11,8 @@ import java.util.function.Supplier;
 /**
  * The planner-facing wording of each wake. The attention policy decides whether an event wakes; this class only
  * writes the trigger text, keyed by event type. It returns {@code null} when the payload lacks what the text needs.
+ * The text reaches the model only without a decision context; with {@code observe}, an event wake is a reference
+ * ({@code observe.wake}) to an {@code observe.events} entry, and coaching comes from {@code DecisionHints}.
  */
 public final class WakePresenter {
 	private final Supplier<String> reflexState;

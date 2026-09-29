@@ -35,7 +35,6 @@ final class DialogueWakeFixture {
 			new PlannerContextAggregator(
 				clock,
 				config.plannerCompactionTriggerTokens(),
-				config.plannerPendingSemanticEventCap(),
 				visionMode, tools
 			),
 			visionTool,

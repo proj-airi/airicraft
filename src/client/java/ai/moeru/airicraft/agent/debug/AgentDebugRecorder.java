@@ -276,17 +276,13 @@ public final class AgentDebugRecorder {
 		String decisionEffect,
 		boolean emitSemantic,
 		boolean emitTrigger,
-		long plannerEventSeqNo,
 		String triggerType
 	) {
 		eventPipeline = new EventPipelineDebugSnapshot(
 			Math.max(eventPipeline.rawLatestSeqNo(), rawEventSeqNo),
-			Math.max(eventPipeline.plannerLatestSeqNo(), plannerEventSeqNo),
 			eventPipeline.rawDroppedCount(),
-			eventPipeline.plannerDroppedCount(),
 			Math.max(eventPipeline.lastProcessedRawSeqNo(), rawEventSeqNo),
 			rawEventSeqNo,
-			plannerEventSeqNo,
 			eventType,
 			decisionEffect,
 			triggerType,
@@ -299,7 +295,7 @@ public final class AgentDebugRecorder {
 			"event_pipeline",
 			"route",
 			"Routed raw event " + (eventType == null ? "-" : eventType),
-			Map.of("rawEventSeqNo", rawEventSeqNo, "plannerEventSeqNo", plannerEventSeqNo),
+			Map.of("rawEventSeqNo", rawEventSeqNo),
 			Map.of(
 				"eventType", eventType == null ? "" : eventType,
 				"decisionEffect", decisionEffect == null ? "" : decisionEffect,
@@ -310,15 +306,12 @@ public final class AgentDebugRecorder {
 		);
 	}
 
-	public synchronized void updateEventPipelineBufferState(long rawLatestSeqNo, long plannerLatestSeqNo, long rawDroppedCount, long plannerDroppedCount, long lastProcessedRawSeqNo) {
+	public synchronized void updateEventPipelineBufferState(long rawLatestSeqNo, long rawDroppedCount, long lastProcessedRawSeqNo) {
 		eventPipeline = new EventPipelineDebugSnapshot(
 			rawLatestSeqNo,
-			plannerLatestSeqNo,
 			rawDroppedCount,
-			plannerDroppedCount,
 			lastProcessedRawSeqNo,
 			eventPipeline.lastRawEventSeqNo(),
-			eventPipeline.lastPlannerEventSeqNo(),
 			eventPipeline.lastEventType(),
 			eventPipeline.lastDecisionEffect(),
 			eventPipeline.lastTriggerType(),

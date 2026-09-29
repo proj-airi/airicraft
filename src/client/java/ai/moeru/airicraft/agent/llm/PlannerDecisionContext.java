@@ -55,8 +55,8 @@ public record PlannerDecisionContext(
 		return payload;
 	}
 
+	/** Planner visibility comes from the event catalog (spec 4.8); chat arrives as user turns instead. */
 	private static boolean relevant(String type) {
-		return List.of("task.", "work.", "player.", "combat.", "pickup.", "crafting.", "smelting.",
-			"container.", "interaction.", "objective.", "policy.", "inventory.", "reflex.", "survival.", "session.", "lighting.", "food.").stream().anyMatch(type::startsWith);
+		return ai.moeru.airicraft.agent.events.EventCatalog.defaults().plannerVisible(type);
 	}
 }

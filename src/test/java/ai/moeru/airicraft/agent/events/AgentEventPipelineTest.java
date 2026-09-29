@@ -15,7 +15,7 @@ class AgentEventPipelineTest {
 		var clock = new java.util.concurrent.atomic.AtomicLong(1000L);
 		var raw = new AgentEventLog(16);
 		var bus = new AgentEventBus(EventCatalog.defaults(), raw, clock::get, true);
-		var pipeline = new AgentEventPipeline(raw, bus, new SemanticEventBuffer(16), new EventPolicyState(),
+		var pipeline = new AgentEventPipeline(raw, bus, new EventPolicyState(),
 			Map.of("task.notice", new EventRoutingProfile("task.notice", true, null, false)),
 			new ai.moeru.airicraft.agent.debug.AgentDebugRecorder(),
 			(event, profile) -> new EventPolicyDecision(EventPolicyEffect.IGNORE, "quiet", "test policy", false));
@@ -36,26 +36,11 @@ class AgentEventPipelineTest {
 		assertEquals(2500L, bus.from("DialogueRuntime").publish(11, "task.notice", Map.of()).timestampMs());
 	}
 
-	@Test void plannerCopyRetainsProvenance() {
-		var raw = new AgentEventLog(16);
-		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		var planner = new SemanticEventBuffer(16);
-		var pipeline = new AgentEventPipeline(raw, publisher, planner, new EventPolicyState(), Map.of(
-			"task.notice", new EventRoutingProfile("task.notice", true, null, false)));
-		publisher.publish(10, "task.notice", Map.of("message", "progress"), "DialogueRuntime", EventCause.event(7));
-		pipeline.drain((event, profile) -> null);
-		var copied = planner.query(null).events().getFirst();
-		assertEquals("DialogueRuntime", copied.source());
-		assertEquals(EventCause.event(7), copied.cause());
-		assertEquals(1000, copied.timestampMs());
-	}
-
 	@Test
 	void plannerOffStillProducesTriggersButDoesNotRetainSemanticInput() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, new EventPolicyState(), Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, new EventPolicyState(), Map.of(
 			"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false)
 		));
 		pipeline.setPlannerEnabled(false);
@@ -66,44 +51,16 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(1, triggers.size());
-		assertEquals(0, planner.size());
+		assertEquals(0, semanticDecisions(pipeline).size());
 
 		pipeline.setPlannerEnabled(true);
-		assertEquals(0, planner.size());
-	}
-
-	@Test
-	void reenabledPlannerFeedContinuesAfterThePreviousSequenceWatermark() {
-		AgentEventLog raw = new AgentEventLog(16);
-		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, new EventPolicyState(), Map.of(
-			"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false)
-		));
-
-		publisher.from("test").publish(10L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:apple"));
-		pipeline.drain((event, profile) ->
-			PlannerTrigger.pending(profile.triggerType(), "self", "picked up", event.tick(), event.timestampMs())
-		);
-		long previousPlannerSeqNo = planner.latestSeqNo();
-
-		pipeline.setPlannerEnabled(false);
-		pipeline.setPlannerEnabled(true);
-		publisher.from("test").publish(11L, "pickup.item_picked_up", Map.of("actor", "self", "itemId", "minecraft:stick"));
-		pipeline.drain((event, profile) ->
-			PlannerTrigger.pending(profile.triggerType(), "self", "picked up", event.tick(), event.timestampMs())
-		);
-
-		SemanticEventQueryResult resumed = planner.query(previousPlannerSeqNo);
-		assertEquals(1, resumed.events().size());
-		assertEquals("minecraft:stick", resumed.events().getFirst().payload().get("itemId"));
+		assertEquals(0, semanticDecisions(pipeline).size());
 	}
 
 	@Test
 	void ignoreKeepsRawEventButSuppressesSemanticAndTrigger() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"mute-system",
@@ -115,7 +72,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"social.system_message", new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -126,7 +83,7 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(0, triggers.size());
-		assertEquals(0, planner.size());
+		assertEquals(0, semanticDecisions(pipeline).size());
 		assertEquals(2, raw.size());
 		assertTrue(raw.containsType("social.system_message"));
 		assertTrue(raw.containsType("policy.event_intervened"));
@@ -139,7 +96,6 @@ class AgentEventPipelineTest {
 	void semanticOnlyKeepsPlannerSemanticFeedButSuppressesTrigger() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"pickup-semantic",
@@ -151,7 +107,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -162,20 +118,18 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(0, triggers.size());
-		assertEquals(1, planner.size());
-		assertTrue(planner.containsType("pickup.item_picked_up"));
+		assertEquals(1, semanticDecisions(pipeline).size());
+		assertTrue(semanticDecisions(pipeline).contains("pickup.item_picked_up"));
 	}
 
 	@Test
 	void defaultSemanticOnlyPolicySuppressesTriggerWithoutDroppingContext() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		AgentEventPipeline pipeline = new AgentEventPipeline(
 			raw,
 			publisher,
-			planner,
 			policyState,
 			Map.of(
 				"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false),
@@ -196,8 +150,8 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(0, triggers.size());
-		assertEquals(1, planner.size());
-		assertTrue(planner.containsType("pickup.item_picked_up"));
+		assertEquals(1, semanticDecisions(pipeline).size());
+		assertTrue(semanticDecisions(pipeline).contains("pickup.item_picked_up"));
 		assertEquals("default-mining-pickup-semantic-only", policyState.lastDecision().orElseThrow().matchedRuleId());
 	}
 
@@ -205,7 +159,6 @@ class AgentEventPipelineTest {
 	void explicitAllowRuleOverridesDefaultSemanticOnlyPolicy() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"allow-pickups",
@@ -220,7 +173,6 @@ class AgentEventPipelineTest {
 		AgentEventPipeline pipeline = new AgentEventPipeline(
 			raw,
 			publisher,
-			planner,
 			policyState,
 			Map.of(
 				"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false),
@@ -241,7 +193,7 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(1, triggers.size());
-		assertEquals(1, planner.size());
+		assertEquals(1, semanticDecisions(pipeline).size());
 		assertEquals("allow-pickups", policyState.lastDecision().orElseThrow().matchedRuleId());
 	}
 
@@ -249,7 +201,6 @@ class AgentEventPipelineTest {
 	void triggerOnlyWakesPlannerWithoutSemanticProjectionInput() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"pickup-trigger",
@@ -261,7 +212,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"pickup.item_picked_up", new EventRoutingProfile("pickup.item_picked_up", true, PlannerTriggerType.PICKUP, false),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -272,14 +223,13 @@ class AgentEventPipelineTest {
 		);
 
 		assertEquals(1, triggers.size());
-		assertEquals(0, planner.size());
+		assertEquals(0, semanticDecisions(pipeline).size());
 	}
 
 	@Test
 	void newestMatchingRuleWins() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"allow-system",
@@ -301,7 +251,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"social.system_message", new EventRoutingProfile("social.system_message", false, PlannerTriggerType.SYSTEM, false),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -319,7 +269,6 @@ class AgentEventPipelineTest {
 	void bypassEventsIgnoreMatchingPolicyRules() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"ignore-addressed",
@@ -331,7 +280,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"social.player_addressed_agent", new EventRoutingProfile("social.player_addressed_agent", false, PlannerTriggerType.CHAT, true),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -350,7 +299,6 @@ class AgentEventPipelineTest {
 	void taskBlockedBypassesPolicyAndEmitsSemanticAndTrigger() {
 		AgentEventLog raw = new AgentEventLog(16);
 		var publisher = new AgentEventBus(EventCatalog.defaults(), raw, () -> 1000L, true);
-		SemanticEventBuffer planner = new SemanticEventBuffer(16, () -> 1000L);
 		EventPolicyState policyState = new EventPolicyState();
 		policyState.upsert(new EventPolicyRule(
 			"ignore-task-blocked",
@@ -362,7 +310,7 @@ class AgentEventPipelineTest {
 			0L,
 			"planner"
 		));
-		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, planner, policyState, Map.of(
+		AgentEventPipeline pipeline = new AgentEventPipeline(raw, publisher, policyState, Map.of(
 			"task.blocked", new EventRoutingProfile("task.blocked", true, PlannerTriggerType.SYSTEM, true),
 			"policy.event_intervened", EventRoutingProfile.rawOnly("policy.event_intervened")
 		));
@@ -391,10 +339,17 @@ class AgentEventPipelineTest {
 			"Task blocked: taskType=COLLECT_RESOURCE resourceKind=WOOD_LOGS reason=target_missing collected=0 remaining=5.",
 			triggers.getFirst().text()
 		);
-		assertEquals(1, planner.size());
-		assertTrue(planner.containsType("task.blocked"));
+		assertEquals(1, semanticDecisions(pipeline).size());
+		assertTrue(semanticDecisions(pipeline).contains("task.blocked"));
 		assertEquals(0, policyState.recentInterventionCount());
 		assertEquals(1, raw.size());
 		assertTrue(policyState.lastDecision().orElseThrow().bypassed());
+	}
+
+	/** Types the pipeline's attention decisions route to the planner's semantic input. */
+	private static List<String> semanticDecisions(AgentEventPipeline pipeline) {
+		return pipeline.attentionLog().query(null).decisions().stream()
+			.filter(ai.moeru.airicraft.agent.attention.AttentionDecision::emitSemantic)
+			.map(ai.moeru.airicraft.agent.attention.AttentionDecision::type).toList();
 	}
 }

@@ -1,8 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.dialogue.DialogueTurn;
-import ai.moeru.airicraft.agent.events.SemanticEvent;
-import ai.moeru.airicraft.agent.events.SemanticEventQueryResult;
 import com.google.gson.JsonElement;
 
 import java.util.ArrayList;
@@ -10,42 +8,6 @@ import java.util.List;
 
 final class PlannerContextReducer {
 	private PlannerContextReducer() {
-	}
-
-	static PlannerContextState recordObservedEvents(PlannerContextState state, SemanticEventQueryResult queryResult) {
-		if (queryResult == null) {
-			return state;
-		}
-
-		ArrayList<SemanticEvent> pending = new ArrayList<>(state.pendingSemanticEvents());
-		for (SemanticEvent event : queryResult.events()) {
-			if (event == null || event.seqNo() <= state.lastObservedEventSeqNo()) {
-				continue;
-			}
-			pending.add(event);
-		}
-
-		long pendingSemanticGapVersion = state.pendingSemanticGapVersion();
-		long nextSemanticGapVersion = state.nextSemanticGapVersion();
-		if (queryResult.truncated()) {
-			pendingSemanticGapVersion = nextSemanticGapVersion;
-			nextSemanticGapVersion++;
-		}
-
-		return new PlannerContextState(
-			state.acceptedHistoryTape(),
-			state.activeCheckpoint(),
-			List.copyOf(pending),
-			pendingSemanticGapVersion,
-			nextSemanticGapVersion,
-			Math.max(state.lastObservedEventSeqNo(), queryResult.latestSeqNo()),
-			state.lastAcceptedAmbientContext(),
-			state.lastAcceptedTimeContextAtMs(),
-			state.compactionPending(),
-			state.lastObservedUsage(),
-			state.queuedTriggers(),
-			state.nextTriggerSeqNo()
-		);
 	}
 
 	static PlannerContextState enqueueTrigger(PlannerContextState state, PlannerTrigger trigger) {
@@ -58,10 +20,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			state.acceptedHistoryTape(),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -82,10 +40,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			state.acceptedHistoryTape(),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -113,7 +67,6 @@ final class PlannerContextReducer {
 			tick,
 			timestampMs,
 			null,
-			null,
 			List.of(),
 			structured == null ? null : structured.fields()
 		);
@@ -122,10 +75,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(acceptedHistory),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -152,10 +101,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(acceptedHistory),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -182,10 +127,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(acceptedHistory),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -215,10 +156,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(acceptedHistory),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -239,7 +176,6 @@ final class PlannerContextReducer {
 			turn.text(),
 			turn.tick(),
 			turn.timestampMs(),
-			null,
 			rawAssistantContent,
 			List.of()
 		);
@@ -248,10 +184,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(acceptedHistory),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -282,13 +214,6 @@ final class PlannerContextReducer {
 			? recordAcceptedUserTurn(state, snapshot.triggerBatch(), snapshot.request().tick(), snapshot.request().timestampMs())
 			: state;
 
-		ArrayList<SemanticEvent> remainingPending = new ArrayList<>();
-		for (SemanticEvent event : next.pendingSemanticEvents()) {
-			if (event.seqNo() > snapshot.includedSemanticEventSeqNoUpperBound()) {
-				remainingPending.add(event);
-			}
-		}
-
 		ArrayList<PlannerTrigger> remainingQueued = new ArrayList<>(next.queuedTriggers());
 		if (snapshot.mode() == PlannerSnapshotMode.TRIGGERED && snapshot.triggerBatch() != null && !snapshot.triggerBatch().isEmpty()) {
 			remainingQueued.clear();
@@ -299,21 +224,9 @@ final class PlannerContextReducer {
 			}
 		}
 
-		long pendingSemanticGapVersion = next.pendingSemanticGapVersion();
-		if (
-			snapshot.includedSemanticGapVersion() != 0L
-			&& pendingSemanticGapVersion == snapshot.includedSemanticGapVersion()
-		) {
-			pendingSemanticGapVersion = 0L;
-		}
-
 		return new PlannerContextState(
 			next.acceptedHistoryTape(),
 			next.activeCheckpoint(),
-			List.copyOf(remainingPending),
-			pendingSemanticGapVersion,
-			next.nextSemanticGapVersion(),
-			next.lastObservedEventSeqNo(),
 			snapshot.renderedAmbientContext(),
 			snapshot.renderedTimeContextAtMs() >= 0L ? snapshot.renderedTimeContextAtMs() : next.lastAcceptedTimeContextAtMs(),
 			next.compactionPending(),
@@ -327,10 +240,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			state.acceptedHistoryTape(),
 			state.activeCheckpoint(),
-			List.of(),
-			0L,
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			state.compactionPending(),
@@ -368,10 +277,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			state.acceptedHistoryTape(),
 			state.activeCheckpoint(),
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			state.lastAcceptedTimeContextAtMs(),
 			compactionPending,
@@ -407,10 +312,6 @@ final class PlannerContextReducer {
 		return new PlannerContextState(
 			List.copyOf(retained),
 			checkpoint,
-			state.pendingSemanticEvents(),
-			state.pendingSemanticGapVersion(),
-			state.nextSemanticGapVersion(),
-			state.lastObservedEventSeqNo(),
 			state.lastAcceptedAmbientContext(),
 			compactedAtMs,
 			false,

@@ -5,6 +5,7 @@ import ai.moeru.airicraft.agent.attention.WakeScheduler;
 import ai.moeru.airicraft.agent.events.EventStream;
 import ai.moeru.airicraft.agent.events.EventCause;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
+import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.agent.llm.CompactionExecutionResult;
 import ai.moeru.airicraft.agent.llm.ExternalPlannerToolResult;
 import ai.moeru.airicraft.agent.llm.LlmFailureType;
@@ -13,8 +14,8 @@ import ai.moeru.airicraft.agent.llm.PlannerExecutionResult;
 import ai.moeru.airicraft.agent.llm.PlannerOrchestrator;
 import ai.moeru.airicraft.agent.llm.PlannerOrchestratorDebugSnapshot;
 import ai.moeru.airicraft.agent.llm.PlannerRequest;
-import ai.moeru.airicraft.agent.llm.PlannerRequestSeed;
 import ai.moeru.airicraft.agent.llm.PlannerResponse;
+import ai.moeru.airicraft.agent.llm.WakeRef;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerBatch;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
@@ -283,9 +284,11 @@ public final class DialogueRuntime {
 		if (awaitingSafetyDecision) continuation = "Safety hold " + safetyHoldId
 			+ " still awaits your decision. The previous job remains paused. Use continue to keep and resume the plan, or clear_queue to abort and replace it."
 			+ " Saying you will act does not release the hold.\n" + continuation;
-		onPlannerTrigger(PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
-			continuation, tick, clock.millis(), "planner_goal", delegationPrompt == null ? null : delegationPrompt.fields()),
-			session, primaryPlayer, actionGoal, task, mission, events);
+		var trigger = PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self",
+			continuation, tick, clock.millis(), "planner_goal", delegationPrompt == null ? null : delegationPrompt.fields());
+		// A delegated role's continuation is its task statement and keeps its text; the audit label stays W4.
+		if (delegationPrompt != null) trigger = trigger.withWake(WakeRef.reason("delegation"));
+		onPlannerTrigger(trigger, session, primaryPlayer, actionGoal, task, mission, events);
 		return true;
 	}
 
@@ -837,17 +840,6 @@ public final class DialogueRuntime {
 			);
 			return;
 		}
-		Long sinceSeqNo = activePlanner().lastObservedEventSeqNo();
-		activePlanner().recordEvents(
-			eventBuffer.query(sinceSeqNo <= 0L ? null : sinceSeqNo),
-			new PlannerRequestSeed(
-				request.tick(),
-				timestampMs,
-				request.sessionMode(),
-				request.primaryInteractionPlayer(),
-				request.activeGoal()
-			)
-		);
 		// Record before submit: the orchestrator writes its own submission entry synchronously, and the
 		// wake ledger attributes audits by timeline order. A disabled planner discards the request.
 		outcome.record(activePlanner().isEnabled() ? "submitted" : "dropped", activePlanner().isEnabled() ? null : "G8.planner_disabled");
@@ -916,14 +908,17 @@ public final class DialogueRuntime {
 		}
 		@Override public void deliver(Wake wake) {
 			// A wake contains no historical state. Evidence remains in the shared event buffer.
-			String message = eventBuffer.query(wake.eventSequence() - 1).events().stream()
-				.filter(event -> event.seqNo() == wake.eventSequence() && event.type().equals("task.notice"))
-				.map(event -> Objects.toString(event.payload().get("message"))).findFirst()
+			var cause = eventBuffer.query(wake.eventSequence() - 1).events().stream()
+				.filter(event -> event.seqNo() == wake.eventSequence()).findFirst();
+			String message = cause.filter(event -> event.type().equals("task.notice"))
+				.map(event -> Objects.toString(event.payload().get("message")))
 				.orElse("Work changed.");
+			WakeRef reference = WakeRef.event(wake.eventSequence(), cause.map(SemanticEvent::type).orElse(null), wake.urgency().name());
 			submitPlannerTrigger(new PlannerRequest(wake.tick(), clock.millis(),
 				sessionSnapshot == null ? SessionSnapshot.initial().mode() : sessionSnapshot.mode(), null,
 				activeGoal == null ? null : activeGoal.orElse(null), activeTask, missionExecution,
-				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis()))), null
+				PlannerTriggerBatch.of(List.of(PlannerTrigger.pending(PlannerTriggerType.SYSTEM, "runtime", message, wake.tick(), clock.millis())
+					.withWake(reference))), null
 			).withSafetyContext(safetyEpoch, safetyHoldId), eventBuffer, clock.millis(), false,
 				(kind, gate) -> auditTask(wake, kind, gate));
 		}

@@ -102,6 +102,14 @@ public final class IdleIdeaScheduler {
 			builder.append("If torches would improve mining readiness and none are available, consider smelting a log into minecraft:charcoal, then crafting minecraft:torch from charcoal and sticks.\n");
 		}
 		builder.append("Do not read these lists back to the player.\n");
-		return PlannerTrigger.pending(PlannerTriggerType.IDLE_THINK, "self", builder.toString(), tickCount, nowMs);
+		// With a decision context the prose is not sent; the lists become the idle_think hint.
+		var fields = new com.google.gson.JsonObject();
+		var interestList = new com.google.gson.JsonArray();
+		interests.forEach(interestList::add);
+		var ideaList = new com.google.gson.JsonArray();
+		ideas.forEach(ideaList::add);
+		fields.add("interests", interestList);
+		fields.add("ideas", ideaList);
+		return new PlannerTrigger(0L, PlannerTriggerType.IDLE_THINK, "self", builder.toString(), tickCount, nowMs, null, null, fields);
 	}
 }
