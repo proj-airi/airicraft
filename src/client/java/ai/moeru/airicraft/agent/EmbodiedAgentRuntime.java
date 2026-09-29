@@ -59,8 +59,6 @@ import ai.moeru.airicraft.agent.events.AgentEventPipeline;
 import ai.moeru.airicraft.agent.events.AgentEventBus;
 import ai.moeru.airicraft.agent.events.AgentEventLog;
 import ai.moeru.airicraft.agent.events.EventIngressQueue;
-import ai.moeru.airicraft.agent.events.PhysicalEventObserver;
-import ai.moeru.airicraft.agent.events.ItemOfferObserver;
 import ai.moeru.airicraft.agent.events.EventPolicyChanges;
 import ai.moeru.airicraft.agent.events.EventPolicyDecision;
 import ai.moeru.airicraft.agent.events.EventPolicyEffect;
@@ -255,11 +253,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final ChatIngestService chatIngestService = new ChatIngestService();
 	private final LocalDamageTracker localDamageTracker = new LocalDamageTracker();
 	private final LifecycleDispatcher lifecycleDispatcher = new LifecycleDispatcher();
-	private PhysicalEventObserver physicalEventObserver;
-	private ItemOfferObserver itemOfferObserver;
-	private net.minecraft.client.world.ClientWorld itemOfferWorld;
+	private final ai.moeru.airicraft.agent.perception.SensorRegistry sensorRegistry = new ai.moeru.airicraft.agent.perception.SensorRegistry();
 	private ai.moeru.airicraft.agent.events.SlowMiningObserver slowMiningObserver;
-	private Object physicalObservationWorld;
 	private final NearbyPlayerTracker nearbyPlayerTracker;
 	private final PrimaryInteractionResolver primaryInteractionResolver = new PrimaryInteractionResolver(200L);
 	private final IdleIdeaScheduler idleIdeaScheduler;
@@ -447,22 +442,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.eventPipeline = new AgentEventPipeline(eventLog, eventBus,
 			eventPolicyState, eventRoutingProfiles, debugRecorder,
 			attentionPolicy, attentionDecisionLog);
-		lifecycleDispatcher.register("damage", EnumSet.of(LifecycleBoundary.WORLD_LEFT,
-			LifecycleBoundary.WORLD_LOADED, LifecycleBoundary.RESPAWNED, LifecycleBoundary.SHUTDOWN),
-			(boundary, tick) -> {
-				if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) localDamageTracker.clear();
-				else localDamageTracker.onLifecycleReset(tick);
-			});
-		lifecycleDispatcher.register("physical", EnumSet.allOf(LifecycleBoundary.class),
-			(boundary, tick) -> physicalObserver().reset());
-		lifecycleDispatcher.register("item", EnumSet.allOf(LifecycleBoundary.class),
-			(boundary, tick) -> { if (itemOfferObserver != null) itemOfferObserver.reset(); });
+		ai.moeru.airicraft.agent.perception.BoundarySignal sensorBoundaries =
+			(boundary, participants) -> lifecycleDispatcher.dispatch(boundary, tickCount, participants);
+		registerSensor(new DamageSensor(localDamageTracker));
+		registerSensor(new ai.moeru.airicraft.agent.perception.PhysicalSensor(this::physicalTaskContext,
+			() -> this.config.reflex().lowAirTicks(), sensorBoundaries));
+		registerSensor(new ai.moeru.airicraft.agent.perception.ItemOfferSensor(sensorBoundaries));
 		lifecycleDispatcher.register("slow", EnumSet.allOf(LifecycleBoundary.class),
 			(boundary, tick) -> { if (slowMiningObserver != null) slowMiningObserver.reset(); });
 		lifecycleDispatcher.register("food", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
 			(boundary, tick) -> foodOutcomes.clear());
-		lifecycleDispatcher.register("nearby", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.SHUTDOWN),
-			(boundary, tick) -> nearbyPlayerTracker.clear(tick, eventBus));
+		registerSensor(new ai.moeru.airicraft.agent.perception.SocialPresenceSensor(nearbyPlayerTracker, eventBus));
 		PlannerShellComponents plannerShell = PlannerShellFactory.create(
 			config,
 				Objects.requireNonNull(screenshotService, "screenshotService"),
@@ -547,7 +537,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		sessionSnapshot = sessionRuntime.snapshot();
 		autoLanOpenState.clear();
 		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
-		physicalObservationWorld = null;
 		sessionSnapshotOverrideForTests = null;
 		blockAcquisitionsOverrideForTests = null;
 		lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LEFT, tickCount, Set.of("nearby"));
@@ -605,7 +594,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		stopWorkOutsideTravelBounds(client);
 		dialogueRuntime.refreshPlannerGoalWorld();
 		tickCount++;
-		localDamageTracker.pruneStale(tickCount);
+		sampleSensor(DamageSensor.ID, client);
 		BehaviorTreeSnapshot previousTreeSnapshot = behaviorTreeRuntime.snapshot();
 		boolean wasWorldLoaded = sessionSnapshot.worldLoaded();
 		sessionSnapshot = sessionSnapshotOverrideForTests != null
@@ -636,8 +625,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			lastKnownPlayerHealth = currentPlayerHealth(client);
 			return;
 		}
-		observeItemOffers(client);
-		observePhysicalEvents(client);
+		sampleSensor(ai.moeru.airicraft.agent.perception.ItemOfferSensor.ID, client);
+		sampleSensor(ai.moeru.airicraft.agent.perception.PhysicalSensor.ID, client);
 		observeSlowMining(client);
 		openLanIfSingleplayerLocal(client);
 		surfaceMemory.tick(client, tickCount);
@@ -650,7 +639,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		tickIdleEating(client);
 		drainEventPipeline();
 
-		nearbyPlayerTracker.poll(client, tickCount, eventBus);
+		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, client);
 		primaryInteractionResolver.current().ifPresent(current ->
 			primaryInteractionResolver.clearIfNotNearby(current.uuid(), nearbyPlayerTracker.isNearby(current.uuid()))
 		);
@@ -786,37 +775,28 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lastKnownPlayerHealth = currentPlayerHealth(client);
 	}
 
-	private void observeItemOffers(MinecraftClient client) {
-		if (itemOfferObserver == null) itemOfferObserver = new ItemOfferObserver();
-		if (client == null || client.world == null || client.player == null || !client.player.isAlive()) {
-			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("item"));
-			itemOfferWorld = null;
-			return;
-		}
-		if (itemOfferWorld != client.world) {
-			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("item"));
-			itemOfferWorld = client.world;
-		}
-		var players = client.world.getPlayers().stream().filter(player -> player.isAlive() && !player.isSpectator())
-			.map(player -> new ItemOfferObserver.Player(player.getUuid(), player.getName().getString(),
-				player.getEyePos().add(0, -.3, 0), player.getRotationVec(1.0F))).toList();
-		List<ItemOfferObserver.Item> items = new ArrayList<>();
-		for (var entity : client.world.getEntities()) {
-			if (entity instanceof net.minecraft.entity.ItemEntity item && !item.isRemoved()) {
-				var stack = item.getStack();
-				items.add(new ItemOfferObserver.Item(item.getUuid(), Registries.ITEM.getId(stack.getItem()).toString(),
-					stack.getCount(), new Vec3d(item.getX(), item.getY(), item.getZ()), item.getVelocity(), item.age));
-			}
-		}
-		for (var payload : itemOfferObserver.observe(tickCount, client.world.getRegistryKey().getValue().toString(),
-			client.player.getUuid(), new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ()), players, items)) {
-			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.item_offered", payload);
-		}
+	/** Each sensor is also a lifecycle participant under its own id, in registration order. */
+	private void registerSensor(ai.moeru.airicraft.agent.perception.Sensor sensor) {
+		sensorRegistry.register(sensor);
+		lifecycleDispatcher.register(sensor.id(), sensor.boundaries(), sensor::onBoundary);
 	}
 
-	private PhysicalEventObserver physicalObserver() {
-		if (physicalEventObserver == null) physicalEventObserver = new PhysicalEventObserver();
-		return physicalEventObserver;
+	private void sampleSensor(String id, MinecraftClient client) {
+		sensorRegistry.sample(id, new ai.moeru.airicraft.agent.perception.SensorContext(tickCount, client, config.perception()), perceptSink);
+	}
+
+	private final ai.moeru.airicraft.agent.perception.PerceptSink perceptSink = new ai.moeru.airicraft.agent.perception.PerceptSink() {
+		@Override public void publish(String type, Map<String, Object> payload) {
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, type, payload);
+		}
+
+		@Override public void candidate(ai.moeru.airicraft.agent.perception.PerceptCandidate candidate) {
+		}
+	};
+
+	/** Per-sensor tick cost, for debug state and the dashboard. */
+	public Map<String, Map<String, Long>> sensorTimings() {
+		return sensorRegistry.timings();
 	}
 
 	private Map<String, Object> physicalTaskContext() {
@@ -899,31 +879,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			: policyActive() ? "policy" : activeTaskInProgress() ? "work" : "idle";
 		return new ai.moeru.airicraft.agent.llm.PlannerDecisionContext(worldSession, tickCount, integratedServerTick(),
 			dialogueRuntime.decisionOwner(), actuator, facts, eventBus.query(null));
-	}
-
-	private void observePhysicalEvents(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null || !client.player.isAlive()) {
-			lifecycleDispatcher.dispatch(LifecycleBoundary.PLAYER_UNAVAILABLE, tickCount, Set.of("physical", "slow"));
-			physicalObservationWorld = null;
-			return;
-		}
-		if (physicalObservationWorld != client.world) {
-			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_CHANGED, tickCount, Set.of("physical", "slow"));
-			physicalObservationWorld = client.world;
-		}
-		var player = client.player;
-		var position = player.getPos();
-		var velocity = player.getVelocity();
-		var input = player.input == null ? net.minecraft.util.PlayerInput.DEFAULT : player.input.playerInput;
-		boolean directional = input.forward() || input.backward() || input.left() || input.right() || input.jump() || input.sneak();
-		var sample = new PhysicalEventObserver.Sample(
-			tickCount, client.world.getRegistryKey().getValue().toString(),
-			new PhysicalEventObserver.Position(position.x, position.y, position.z),
-			new PhysicalEventObserver.Position(velocity.x, velocity.y, velocity.z),
-			player.isOnGround(), player.isTouchingWater(), player.isSubmergedInWater(), player.isClimbing(),
-			player.getAbilities().flying || player.isGliding() || player.hasVehicle(), directional, player.isOnFire(),
-			player.isSubmergedInWater() && player.getAir() <= config.reflex().lowAirTicks(), player.getAir(), player.getHealth(), physicalTaskContext());
-		for (var event : physicalObserver().observe(sample)) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.physical", event.payload());
 	}
 
 	private void observeWorkProgress(MinecraftClient client) {
@@ -1279,7 +1234,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		blockAcquisitionsOverrideForTests = null;
 		autoLanOpenState.clear();
 		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("damage", "physical", "item", "slow", "food"));
-		physicalObservationWorld = null;
 		lifecycleDispatcher.dispatch(LifecycleBoundary.SHUTDOWN, tickCount, Set.of("nearby"));
 		eventPipeline.clearForShutdown();
 		primaryInteractionResolver.clear();
