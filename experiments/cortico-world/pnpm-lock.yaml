@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.4
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       tsx:
         specifier: ^4.19.2
         version: 4.23.15
@@ -20,6 +23,9 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.4)
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
 
   worlds/airi-stage:
     dependencies:

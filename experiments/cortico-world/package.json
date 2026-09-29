@@ -3,15 +3,19 @@
   "private": true,
   "type": "module",
   "description": "Exploratory: airicraft as a Cortico World. Not part of the Gradle build.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "pnpm -r --workspace-concurrency=1 test",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "ws": "^8.22.0"
   }
 }

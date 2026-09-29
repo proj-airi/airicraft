@@ -69,6 +69,18 @@ describe('delivery table', () => {
     expect(text).toContain('token=<redacted>');
   });
 
+  it('wakes only for a top-level job reaching a final state, and keeps work text short', () => {
+    expect(deliveryFor('work.changed', { state: 'SUCCEEDED', parentWorkId: '' })).toBe('flush');
+    expect(deliveryFor('work.changed', { state: 'FAILED', parentWorkId: '' })).toBe('flush');
+    expect(deliveryFor('work.changed', { state: 'RUNNING', parentWorkId: '' })).toBe('piggyback');
+    expect(deliveryFor('work.changed', { state: 'SUCCEEDED', parentWorkId: 'JOB:parent' })).toBe('piggyback');
+    const text = eventText({
+      seqNo: 1, tick: 1, timestampMs: 1, type: 'work.changed',
+      payload: { workId: 'JOB:1', label: 'NAVIGATE_TO', state: 'SUCCEEDED', phase: 'COMPLETED', controls: ['inspect'], details: { request: { x: 1 } }, updatedTick: 5 },
+    });
+    expect(text).toBe('work.changed workId=JOB:1 label=NAVIGATE_TO state=SUCCEEDED phase=COMPLETED');
+  });
+
   it('classifies tools', () => {
     expect(tagsFor('inspect_inventory')).toEqual(['read']);
     expect(tagsFor('navigate_to')).toEqual(['act']);
