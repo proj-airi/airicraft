@@ -112,4 +112,24 @@ class SaliencePolicyTest {
 	@Test void plainKeepsJsonShapes() {
 		assertEquals(Map.of("a", 3L, "b", 2.5, "c", List.of(true, "x")), SaliencePolicy.plain(JsonParser.parseString("{\"a\":3,\"b\":2.5,\"c\":[true,\"x\"],\"d\":null}")));
 	}
+
+	@Test void aFailingPlannerVersionRevertsToItsFallbackAndTheEventNamesBothVersions() throws Exception {
+		var store = new ai.moeru.airicraft.rules.RulesStore();
+		store.append(RuleModule.Hook.SALIENCE, ai.moeru.airicraft.rules.RulesStore.Kind.UPDATE,
+			"(lib => ({ step() { throw Error('bad'); } }))", "break", 1, 0, null);
+		var feed = new SemanticEventBuffer(16);
+		RuleEngine.shared(store.activeModule(RuleModule.Hook.SALIENCE)).awaitReady(WARM);
+		var policy = new SaliencePolicy(feed, store.activeModule(RuleModule.Hook.SALIENCE));
+		policy.useRevert(store);
+		RuleEngine.shared(RuleModule.bundledSalience()).awaitReady(WARM);
+		for (int tick = 1; tick <= 3; tick++) {
+			policy.offer(item("c" + tick, "minecraft:bread"), tick);
+			policy.step(tick, Map.of(), 1);
+		}
+		assertEquals(RuleModule.BUNDLED_SALIENCE, policy.module().origin(), "no earlier version: the base");
+		var reverted = feed.query(null).events().getLast();
+		assertEquals("salience", reverted.payload().get("hook"));
+		assertEquals(1, reverted.payload().get("fromVersion"));
+		assertEquals(0, reverted.payload().get("toVersion"));
+	}
 }

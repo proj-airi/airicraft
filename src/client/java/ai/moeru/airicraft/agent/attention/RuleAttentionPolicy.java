@@ -11,6 +11,7 @@ import ai.moeru.airicraft.agent.events.SemanticEvent;
 import ai.moeru.airicraft.rules.RuleEngine;
 import ai.moeru.airicraft.rules.RuleException;
 import ai.moeru.airicraft.rules.RuleModule;
+import ai.moeru.airicraft.rules.RuleRevert;
 import ai.moeru.airicraft.rules.RuleStepResult;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -47,6 +48,8 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 	private final Function<SemanticEvent, AttentionEvidence> evidence;
 	private final EventPublisher diagnostics;
 	private RuleEngine engine;
+	/** Where a failing override goes; {@code null} disables reverting, as in a dry run. */
+	private RuleRevert revert = RuleRevert.toBundled(RuleModule.Hook.ATTENTION);
 	private String ruleState = "{}";
 	private int consecutiveFailures;
 	private long steps;
@@ -59,10 +62,31 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 
 	public RuleAttentionPolicy(Supplier<AttentionState> state, Function<SemanticEvent, AttentionEvidence> evidence,
 		EventPublisher diagnostics, RuleModule module) {
+		this(state, evidence, diagnostics, RuleEngine.shared(Objects.requireNonNull(module, "module")));
+	}
+
+	private RuleAttentionPolicy(Supplier<AttentionState> state, Function<SemanticEvent, AttentionEvidence> evidence,
+		EventPublisher diagnostics, RuleEngine engine) {
 		this.state = Objects.requireNonNull(state, "state");
 		this.evidence = Objects.requireNonNull(evidence, "evidence");
 		this.diagnostics = Objects.requireNonNull(diagnostics, "diagnostics");
-		this.engine = RuleEngine.shared(Objects.requireNonNull(module, "module"));
+		this.engine = Objects.requireNonNull(engine, "engine");
+	}
+
+	/**
+	 * A policy over a given engine that never reverts, for replaying history through a candidate module. Its
+	 * diagnostics go nowhere useful: pass a scratch publisher.
+	 */
+	public static RuleAttentionPolicy forReplay(Supplier<AttentionState> state, Function<SemanticEvent, AttentionEvidence> evidence,
+		EventPublisher scratch, RuleEngine engine) {
+		var policy = new RuleAttentionPolicy(state, evidence, scratch, engine);
+		policy.revert = null;
+		return policy;
+	}
+
+	/** Chooses where a failing override reverts; the runtime passes the planner's version store. */
+	public synchronized void useRevert(RuleRevert revert) {
+		this.revert = Objects.requireNonNull(revert, "revert");
 	}
 
 	@Override
@@ -159,15 +183,19 @@ public final class RuleAttentionPolicy implements AttentionPolicy {
 			"eventSeqNo", event.seqNo()
 		), SOURCE, null);
 		boolean loadFailed = engine.loadFailure() != null;
-		if (!engine.module().bundled() && (loadFailed || consecutiveFailures >= REVERT_AFTER_FAILURES)) {
-			engine = RuleEngine.shared(RuleModule.bundledAttention());
+		if (revert != null && !engine.module().bundled() && (loadFailed || consecutiveFailures >= REVERT_AFTER_FAILURES)) {
+			RuleRevert.Result target = revert.revert(engine.module(), event.tick());
+			engine = RuleEngine.shared(target.to());
 			ruleState = "{}";
 			consecutiveFailures = 0;
 			reverts++;
 			Airicraft.LOGGER.warn("Attention rules {} failed ({}); reverted to {}", failedModule, lastFailure, engine.module().origin());
 			diagnostics.publish(event.tick(), "rules.reverted", Map.of(
+				"hook", "attention",
 				"from", failedModule,
 				"to", engine.module().origin(),
+				"fromVersion", target.fromVersion(),
+				"toVersion", target.toVersion(),
 				"reason", loadFailed ? "load_failed" : "consecutive_step_failures"
 			), SOURCE, null);
 		}

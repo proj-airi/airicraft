@@ -65,6 +65,34 @@ class RuleAttentionPolicyTest {
 		assertEquals(AttentionStage.RULES, policy.decide(event(4, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true).wake().stage());
 	}
 
+	@Test void aFailingPlannerVersionRevertsToThePreviousVersionNotTheBundledModule() throws Exception {
+		var store = new ai.moeru.airicraft.rules.RulesStore();
+		String mute = """
+			(lib => ({ step(input, state) {
+			  return {state, decisions: input.events.map(e => ({seqNo: e.seqNo, emitSemantic: false,
+			    ruleMatch: {effect: 'IGNORE', ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+			    policy: {effect: 'IGNORE', ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+			    wake: {delivery: 'NONE', urgency: 'LOW', ruleId: 'mine.mute', reason: 'quiet'}}))};
+			} }))
+			""";
+		var first = store.append(RuleModule.Hook.ATTENTION, ai.moeru.airicraft.rules.RulesStore.Kind.UPDATE, mute, "mute", 1, 0, null);
+		store.append(RuleModule.Hook.ATTENTION, ai.moeru.airicraft.rules.RulesStore.Kind.UPDATE,
+			"(lib => ({ step() { throw Error('bad rule'); } }))", "break", 2, first.number(), null);
+		var diagnostics = new SemanticEventBuffer(16);
+		RuleEngine.shared(store.activeModule(RuleModule.Hook.ATTENTION)).awaitReady(Duration.ofSeconds(60));
+		var policy = new RuleAttentionPolicy(AttentionState::idle, event -> AttentionEvidence.NONE, diagnostics, store.activeModule(RuleModule.Hook.ATTENTION));
+		policy.useRevert(store);
+		for (long seq = 1; seq <= 3; seq++) policy.decide(event(seq, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true);
+		assertEquals("planner:attention/v3", policy.module().origin(), "a copy of v1, the version v2 replaced");
+		var reverted = diagnostics.query(null).events().getLast();
+		assertEquals("rules.reverted", reverted.type());
+		assertEquals("attention", reverted.payload().get("hook"));
+		assertEquals(2, reverted.payload().get("fromVersion"));
+		assertEquals(3, reverted.payload().get("toVersion"));
+		RuleEngine.shared(policy.module()).awaitReady(Duration.ofSeconds(60));
+		assertEquals("mine.mute", policy.decide(event(4, "pickup.item_picked_up"), PICKUP, new EventPolicyState(), true).wake().ruleId());
+	}
+
 	@Test void malformedSequenceNumbersFailTheStepAndFallBack() throws Exception {
 		for (String seqNo : java.util.List.of("'oops'", "null", "{}")) {
 			var module = module("bad-seq-" + seqNo.hashCode(), "(lib => ({ step(input, state) { return {state, decisions: [{seqNo: " + seqNo + "}]}; } }))");
