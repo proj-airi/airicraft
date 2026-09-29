@@ -23,9 +23,11 @@ Earlier phases deferred two items to this one: Phase 2 Task 9 Steps 2 and 3
 Decisions confirmed by the user on 2026-09-29. Slices 5a–5e are implemented on `claude/hopeful-gauss-1gjr8v`,
 with the revisions below.
 
-- **Goldens:** one existing golden changed, in its own commit: `addressed_chat_while_turn_in_flight`, whose
-  superseding request now goes out at tick 2 instead of 22, because the golden backend cancels like both production
-  backends. New goldens: `safety_epoch_preempts_turn`, `chat_spam_supersede_budget`, `tool_queue_review` and
+- **Goldens:** two existing goldens changed, each in a named commit.
+  - `addressed_chat_while_turn_in_flight`: the superseding request now goes out at tick 2 instead of 22, because the
+    golden backend cancels like both production backends.
+  - `death_then_respawn` (review fix): a player's line waiting behind a failed turn now starts right after the failure,
+    at tick 17 instead of the next poll at 18. New goldens: `safety_epoch_preempts_turn`, `chat_spam_supersede_budget`, `tool_queue_review` and
   `autonomous_wake_budget`.
 - **Verification:** `./gradlew build` passes, with 1,854 root, 96 wrapper and 20 JourneyMap tests. The known
   JourneyMap timing test failed once under the full build and passed on its own. The evaluator (46), Python (117) and
@@ -80,6 +82,12 @@ What Phases 1–4 already provide, and what is missing (on `dev`, 8dee6095):
 - **`chat_spam_supersede_budget` records up to the queued line.** When the queued line's turn starts depends on
   provider threads, so the golden stops before it, and a count assertion checks that the line is answered next.
 - **The wake ledger subcommand is `summarize`.** Its metrics gain a `priority` section.
+- **Review fixes (PR #99):**
+  - A reflex wake preempts wherever it waits in the queue, not only at the head.
+  - A player's queued line starts after a failed turn too.
+  - A reset closes the coalesce window.
+  - The budget does not charge wakes the scheduler drops (G4): `AttentionState` gains `routineWakesHeld` and
+    `goalBlocked`.
 
 ## Decisions
 
