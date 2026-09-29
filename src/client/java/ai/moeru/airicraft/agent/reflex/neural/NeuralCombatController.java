@@ -77,10 +77,18 @@ public final class NeuralCombatController {
 
 	/** Release actuators the controller may hold (offhand use key, GRU cleared via reset). */
 	public void release(MinecraftClient client) {
-		if (client != null) {
-			client.options.useKey.setPressed(false);
+		if (!shieldHeld) {
+			return;
 		}
 		shieldHeld = false;
+		if (client != null) {
+			client.options.useKey.setPressed(false);
+			ClientPlayerEntity player = client.player;
+			if (client.interactionManager != null && player != null
+					&& player.isUsingItem() && player.getActiveHand() == Hand.OFF_HAND) {
+				client.interactionManager.stopUsingItem(player);
+			}
+		}
 	}
 
 	public void configure(Path configDir) {
@@ -141,7 +149,8 @@ public final class NeuralCombatController {
 		encode(player, hostiles, n, ef, tid, g, tick);
 
 		EgtNet.Decision d = policy.decide(ef, tid, g, n);
-		LivingEntity target = d.targetSlot() >= 0 ? hostiles.get(d.targetSlot()) : null;
+		LivingEntity target = d.targetSlot() >= 0 && d.targetSlot() < hostiles.size()
+				? hostiles.get(d.targetSlot()) : null;
 		lastDecision = new Decision(
 				target == null ? null : target.getUuidAsString(),
 				d.attack(), d.shield(), d.sprint(), d.jump(), d.mvX(), d.mvZ());
@@ -150,7 +159,7 @@ public final class NeuralCombatController {
 			cameraController.lookAt(client, target.getBoundingBox().getCenter());
 		}
 		applyMovement(client, player, movementController, d, tick);
-		if (d.attack()) {
+		if (d.attack() && target != null) {
 			tryAttack(client, player, target, tick);
 		}
 		applyShield(client, player, d.shield());

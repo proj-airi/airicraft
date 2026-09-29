@@ -598,6 +598,9 @@ public final class SurvivalReflexRuntime {
 			}
 			return;
 		}
+		if (escapingCreeper != null) {
+			neural.release(client);
+		}
 		if (blockShieldThreat(client, player, threats, tick)) {
 			if (usePositioning) reposition(client, threats, tick, true);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
