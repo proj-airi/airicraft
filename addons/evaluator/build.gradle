@@ -1,10 +1,10 @@
 buildscript {
 	repositories { mavenCentral() }
-	dependencies { classpath "org.yaml:snakeyaml:2.4" }
+	dependencies { classpath libs.snakeyaml }
 }
 
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	alias(libs.plugins.fabric.loom.remap)
 }
 
 version = rootProject.version
@@ -42,27 +42,24 @@ configurations {
 }
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	minecraft libs.minecraft
+	mappings variantOf(libs.yarn) { classifier("v2") }
+	modImplementation libs.fabric.loader
+	modImplementation libs.fabric.api
 	clientCompileOnly rootProject.sourceSets.main.output
 	clientCompileOnly rootProject.sourceSets.client.output
-	implementation "org.yaml:snakeyaml:2.4"
+	implementation libs.snakeyaml
 
-	evaluatorRuntimeMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-	evaluatorRuntimeLibraries "org.yaml:snakeyaml:2.4"
-	evaluatorRuntimeLibraries "io.opentelemetry:opentelemetry-api:1.60.1"
-	evaluatorRuntimeLibraries "io.opentelemetry:opentelemetry-sdk:1.60.1"
-	evaluatorRuntimeLibraries "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	evaluatorRuntimeMods libs.fabric.api
+	evaluatorRuntimeLibraries libs.bundles.runtime.libraries
 
-	testImplementation platform("org.junit:junit-bom:5.11.4")
-	testImplementation "org.junit.jupiter:junit-jupiter"
+	testImplementation platform(libs.junit.bom)
+	testImplementation libs.junit.jupiter
 	testImplementation rootProject.sourceSets.main.output
 	testImplementation rootProject.sourceSets.client.output
 	// Runtime fixtures instantiate the root client, including its Baritone tool schemas.
 	testRuntimeOnly files(rootProject.sourceSets.client.runtimeClasspath)
-	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+	testRuntimeOnly libs.junit.platform.launcher
 }
 
 processResources {

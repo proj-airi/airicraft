@@ -1,7 +1,7 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
-	id 'pl.allegro.tech.build.axion-release' version '1.21.4'
-	id 'com.gradleup.shadow' version '9.6.+' apply false
+	alias(libs.plugins.fabric.loom.remap)
+	alias(libs.plugins.axion.release)
+	alias(libs.plugins.shadow) apply false
 	id 'maven-publish'
 }
 
@@ -147,14 +147,14 @@ configurations {
 		canBeConsumed = false
 		canBeResolved = true
 		defaultDependencies {
-			add dependencyFactory.create('org.hotswapagent:hotswap-agent:2.0.3').setTransitive(false)
+			add project.dependencies.create(libs.hotswap.agent.get()).setTransitive(false)
 		}
 	}
 	create('mixinAgent') {
 		canBeConsumed = false
 		canBeResolved = true
 		defaultDependencies {
-			add dependencyFactory.create('net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7').setTransitive(false)
+			add project.dependencies.create(libs.sponge.mixin.get()).setTransitive(false)
 		}
 	}
 }
@@ -204,7 +204,7 @@ loom {
 // Opt-in rendered settings test; never touches the normal development game directory.
 if (providers.gradleProperty("airicraft.settingsSmoke").orElse("false").get().toBoolean()) {
 	if (providers.gradleProperty("airicraft.settingsSmokeModMenu").orElse("false").get().toBoolean()) {
-		dependencies { modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}" }
+		dependencies { modLocalRuntime libs.modmenu }
 	}
 	fabricApi.configureTests {
 		createSourceSet = true
@@ -536,51 +536,41 @@ tasks.register("arthasShell", Exec) {
 }
 
 dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	minecraft libs.minecraft
+	mappings variantOf(libs.yarn) { classifier("v2") }
+	modImplementation libs.fabric.loader
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-	modImplementation("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+	modImplementation libs.fabric.api
+	modImplementation(libs.cloth.config) {
 		exclude group: "net.fabricmc.fabric-api"
 	}
-	include("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") { transitive = false }
-	modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	include(libs.cloth.config) { transitive = false }
+	modCompileOnly libs.modmenu
 	modImplementation files("libs/baritone-unoptimized-fabric-1.15.0.jar")
 	modImplementation files("libs/nether-pathfinder-1.4.1.jar")
-	implementation "ai.moeru:action-plan-advisor:0.1.0"
-	include "ai.moeru:action-plan-advisor:0.1.0"
+    implementation libs.action.plan.advisor
+    include libs.action.plan.advisor
 	implementation project(":navigation-core")
 	include project(":navigation-core")
-	bundledLibraries "org.yaml:snakeyaml:2.4"
+	bundledLibraries libs.snakeyaml
 	// Use concrete JARs: the js-community aggregate adds POM files that Fabric cannot load.
 	// Keep language/provider descriptors in separate nested jars (include is non-transitive).
-	[
-		"org.graalvm.polyglot:polyglot", "org.graalvm.js:js-language", "org.graalvm.regex:regex",
-		"org.graalvm.truffle:truffle-api", "org.graalvm.truffle:truffle-runtime", "org.graalvm.truffle:truffle-compiler",
-		"org.graalvm.sdk:collections", "org.graalvm.sdk:nativeimage", "org.graalvm.sdk:word", "org.graalvm.sdk:jniutils",
-		"org.graalvm.shadowed:icu4j", "org.graalvm.shadowed:xz"
-	].each { coordinate ->
-		implementation("${coordinate}:25.0.4") { transitive = false }
-		include("${coordinate}:25.0.4") { transitive = false }
-	}
+	implementation(libs.bundles.graaljs) { transitive = false }
+	include(libs.bundles.graaljs) { transitive = false }
 
-	bundledLibraries "io.opentelemetry:opentelemetry-api:1.60.1"
-	bundledLibraries "io.opentelemetry:opentelemetry-sdk:1.60.1"
-	bundledLibraries "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	bundledLibraries libs.bundles.runtime.libraries
 	// Loom include is non-transitive: resolve the complete library runtime first.
 	configurations.bundledLibraries.resolvedConfiguration.resolvedArtifacts.each { artifact ->
 		include(artifact.moduleVersion.id.toString()) { transitive = false }
 	}
 
 	// Source: https://mvnrepository.com/artifact/org.hotswapagent/hotswap-agent
-	runtimeOnly('org.hotswapagent:hotswap-agent:2.0.3') { transitive = false }
+	runtimeOnly(libs.hotswap.agent) { transitive = false }
 
-	testImplementation platform("org.junit:junit-bom:5.11.4")
-	testImplementation "org.junit.jupiter:junit-jupiter"
-	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+	testImplementation platform(libs.junit.bom)
+	testImplementation libs.junit.jupiter
+	testRuntimeOnly libs.junit.platform.launcher
 }
 
 tasks.named("remapJar") {
@@ -599,7 +589,7 @@ def reportBuildRevision = providers.gradleProperty("airicraft.buildRevision").or
 
 processResources {
 	inputs.property "revision", reportBuildRevision
-	inputs.property "minecraftVersion", project.minecraft_version
+	inputs.property "minecraftVersion", libs.versions.minecraft
 	inputs.property "version", project.version
 
 	filesMatching("airicraft-build.properties") {
