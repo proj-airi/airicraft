@@ -57,12 +57,17 @@ final class WakeScenarioHarness implements AutoCloseable {
 	 */
 	void settle() {
 		long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
+		long editDeadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
 		var dialogue = runtime.dialogueRuntimeForTests();
 		Runnable resolution;
 		while ((resolution = pendingResolutions.poll()) != null) resolution.run();
 		backend.openGate();
 		try {
-			while (dialogue.plannerWorkRunning() && !backend.held()) {
+			while ((dialogue.plannerWorkRunning() || runtime.plannerRules().inFlight() > 0) && !backend.held()) {
+				// A rules edit is checked off the tick and applied by the next drain; settle is on the tick thread, so it
+				// drains here and keeps waiting (a cold module needs a warm-up) instead of racing a tick count.
+				runtime.plannerRules().drain();
+				if (runtime.plannerRules().inFlight() > 0) deadline = Math.min(editDeadline, System.nanoTime() + Duration.ofSeconds(1).toNanos());
 				if (System.nanoTime() > deadline) throw new AssertionError("Planner did not settle at tick " + tick);
 				Thread.yield();
 			}

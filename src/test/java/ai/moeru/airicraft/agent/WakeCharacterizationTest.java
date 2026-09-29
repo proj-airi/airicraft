@@ -169,6 +169,123 @@ class WakeCharacterizationTest {
 			h.transcript("autonomous_wake_budget").assertMatchesGolden("autonomous_wake_budget");
 		}
 	}
+	/** Phase 6 test module: mutes pickup wakes (and reads plannerRules, so update_event_policy would still work). */
+	private static final String MUTE_PICKUPS = """
+		(lib => ({ step(input, state) {
+		  return {state, decisions: input.events.map(e => {
+		    const quiet = e.type === 'pickup.item_picked_up';
+		    const effect = quiet ? 'IGNORE' : 'ALLOW';
+		    // Everything but pickups keeps its evidence and wakes nobody, so a chat is decided by the constitution alone.
+		    return {seqNo: e.seqNo, emitSemantic: !quiet,
+		      ruleMatch: {effect, ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+		      policy: {effect, ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+		      wake: {delivery: 'NONE', urgency: 'LOW', ruleId: quiet ? 'mine.quiet' : 'mine.default', reason: quiet ? 'quiet while building' : 'default'}};
+		  })};
+		  // input.plannerRules
+		} }))
+		""";
+	/** Passes the empty step and the (pickup-free) replay, then throws on the first pickup it sees. */
+	private static final String THROWS_ON_PICKUP = """
+		(lib => ({ step(input, state) {
+		  if (input.events.some(e => e.type === 'pickup.item_picked_up')) throw Error('pickups are not handled');
+		  return {state, decisions: input.events.map(e => ({seqNo: e.seqNo, emitSemantic: true,
+		    ruleMatch: {effect: 'ALLOW', ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+		    policy: {effect: 'ALLOW', ruleIndex: -1, ruleId: null, reason: null, bypassed: false},
+		    wake: {delivery: 'NONE', urgency: 'LOW', ruleId: 'mine.default', reason: 'default'}}))};
+		  // input.plannerRules
+		} }))
+		""";
+	private static ai.moeru.airicraft.agent.llm.PlannerResponse rulesCall(String id, String tool, String... fields) {
+		var arguments = new com.google.gson.JsonObject();
+		for (int index = 0; index < fields.length; index += 2) arguments.addProperty(fields[index], fields[index + 1]);
+		return ai.moeru.airicraft.agent.llm.PlannerResponse.toolCalls(List.of(
+			new ai.moeru.airicraft.agent.llm.PlannerToolCall(id, tool, arguments, null)), null);
+	}
+	private static ai.moeru.airicraft.agent.llm.PlannerResponse reply(String text) {
+		return new ai.moeru.airicraft.agent.llm.PlannerResponse(text, List.of(), null);
+	}
+	private static void pickups(WakeScenarioHarness h, int count) {
+		for (int pickup = 0; pickup < count; pickup++) {
+			h.runtime.onPlayerPickedUpItem("minecraft:oak_log", 1);
+			h.tick(1);
+		}
+		h.tick(10);
+	}
+	private static List<ai.moeru.airicraft.agent.attention.AttentionDecision> pickupDecisions(WakeScenarioHarness h) {
+		return h.runtime.attentionDecisionLog().query(null).decisions().stream()
+			.filter(decision -> decision.type().equals("pickup.item_picked_up")).toList();
+	}
+	/** Phase 6: the planner replaces its attention rules to mute pickups; they stay evidence and the edit is an event. */
+	@Test void planner_mutes_pickups() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.backend.injectMockResponse(rulesCall("edit", "update_rules", "hook", "attention", "source", MUTE_PICKUPS,
+				"reason", "mute pickup wakes while I build"));
+			h.backend.injectMockResponse(reply("Pickups are muted."));
+			h.chat("Alex", "@agent stop waking me for pickups while I build");
+			h.tick(5);
+			assertEquals(1, h.runtime.plannerRules().store().activeNumber(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION));
+			int requests = h.backend.requests().size();
+			for (int reply = 0; reply < 4; reply++) h.backend.injectMockResponse(reply("Noted."));
+			pickups(h, 5);
+			var pickups = pickupDecisions(h);
+			assertEquals(5, pickups.size());
+			assertTrue(pickups.stream().allMatch(decision -> decision.delivery() == Delivery.NONE && "mine.quiet".equals(decision.ruleId())),
+				pickups.toString());
+			assertEquals(requests, h.backend.requests().size(), "muted pickups wake nobody");
+			h.chat("Alex", "@agent what did you pick up?");
+			h.tick(5);
+			var observed = h.transcript("planner_mutes_pickups");
+			assertTrue(observed.data().toString().contains("rules.updated"), "the edit is evidence in observe");
+			observed.assertMatchesGolden("planner_mutes_pickups");
+		}
+	}
+	/** Phase 6: an edit that passes its checks but fails while running is reverted for the planner, who is told. */
+	@Test void planner_rules_reverted() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.backend.injectMockResponse(rulesCall("edit", "update_rules", "hook", "attention", "source", THROWS_ON_PICKUP,
+				"reason", "try a stricter default"));
+			h.backend.injectMockResponse(reply("Rules updated."));
+			h.chat("Alex", "@agent try your new rules");
+			h.tick(5);
+			assertEquals(1, h.runtime.plannerRules().store().activeNumber(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION));
+			for (int reply = 0; reply < 6; reply++) h.backend.injectMockResponse(reply("Noted."));
+			pickups(h, 4);
+			assertEquals(0, h.runtime.plannerRules().store().activeNumber(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION),
+				"three failed steps reverted to the base");
+			assertEquals(ai.moeru.airicraft.rules.RuleModule.BUNDLED_ATTENTION, h.runtime.debugAttentionState().get("rules") instanceof Map<?, ?> rules
+				? rules.get("module") : null);
+			assertTrue(h.runtime.recentEvents(null).events().stream().anyMatch(event -> event.type().equals("rules.reverted")));
+			h.backend.injectMockResponse(reply("Back on the standard rules."));
+			h.chat("Alex", "@agent what happened to your rules?");
+			h.tick(5);
+			h.transcript("planner_rules_reverted").assertMatchesGolden("planner_rules_reverted");
+		}
+	}
+	/** Phase 6: rolling back to the base restores the wakes, and the rollback is a version and an event too. */
+	@Test void planner_rules_rollback() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.backend.injectMockResponse(rulesCall("edit", "update_rules", "hook", "attention", "source", MUTE_PICKUPS, "reason", "mute pickups"));
+			h.backend.injectMockResponse(reply("Muted."));
+			h.chat("Alex", "@agent mute pickups");
+			h.tick(3);
+			h.backend.injectMockResponse(rulesCall("back", "update_rules", "hook", "attention", "revert_to", "base", "reason", "I need pickups again"));
+			h.backend.injectMockResponse(reply("Restored."));
+			h.chat("Alex", "@agent unmute them");
+			h.tick(3);
+			assertEquals(0, h.runtime.plannerRules().store().activeNumber(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION));
+			int requests = h.backend.requests().size();
+			h.backend.injectMockResponse(reply("A log."));
+			h.runtime.onPlayerPickedUpItem("minecraft:oak_log", 1);
+			h.tick(10);
+			assertEquals(requests + 1, h.backend.requests().size(), "the pickup wakes the planner again");
+			assertEquals(List.of("rules.updated", "rules.updated"), h.runtime.recentEvents(null).events().stream()
+				.map(event -> event.type()).filter(type -> type.startsWith("rules.")).toList());
+			h.transcript("planner_rules_rollback").assertMatchesGolden("planner_rules_rollback");
+		}
+	}
 	@Test void damage_outside_reflex() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerHealthUpdated(true, 20, 16); h.tick(10);

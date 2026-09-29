@@ -1,0 +1,456 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent mute pickups",
+        "normalizedMessage": "@agent mute pickups",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent mute pickups",
+        "normalizedMessage": "@agent mute pickups",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "objective.changed"
+    },
+    {
+      "payload": {
+        "changed": 1,
+        "hook": "attention",
+        "kind": "update",
+        "previousVersion": 0,
+        "reason": "mute pickups",
+        "replayed": 3,
+        "sha": "1a3d9a88bba5bfed",
+        "version": 1,
+        "wakesGained": 0,
+        "wakesLost": 0
+      },
+      "seqNo": 5,
+      "tick": 3,
+      "type": "rules.updated"
+    },
+    {
+      "payload": {
+        "message": "@agent unmute them",
+        "normalizedMessage": "@agent unmute them",
+        "player": "Alex"
+      },
+      "seqNo": 6,
+      "tick": 4,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent unmute them",
+        "normalizedMessage": "@agent unmute them",
+        "player": "Alex"
+      },
+      "seqNo": 7,
+      "tick": 4,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "failureType": "PROVIDER_ERROR",
+        "message": "Planner generation is no longer active"
+      },
+      "seqNo": 8,
+      "tick": 5,
+      "type": "planner.provider_error"
+    },
+    {
+      "payload": {
+        "changed": 2,
+        "hook": "attention",
+        "kind": "rollback",
+        "previousVersion": 1,
+        "reason": "I need pickups again",
+        "replayed": 5,
+        "sha": "37ce24db38862922",
+        "version": 0,
+        "wakesGained": 0,
+        "wakesLost": 0
+      },
+      "seqNo": 9,
+      "tick": 7,
+      "type": "rules.updated"
+    },
+    {
+      "payload": {
+        "actor": "self",
+        "count": 1,
+        "itemId": "minecraft:oak_log"
+      },
+      "seqNo": 10,
+      "tick": 7,
+      "type": "pickup.item_picked_up"
+    },
+    {
+      "payload": {
+        "intentType": "REPLY_ONLY",
+        "replyText": "Restored."
+      },
+      "seqNo": 11,
+      "tick": 9,
+      "type": "planner.response_applied"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent mute pickups"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "player": "Alex",
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "social.player_joined_nearby"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 4,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 4,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "969bdb6f82065d6d1f08abf55e348b6c66230c1e6b43abf61532d04ab7e23db6",
+        "toolsSha": "ded9c213a63b56903335597cfaef991c8d0f6fa4ee4cc4a4896512d63a6322ab"
+      },
+      "tick": 1
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":1,\"hook\":\"attention\",\"kind\":\"update\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":0,\"replay\":{\"byType\":{\"social.player_spoke\":{\"changed\":1}},\"changed\":1,\"examples\":[{\"now\":\"no wake (mine.default)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake, not shown (chat.addressed_routed_separately)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":3,\"skipped\":1,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"1a3d9a88bba5bfed\"}"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 4,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "changed": 1,
+              "hook": "attention",
+              "kind": "update",
+              "previousVersion": 0,
+              "reason": "mute pickups",
+              "replayed": 3,
+              "sha": "1a3d9a88bba5bfed",
+              "version": 1,
+              "wakesGained": 0,
+              "wakesLost": 0
+            },
+            "seqNo": 5,
+            "tick": 3,
+            "type": "rules.updated"
+          }
+        ],
+        "notices": [
+          "FIFO empty. Review completed results and plan the next batch."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 5,
+        "tick": 4,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "tool_queue_review"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "969bdb6f82065d6d1f08abf55e348b6c66230c1e6b43abf61532d04ab7e23db6",
+        "toolsSha": "ded9c213a63b56903335597cfaef991c8d0f6fa4ee4cc4a4896512d63a6322ab"
+      },
+      "tick": 4
+    },
+    {
+      "discarded": false,
+      "generation": 3,
+      "index": 3,
+      "newMessages": [
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent unmute them"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 5,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "FIFO empty. Review completed results and plan the next batch."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 8,
+        "tick": 5,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "tool_queue_review"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "969bdb6f82065d6d1f08abf55e348b6c66230c1e6b43abf61532d04ab7e23db6",
+        "toolsSha": "ded9c213a63b56903335597cfaef991c8d0f6fa4ee4cc4a4896512d63a6322ab"
+      },
+      "tick": 5
+    },
+    {
+      "discarded": false,
+      "generation": 4,
+      "index": 4,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_spoke\":{\"changed\":2}},\"changed\":2,\"examples\":[{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"37ce24db38862922\"}"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 8,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "changed": 2,
+              "hook": "attention",
+              "kind": "rollback",
+              "previousVersion": 1,
+              "reason": "I need pickups again",
+              "replayed": 5,
+              "sha": "37ce24db38862922",
+              "version": 0,
+              "wakesGained": 0,
+              "wakesLost": 0
+            },
+            "seqNo": 9,
+            "tick": 7,
+            "type": "rules.updated"
+          },
+          {
+            "payload": {
+              "actor": "self",
+              "count": 1,
+              "itemId": "minecraft:oak_log"
+            },
+            "seqNo": 10,
+            "tick": 7,
+            "type": "pickup.item_picked_up"
+          }
+        ],
+        "notices": [
+          "FIFO empty. Review completed results and plan the next batch."
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 10,
+        "tick": 8,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "tool_queue_review"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "969bdb6f82065d6d1f08abf55e348b6c66230c1e6b43abf61532d04ab7e23db6",
+        "toolsSha": "ded9c213a63b56903335597cfaef991c8d0f6fa4ee4cc4a4896512d63a6322ab"
+      },
+      "tick": 8
+    }
+  ],
+  "scenario": "planner_rules_rollback",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 1
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W9",
+      "review": "fifo_empty",
+      "serverTick": -1,
+      "speakers": [
+        "tool_queue"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 4
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 4
+    },
+    {
+      "coalescingKeys": [
+        "pickup:minecraft:oak_log"
+      ],
+      "gate": "G4.accepted_work",
+      "kind": "dropped",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "self"
+      ],
+      "tick": 7,
+      "triggerTypes": [
+        "PICKUP"
+      ],
+      "wakeTick": 7
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W9",
+      "review": "fifo_empty",
+      "serverTick": -1,
+      "speakers": [
+        "tool_queue"
+      ],
+      "tick": 8,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 8
+    }
+  ]
+}
