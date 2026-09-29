@@ -9,13 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntityInteractionTaskExecutorTest {
 	@Test void rejectsServerForbiddenAttackTargets() {
-		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.ItemEntity.class, false, true));
-		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.ExperienceOrbEntity.class, false, true));
-		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.projectile.ArrowEntity.class, false, false));
-		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.player.PlayerEntity.class, true, true));
-		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.mob.ZombieEntity.class, false, true));
-		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.decoration.EndCrystalEntity.class, false, true));
-		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.entity.projectile.FireballEntity.class, false, true));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.item.ItemEntity.class, false, true));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.ExperienceOrb.class, false, true));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.projectile.Arrow.class, false, false));
+		assertFalse(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.player.Player.class, true, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.monster.Zombie.class, false, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.boss.enderdragon.EndCrystal.class, false, true));
+		assertTrue(EntityInteractionTaskExecutor.attackTargetAllowed(net.minecraft.world.entity.projectile.LargeFireball.class, false, true));
 	}
 
 	@Test void collectionReportCountsGainsInsteadOfExistingInventoryOrExpectedLoot() {
@@ -31,10 +31,10 @@ class EntityInteractionTaskExecutorTest {
 
 	@Test void disappearingTargetMustHaveDeathEvidenceBeforeCollectingDrops() {
 		assertTrue(EntityInteractionTaskExecutor.confirmedKill(true, null));
-		assertTrue(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.entity.Entity.RemovalReason.KILLED));
+		assertTrue(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.world.entity.Entity.RemovalReason.KILLED));
 		assertFalse(EntityInteractionTaskExecutor.confirmedKill(false, null));
-		assertFalse(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.entity.Entity.RemovalReason.UNLOADED_TO_CHUNK));
-		assertFalse(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.entity.Entity.RemovalReason.DISCARDED));
+		assertFalse(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.world.entity.Entity.RemovalReason.UNLOADED_TO_CHUNK));
+		assertFalse(EntityInteractionTaskExecutor.confirmedKill(false, net.minecraft.world.entity.Entity.RemovalReason.DISCARDED));
 	}
 
 	@Test

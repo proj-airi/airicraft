@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 public final class InventoryResourceCounter {
 	public int count(Iterable<ItemStack> stacks, TaskResourceKind resourceKind) {
@@ -10,7 +10,7 @@ public final class InventoryResourceCounter {
 			if (stack == null || stack.isEmpty()) {
 				continue;
 			}
-			if (accepts(resourceKind, Registries.ITEM.getId(stack.getItem()).toString())) {
+			if (accepts(resourceKind, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())) {
 				total += stack.getCount();
 			}
 		}

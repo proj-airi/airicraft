@@ -5,7 +5,7 @@ import ai.moeru.airicraft.agent.memory.PlaceMemory;
 import journeymap.api.v2.client.IClientAPI;
 import journeymap.api.v2.common.waypoint.Waypoint;
 import journeymap.api.v2.common.waypoint.WaypointFactory;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.List;
 import java.util.function.BooleanSupplier;

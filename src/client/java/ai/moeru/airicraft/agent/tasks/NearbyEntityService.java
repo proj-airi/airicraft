@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.registry.Registries;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,17 +22,17 @@ public final class NearbyEntityService {
 	private NearbyEntityService() {
 	}
 
-	public static List<NearbyEntitySnapshot> listNearbyEntities(MinecraftClient client) {
-		return listNearbyEntities(client, EntitySelectorResolver.DEFAULT_NEARBY_RADIUS_BLOCKS, DEFAULT_MAX_RESULTS, Set.of());
+	public static List<NearbyEntitySnapshot> listNearbyEntities(Minecraft minecraft) {
+		return listNearbyEntities(minecraft, EntitySelectorResolver.DEFAULT_NEARBY_RADIUS_BLOCKS, DEFAULT_MAX_RESULTS, Set.of());
 	}
 
-	public static List<NearbyEntitySnapshot> listNearbyEntities(MinecraftClient client, double radius, int maxResults, Set<String> entityTypeIds) {
-		if (client == null || client.world == null || client.player == null) {
+	public static List<NearbyEntitySnapshot> listNearbyEntities(Minecraft minecraft, double radius, int maxResults, Set<String> entityTypeIds) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return List.of();
 		}
 		return listNearbyEntities(
-			client.player,
-			client.world.getEntities(),
+			minecraft.player,
+			minecraft.level.entitiesForRendering(),
 			radius,
 			maxResults,
 			entityTypeIds
@@ -43,9 +43,9 @@ public final class NearbyEntityService {
 		Objects.requireNonNull(entity, "entity");
 		return new EntitySelectorResolver.EntityCandidate(
 			entity.getId(),
-			entity.getUuidAsString(),
+			entity.getStringUUID(),
 			entity.getName() == null ? null : entity.getName().getString(),
-			Registries.ENTITY_TYPE.getId(entity.getType()).toString(),
+			BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
 			entity.getX(),
 			entity.getY(),
 			entity.getZ(),
@@ -107,7 +107,7 @@ public final class NearbyEntityService {
 				health,
 				maxHealth,
 				baby,
-				entity instanceof PlayerEntity
+				entity instanceof Player
 			));
 		}
 		return selectSnapshots(snapshots, entityTypeIds, maxResults);

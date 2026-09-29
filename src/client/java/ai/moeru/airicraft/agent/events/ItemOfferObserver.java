@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.events;
 
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,14 +13,14 @@ import java.util.UUID;
 
 /** Infers possible offers from client observations; never confirms ownership or pickup. */
 public final class ItemOfferObserver {
-	public record Player(UUID uuid, String name, Vec3d dropPosition, Vec3d look) {}
-	public record Item(UUID uuid, String itemId, int count, Vec3d position, Vec3d velocity, int age) {}
+	public record Player(UUID uuid, String name, Vec3 dropPosition, Vec3 look) {}
+	public record Item(UUID uuid, String itemId, int count, Vec3 position, Vec3 velocity, int age) {}
 	private record Candidate(Player player, Item spawn, long tick) {}
 	private final Set<UUID> seen = new HashSet<>();
 	private final Map<UUID, Candidate> pending = new HashMap<>();
 	private String dimension;
 
-	public List<Map<String, Object>> observe(long tick, String dimension, UUID self, Vec3d selfPosition,
+	public List<Map<String, Object>> observe(long tick, String dimension, UUID self, Vec3 selfPosition,
 		List<Player> players, List<Item> items) {
 		Set<UUID> present = new HashSet<>();
 		for (Item item : items) present.add(item.uuid());
@@ -37,7 +37,7 @@ public final class ItemOfferObserver {
 			if (seen.add(item.uuid()) && item.age() <= 5 && headsTowardSelf(item, selfPosition)) {
 				// Include self and players facing elsewhere when checking ambiguity: proximity alone cannot identify a thrower.
 				List<Player> sources = players.stream()
-					.filter(player -> player.dropPosition().squaredDistanceTo(item.position()) <= 1.0)
+					.filter(player -> player.dropPosition().distanceToSqr(item.position()) <= 1.0)
 					.toList();
 				if (sources.size() == 1) {
 					Player source = sources.getFirst();
@@ -67,8 +67,8 @@ public final class ItemOfferObserver {
 		return List.copyOf(events);
 	}
 
-	private static boolean headsTowardSelf(Item item, Vec3d self) {
-		Vec3d delta = self.subtract(item.position());
+	private static boolean headsTowardSelf(Item item, Vec3 self) {
+		Vec3 delta = self.subtract(item.position());
 		double speed = Math.hypot(item.velocity().x, item.velocity().z);
 		double distance = Math.hypot(delta.x, delta.z);
 		if (speed < .1 || distance > 6 || Math.abs(delta.y) > 2.5) return false;
@@ -77,12 +77,12 @@ public final class ItemOfferObserver {
 		return forward > 0 && missDistance <= 1.5 && horizontalAlignment(delta, item.velocity()) >= .7;
 	}
 
-	private static double horizontalAlignment(Vec3d a, Vec3d b) {
+	private static double horizontalAlignment(Vec3 a, Vec3 b) {
 		double length = Math.hypot(a.x, a.z) * Math.hypot(b.x, b.z);
 		return length == 0 ? 0 : (a.x * b.x + a.z * b.z) / length;
 	}
 
-	private static Map<String, Object> coordinates(Vec3d position) {
+	private static Map<String, Object> coordinates(Vec3 position) {
 		return Map.of("x", position.x, "y", position.y, "z", position.z);
 	}
 

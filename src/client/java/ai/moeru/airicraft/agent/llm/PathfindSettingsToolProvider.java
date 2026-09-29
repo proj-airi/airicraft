@@ -4,7 +4,7 @@ import ai.moeru.airicraft.agent.baritone.BaritonePathfindSettings;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class PathfindSettingsToolProvider implements PlannerToolProvider {
 	}
 	@Override public CompletableFuture<String> execute(PlannerToolCall call) {
 		var result = new CompletableFuture<String>();
-		MinecraftClient.getInstance().execute(() -> {
+		Minecraft.getInstance().execute(() -> {
 			try {
 				validateArguments(call.name(), call.arguments());
 				result.complete("Tool result for inspect_pathfind: " + new Gson().toJson(call.arguments().has("query")

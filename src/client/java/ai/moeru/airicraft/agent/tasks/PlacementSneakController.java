@@ -1,23 +1,23 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 
 final class PlacementSneakController {
 	private boolean ownsSneakKey;
 
-	Preparation prepare(MinecraftClient client, ClientPlayerEntity player) {
-		Preparation preparation = preparation(ownsSneakKey, client.options.sneakKey.isPressed(), player.isSneaking());
+	Preparation prepare(Minecraft minecraft, LocalPlayer player) {
+		Preparation preparation = preparation(ownsSneakKey, minecraft.options.keyShift.isDown(), player.isShiftKeyDown());
 		if (preparation == Preparation.PRESS_AND_WAIT) {
-			client.options.sneakKey.setPressed(true);
+			minecraft.options.keyShift.setDown(true);
 			ownsSneakKey = true;
 		}
 		return preparation;
 	}
 
-	void release(MinecraftClient client) {
-		if (ownsSneakKey && client != null) {
-			client.options.sneakKey.setPressed(false);
+	void release(Minecraft minecraft) {
+		if (ownsSneakKey && minecraft != null) {
+			minecraft.options.keyShift.setDown(false);
 		}
 		ownsSneakKey = false;
 	}

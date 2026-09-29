@@ -1,9 +1,9 @@
 package ai.moeru.airicraft;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.world.GameMode;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.level.storage.LevelStorage;
+import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.LevelStorageException;
 import net.minecraft.world.level.storage.LevelSummary;
 
@@ -35,25 +35,25 @@ public final class SingleplayerWorldService {
 			case "hard" -> Difficulty.HARD;
 			default -> throw new SingleplayerWorldException("invalid_request", "Difficulty must be peaceful, easy, normal, or hard");
 		};
-		MinecraftClient client = requireClient();
-		var server = runOnClientThread(client, () -> {
-			if (client.world == null) throw new SingleplayerWorldException("world_not_loaded", "No world is loaded");
-			if (client.getServer() == null) throw new SingleplayerWorldException("singleplayer_required", "Difficulty control requires the local singleplayer server");
-			return client.getServer();
+		Minecraft minecraft = requireClient();
+		var server = runOnClientThread(minecraft, () -> {
+			if (minecraft.level == null) throw new SingleplayerWorldException("world_not_loaded", "No world is loaded");
+			if (minecraft.getSingleplayerServer() == null) throw new SingleplayerWorldException("singleplayer_required", "Difficulty control requires the local singleplayer server");
+			return minecraft.getSingleplayerServer();
 		});
 		try {
 			return server.submit(() -> {
-				var properties = server.getSaveProperties();
-				Difficulty before = properties.getDifficulty();
+				var worldData = server.getWorldData();
+				Difficulty before = worldData.getDifficulty();
 				if (requested != null && requested != before) {
-					if (properties.isDifficultyLocked() || properties.isHardcore())
+					if (worldData.isDifficultyLocked() || worldData.isHardcore())
 						throw new SingleplayerWorldException("difficulty_locked", "World difficulty is locked");
 					server.setDifficulty(requested, false);
 				}
-				return Map.<String, Object>of("difficulty", properties.getDifficulty().getName(),
-					"previousDifficulty", before.getName(), "changed", before != properties.getDifficulty(),
-					"locked", properties.isDifficultyLocked(), "hardcore", properties.isHardcore(),
-					"timeOfDay", server.getOverworld().getTimeOfDay());
+				return Map.<String, Object>of("difficulty", worldData.getDifficulty().getKey(),
+					"previousDifficulty", before.getKey(), "changed", before != worldData.getDifficulty(),
+					"locked", worldData.isDifficultyLocked(), "hardcore", worldData.isHardcore(),
+					"timeOfDay", server.overworld().getDayTime());
 			}).get(5, TimeUnit.SECONDS);
 		}
 		catch (InterruptedException exception) {
@@ -70,8 +70,8 @@ public final class SingleplayerWorldService {
 	}
 
 	public List<Map<String, Object>> listWorlds() {
-		MinecraftClient client = requireClient();
-		if (isInWorld(client)) {
+		Minecraft minecraft = requireClient();
+		if (isInWorld(minecraft)) {
 			throw new SingleplayerWorldException("already_in_world", "A world is already loaded");
 		}
 
@@ -89,35 +89,35 @@ public final class SingleplayerWorldService {
 	}
 
 	public Map<String, Object> joinWorld(String worldId) {
-		MinecraftClient client = requireClient();
-		if (isInWorld(client)) {
+		Minecraft minecraft = requireClient();
+		if (isInWorld(minecraft)) {
 			throw new SingleplayerWorldException("already_in_world", "A world is already loaded");
 		}
 
 		LevelSummary summary = findSummaryByWorldId(worldId);
-		return joinSummary(client, summary, worldId);
+		return joinSummary(minecraft, summary, worldId);
 	}
 
 	public Map<String, Object> joinWorldDirectory(String directoryName) {
-		MinecraftClient client = requireClient();
-		if (isInWorld(client)) {
+		Minecraft minecraft = requireClient();
+		if (isInWorld(minecraft)) {
 			throw new SingleplayerWorldException("already_in_world", "A world is already loaded");
 		}
 
 		LevelSummary summary = findSummaryByDirectoryName(directoryName);
-		return joinSummary(client, summary, directoryName);
+		return joinSummary(minecraft, summary, directoryName);
 	}
 
-	private Map<String, Object> joinSummary(MinecraftClient client, LevelSummary summary, String requestedId) {
+	private Map<String, Object> joinSummary(Minecraft minecraft, LevelSummary summary, String requestedId) {
 		if (summary == null) {
 			throw new SingleplayerWorldException("world_not_found", "World not found: " + requestedId);
 		}
-		if (!summary.isSelectable()) {
-			throw new SingleplayerWorldException("world_not_selectable", "World is not selectable: " + summary.getName());
+		if (!summary.primaryActionActive()) {
+			throw new SingleplayerWorldException("world_not_selectable", "World is not selectable: " + summary.getLevelId());
 		}
 
-		runOnClientThread(client, () -> {
-			client.createIntegratedServerLoader().start(summary.getName(), () -> {
+		runOnClientThread(minecraft, () -> {
+			minecraft.createWorldOpenFlows().openWorld(summary.getLevelId(), () -> {
 			});
 			return null;
 		});
@@ -125,8 +125,8 @@ public final class SingleplayerWorldService {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("started", true);
 		payload.put("worldId", worldId(summary));
-		payload.put("name", summary.getName());
-		payload.put("displayName", summary.getDisplayName());
+		payload.put("name", summary.getLevelId());
+		payload.put("displayName", summary.getLevelName());
 		return payload;
 	}
 
@@ -152,7 +152,7 @@ public final class SingleplayerWorldService {
 		}
 		try {
 			for (LevelSummary summary : loadSummaries()) {
-				if (summary.getName().equals(normalized)) {
+				if (summary.getLevelId().equals(normalized)) {
 					return summary;
 				}
 			}
@@ -164,8 +164,8 @@ public final class SingleplayerWorldService {
 	}
 
 	private List<LevelSummary> loadSummaries() throws LevelStorageException {
-		LevelStorage storage = requireClient().getLevelStorage();
-		CompletableFuture<List<LevelSummary>> future = storage.loadSummaries(storage.getLevelList());
+		LevelStorageSource storage = requireClient().getLevelSource();
+		CompletableFuture<List<LevelSummary>> future = storage.loadLevelSummaries(storage.findLevelCandidates());
 		try {
 			return future.get(LIST_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
 		}
@@ -188,22 +188,22 @@ public final class SingleplayerWorldService {
 	private static Map<String, Object> worldPayload(LevelSummary summary) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("worldId", worldId(summary));
-		payload.put("name", summary.getName());
-		payload.put("displayName", summary.getDisplayName());
+		payload.put("name", summary.getLevelId());
+		payload.put("displayName", summary.getLevelName());
 		payload.put("lastPlayed", summary.getLastPlayed());
 		payload.put("gameMode", gameModeName(summary.getGameMode()));
-		payload.put("selectable", summary.isSelectable());
-		payload.put("immediatelyLoadable", summary.isImmediatelyLoadable());
+		payload.put("selectable", summary.primaryActionActive());
+		payload.put("immediatelyLoadable", summary.canUpload());
 		payload.put("locked", summary.isLocked());
-		payload.put("unavailable", summary.isUnavailable());
+		payload.put("unavailable", summary.isDisabled());
 		payload.put("experimental", summary.isExperimental());
-		payload.put("details", summary.getDetails().getString());
-		payload.put("version", summary.getVersion().getString());
+		payload.put("details", summary.getInfo().getString());
+		payload.put("version", summary.getWorldVersionName().getString());
 		return payload;
 	}
 
 	private static String worldId(LevelSummary summary) {
-		return worldId(summary.getName());
+		return worldId(summary.getLevelId());
 	}
 
 	private static String worldId(String name) {
@@ -243,25 +243,25 @@ public final class SingleplayerWorldService {
 		}
 	}
 
-	private static String gameModeName(GameMode gameMode) {
-		return gameMode == null ? "unknown" : gameMode.getId();
+	private static String gameModeName(GameType gameType) {
+		return gameType == null ? "unknown" : gameType.getName();
 	}
 
-	private static MinecraftClient requireClient() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+	private static Minecraft requireClient() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			throw new SingleplayerWorldException("minecraft_unavailable", "Minecraft client is not initialized");
 		}
-		return client;
+		return minecraft;
 	}
 
-	private static boolean isInWorld(MinecraftClient client) {
-		return client.world != null || client.player != null;
+	private static boolean isInWorld(Minecraft minecraft) {
+		return minecraft.level != null || minecraft.player != null;
 	}
 
-	private static <T> T runOnClientThread(MinecraftClient client, java.util.function.Supplier<T> supplier) {
+	private static <T> T runOnClientThread(Minecraft minecraft, java.util.function.Supplier<T> supplier) {
 		CompletableFuture<T> future = new CompletableFuture<>();
-		client.execute(() -> {
+		minecraft.execute(() -> {
 			try {
 				future.complete(supplier.get());
 			}

@@ -2,31 +2,31 @@ package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
 import com.mojang.authlib.GameProfile;
-import net.minecraft.client.network.message.MessageHandler;
-import net.minecraft.network.message.MessageType;
-import net.minecraft.network.message.SignedMessage;
-import net.minecraft.text.Text;
+import net.minecraft.client.multiplayer.chat.ChatListener;
+import net.minecraft.network.chat.ChatType;
+import net.minecraft.network.chat.PlayerChatMessage;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(MessageHandler.class)
+@Mixin(ChatListener.class)
 public class MessageHandlerMixin {
-	@Inject(method = "onChatMessage", at = @At("TAIL"))
+	@Inject(method = "handlePlayerChatMessage", at = @At("TAIL"))
 	private void airicraft$onChatMessage(
-		SignedMessage message,
+		PlayerChatMessage message,
 		GameProfile sender,
-		MessageType.Parameters params,
+		ChatType.Bound params,
 		CallbackInfo ci
 	) {
 		if (sender == null) {
 			return;
 		}
 
-		String content = message.getSignedContent();
+		String content = message.signedContent();
 		if (content == null || content.isBlank()) {
-			Text fallback = message.getContent();
+			Component fallback = message.decoratedContent();
 			content = fallback == null ? "" : fallback.getString();
 		}
 
@@ -37,8 +37,8 @@ public class MessageHandlerMixin {
 		AiricraftClient.runtimeController().onChatReceived(sender.getName(), content);
 	}
 
-	@Inject(method = "onProfilelessMessage", at = @At("TAIL"))
-	private void airicraft$onProfilelessMessage(Text content, MessageType.Parameters params, CallbackInfo ci) {
+	@Inject(method = "handleDisguisedChatMessage", at = @At("TAIL"))
+	private void airicraft$onProfilelessMessage(Component content, ChatType.Bound params, CallbackInfo ci) {
 		String message = content == null ? "" : content.getString();
 		if (message.isBlank()) {
 			return;
@@ -47,8 +47,8 @@ public class MessageHandlerMixin {
 		AiricraftClient.runtimeController().onSystemChatReceived(message);
 	}
 
-	@Inject(method = "onGameMessage", at = @At("TAIL"))
-	private void airicraft$onGameMessage(Text content, boolean overlay, CallbackInfo ci) {
+	@Inject(method = "handleSystemMessage", at = @At("TAIL"))
+	private void airicraft$onGameMessage(Component content, boolean overlay, CallbackInfo ci) {
 		if (overlay) {
 			return;
 		}

@@ -4,10 +4,10 @@ import ai.moeru.airicraft.AiricraftClient;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 
 /** Exercises the rendered form against a real local provider, without touching user credentials. */
 public final class OnboardingScreenGameTest implements FabricClientGameTest {
@@ -56,26 +56,26 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			context.takeScreenshot("airicraft-onboarding-codex");
 			context.clickScreenButton("Local Codex");
 			String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
-			context.runOnClient(client -> {
-				paste(client, "Provider URL", url);
-				paste(client, "API key", "onboarding-test-secret");
+			context.runOnClient(minecraft -> {
+				paste(minecraft, "Provider URL", url);
+				paste(minecraft, "API key", "onboarding-test-secret");
 			});
-			context.waitFor(client -> button(client.currentScreen, "▼").active, 200);
+			context.waitFor(minecraft -> button(minecraft.screen, "▼").active, 200);
 			if (lists.get() != 1) throw new AssertionError("Model discovery was not debounced");
 			context.clickScreenButton("▼");
 			context.takeScreenshot("airicraft-onboarding-model-dropdown");
-			context.runOnClient(client -> field(client.currentScreen, "Model").setText("planner"));
+			context.runOnClient(minecraft -> field(minecraft.screen, "Model").setValue("planner"));
 			context.clickScreenButton("test-planner");
-			context.runOnClient(client -> {
-				if (!field(client.currentScreen, "Model").getText().equals("test-planner")) throw new AssertionError("Model selection did not fill field");
+			context.runOnClient(minecraft -> {
+				if (!field(minecraft.screen, "Model").getValue().equals("test-planner")) throw new AssertionError("Model selection did not fill field");
 			});
 			testConnection(context);
 			assertFinish(context, true);
 			// Manual model entry remains available, and any edit invalidates inference proof.
-			context.runOnClient(client -> field(client.currentScreen, "Model").setText("manual-model"));
+			context.runOnClient(minecraft -> field(minecraft.screen, "Model").setValue("manual-model"));
 			assertFinish(context, false);
 			testConnection(context);
-			context.runOnClient(client -> field(client.currentScreen, "API key").setText("updated-test-secret"));
+			context.runOnClient(minecraft -> field(minecraft.screen, "API key").setValue("updated-test-secret"));
 			assertFinish(context, false);
 			testConnection(context);
 			context.clickScreenButton("Vision");
@@ -89,8 +89,8 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			assertFinish(context, true);
 			if (images.get() != 1) throw new AssertionError("Native vision did not test image input");
 			context.clickScreenButton("Vision");
-			context.runOnClient(client -> {
-				if (client.currentScreen.children().stream().anyMatch(child -> child instanceof TextFieldWidget))
+			context.runOnClient(minecraft -> {
+				if (minecraft.screen.children().stream().anyMatch(child -> child instanceof EditBox))
 					throw new AssertionError("Native vision still asks for a dedicated endpoint");
 			});
 			context.takeScreenshot("airicraft-onboarding-native-vision");
@@ -99,11 +99,11 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			testConnection(context);
 			assertFinish(context, false);
 			context.clickScreenButton("Vision");
-			context.runOnClient(client -> {
+			context.runOnClient(minecraft -> {
 				// Listing is unsupported at this URL; inference still works with a manual ID.
-				field(client.currentScreen, "Provider URL").setText(url + "/manual");
-				field(client.currentScreen, "API key").setText("onboarding-test-secret");
-				field(client.currentScreen, "Model").setText("test-vision");
+				field(minecraft.screen, "Provider URL").setValue(url + "/manual");
+				field(minecraft.screen, "API key").setValue("onboarding-test-secret");
+				field(minecraft.screen, "Model").setValue("test-vision");
 			});
 			server.createContext("/v1/manual/chat/completions", exchange -> {
 				String request = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
@@ -114,7 +114,7 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			testConnection(context);
 			assertFinish(context, true);
 			if (!java.nio.file.Files.readString(file).equals(original)) throw new AssertionError("Editing or testing wrote settings");
-			context.runOnClient(client -> client.currentScreen.resize(client, client.currentScreen.width, client.currentScreen.height));
+			context.runOnClient(minecraft -> minecraft.screen.resize(minecraft, minecraft.screen.width, minecraft.screen.height));
 			assertFinish(context, true);
 			context.takeScreenshot("airicraft-onboarding-vision-ready");
 			context.clickScreenButton("Planner");
@@ -127,45 +127,45 @@ public final class OnboardingScreenGameTest implements FabricClientGameTest {
 			if (!saved.get("agent.yml", "model", "").equals("manual-model")) throw new AssertionError("Manual model not saved");
 		} finally {
 			server.stop(0); java.nio.file.Files.writeString(file, original);
-			context.runOnClient(client -> AiricraftClient.runtimeController().reload());
+			context.runOnClient(minecraft -> AiricraftClient.runtimeController().reload());
 		}
 	}
-	private static void paste(net.minecraft.client.MinecraftClient client, String label, String value) {
-		String previous = client.keyboard.getClipboard();
+	private static void paste(net.minecraft.client.Minecraft minecraft, String label, String value) {
+		String previous = minecraft.keyboardHandler.getClipboard();
 		try {
-			var input = field(client.currentScreen, label);
-			client.currentScreen.setFocused(input);
+			var input = field(minecraft.screen, label);
+			minecraft.screen.setFocused(input);
 			input.setFocused(true);
-			input.setText("replace this");
-			int modifier = net.minecraft.client.MinecraftClient.IS_SYSTEM_MAC
+			input.setValue("replace this");
+			int modifier = net.minecraft.client.Minecraft.ON_OSX
 				? org.lwjgl.glfw.GLFW.GLFW_MOD_SUPER : org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL;
-			client.keyboard.setClipboard(value);
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
-			if (!input.getText().equals(value)) throw new AssertionError("Shortcut paste did not replace the selection in " + label);
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_C, 0, modifier);
-			if (!client.keyboard.getClipboard().equals(value)) throw new AssertionError("Shortcut copy failed");
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_X, 0, modifier);
-			if (!input.getText().isEmpty()) throw new AssertionError("Shortcut cut failed");
-			client.currentScreen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
-			if (!input.getText().equals(value)) throw new AssertionError("Shortcut paste after cut failed");
-		} finally { client.keyboard.setClipboard(previous); }
+			minecraft.keyboardHandler.setClipboard(value);
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
+			if (!input.getValue().equals(value)) throw new AssertionError("Shortcut paste did not replace the selection in " + label);
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_A, 0, modifier);
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_C, 0, modifier);
+			if (!minecraft.keyboardHandler.getClipboard().equals(value)) throw new AssertionError("Shortcut copy failed");
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_X, 0, modifier);
+			if (!input.getValue().isEmpty()) throw new AssertionError("Shortcut cut failed");
+			minecraft.screen.keyPressed(org.lwjgl.glfw.GLFW.GLFW_KEY_V, 0, modifier);
+			if (!input.getValue().equals(value)) throw new AssertionError("Shortcut paste after cut failed");
+		} finally { minecraft.keyboardHandler.setClipboard(previous); }
 	}
 
 	private static void testConnection(ClientGameTestContext context) {
 		context.clickScreenButton("Test connection");
-		context.waitFor(client -> ((OnboardingScreen) client.currentScreen).checksFinished(), 200);
+		context.waitFor(minecraft -> ((OnboardingScreen) minecraft.screen).checksFinished(), 200);
 	}
 	private static void assertFinish(ClientGameTestContext context, boolean expected) {
-		context.runOnClient(client -> { if (button(client.currentScreen, "Save & finish").active != expected) throw new AssertionError("Wrong completion state"); });
+		context.runOnClient(minecraft -> { if (button(minecraft.screen, "Save & finish").active != expected) throw new AssertionError("Wrong completion state"); });
 	}
-	private static ButtonWidget button(Screen screen, String label) {
-		return screen.children().stream().filter(child -> child instanceof ButtonWidget).map(child -> (ButtonWidget) child)
+	private static Button button(Screen screen, String label) {
+		return screen.children().stream().filter(child -> child instanceof Button).map(child -> (Button) child)
 			.filter(button -> button.getMessage().getString().equals(label)).findFirst().orElseThrow();
 	}
-	private static TextFieldWidget field(Screen screen, String label) {
-		return screen.children().stream().filter(child -> child instanceof TextFieldWidget).map(child -> (TextFieldWidget) child)
+	private static EditBox field(Screen screen, String label) {
+		return screen.children().stream().filter(child -> child instanceof EditBox).map(child -> (EditBox) child)
 			.filter(field -> field.getMessage().getString().equals(label)).findFirst().orElseThrow();
 	}
 }

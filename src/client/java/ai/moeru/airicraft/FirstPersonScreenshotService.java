@@ -1,8 +1,8 @@
 package ai.moeru.airicraft;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.ScreenshotRecorder;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Screenshot;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -20,8 +20,8 @@ public final class FirstPersonScreenshotService {
 
 	private CaptureJob activeJob;
 
-	public CompletableFuture<CapturedScreenshot> requestCapture(MinecraftClient client) {
-		if (client == null || client.world == null || client.player == null) {
+	public CompletableFuture<CapturedScreenshot> requestCapture(Minecraft minecraft) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
 
@@ -35,7 +35,7 @@ public final class FirstPersonScreenshotService {
 		}
 	}
 
-	public void onWorldRendered(MinecraftClient client) {
+	public void onWorldRendered(Minecraft minecraft) {
 		CaptureJob job;
 		synchronized (lock) {
 			if (activeJob == null || activeJob.phase() != CapturePhase.PENDING) {
@@ -46,7 +46,7 @@ public final class FirstPersonScreenshotService {
 		}
 
 		try {
-			ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), image -> completeCapture(job, image));
+			Screenshot.takeScreenshot(minecraft.getMainRenderTarget(), image -> completeCapture(job, image));
 		}
 		catch (Throwable throwable) {
 			fail(job, new BridgeUnavailableException("capture_failed", "Failed to capture screenshot"));
@@ -103,7 +103,7 @@ public final class FirstPersonScreenshotService {
 
 	private static CapturedScreenshot encode(NativeImage image) {
 		BufferedImage sourceImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
-		sourceImage.setRGB(0, 0, image.getWidth(), image.getHeight(), image.copyPixelsArgb(), 0, image.getWidth());
+		sourceImage.setRGB(0, 0, image.getWidth(), image.getHeight(), image.getPixels(), 0, image.getWidth());
 
 		BufferedImage scaledImage = LetterboxImageScaler.scaleToCanvas(sourceImage, TARGET_WIDTH, TARGET_HEIGHT);
 		byte[] pngBytes = writePng(scaledImage);

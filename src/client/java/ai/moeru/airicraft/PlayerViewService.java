@@ -1,8 +1,8 @@
 package ai.moeru.airicraft;
 
 import ai.moeru.airicraft.agent.control.CameraController;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,16 +24,16 @@ public final class PlayerViewService {
 	}
 
 	public Map<String, Object> lookAt(double x, double y, double z, Integer durationTicks) {
-		MinecraftClient client = requireClient();
-		if (client.world == null || client.player == null) {
+		Minecraft minecraft = requireClient();
+		if (minecraft.level == null || minecraft.player == null) {
 			throw new PlayerViewException("world_not_loaded", "No world is currently loaded");
 		}
 
-		Vec3d target = new Vec3d(x, y, z);
+		Vec3 target = new Vec3(x, y, z);
 		int effectiveDurationTicks = durationTicks == null
 			? cameraController.defaultLerpTicks()
 			: Math.max(0, durationTicks);
-		CameraController.Rotation rotation = cameraController.startLookAt(client, target, effectiveDurationTicks, "player_look_at")
+		CameraController.Rotation rotation = cameraController.startLookAt(minecraft, target, effectiveDurationTicks, "player_look_at")
 			.orElseThrow(() -> new PlayerViewException("invalid_request", "Target must differ from the current camera position"));
 
 		Map<String, Object> payload = new LinkedHashMap<>();
@@ -53,12 +53,12 @@ public final class PlayerViewService {
 		return payload;
 	}
 
-	private static MinecraftClient requireClient() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+	private static Minecraft requireClient() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			throw new PlayerViewException("minecraft_unavailable", "Minecraft client is not initialized");
 		}
-		return client;
+		return minecraft;
 	}
 
 	public static final class PlayerViewException extends RuntimeException {

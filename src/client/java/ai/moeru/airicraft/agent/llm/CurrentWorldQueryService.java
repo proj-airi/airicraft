@@ -3,16 +3,16 @@ package ai.moeru.airicraft.agent.llm;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.DoorBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -36,9 +36,9 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	static final int SEARCH_BLOCK_CAP = 20000;
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 
-	public CurrentWorldQueryService(Supplier<MinecraftClient> clientSupplier) {
+	public CurrentWorldQueryService(Supplier<Minecraft> clientSupplier) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
 
@@ -48,12 +48,12 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	}
 
 	public CompletableFuture<WorldQueryResult> inspectWorldDetailed(JsonObject arguments) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.completedFuture(new WorldQueryResult("WORLD_UNAVAILABLE: world_not_loaded", List.of()));
 		}
 		try {
-			return CompletableFuture.completedFuture(inspectWorld(client, arguments == null ? new JsonObject() : arguments));
+			return CompletableFuture.completedFuture(inspectWorld(minecraft, arguments == null ? new JsonObject() : arguments));
 		}
 		catch (WorldQueryException exception) {
 			return CompletableFuture.completedFuture(new WorldQueryResult("TOOL_ERROR: inspect_world " + exception.getMessage(), List.of()));
@@ -63,46 +63,46 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		}
 	}
 
-	private static WorldQueryResult inspectWorld(MinecraftClient client, JsonObject arguments) {
+	private static WorldQueryResult inspectWorld(Minecraft minecraft, JsonObject arguments) {
 		String mode = stringArg(arguments, "mode").orElseThrow(() -> new WorldQueryException("mode is required"));
-		QueryBounds bounds = QueryBounds.from(client.player.getBlockPos(), arguments);
-		ensureWithinDistance(bounds, client.player.getBlockPos());
+		QueryBounds bounds = QueryBounds.from(minecraft.player.blockPosition(), arguments);
+		ensureWithinDistance(bounds, minecraft.player.blockPosition());
 		ensureWithinBlockCap(bounds);
 		WorldQueryResult result = switch (mode) {
-			case "check_position", "check_interaction" -> LocalSpatialQuery.inspect(client,mode,bounds.center(),arguments);
-			case "inspect_area" -> inspectArea(client.world, client.player, bounds, arguments);
-			case "find_blocks" -> findBlocks(client.world, client.player, bounds, arguments);
-			case "find_placement_sites" -> findPlacementSites(client.world, client.player, bounds, arguments);
+			case "check_position", "check_interaction" -> LocalSpatialQuery.inspect(minecraft,mode,bounds.center(),arguments);
+			case "inspect_area" -> inspectArea(minecraft.level, minecraft.player, bounds, arguments);
+			case "find_blocks" -> findBlocks(minecraft.level, minecraft.player, bounds, arguments);
+			case "find_placement_sites" -> findPlacementSites(minecraft.level, minecraft.player, bounds, arguments);
 			default -> throw new WorldQueryException("unsupported_mode " + mode);
 		};
 		if (List.of("find_placement_sites", "check_position", "check_interaction").contains(mode)) return result;
-		World world = client.world;
+		Level level = minecraft.level;
 		Map<BlockPos, BlockPos> doors = new LinkedHashMap<>();
 		for (BlockPos pos : result.observedPositions()) {
-			if (!world.isChunkLoaded(pos)) continue;
-			BlockState state = world.getBlockState(pos);
+			if (!level.hasChunkAt(pos)) continue;
+			BlockState state = level.getBlockState(pos);
 			if (state.getBlock() instanceof DoorBlock) doors.putIfAbsent(DoorPassageGeometry.lowerPos(pos, state), pos);
 		}
 		if (doors.isEmpty()) return result;
 		StringBuilder text = new StringBuilder(result.text()).append("\nDoor passages (local collision heuristic; no route guarantee):");
 		for (BlockPos door : doors.values().stream().limit(8).toList()) {
-			DoorPassageGeometry.describe(world, door).ifPresent(description -> text.append('\n').append(description));
+			DoorPassageGeometry.describe(level, door).ifPresent(description -> text.append('\n').append(description));
 		}
 		if (doors.size() > 8) text.append("\nAdditional door summaries omitted; narrow the query.");
 		return new WorldQueryResult(text.toString(), result.observedPositions());
 	}
 
-	private static WorldQueryResult inspectArea(World world, ClientPlayerEntity player, QueryBounds bounds, JsonObject arguments) {
+	private static WorldQueryResult inspectArea(Level level, LocalPlayer player, QueryBounds bounds, JsonObject arguments) {
 		ArrayList<BlockRecord> records = new ArrayList<>();
 		int scanned = 0;
 		for (BlockPos pos : bounds.positions()) {
 			scanned++;
-			if (!world.isChunkLoaded(pos)) {
-				records.add(BlockRecord.unloaded(pos, distance(player.getBlockPos(), pos)));
+			if (!level.hasChunkAt(pos)) {
+				records.add(BlockRecord.unloaded(pos, distance(player.blockPosition(), pos)));
 				continue;
 			}
-			BlockState state = world.getBlockState(pos);
-			records.add(BlockRecord.of(pos, state, distance(player.getBlockPos(), pos)));
+			BlockState state = level.getBlockState(pos);
+			records.add(BlockRecord.of(pos, state, distance(player.blockPosition(), pos)));
 		}
 		int maxResults = boundedInt(arguments, "maxResults", DEFAULT_MAX_RESULTS, 1, MAX_RESULTS);
 		return areaResult(bounds, scanned, records, maxResults, stringArg(arguments, "detail").orElse("summary").equals("blocks"));
@@ -131,12 +131,12 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			+ (detailed ? " blocks=" + formatRecords(limited, limited.size()) : summarizeArea(bounds, limited))
 			+ (limited.size() < safeRecords.size()
 				? "\nResult truncated. Use a smaller box or radius around the blocks you need; omitted positions have not been inspected."
-				: ""), limited.stream().map(record -> record.pos().toImmutable()).toList());
+				: ""), limited.stream().map(record -> record.pos().immutable()).toList());
 	}
 
 	/** Merge only fully observed, identical horizontal rectangles; never bridge gaps or states. */
 	private static String summarizeArea(QueryBounds bounds, List<BlockRecord> records) {
-		var cells = new java.util.TreeMap<BlockPos, BlockRecord>(Comparator.comparingInt(BlockPos::getY)
+		var cells = new java.util.TreeMap<BlockPos, BlockRecord>(Comparator.<BlockPos>comparingInt(BlockPos::getY)
 			.thenComparingInt(BlockPos::getZ).thenComparingInt(BlockPos::getX));
 		for (var record : records) cells.put(record.pos(), record);
 		var descriptions = new ArrayList<String>();
@@ -146,15 +146,15 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			BlockPos pos = start.pos();
 			String material = start.materialDescription();
 			int width = 1, depth = 1;
-			while (sameMaterial(cells.get(pos.add(width, 0, 0)), material)) width++;
+			while (sameMaterial(cells.get(pos.offset(width, 0, 0)), material)) width++;
 			boolean nextRow = true;
 			while (nextRow) {
-				for (int x = 0; x < width; x++) if (!sameMaterial(cells.get(pos.add(x, 0, depth)), material)) { nextRow = false; break; }
+				for (int x = 0; x < width; x++) if (!sameMaterial(cells.get(pos.offset(x, 0, depth)), material)) { nextRow = false; break; }
 				if (nextRow) depth++;
 			}
 			int near = Integer.MAX_VALUE, far = Integer.MIN_VALUE;
 			for (int z = 0; z < depth; z++) for (int x = 0; x < width; x++) {
-				var cell = cells.remove(pos.add(x, 0, z));
+				var cell = cells.remove(pos.offset(x, 0, z));
 				near = Math.min(near, cell.distance()); far = Math.max(far, cell.distance());
 			}
 			merged |= width * depth >= 4;
@@ -201,7 +201,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		return text.toString();
 	}
 
-	private static WorldQueryResult findBlocks(World world, ClientPlayerEntity player, QueryBounds bounds, JsonObject arguments) {
+	private static WorldQueryResult findBlocks(Level level, LocalPlayer player, QueryBounds bounds, JsonObject arguments) {
 		List<String> blockIds = stringArrayArg(arguments, "blockIds");
 		List<StateFilter> filters = stateFilters(arguments, "stateFilters");
 		int maxResults = boundedInt(arguments, "maxResults", DEFAULT_MAX_RESULTS, 1, MAX_RESULTS);
@@ -212,12 +212,12 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			if (scanned > SEARCH_BLOCK_CAP) {
 				break;
 			}
-			if (!world.isChunkLoaded(pos)) {
+			if (!level.hasChunkAt(pos)) {
 				continue;
 			}
-			BlockState state = world.getBlockState(pos);
+			BlockState state = level.getBlockState(pos);
 			if (blockIds.contains(blockId(state)) && matchesFilters(state, filters)) {
-				matches.add(BlockRecord.of(pos, state, distance(player.getBlockPos(), pos)));
+				matches.add(BlockRecord.of(pos, state, distance(player.blockPosition(), pos)));
 			}
 		}
 		matches.sort(BlockRecord.ORDERING);
@@ -228,10 +228,10 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			+ " scanned=" + Math.min(scanned, SEARCH_BLOCK_CAP)
 			+ " matched=" + matches.size()
 			+ " returned=" + limited.size()
-			+ " blocks=" + formatRecords(limited, maxResults), limited.stream().map(record -> record.pos().toImmutable()).toList());
+			+ " blocks=" + formatRecords(limited, maxResults), limited.stream().map(record -> record.pos().immutable()).toList());
 	}
 
-	private static WorldQueryResult findPlacementSites(World world, ClientPlayerEntity player, QueryBounds bounds, JsonObject arguments) {
+	private static WorldQueryResult findPlacementSites(Level level, LocalPlayer player, QueryBounds bounds, JsonObject arguments) {
 		PlacementConstraints constraints = PlacementConstraints.from(arguments);
 		int maxResults = boundedInt(arguments, "maxResults", DEFAULT_MAX_RESULTS, 1, MAX_RESULTS);
 		ArrayList<PlacementSite> matches = new ArrayList<>();
@@ -241,7 +241,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			if (scanned > SEARCH_BLOCK_CAP) {
 				break;
 			}
-			Optional<PlacementSite> site = placementSite(world, player, pos, constraints);
+			Optional<PlacementSite> site = placementSite(level, player, pos, constraints);
 			site.ifPresent(matches::add);
 		}
 		matches.sort(PlacementSite.ORDERING);
@@ -257,40 +257,40 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	}
 
 	private static Optional<PlacementSite> placementSite(
-		World world,
-		ClientPlayerEntity player,
+		Level level,
+		LocalPlayer player,
 		BlockPos targetPos,
 		PlacementConstraints constraints
 	) {
-		if (!world.isChunkLoaded(targetPos) || !world.isChunkLoaded(targetPos.down())) {
+		if (!level.hasChunkAt(targetPos) || !level.hasChunkAt(targetPos.below())) {
 			return Optional.empty();
 		}
-		BlockState target = world.getBlockState(targetPos);
+		BlockState target = level.getBlockState(targetPos);
 		if (!constraints.targetMaterial().matches(target)) {
 			return Optional.empty();
 		}
-		BlockPos supportPos = targetPos.down();
-		BlockState support = world.getBlockState(supportPos);
+		BlockPos supportPos = targetPos.below();
+		BlockState support = level.getBlockState(supportPos);
 		if (!constraints.supportBlockIds().isEmpty() && !constraints.supportBlockIds().contains(blockId(support))) {
 			return Optional.empty();
 		}
 		if (!matchesFilters(support, constraints.supportStateFilters())) {
 			return Optional.empty();
 		}
-		if (constraints.requireSolidTopSupport() && !support.isSideSolidFullSquare(world, supportPos, Direction.UP)) {
+		if (constraints.requireSolidTopSupport() && !support.isFaceSturdy(level, supportPos, Direction.UP)) {
 			return Optional.empty();
 		}
 		if (constraints.requireAirAbove()) {
-			BlockPos abovePos = targetPos.up();
-			if (!world.isChunkLoaded(abovePos)) {
+			BlockPos abovePos = targetPos.above();
+			if (!level.hasChunkAt(abovePos)) {
 				return Optional.empty();
 			}
-			BlockState above = world.getBlockState(abovePos);
-			if (!above.isAir() && !above.isReplaceable()) {
+			BlockState above = level.getBlockState(abovePos);
+			if (!above.isAir() && !above.canBeReplaced()) {
 				return Optional.empty();
 			}
 		}
-		Optional<BlockPos> standableAdjacent = standableAdjacentPosition(world, targetPos);
+		Optional<BlockPos> standableAdjacent = standableAdjacentPosition(level, targetPos);
 		if (constraints.requireStandableAdjacent() && standableAdjacent.isEmpty()) {
 			return Optional.empty();
 		}
@@ -299,7 +299,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		}
 		BlockPos nearbyRequiredPos = null;
 		if (!constraints.nearbyRequiredBlockIds().isEmpty()) {
-			Optional<BlockPos> nearbyRequired = nearbyRequiredBlock(world, targetPos, constraints.nearbyRequiredBlockIds(), constraints.nearbyRequiredHorizontalRadius(), constraints.nearbyRequiredVerticalRadius());
+			Optional<BlockPos> nearbyRequired = nearbyRequiredBlock(level, targetPos, constraints.nearbyRequiredBlockIds(), constraints.nearbyRequiredHorizontalRadius(), constraints.nearbyRequiredVerticalRadius());
 			if (nearbyRequired.isEmpty()) {
 				return Optional.empty();
 			}
@@ -312,7 +312,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 			supportPos,
 			blockId(support),
 			properties(support),
-			distance(player.getBlockPos(), targetPos),
+			distance(player.blockPosition(), targetPos),
 			standableAdjacent.orElse(null),
 			nearbyRequiredPos,
 			withinInteractionRange(player, targetPos)
@@ -320,7 +320,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	}
 
 	private static Optional<BlockPos> nearbyRequiredBlock(
-		World world,
+		Level level,
 		BlockPos origin,
 		List<String> blockIds,
 		int horizontalRadius,
@@ -329,9 +329,9 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		for (int dx = -horizontalRadius; dx <= horizontalRadius; dx++) {
 			for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
 				for (int dz = -horizontalRadius; dz <= horizontalRadius; dz++) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					if (world.isChunkLoaded(pos) && blockIds.contains(blockId(world.getBlockState(pos)))) {
-						return Optional.of(pos.toImmutable());
+					BlockPos pos = origin.offset(dx, dy, dz);
+					if (level.hasChunkAt(pos) && blockIds.contains(blockId(level.getBlockState(pos)))) {
+						return Optional.of(pos.immutable());
 					}
 				}
 			}
@@ -342,42 +342,42 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	private static List<BlockPos> observedPlacementPositions(List<PlacementSite> sites) {
 		ArrayList<BlockPos> positions = new ArrayList<>();
 		for (PlacementSite site : sites) {
-			positions.add(site.targetPos().toImmutable());
-			positions.add(site.supportPos().toImmutable());
+			positions.add(site.targetPos().immutable());
+			positions.add(site.supportPos().immutable());
 			if (site.standableAdjacent() != null) {
-				positions.add(site.standableAdjacent().toImmutable());
+				positions.add(site.standableAdjacent().immutable());
 			}
 			if (site.nearbyRequiredPos() != null) {
-				positions.add(site.nearbyRequiredPos().toImmutable());
+				positions.add(site.nearbyRequiredPos().immutable());
 			}
 		}
 		return List.copyOf(positions);
 	}
 
-	private static Optional<BlockPos> standableAdjacentPosition(World world, BlockPos targetPos) {
-		for (Direction direction : Direction.Type.HORIZONTAL) {
-			BlockPos pos = targetPos.offset(direction);
-			if (isStandable(world, pos)) {
+	private static Optional<BlockPos> standableAdjacentPosition(Level level, BlockPos targetPos) {
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
+			BlockPos pos = targetPos.relative(direction);
+			if (isStandable(level, pos)) {
 				return Optional.of(pos);
 			}
 		}
 		return Optional.empty();
 	}
 
-	private static boolean isStandable(World world, BlockPos pos) {
-		if (!world.isChunkLoaded(pos) || !world.isChunkLoaded(pos.up()) || !world.isChunkLoaded(pos.down())) {
+	private static boolean isStandable(Level level, BlockPos pos) {
+		if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.above()) || !level.hasChunkAt(pos.below())) {
 			return false;
 		}
-		BlockState feet = world.getBlockState(pos);
-		BlockState head = world.getBlockState(pos.up());
-		BlockState floor = world.getBlockState(pos.down());
-		return (feet.isAir() || feet.isReplaceable())
-			&& (head.isAir() || head.isReplaceable())
-			&& floor.isSideSolidFullSquare(world, pos.down(), Direction.UP);
+		BlockState feet = level.getBlockState(pos);
+		BlockState head = level.getBlockState(pos.above());
+		BlockState floor = level.getBlockState(pos.below());
+		return (feet.isAir() || feet.canBeReplaced())
+			&& (head.isAir() || head.canBeReplaced())
+			&& floor.isFaceSturdy(level, pos.below(), Direction.UP);
 	}
 
-	private static boolean withinInteractionRange(ClientPlayerEntity player, BlockPos pos) {
-		return player.squaredDistanceTo(Vec3d.ofCenter(pos)) <= INTERACTION_RANGE_SQUARED;
+	private static boolean withinInteractionRange(LocalPlayer player, BlockPos pos) {
+		return player.distanceToSqr(Vec3.atCenterOf(pos)) <= INTERACTION_RANGE_SQUARED;
 	}
 
 	private static String formatRecords(List<BlockRecord> records, int maxResults) {
@@ -393,7 +393,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	static String formatSites(List<PlacementSite> sites) {
 		if (sites.isEmpty()) return "No placement sites.";
 		boolean allAir = sites.stream().allMatch(site -> site.targetBlockId().equals("minecraft:air") && site.targetProperties().isEmpty());
-		boolean allBelow = sites.stream().allMatch(site -> site.supportPos().equals(site.targetPos().down()));
+		boolean allBelow = sites.stream().allMatch(site -> site.supportPos().equals(site.targetPos().below()));
 		boolean allReach = sites.stream().allMatch(PlacementSite::withinInteractionRange);
 		boolean noRequired = sites.stream().allMatch(site -> site.nearbyRequiredPos() == null);
 		var text = new StringBuilder("\nPlacement targets are block cells.");
@@ -440,7 +440,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	}
 
 	private static String blockId(BlockState state) {
-		return Registries.BLOCK.getId(state.getBlock()).toString();
+		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 	}
 
 	private static Map<String, String> properties(BlockState state) {
@@ -461,7 +461,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 	}
 
 	private static <T extends Comparable<T>> String propertyValue(BlockState state, Property<T> property) {
-		return property.name(state.get(property));
+		return property.getName(state.getValue(property));
 	}
 
 	private static int distance(BlockPos origin, BlockPos pos) {
@@ -542,7 +542,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 				CurrentWorldQueryService.blockId(state),
 				CurrentWorldQueryService.properties(state),
 				true,
-				state.isReplaceable(),
+				state.canBeReplaced(),
 				state.isAir(),
 				!state.getFluidState().isEmpty(),
 				distance
@@ -612,7 +612,7 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 				? List.of()
 				: observedPositions.stream()
 					.filter(Objects::nonNull)
-					.map(BlockPos::toImmutable)
+					.map(BlockPos::immutable)
 					.toList();
 		}
 	}
@@ -665,8 +665,8 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		boolean matches(BlockState state) {
 			return switch (this) {
 				case AIR -> state.isAir();
-				case REPLACEABLE -> !state.isAir() && state.isReplaceable();
-				case AIR_OR_REPLACEABLE -> state.isAir() || state.isReplaceable();
+				case REPLACEABLE -> !state.isAir() && state.canBeReplaced();
+				case AIR_OR_REPLACEABLE -> state.isAir() || state.canBeReplaced();
 			};
 		}
 	}
@@ -703,8 +703,8 @@ public final class CurrentWorldQueryService implements CurrentWorldQueryTool {
 		private static QueryBounds centered(String scope, BlockPos center, int horizontalRadius, int verticalRadius) {
 			return new QueryBounds(
 				scope,
-				center.add(-horizontalRadius, -verticalRadius, -horizontalRadius),
-				center.add(horizontalRadius, verticalRadius, horizontalRadius)
+				center.offset(-horizontalRadius, -verticalRadius, -horizontalRadius),
+				center.offset(horizontalRadius, verticalRadius, horizontalRadius)
 			);
 		}
 

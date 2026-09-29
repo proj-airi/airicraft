@@ -1,24 +1,24 @@
 package ai.moeru.airicraft.evaluator;
 
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.mob.ZombieEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.World;
+import net.minecraft.world.level.Level;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,25 +40,25 @@ final class SurvivalSmokeFixtureService {
 	private long underwaterExitAtWorldTime = -1L;
 	private long fleeThreatSpawnAtWorldTime = -1L;
 
-	void onClientTick(MinecraftClient client) {
-		if (client.player == null || client.world == null || client.getServer() == null) {
+	void onClientTick(Minecraft minecraft) {
+		if (minecraft.player == null || minecraft.level == null || minecraft.getSingleplayerServer() == null) {
 			return;
 		}
-		ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
-		if (world == null) {
+		ServerLevel level = minecraft.getSingleplayerServer().getLevel(minecraft.level.dimension());
+		if (level == null) {
 			return;
 		}
-		ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(client.player.getUuid());
+		ServerPlayer player = level.getServer().getPlayerList().getPlayer(minecraft.player.getUUID());
 		if (player == null) {
 			return;
 		}
-		if (underwaterExitAtWorldTime >= 0L && world.getTime() >= underwaterExitAtWorldTime) {
-			cleanup(world, player);
+		if (underwaterExitAtWorldTime >= 0L && level.getGameTime() >= underwaterExitAtWorldTime) {
+			cleanup(level, player);
 			return;
 		}
-		if (fleeThreatSpawnAtWorldTime >= 0L && world.getTime() >= fleeThreatSpawnAtWorldTime) {
+		if (fleeThreatSpawnAtWorldTime >= 0L && level.getGameTime() >= fleeThreatSpawnAtWorldTime) {
 			fleeThreatSpawnAtWorldTime = -1L;
-			threat = spawnZombie(world, player);
+			threat = spawnZombie(level, player);
 		}
 	}
 
@@ -68,136 +68,136 @@ final class SurvivalSmokeFixtureService {
 			throw new FixtureException("invalid_request", "mode must be loadout, underwater, mob_defend, mob_flee, mob_flee_natural, or cleanup");
 		}
 
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.player == null || client.world == null || client.getServer() == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.player == null || minecraft.level == null || minecraft.getSingleplayerServer() == null) {
 			throw new FixtureException("world_not_loaded", "A singleplayer world must be loaded");
 		}
-		ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
-		if (world == null) {
+		ServerLevel level = minecraft.getSingleplayerServer().getLevel(minecraft.level.dimension());
+		if (level == null) {
 			throw new FixtureException("world_not_loaded", "The integrated server world is unavailable");
 		}
-		ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(client.player.getUuid());
+		ServerPlayer player = level.getServer().getPlayerList().getPlayer(minecraft.player.getUUID());
 		if (player == null) {
 			throw new FixtureException("player_not_loaded", "The integrated server player is unavailable");
 		}
 
 		if (mode == Mode.CLEANUP) {
-			cleanup(world, player);
+			cleanup(level, player);
 			return payload(mode, player, null);
 		}
 
-		cleanup(world, player);
-		origin = new Origin(world.getRegistryKey(), player.getPos(), player.getYaw(), player.getPitch());
-		world.getServer().setDifficulty(Difficulty.NORMAL, false);
+		cleanup(level, player);
+		origin = new Origin(level.dimension(), player.position(), player.getYRot(), player.getXRot());
+		level.getServer().setDifficulty(Difficulty.NORMAL, false);
 		if (mode == Mode.MOB_FLEE_NATURAL) {
-			return setupNaturalMobFlee(world, player);
+			return setupNaturalMobFlee(level, player);
 		}
 		fixtureCenter = new BlockPos(player.getBlockX(), FIXTURE_Y, player.getBlockZ());
-		clearFixture(world);
+		clearFixture(level);
 
 		return switch (mode) {
-			case LOADOUT -> setupLoadout(world, player);
-			case UNDERWATER -> setupUnderwater(world, player);
-			case MOB_DEFEND -> setupMob(world, player, true);
-			case MOB_FLEE -> setupMob(world, player, false);
+			case LOADOUT -> setupLoadout(level, player);
+			case UNDERWATER -> setupUnderwater(level, player);
+			case MOB_DEFEND -> setupMob(level, player, true);
+			case MOB_FLEE -> setupMob(level, player, false);
 			case MOB_FLEE_NATURAL -> throw new IllegalStateException("natural flee handled above");
 			case CLEANUP -> throw new IllegalStateException("cleanup handled above");
 		};
 	}
 
-	private Map<String, Object> setupNaturalMobFlee(ServerWorld world, ServerPlayerEntity player) {
-		player.equipStack(EquipmentSlot.HEAD, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.CHEST, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.LEGS, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.FEET, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_SWORD));
-		player.setVelocity(Vec3d.ZERO);
-		player.setAir(player.getMaxAir());
+	private Map<String, Object> setupNaturalMobFlee(ServerLevel level, ServerPlayer player) {
+		player.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.LEGS, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.FEET, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.WOODEN_SWORD));
+		player.setDeltaMovement(Vec3.ZERO);
+		player.setAirSupply(player.getMaxAirSupply());
 		player.setHealth(player.getMaxHealth() * 0.5F);
-		BlockPos spawn = findNaturalThreatSpawn(world, player.getBlockPos());
-		ZombieEntity zombie = spawnZombie(world, player, spawn);
+		BlockPos spawn = findNaturalThreatSpawn(level, player.blockPosition());
+		Zombie zombie = spawnZombie(level, player, spawn);
 		threat = zombie;
-		return payload(Mode.MOB_FLEE_NATURAL, player, zombie.getUuid());
+		return payload(Mode.MOB_FLEE_NATURAL, player, zombie.getUUID());
 	}
 
-	private Map<String, Object> setupLoadout(ServerWorld world, ServerPlayerEntity player) {
-		prepareMobPlatform(world, player);
-		player.getInventory().clear();
-		player.equipStack(EquipmentSlot.HEAD, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.CHEST, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.LEGS, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.FEET, ItemStack.EMPTY);
-		player.equipStack(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
-		player.getInventory().insertStack(new ItemStack(Items.IRON_CHESTPLATE));
-		player.getInventory().insertStack(new ItemStack(Items.IRON_LEGGINGS));
-		player.getInventory().insertStack(new ItemStack(Items.IRON_SWORD));
-		player.getInventory().insertStack(new ItemStack(Items.BREAD, 2));
-		player.getHungerManager().setFoodLevel(12);
-		player.getHungerManager().setSaturationLevel(0.0F);
+	private Map<String, Object> setupLoadout(ServerLevel level, ServerPlayer player) {
+		prepareMobPlatform(level, player);
+		player.getInventory().clearContent();
+		player.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.LEGS, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.FEET, ItemStack.EMPTY);
+		player.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+		player.getInventory().add(new ItemStack(Items.IRON_CHESTPLATE));
+		player.getInventory().add(new ItemStack(Items.IRON_LEGGINGS));
+		player.getInventory().add(new ItemStack(Items.IRON_SWORD));
+		player.getInventory().add(new ItemStack(Items.BREAD, 2));
+		player.getFoodData().setFoodLevel(12);
+		player.getFoodData().setSaturation(0.0F);
 		player.setHealth(player.getMaxHealth());
 		return payload(Mode.LOADOUT, player, null);
 	}
 
-	private Map<String, Object> setupUnderwater(ServerWorld world, ServerPlayerEntity player) {
+	private Map<String, Object> setupUnderwater(ServerLevel level, ServerPlayer player) {
 		BlockPos center = fixtureCenter;
-		fill(world, center.add(-4, -1, -4), center.add(4, -1, 4), Blocks.STONE.getDefaultState());
-		fill(world, center.add(-2, 0, -2), center.add(-2, 4, 2), Blocks.GLASS.getDefaultState());
-		fill(world, center.add(2, 0, -2), center.add(2, 4, 2), Blocks.GLASS.getDefaultState());
-		fill(world, center.add(-1, 0, -2), center.add(1, 4, -2), Blocks.GLASS.getDefaultState());
-		fill(world, center.add(-1, 0, 2), center.add(1, 4, 2), Blocks.GLASS.getDefaultState());
-		fill(world, center.add(-1, 0, -1), center.add(1, 3, 1), Blocks.WATER.getDefaultState());
-		teleport(player, world, center.getX() + 0.5, center.getY() + 0.1, center.getZ() + 0.5);
-		player.setVelocity(Vec3d.ZERO);
+		fill(level, center.offset(-4, -1, -4), center.offset(4, -1, 4), Blocks.STONE.defaultBlockState());
+		fill(level, center.offset(-2, 0, -2), center.offset(-2, 4, 2), Blocks.GLASS.defaultBlockState());
+		fill(level, center.offset(2, 0, -2), center.offset(2, 4, 2), Blocks.GLASS.defaultBlockState());
+		fill(level, center.offset(-1, 0, -2), center.offset(1, 4, -2), Blocks.GLASS.defaultBlockState());
+		fill(level, center.offset(-1, 0, 2), center.offset(1, 4, 2), Blocks.GLASS.defaultBlockState());
+		fill(level, center.offset(-1, 0, -1), center.offset(1, 3, 1), Blocks.WATER.defaultBlockState());
+		teleport(player, level, center.getX() + 0.5, center.getY() + 0.1, center.getZ() + 0.5);
+		player.setDeltaMovement(Vec3.ZERO);
 		player.setHealth(player.getMaxHealth());
-		player.setAir(80);
-		underwaterExitAtWorldTime = world.getTime() + 80L;
+		player.setAirSupply(80);
+		underwaterExitAtWorldTime = level.getGameTime() + 80L;
 		return payload(Mode.UNDERWATER, player, null);
 	}
 
-	private Map<String, Object> setupMob(ServerWorld world, ServerPlayerEntity player, boolean defend) {
-		prepareMobPlatform(world, player);
+	private Map<String, Object> setupMob(ServerLevel level, ServerPlayer player, boolean defend) {
+		prepareMobPlatform(level, player);
 		if (!defend) {
 			BlockPos center = fixtureCenter;
-			fill(world, center.add(-15, -2, -3), center.add(-1, -2, 3), Blocks.STONE.getDefaultState());
-			fill(world, center.add(-15, -1, -3), center.add(-1, -1, 3), Blocks.WATER.getDefaultState());
-			player.equipStack(EquipmentSlot.HEAD, ItemStack.EMPTY);
-			player.equipStack(EquipmentSlot.CHEST, ItemStack.EMPTY);
-			player.equipStack(EquipmentSlot.LEGS, ItemStack.EMPTY);
-			player.equipStack(EquipmentSlot.FEET, ItemStack.EMPTY);
-			player.equipStack(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+			fill(level, center.offset(-15, -2, -3), center.offset(-1, -2, 3), Blocks.STONE.defaultBlockState());
+			fill(level, center.offset(-15, -1, -3), center.offset(-1, -1, 3), Blocks.WATER.defaultBlockState());
+			player.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+			player.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
+			player.setItemSlot(EquipmentSlot.LEGS, ItemStack.EMPTY);
+			player.setItemSlot(EquipmentSlot.FEET, ItemStack.EMPTY);
+			player.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
 		}
 		player.setHealth(defend ? player.getMaxHealth() : player.getMaxHealth() * 0.5F);
 		if (!defend) {
-			fleeThreatSpawnAtWorldTime = world.getTime() + FLEE_THREAT_SYNC_DELAY_TICKS;
+			fleeThreatSpawnAtWorldTime = level.getGameTime() + FLEE_THREAT_SYNC_DELAY_TICKS;
 			return payload(Mode.MOB_FLEE, player, null);
 		}
-		ZombieEntity zombie = spawnZombie(world, player);
+		Zombie zombie = spawnZombie(level, player);
 		threat = zombie;
-		return payload(Mode.MOB_DEFEND, player, zombie.getUuid());
+		return payload(Mode.MOB_DEFEND, player, zombie.getUUID());
 	}
 
-	private ZombieEntity spawnZombie(ServerWorld world, ServerPlayerEntity player) {
-		return spawnZombie(world, player, fixtureCenter);
+	private Zombie spawnZombie(ServerLevel level, ServerPlayer player) {
+		return spawnZombie(level, player, fixtureCenter);
 	}
 
-	private ZombieEntity spawnZombie(ServerWorld world, ServerPlayerEntity player, BlockPos center) {
-		ZombieEntity zombie = new ZombieEntity(EntityType.ZOMBIE, world);
+	private Zombie spawnZombie(ServerLevel level, ServerPlayer player, BlockPos center) {
+		Zombie zombie = new Zombie(EntityType.ZOMBIE, level);
 		double xOffset = fixtureCenter == null ? 0.5D : 2.5D;
-		zombie.refreshPositionAndAngles(center.getX() + xOffset, center.getY(), center.getZ() + 0.5, 90.0F, 0.0F);
-		zombie.equipStack(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
-		var attackDamage = zombie.getAttributeInstance(EntityAttributes.ATTACK_DAMAGE);
+		zombie.snapTo(center.getX() + xOffset, center.getY(), center.getZ() + 0.5, 90.0F, 0.0F);
+		zombie.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+		var attackDamage = zombie.getAttribute(Attributes.ATTACK_DAMAGE);
 		if (attackDamage != null) {
 			attackDamage.setBaseValue(0.5D);
 		}
-		zombie.setPersistent();
+		zombie.setPersistenceRequired();
 		zombie.setTarget(player);
-		if (!world.spawnEntity(zombie)) {
+		if (!level.addFreshEntity(zombie)) {
 			throw new FixtureException("fixture_setup_failed", "Failed to spawn the survival fixture zombie");
 		}
 		return zombie;
 	}
 
-	private static BlockPos findNaturalThreatSpawn(ServerWorld world, BlockPos playerPos) {
+	private static BlockPos findNaturalThreatSpawn(ServerLevel level, BlockPos playerPos) {
 		int[][] offsets = {
 			{2, 0}, {-2, 0}, {0, 2}, {0, -2},
 			{3, 0}, {-3, 0}, {0, 3}, {0, -3},
@@ -205,8 +205,8 @@ final class SurvivalSmokeFixtureService {
 		};
 		for (int[] offset : offsets) {
 			for (int dy = 2; dy >= -2; dy--) {
-				BlockPos feet = playerPos.add(offset[0], dy, offset[1]);
-				if (isNaturalStandingPosition(world, feet)) {
+				BlockPos feet = playerPos.offset(offset[0], dy, offset[1]);
+				if (isNaturalStandingPosition(level, feet)) {
 					return feet;
 				}
 			}
@@ -214,32 +214,32 @@ final class SurvivalSmokeFixtureService {
 		throw new FixtureException("fixture_setup_failed", "No nearby natural standing position for the survival threat");
 	}
 
-	private static boolean isNaturalStandingPosition(ServerWorld world, BlockPos feet) {
-		return world.getFluidState(feet).isEmpty()
-			&& world.getFluidState(feet.up()).isEmpty()
-			&& (world.getBlockState(feet).isAir() || world.getBlockState(feet).isReplaceable())
-			&& (world.getBlockState(feet.up()).isAir() || world.getBlockState(feet.up()).isReplaceable())
-			&& world.getBlockState(feet.down()).isSideSolidFullSquare(world, feet.down(), Direction.UP);
+	private static boolean isNaturalStandingPosition(ServerLevel level, BlockPos feet) {
+		return level.getFluidState(feet).isEmpty()
+			&& level.getFluidState(feet.above()).isEmpty()
+			&& (level.getBlockState(feet).isAir() || level.getBlockState(feet).canBeReplaced())
+			&& (level.getBlockState(feet.above()).isAir() || level.getBlockState(feet.above()).canBeReplaced())
+			&& level.getBlockState(feet.below()).isFaceSturdy(level, feet.below(), Direction.UP);
 	}
 
-	private void prepareMobPlatform(ServerWorld world, ServerPlayerEntity player) {
+	private void prepareMobPlatform(ServerLevel level, ServerPlayer player) {
 		BlockPos center = fixtureCenter;
 		fill(
-			world,
-			center.add(-PLATFORM_RADIUS, -1, -PLATFORM_RADIUS),
-			center.add(PLATFORM_RADIUS, -1, PLATFORM_RADIUS),
-			Blocks.STONE.getDefaultState()
+			level,
+			center.offset(-PLATFORM_RADIUS, -1, -PLATFORM_RADIUS),
+			center.offset(PLATFORM_RADIUS, -1, PLATFORM_RADIUS),
+			Blocks.STONE.defaultBlockState()
 		);
-		fill(world, center.add(-PLATFORM_RADIUS, 0, -PLATFORM_RADIUS), center.add(-PLATFORM_RADIUS, 2, PLATFORM_RADIUS), Blocks.BARRIER.getDefaultState());
-		fill(world, center.add(PLATFORM_RADIUS, 0, -PLATFORM_RADIUS), center.add(PLATFORM_RADIUS, 2, PLATFORM_RADIUS), Blocks.BARRIER.getDefaultState());
-		fill(world, center.add(-PLATFORM_RADIUS + 1, 0, -PLATFORM_RADIUS), center.add(PLATFORM_RADIUS - 1, 2, -PLATFORM_RADIUS), Blocks.BARRIER.getDefaultState());
-		fill(world, center.add(-PLATFORM_RADIUS + 1, 0, PLATFORM_RADIUS), center.add(PLATFORM_RADIUS - 1, 2, PLATFORM_RADIUS), Blocks.BARRIER.getDefaultState());
-		teleport(player, world, center.getX() + 0.5, center.getY(), center.getZ() + 0.5);
-		player.setVelocity(Vec3d.ZERO);
-		player.setAir(player.getMaxAir());
+		fill(level, center.offset(-PLATFORM_RADIUS, 0, -PLATFORM_RADIUS), center.offset(-PLATFORM_RADIUS, 2, PLATFORM_RADIUS), Blocks.BARRIER.defaultBlockState());
+		fill(level, center.offset(PLATFORM_RADIUS, 0, -PLATFORM_RADIUS), center.offset(PLATFORM_RADIUS, 2, PLATFORM_RADIUS), Blocks.BARRIER.defaultBlockState());
+		fill(level, center.offset(-PLATFORM_RADIUS + 1, 0, -PLATFORM_RADIUS), center.offset(PLATFORM_RADIUS - 1, 2, -PLATFORM_RADIUS), Blocks.BARRIER.defaultBlockState());
+		fill(level, center.offset(-PLATFORM_RADIUS + 1, 0, PLATFORM_RADIUS), center.offset(PLATFORM_RADIUS - 1, 2, PLATFORM_RADIUS), Blocks.BARRIER.defaultBlockState());
+		teleport(player, level, center.getX() + 0.5, center.getY(), center.getZ() + 0.5);
+		player.setDeltaMovement(Vec3.ZERO);
+		player.setAirSupply(player.getMaxAirSupply());
 	}
 
-	private void cleanup(ServerWorld currentWorld, ServerPlayerEntity player) {
+	private void cleanup(ServerLevel currentLevel, ServerPlayer player) {
 		if (threat != null && !threat.isRemoved()) {
 			threat.discard();
 		}
@@ -248,70 +248,70 @@ final class SurvivalSmokeFixtureService {
 		fleeThreatSpawnAtWorldTime = -1L;
 		Origin savedOrigin = origin;
 		if (savedOrigin != null) {
-			ServerWorld originWorld = currentWorld.getServer().getWorld(savedOrigin.world());
-			if (originWorld != null) {
-				teleport(player, originWorld, savedOrigin.position().x, savedOrigin.position().y, savedOrigin.position().z, savedOrigin.yaw(), savedOrigin.pitch());
+			ServerLevel originLevel = currentLevel.getServer().getLevel(savedOrigin.world());
+			if (originLevel != null) {
+				teleport(player, originLevel, savedOrigin.position().x, savedOrigin.position().y, savedOrigin.position().z, savedOrigin.yaw(), savedOrigin.pitch());
 			}
 		}
 		if (fixtureCenter != null) {
-			clearFixture(currentWorld);
+			clearFixture(currentLevel);
 		}
 		origin = null;
 		fixtureCenter = null;
 	}
 
-	private void clearFixture(ServerWorld world) {
+	private void clearFixture(ServerLevel level) {
 		if (fixtureCenter == null) {
 			return;
 		}
 		fill(
-			world,
-			fixtureCenter.add(-CLEAR_RADIUS, CLEAR_BOTTOM - FIXTURE_Y, -CLEAR_RADIUS),
-			fixtureCenter.add(CLEAR_RADIUS, CLEAR_TOP - FIXTURE_Y, CLEAR_RADIUS),
-			Blocks.AIR.getDefaultState()
+			level,
+			fixtureCenter.offset(-CLEAR_RADIUS, CLEAR_BOTTOM - FIXTURE_Y, -CLEAR_RADIUS),
+			fixtureCenter.offset(CLEAR_RADIUS, CLEAR_TOP - FIXTURE_Y, CLEAR_RADIUS),
+			Blocks.AIR.defaultBlockState()
 		);
 	}
 
-	private static void fill(ServerWorld world, BlockPos from, BlockPos to, net.minecraft.block.BlockState state) {
-		for (BlockPos pos : BlockPos.iterate(from, to)) {
-			world.setBlockState(pos, state);
+	private static void fill(ServerLevel level, BlockPos from, BlockPos to, net.minecraft.world.level.block.state.BlockState state) {
+		for (BlockPos pos : BlockPos.betweenClosed(from, to)) {
+			level.setBlockAndUpdate(pos, state);
 		}
 	}
 
-	private static void teleport(ServerPlayerEntity player, ServerWorld world, double x, double y, double z) {
-		teleport(player, world, x, y, z, player.getYaw(), player.getPitch());
+	private static void teleport(ServerPlayer player, ServerLevel level, double x, double y, double z) {
+		teleport(player, level, x, y, z, player.getYRot(), player.getXRot());
 	}
 
-	private static void teleport(ServerPlayerEntity player, ServerWorld world, double x, double y, double z, float yaw, float pitch) {
-		if (!player.teleport(world, x, y, z, Set.<PositionFlag>of(), yaw, pitch, true)) {
+	private static void teleport(ServerPlayer player, ServerLevel level, double x, double y, double z, float yaw, float pitch) {
+		if (!player.teleportTo(level, x, y, z, Set.<Relative>of(), yaw, pitch, true)) {
 			throw new FixtureException("fixture_setup_failed", "Failed to teleport the survival fixture player");
 		}
 	}
 
-	private Map<String, Object> payload(Mode mode, ServerPlayerEntity player, UUID threatId) {
+	private Map<String, Object> payload(Mode mode, ServerPlayer player, UUID threatId) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("available", true);
 		payload.put("mode", mode.wireValue);
-		payload.put("difficulty", player.getWorld().getDifficulty().getName());
+		payload.put("difficulty", player.level().getDifficulty().getKey());
 		payload.put("health", player.getHealth());
-		payload.put("air", player.getAir());
-		payload.put("hunger", player.getHungerManager().getFoodLevel());
-		payload.put("armor", player.getArmor());
-		payload.put("mainHandItemId", Registries.ITEM.getId(player.getMainHandStack().getItem()).toString());
-		payload.put("player", position(player.getPos()));
-		payload.put("fixtureCenter", fixtureCenter == null ? Map.of() : position(Vec3d.ofCenter(fixtureCenter)));
+		payload.put("air", player.getAirSupply());
+		payload.put("hunger", player.getFoodData().getFoodLevel());
+		payload.put("armor", player.getArmorValue());
+		payload.put("mainHandItemId", BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString());
+		payload.put("player", position(player.position()));
+		payload.put("fixtureCenter", fixtureCenter == null ? Map.of() : position(Vec3.atCenterOf(fixtureCenter)));
 		payload.put("threatId", threatId == null ? "" : threatId.toString());
 		return payload;
 	}
 
-	private static Map<String, Double> position(Vec3d position) {
+	private static Map<String, Double> position(Vec3 position) {
 		return Map.of("x", position.x, "y", position.y, "z", position.z);
 	}
 
 	record Request(String mode) {
 	}
 
-	private record Origin(RegistryKey<World> world, Vec3d position, float yaw, float pitch) {
+	private record Origin(ResourceKey<Level> world, Vec3 position, float yaw, float pitch) {
 	}
 
 	private enum Mode {

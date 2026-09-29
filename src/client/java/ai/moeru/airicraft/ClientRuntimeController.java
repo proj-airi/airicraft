@@ -32,14 +32,14 @@ import ai.moeru.airicraft.dashboard.DashboardObservationStore;
 import ai.moeru.airicraft.dashboard.DebugDashboardServer;
 import ai.moeru.airicraft.debug.ClientTickDebugRuntime;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.text.ClickEvent;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.DeltaTracker;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import org.lwjgl.glfw.GLFW;
 
 import java.net.URI;
@@ -204,8 +204,8 @@ public final class ClientRuntimeController {
 		return clientTickDebugRuntime;
 	}
 
-	public void onClientStarted(MinecraftClient client) {
-		currentAgentRuntime().onClientStarted(client);
+	public void onClientStarted(Minecraft minecraft) {
+		currentAgentRuntime().onClientStarted(minecraft);
 		dashboardObservationCollector.startSession("client_started", currentAgentRuntime());
 		try {
 			debugDashboardServer.start(config.debugDashboard());
@@ -231,18 +231,18 @@ public final class ClientRuntimeController {
 
 	public CameraController cameraController() { return cameraController; }
 
-	public void onClientTick(MinecraftClient client) {
-		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(client);
+	public void onClientTick(Minecraft minecraft) {
+		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(minecraft);
 		if (!automaticPlaytest.freezing()) {
-			airicraftBackend.releaseIfIdle(client);
-			currentAgentRuntime().onClientTick(client);
-			airicraftBackend.tick(client);
+			airicraftBackend.releaseIfIdle(minecraft);
+			currentAgentRuntime().onClientTick(minecraft);
+			airicraftBackend.tick(minecraft);
 		}
-		cameraController.tick(client);
+		cameraController.tick(minecraft);
 		highlightManager.tick();
-		clientTickDebugRuntime.onClientTickCompleted(client, currentAgentRuntime());
+		clientTickDebugRuntime.onClientTickCompleted(minecraft, currentAgentRuntime());
 		try {
-			dashboardObservationCollector.capture(client, currentAgentRuntime());
+			dashboardObservationCollector.capture(minecraft, currentAgentRuntime());
 		}
 		catch (RuntimeException exception) {
 			long now = System.currentTimeMillis();
@@ -251,44 +251,44 @@ public final class ClientRuntimeController {
 				Airicraft.LOGGER.warn("Debug dashboard observation failed; game execution is unaffected", exception);
 			}
 		}
-		automaticPlaytest.onClientTick(client);
-		pollConversationScrollKeys(client);
-		announceDashboardUrl(client);
+		automaticPlaytest.onClientTick(minecraft);
+		pollConversationScrollKeys(minecraft);
+		announceDashboardUrl(minecraft);
 	}
 
 	// The HUD has no cursor to hover the pane, and the wheel drives the hotbar;
 	// PgUp/PgDn/Home/End scroll the conversation overlay when no screen is open.
-	private void pollConversationScrollKeys(MinecraftClient client) {
-		if (client == null || client.currentScreen != null || client.getWindow() == null
+	private void pollConversationScrollKeys(Minecraft minecraft) {
+		if (minecraft == null || minecraft.screen != null || minecraft.getWindow() == null
 			|| plannerDebugOverlay.mode() != PlannerDebugOverlayMode.CONVERSATION) {
 			return;
 		}
-		long handle = client.getWindow().getHandle();
-		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_PAGE_UP)) {
+		long handle = minecraft.getWindow().getWindow();
+		if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_PAGE_UP)) {
 			plannerDebugOverlay.scrollConversationBy(-PlannerDebugOverlay.CONVERSATION_KEY_SCROLL_STEP_PX);
 		}
-		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_PAGE_DOWN)) {
+		if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_PAGE_DOWN)) {
 			plannerDebugOverlay.scrollConversationBy(PlannerDebugOverlay.CONVERSATION_KEY_SCROLL_STEP_PX);
 		}
-		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_HOME)) {
+		if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_HOME)) {
 			plannerDebugOverlay.scrollConversationToStart();
 		}
-		if (InputUtil.isKeyPressed(handle, GLFW.GLFW_KEY_END)) {
+		if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_END)) {
 			plannerDebugOverlay.scrollConversationToEnd();
 		}
 	}
 
-	private void announceDashboardUrl(MinecraftClient client) {
+	private void announceDashboardUrl(Minecraft minecraft) {
 		String url = debugDashboardServer.status().primaryUrl();
-		if (client == null || client.player == null || url.isBlank() || url.equals(announcedDashboardUrl)) {
+		if (minecraft == null || minecraft.player == null || url.isBlank() || url.equals(announcedDashboardUrl)) {
 			return;
 		}
 		announcedDashboardUrl = url;
-		Text link = Text.literal(url).styled(style -> style
-			.withColor(Formatting.AQUA)
-			.withUnderline(true)
+		Component link = Component.literal(url).withStyle(style -> style
+			.withColor(ChatFormatting.AQUA)
+			.withUnderlined(true)
 			.withClickEvent(new ClickEvent.OpenUrl(URI.create(url))));
-		client.player.sendMessage(Text.literal("Airicraft debug dashboard: ").append(link), false);
+		minecraft.player.displayClientMessage(Component.literal("Airicraft debug dashboard: ").append(link), false);
 	}
 
 	public void onChatReceived(String senderName, String plainTextMessage) {
@@ -355,28 +355,28 @@ public final class ClientRuntimeController {
 		highlightManager.render(context);
 	}
 
-	public void onHudRender(DrawContext drawContext, RenderTickCounter tickCounter) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.currentScreen != null) {
+	public void onHudRender(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.screen != null) {
 			return;
 		}
-		plannerDebugOverlay.render(client, drawContext, currentAgentRuntime(), System.currentTimeMillis());
-		renderClientTickIndicators(client, drawContext);
+		plannerDebugOverlay.render(minecraft, guiGraphics, currentAgentRuntime(), System.currentTimeMillis());
+		renderClientTickIndicators(minecraft, guiGraphics);
 	}
 
-	public void onScreenRender(DrawContext drawContext) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.currentScreen == null) {
+	public void onScreenRender(GuiGraphics guiGraphics) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.screen == null) {
 			return;
 		}
-		plannerDebugOverlay.render(client, drawContext, currentAgentRuntime(), System.currentTimeMillis());
-		renderClientTickIndicators(client, drawContext);
+		plannerDebugOverlay.render(minecraft, guiGraphics, currentAgentRuntime(), System.currentTimeMillis());
+		renderClientTickIndicators(minecraft, guiGraphics);
 	}
 
-	private void renderClientTickIndicators(MinecraftClient client, DrawContext drawContext) {
+	private void renderClientTickIndicators(Minecraft minecraft, GuiGraphics guiGraphics) {
 		clientTickIndicator.render(
-			client,
-			drawContext,
+			minecraft,
+			guiGraphics,
 			clientTickDebugRuntime.status(),
 			clientTickDebugRuntime.traceStatus(),
 			plannerEnabled,
@@ -389,11 +389,11 @@ public final class ClientRuntimeController {
 	}
 
 	public void onFirstPersonFrameRendered() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client != null) {
-			screenshotService.onWorldRendered(client);
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft != null) {
+			screenshotService.onWorldRendered(minecraft);
 			try {
-				dashboardObservationCollector.onRenderedFrame(client, currentAgentRuntime());
+				dashboardObservationCollector.onRenderedFrame(minecraft, currentAgentRuntime());
 			}
 			catch (RuntimeException exception) {
 				long now = System.currentTimeMillis();
@@ -435,9 +435,9 @@ public final class ClientRuntimeController {
 		}
 		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig, nextAttentionRules, nextSalienceRules);
 		nextRuntime.updateIdleIdeasConfig(nextIdleIdeasConfig);
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client != null) {
-			nextRuntime.onClientStarted(client);
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft != null) {
+			nextRuntime.onClientStarted(minecraft);
 		}
 
 		config = nextConfig;

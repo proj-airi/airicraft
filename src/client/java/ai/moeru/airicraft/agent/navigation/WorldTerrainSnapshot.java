@@ -3,13 +3,13 @@ package ai.moeru.airicraft.agent.navigation;
 import ai.moeru.airicraft.navigation.CellInfo;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.TerrainView;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.PalettedContainer;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 /**
  * Chunk sections copied on the client thread, then read and classified by the search thread. Only
@@ -22,7 +22,7 @@ public final class WorldTerrainSnapshot implements TerrainView {
 	private static final int GOAL_MARGIN = 24;
 	private static final int VERTICAL_MARGIN = 24;
 	private static final int MAX_HEIGHT = 96;
-	private static final BlockState AIR = Blocks.AIR.getDefaultState();
+	private static final BlockState AIR = Blocks.AIR.defaultBlockState();
 
 	private final int minX;
 	private final int minY;
@@ -66,7 +66,7 @@ public final class WorldTerrainSnapshot implements TerrainView {
 	 * when {@code targetHasY} is false). Must run on the client thread.
 	 */
 	@SuppressWarnings("unchecked")
-	public static WorldTerrainSnapshot capture(ClientWorld world, GridPos start, GridPos target, boolean targetHasY,
+	public static WorldTerrainSnapshot capture(ClientLevel level, GridPos start, GridPos target, boolean targetHasY,
 		MinecraftCellClassifier classifier) {
 		long started = System.nanoTime();
 		GridPos aim = target == null ? start : target;
@@ -76,27 +76,27 @@ public final class WorldTerrainSnapshot implements TerrainView {
 		int maxZ = clamp(Math.max(start.z(), aim.z()) + GOAL_MARGIN, start.z(), start.z() + HORIZONTAL_RADIUS);
 		int lowY = targetHasY ? Math.min(start.y(), aim.y()) : start.y();
 		int highY = targetHasY ? Math.max(start.y(), aim.y()) : start.y();
-		int minY = Math.max(world.getBottomY(), Math.max(lowY - VERTICAL_MARGIN, start.y() - MAX_HEIGHT / 2));
-		int maxY = Math.max(minY, Math.min(world.getTopYInclusive(), Math.min(highY + VERTICAL_MARGIN, start.y() + MAX_HEIGHT / 2)));
+		int minY = Math.max(level.getMinY(), Math.max(lowY - VERTICAL_MARGIN, start.y() - MAX_HEIGHT / 2));
+		int maxY = Math.max(minY, Math.min(level.getMaxY(), Math.min(highY + VERTICAL_MARGIN, start.y() + MAX_HEIGHT / 2)));
 		int chunksX = (maxX >> 4) - (minX >> 4) + 1, chunksZ = (maxZ >> 4) - (minZ >> 4) + 1;
 		int minSection = minY >> 4, sections = (maxY >> 4) - minSection + 1;
 		boolean[] loadedColumns = new boolean[chunksX * chunksZ];
 		PalettedContainer<BlockState>[] containers = new PalettedContainer[chunksX * chunksZ * sections];
-		BlockPos.Mutable probe = new BlockPos.Mutable();
+		BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
 		for (int cx = 0; cx < chunksX; cx++) {
 			for (int cz = 0; cz < chunksZ; cz++) {
 				int chunkX = (minX >> 4) + cx, chunkZ = (minZ >> 4) + cz;
-				if (!world.isChunkLoaded(probe.set(chunkX << 4, minY, chunkZ << 4))) continue;
+				if (!level.hasChunkAt(probe.set(chunkX << 4, minY, chunkZ << 4))) continue;
 				int column = cx * chunksZ + cz;
 				loadedColumns[column] = true;
-				WorldChunk chunk = world.getChunk(chunkX, chunkZ);
-				ChunkSection[] chunkSections = chunk.getSectionArray();
+				LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+				LevelChunkSection[] chunkSections = chunk.getSections();
 				for (int section = 0; section < sections; section++) {
 					int index = chunk.getSectionIndex((minSection + section) << 4);
 					if (index < 0 || index >= chunkSections.length) continue;
-					ChunkSection chunkSection = chunkSections[index];
-					if (chunkSection == null || chunkSection.isEmpty()) continue;
-					containers[column * sections + section] = chunkSection.getBlockStateContainer().copy();
+					LevelChunkSection chunkSection = chunkSections[index];
+					if (chunkSection == null || chunkSection.hasOnlyAir()) continue;
+					containers[column * sections + section] = chunkSection.getStates().copy();
 				}
 			}
 		}

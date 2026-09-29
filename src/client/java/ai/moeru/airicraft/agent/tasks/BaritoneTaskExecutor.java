@@ -4,8 +4,8 @@ import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 
 import java.util.Locale;
 import java.util.Map;
@@ -39,10 +39,10 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public BaritoneTaskExecutor(BaritoneFacade facade) {
-		this(MinecraftClient::getInstance, facade);
+		this(Minecraft::getInstance, facade);
 	}
 
-	BaritoneTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade facade) {
+	BaritoneTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade facade) {
 		this(facade, () -> waterProgressSample(clientSupplier.get()));
 	}
 
@@ -297,13 +297,13 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		temporaryWaterPenaltyBase = null;
 	}
 
-	private static Optional<WaterStallRecovery.Sample> waterProgressSample(MinecraftClient client) {
-		ClientPlayerEntity player = client == null ? null : client.player;
+	private static Optional<WaterStallRecovery.Sample> waterProgressSample(Minecraft minecraft) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null) {
 			return Optional.empty();
 		}
 		return Optional.of(new WaterStallRecovery.Sample(
-			player.isTouchingWater(),
+			player.isInWater(),
 			player.getX(),
 			player.getY(),
 			player.getZ()

@@ -3,15 +3,15 @@ package ai.moeru.airicraft.agent.llm;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.SpawnGroup;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Detached observations captured on the client thread. Guest code only receives data. */
-record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, ClientWorld world) {
+record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, ClientLevel world) {
 	private static final Gson JSON = new Gson();
 	private static final int MAX_ENTITIES = 64;
 
@@ -40,19 +40,19 @@ record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, Cli
 		}
 	}
 
-	static WorldQuerySnapshot capture(MinecraftClient client, JsonObject args, long serverTick) {
+	static WorldQuerySnapshot capture(Minecraft minecraft, JsonObject args, long serverTick) {
 		validateBounds(args);
-		if (client.world == null || client.player == null) throw new IllegalStateException("world_not_loaded");
-		var world = client.world;
-		var player = client.player;
-		BlockPos origin = player.getBlockPos();
+		if (minecraft.level == null || minecraft.player == null) throw new IllegalStateException("world_not_loaded");
+		var level = minecraft.level;
+		var player = minecraft.player;
+		BlockPos origin = player.blockPosition();
 		BlockPos center = origin;
 		if (args.has("center")) {
 			var c = args.getAsJsonObject("center");
 			center = new BlockPos(c.get("x").getAsInt(), c.get("y").getAsInt(), c.get("z").getAsInt());
 		}
 		int radius = integer(args, "radius", 4, 0, 8), vertical = integer(args, "verticalRadius", 2, 0, 4);
-		BlockPos min = center.add(-radius, -vertical, -radius), max = center.add(radius, vertical, radius);
+		BlockPos min = center.offset(-radius, -vertical, -radius), max = center.offset(radius, vertical, radius);
 		// Check the farthest corner without subtracting in 32-bit coordinate arithmetic.
 		double dx = Math.abs((double) center.getX() - origin.getX()) + radius;
 		double dy = Math.abs((double) center.getY() - origin.getY()) + vertical;
@@ -63,40 +63,40 @@ record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, Cli
 		JsonArray blocks = new JsonArray(), entities = new JsonArray();
 		List<BlockPos> observed = new ArrayList<>();
 		int unloaded = 0, outsideWorld = 0;
-		if (includeBlocks) for (BlockPos cursor : BlockPos.iterate(min, max)) {
-			if (world.isOutOfHeightLimit(cursor)) { outsideWorld++; continue; }
-			if (!world.isChunkLoaded(cursor)) { unloaded++; continue; }
-			BlockPos pos = cursor.toImmutable();
-			var state = world.getBlockState(pos);
+		if (includeBlocks) for (BlockPos cursor : BlockPos.betweenClosed(min, max)) {
+			if (level.isOutsideBuildHeight(cursor)) { outsideWorld++; continue; }
+			if (!level.hasChunkAt(cursor)) { unloaded++; continue; }
+			BlockPos pos = cursor.immutable();
+			var state = level.getBlockState(pos);
 			JsonObject block = new JsonObject();
 			block.add("position", JSON.toJsonTree(position(pos)));
-			block.addProperty("blockId", Registries.BLOCK.getId(state.getBlock()).toString());
+			block.addProperty("blockId", BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
 			JsonObject properties = new JsonObject();
-			state.getEntries().forEach((property, value) -> properties.addProperty(property.getName(), propertyValue(state, property)));
+			state.getValues().forEach((property, value) -> properties.addProperty(property.getName(), propertyValue(state, property)));
 			block.add("properties", properties);
 			block.addProperty("air", state.isAir());
-			block.addProperty("replaceable", state.isReplaceable());
+			block.addProperty("replaceable", state.canBeReplaced());
 			block.addProperty("fluid", !state.getFluidState().isEmpty());
-			block.addProperty("collisionEmpty", state.getCollisionShape(world, pos).isEmpty());
-			block.add("collisionBoxes", JSON.toJsonTree(state.getCollisionShape(world, pos).getBoundingBoxes().stream()
+			block.addProperty("collisionEmpty", state.getCollisionShape(level, pos).isEmpty());
+			block.add("collisionBoxes", JSON.toJsonTree(state.getCollisionShape(level, pos).toAabbs().stream()
 				.map(b -> List.of(b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ)).toList()));
-			block.addProperty("light", world.getLightLevel(pos));
+			block.addProperty("light", level.getMaxLocalRawBrightness(pos));
 			blocks.add(block);
 			observed.add(pos);
 		}
 		int matchedEntities = 0;
 		if (includeEntities) {
-			var box = new Box(min.getX(), min.getY(), min.getZ(), max.getX() + 1, max.getY() + 1, max.getZ() + 1);
-			var found = world.getOtherEntities(player, box);
+			var box = new AABB(min.getX(), min.getY(), min.getZ(), max.getX() + 1, max.getY() + 1, max.getZ() + 1);
+			var found = level.getEntities(player, box);
 			matchedEntities = found.size();
-			found.stream().sorted(Comparator.comparingDouble((Entity entity) -> entity.squaredDistanceTo(player))
-				.thenComparing(Entity::getUuidAsString)).limit(MAX_ENTITIES).forEach(entity -> {
+			found.stream().sorted(Comparator.comparingDouble((Entity entity) -> entity.distanceToSqr(player))
+				.thenComparing(Entity::getStringUUID)).limit(MAX_ENTITIES).forEach(entity -> {
 				JsonObject record = new JsonObject();
-				record.addProperty("uuid", entity.getUuidAsString());
-				record.addProperty("type", Registries.ENTITY_TYPE.getId(entity.getType()).toString());
-				record.add("position", JSON.toJsonTree(position(entity.getPos())));
-				record.addProperty("distance", Math.sqrt(entity.squaredDistanceTo(player)));
-				record.addProperty("hostile", entity.getType().getSpawnGroup() == SpawnGroup.MONSTER);
+				record.addProperty("uuid", entity.getStringUUID());
+				record.addProperty("type", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
+				record.add("position", JSON.toJsonTree(position(entity.position())));
+				record.addProperty("distance", Math.sqrt(entity.distanceToSqr(player)));
+				record.addProperty("hostile", entity.getType().getCategory() == MobCategory.MONSTER);
 				record.addProperty("alive", entity.isAlive());
 				if (entity instanceof LivingEntity living) record.addProperty("health", living.getHealth());
 				entities.add(record);
@@ -104,8 +104,8 @@ record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, Cli
 		}
 		int requestedBlocks = includeBlocks ? (2 * radius + 1) * (2 * radius + 1) * (2 * vertical + 1) : 0;
 		JsonObject metadata = JSON.toJsonTree(Map.of(
-			"source", "client_loaded_snapshot", "serverTick", serverTick, "worldTime", world.getTime(),
-			"dimension", world.getRegistryKey().getValue().toString(), "bounds", Map.of("min", position(min), "max", position(max)),
+			"source", "client_loaded_snapshot", "serverTick", serverTick, "worldTime", level.getGameTime(),
+			"dimension", level.dimension().location().toString(), "bounds", Map.of("min", position(min), "max", position(max)),
 			"blocks", Map.of("included", includeBlocks, "requested", requestedBlocks, "returned", blocks.size(), "unloaded", unloaded,
 				"outsideWorld", outsideWorld, "truncated", false),
 			"entities", Map.of("included", includeEntities, "matched", matchedEntities, "returned", entities.size(),
@@ -113,19 +113,19 @@ record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, Cli
 		)).getAsJsonObject();
 		JsonObject snapshot = new JsonObject();
 		snapshot.add("metadata", metadata);
-		snapshot.add("player", JSON.toJsonTree(Map.of("position", position(player.getPos()), "health", player.getHealth(),
-			"food", player.getHungerManager().getFoodLevel())));
+		snapshot.add("player", JSON.toJsonTree(Map.of("position", position(player.position()), "health", player.getHealth(),
+			"food", player.getFoodData().getFoodLevel())));
 		snapshot.add("blocks", blocks);
 		snapshot.add("entities", entities);
-		return new WorldQuerySnapshot(snapshot, List.copyOf(observed), world);
+		return new WorldQuerySnapshot(snapshot, List.copyOf(observed), level);
 	}
 
-	static <T extends Comparable<T>> String propertyValue(net.minecraft.block.BlockState state, net.minecraft.state.property.Property<T> property) {
-		return property.name(state.get(property));
+	static <T extends Comparable<T>> String propertyValue(net.minecraft.world.level.block.state.BlockState state, net.minecraft.world.level.block.state.properties.Property<T> property) {
+		return property.getName(state.getValue(property));
 	}
 
 	private static Map<String, Integer> position(BlockPos pos) { return Map.of("x", pos.getX(), "y", pos.getY(), "z", pos.getZ()); }
-	private static Map<String, Double> position(Vec3d pos) { return Map.of("x", pos.x, "y", pos.y, "z", pos.z); }
+	private static Map<String, Double> position(Vec3 pos) { return Map.of("x", pos.x, "y", pos.y, "z", pos.z); }
 	private static int integer(JsonObject args, String key, int fallback, int min, int max) {
 		if (!args.has(key)) return fallback;
 		try {

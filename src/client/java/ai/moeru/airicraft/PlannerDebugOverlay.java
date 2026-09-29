@@ -20,9 +20,9 @@ import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import ai.moeru.airicraft.agent.tasks.TaskExecutionSnapshot;
 import ai.moeru.airicraft.agent.tasks.TaskExecutionState;
 import ai.moeru.airicraft.agent.tasks.TaskSnapshot;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -150,13 +150,13 @@ final class PlannerDebugOverlay {
 		return true;
 	}
 
-	void render(MinecraftClient client, DrawContext drawContext, EmbodiedAgentRuntime agentRuntime, long nowMs) {
-		if (!enabled() || client == null || drawContext == null || agentRuntime == null || client.options.hudHidden) {
+	void render(Minecraft minecraft, GuiGraphics guiGraphics, EmbodiedAgentRuntime agentRuntime, long nowMs) {
+		if (!enabled() || minecraft == null || guiGraphics == null || agentRuntime == null || minecraft.options.hideGui) {
 			return;
 		}
 
-		TextRenderer textRenderer = client.textRenderer;
-		if (textRenderer == null) {
+		Font font = minecraft.font;
+		if (font == null) {
 			return;
 		}
 
@@ -164,12 +164,12 @@ final class PlannerDebugOverlay {
 			case OFF -> {
 				return;
 			}
-			case STATES -> renderStates(drawContext, textRenderer, agentRuntime, nowMs);
-			case CONVERSATION -> renderConversation(drawContext, textRenderer, agentRuntime, nowMs);
+			case STATES -> renderStates(guiGraphics, font, agentRuntime, nowMs);
+			case CONVERSATION -> renderConversation(guiGraphics, font, agentRuntime, nowMs);
 		}
 	}
 
-	private void renderStates(DrawContext drawContext, TextRenderer textRenderer, EmbodiedAgentRuntime agentRuntime, long nowMs) {
+	private void renderStates(GuiGraphics guiGraphics, Font font, EmbodiedAgentRuntime agentRuntime, long nowMs) {
 		List<String> lines = formatStateLines(
 			true,
 			agentRuntime.snapshot(),
@@ -186,24 +186,24 @@ final class PlannerDebugOverlay {
 
 		int panelWidth = 0;
 		for (String line : lines) {
-			panelWidth = Math.max(panelWidth, textRenderer.getWidth(line));
+			panelWidth = Math.max(panelWidth, font.width(line));
 		}
-		int lineHeight = textRenderer.fontHeight + 1;
-		int panelRight = drawContext.getScaledWindowWidth() - PANEL_MARGIN;
+		int lineHeight = font.lineHeight + 1;
+		int panelRight = guiGraphics.guiWidth() - PANEL_MARGIN;
 		int panelLeft = panelRight - panelWidth - (PANEL_PADDING * 2);
 		int panelTop = PANEL_MARGIN;
 		int panelBottom = panelTop + (PANEL_PADDING * 2) + (lineHeight * lines.size());
 
-		drawContext.fill(panelLeft, panelTop, panelRight, panelBottom, PANEL_BACKGROUND_COLOR);
+		guiGraphics.fill(panelLeft, panelTop, panelRight, panelBottom, PANEL_BACKGROUND_COLOR);
 		for (int index = 0; index < lines.size(); index++) {
 			String line = lines.get(index);
-			int textX = panelRight - PANEL_PADDING - textRenderer.getWidth(line);
+			int textX = panelRight - PANEL_PADDING - font.width(line);
 			int textY = panelTop + PANEL_PADDING + (index * lineHeight);
-			drawContext.drawText(textRenderer, line, textX, textY, colorForStateLine(line), true);
+			guiGraphics.drawString(font, line, textX, textY, colorForStateLine(line), true);
 		}
 	}
 
-	private void renderConversation(DrawContext drawContext, TextRenderer textRenderer, EmbodiedAgentRuntime agentRuntime, long nowMs) {
+	private void renderConversation(GuiGraphics guiGraphics, Font font, EmbodiedAgentRuntime agentRuntime, long nowMs) {
 		PlannerOrchestratorDebugSnapshot plannerSnapshot = agentRuntime.plannerDebugSnapshot();
 		PlannerConversationDebugSnapshot snapshot = conversationView == PlannerConversationView.CONTEXT
 			? agentRuntime.plannerContextConversationDebugSnapshot()
@@ -216,10 +216,10 @@ final class PlannerDebugOverlay {
 		ConversationPaneLayout layout = layoutConversationPane(
 			conversationView,
 			snapshot,
-			drawContext.getScaledWindowWidth(),
-			drawContext.getScaledWindowHeight(),
-			textRenderer::getWidth,
-			textRenderer.fontHeight + 1,
+			guiGraphics.guiWidth(),
+			guiGraphics.guiHeight(),
+			font::width,
+			font.lineHeight + 1,
 			conversationScrollTop,
 			conversationPinnedToBottom,
 			footerLine
@@ -230,11 +230,11 @@ final class PlannerDebugOverlay {
 
 		Rect pane = layout.paneBounds();
 		Rect viewport = layout.viewportBounds();
-		drawContext.fill(pane.left(), pane.top(), pane.right(), pane.bottom(), CONVERSATION_BACKGROUND_COLOR);
-		drawContext.fill(pane.left(), pane.top(), pane.right(), pane.top() + CONVERSATION_TITLE_HEIGHT, 0xD018202B);
-		drawContext.drawText(textRenderer, layout.title(), pane.left() + PANEL_PADDING, pane.top() + PANEL_PADDING, CONVERSATION_TITLE_COLOR, true);
+		guiGraphics.fill(pane.left(), pane.top(), pane.right(), pane.bottom(), CONVERSATION_BACKGROUND_COLOR);
+		guiGraphics.fill(pane.left(), pane.top(), pane.right(), pane.top() + CONVERSATION_TITLE_HEIGHT, 0xD018202B);
+		guiGraphics.drawString(font, layout.title(), pane.left() + PANEL_PADDING, pane.top() + PANEL_PADDING, CONVERSATION_TITLE_COLOR, true);
 
-		drawContext.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+		guiGraphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
 		for (ConversationCardLayout card : layout.cards()) {
 			int renderTop = viewport.top() + card.contentTop() - layout.scrollTop();
 			int renderBottom = renderTop + card.height();
@@ -243,8 +243,8 @@ final class PlannerDebugOverlay {
 			}
 			int renderLeft = viewport.left();
 			int renderRight = viewport.right();
-			drawContext.fill(renderLeft, renderTop, renderRight, renderBottom, card.borderColor());
-			drawContext.fill(
+			guiGraphics.fill(renderLeft, renderTop, renderRight, renderBottom, card.borderColor());
+			guiGraphics.fill(
 				renderLeft + 1,
 				renderTop + 1,
 				renderRight - 1,
@@ -254,21 +254,21 @@ final class PlannerDebugOverlay {
 			int textX = renderLeft + CONVERSATION_CARD_PADDING;
 			int textY = renderTop + CONVERSATION_CARD_PADDING;
 			for (String headerLine : card.headerLines()) {
-				drawContext.drawText(textRenderer, headerLine, textX, textY, card.borderColor(), true);
+				guiGraphics.drawString(font, headerLine, textX, textY, card.borderColor(), true);
 				textY += layout.lineHeight();
 			}
 			for (String bodyLine : card.bodyLines()) {
-				drawContext.drawText(textRenderer, bodyLine, textX, textY, TEXT_COLOR, false);
+				guiGraphics.drawString(font, bodyLine, textX, textY, TEXT_COLOR, false);
 				textY += layout.lineHeight();
 			}
 			if (card.imageMarkerLine() != null) {
-				drawContext.drawText(textRenderer, card.imageMarkerLine(), textX, textY, CONVERSATION_IMAGE_MARKER_COLOR, false);
+				guiGraphics.drawString(font, card.imageMarkerLine(), textX, textY, CONVERSATION_IMAGE_MARKER_COLOR, false);
 			}
 		}
-		drawContext.disableScissor();
+		guiGraphics.disableScissor();
 		if (layout.footerLine() != null) {
-			int footerY = pane.bottom() - PANEL_PADDING - textRenderer.fontHeight;
-			drawContext.drawText(textRenderer, layout.footerLine(), pane.left() + PANEL_PADDING, footerY, CONVERSATION_FOOTER_COLOR, false);
+			int footerY = pane.bottom() - PANEL_PADDING - font.lineHeight;
+			guiGraphics.drawString(font, layout.footerLine(), pane.left() + PANEL_PADDING, footerY, CONVERSATION_FOOTER_COLOR, false);
 		}
 	}
 

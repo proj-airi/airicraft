@@ -6,21 +6,21 @@ import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -42,7 +42,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private static final int BREAK_TIMEOUT_TICKS = 200;
 	private static final int PICKUP_TIMEOUT_TICKS = 80;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade baritone;
 	private final CameraController camera;
 	private final MovementController movement;
@@ -67,11 +67,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private int groundingTicks;
 
 	public UnderwaterHarvestTaskExecutor(BaritoneFacade baritone, CameraController camera) {
-		this(MinecraftClient::getInstance, baritone, camera);
+		this(Minecraft::getInstance, baritone, camera);
 	}
 
 	UnderwaterHarvestTaskExecutor(
-		Supplier<MinecraftClient> clientSupplier,
+		Supplier<Minecraft> clientSupplier,
 		BaritoneFacade baritone,
 		CameraController camera
 	) {
@@ -100,9 +100,9 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.PAUSED_BY_SESSION_GATE, request, "session_gate");
 			return Optional.empty();
 		}
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.world == null || client.interactionManager == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.level == null || minecraft.gameMode == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
 		if (request.goal() == null || request.goal().mineSpec() == null) {
@@ -111,7 +111,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (run == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "missing_underwater_harvest_origin"));
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "interaction_busy"));
 		}
 
@@ -125,14 +125,14 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 		long tick = sessionSnapshot.tickCount();
 		boolean airRecoveryRequired = UnderwaterHarvestPolicy.shouldSurface(
-			player.isSubmergedInWater(),
-			player.getAir(),
-			player.getMaxAir()
+			player.isUnderWater(),
+			player.getAirSupply(),
+			player.getMaxAirSupply()
 		);
 		boolean airRecoveryComplete = UnderwaterHarvestPolicy.mayResumeHarvest(
-			player.isSubmergedInWater(),
-			player.getAir(),
-			player.getMaxAir()
+			player.isUnderWater(),
+			player.getAirSupply(),
+			player.getMaxAirSupply()
 		);
 		UnderwaterHarvestPolicy.PreSourceAction preSourceAction = UnderwaterHarvestPolicy.preSourceAction(
 			surfacing,
@@ -143,19 +143,19 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		);
 		if (preSourceAction == UnderwaterHarvestPolicy.PreSourceAction.RECOVER_AIR) {
 			run.tickPickup(true);
-			return tickSurfacing(request, client, player, tick);
+			return tickSurfacing(request, minecraft, player, tick);
 		}
 		if (preSourceAction == UnderwaterHarvestPolicy.PreSourceAction.COMPLETE) {
-			return tickCompletion(request, client);
+			return tickCompletion(request, minecraft);
 		}
 		if (preSourceAction == UnderwaterHarvestPolicy.PreSourceAction.PICK_UP) {
-			Optional<TaskTerminalEvent> pickup = tickPickup(request, client, player, spec, tick);
+			Optional<TaskTerminalEvent> pickup = tickPickup(request, minecraft, player, spec, tick);
 			if (pickup.isPresent() || run.pickupTicksRemaining() >= 0) {
 				return pickup;
 			}
 		}
 		if (run.needsSourceScan()) {
-			SourceScan scan = selectBatch(client, spec, run.searchOrigin(), run.unreachableTargets());
+			SourceScan scan = selectBatch(minecraft, spec, run.searchOrigin(), run.unreachableTargets());
 			run.installBatch(scan);
 			if (run.currentTarget().isEmpty()) {
 				boolean everyDiscoveredExcluded = !scan.discoveredTargets().isEmpty()
@@ -180,21 +180,21 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 
 		HarvestTarget target = run.currentTarget().orElseThrow();
-		BlockState currentState = client.world.getBlockState(target.pos());
+		BlockState currentState = minecraft.level.getBlockState(target.pos());
 		if (!spec.blockIds().contains(blockId(currentState))) {
 			cancelNavigation();
-			movement.stop(client);
-			clearBreak(client);
+			movement.stop(minecraft);
+			clearBreak(minecraft);
 			run.invalidateBatch();
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_reassess targetPos=" + compactPos(target.pos()));
 			return Optional.empty();
 		}
 		Optional<UnderwaterHarvestPolicy.SourceEnvironment> observedEnvironment =
-			MinecraftUnderwaterSourceClassifier.classify(client, target.pos(), currentState);
+			MinecraftUnderwaterSourceClassifier.classify(minecraft, target.pos(), currentState);
 		if (observedEnvironment.isEmpty()) {
 			cancelNavigation();
-			movement.stop(client);
-			clearBreak(client);
+			movement.stop(minecraft);
+			clearBreak(minecraft);
 			run.invalidateBatch();
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_no_longer_accessible targetPos="
 				+ compactPos(target.pos()));
@@ -203,42 +203,42 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		UnderwaterHarvestPolicy.SourceEnvironment currentEnvironment = observedEnvironment.orElseThrow();
 		if (!run.reconcileEnvironment(currentEnvironment)) {
 			cancelNavigation();
-			movement.stop(client);
-			clearBreak(client);
+			movement.stop(minecraft);
+			clearBreak(minecraft);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_environment_changed targetPos="
 				+ compactPos(target.pos()) + " environment=" + currentEnvironment.name().toLowerCase(java.util.Locale.ROOT));
 			return Optional.empty();
 		}
 		if (target.environment().underwater()
-			&& UnderwaterHarvestPolicy.shouldSurface(player.isSubmergedInWater(), player.getAir(), player.getMaxAir())) {
-			return tickSurfacing(request, client, player, tick);
+			&& UnderwaterHarvestPolicy.shouldSurface(player.isUnderWater(), player.getAirSupply(), player.getMaxAirSupply())) {
+			return tickSurfacing(request, minecraft, player, tick);
 		}
 		// A successful break can consume the last required tool. Air recovery and
 		// pickup must still finish before another source action needs that tool.
-		if (!selectRequiredTool(client, player, spec.requiredToolItemIds())) {
+		if (!selectRequiredTool(minecraft, player, spec.requiredToolItemIds())) {
 			return fail(request, TaskFailure.of(TaskFailureCode.INVALID_ACTION, "unsupported_acquisition_method missing_required_tool requiredToolItemIds=" + spec.requiredToolItemIds()));
 		}
 
-		Vec3d targetCenter = Vec3d.ofCenter(target.pos());
-		double distanceSquared = player.getEyePos().squaredDistanceTo(targetCenter);
+		Vec3 targetCenter = Vec3.atCenterOf(target.pos());
+		double distanceSquared = player.getEyePosition().distanceToSqr(targetCenter);
 		if (distanceSquared > INTERACTION_RANGE_SQUARED) {
-			return tickApproach(request, client, player, target, targetCenter, distanceSquared, tick);
+			return tickApproach(request, minecraft, player, target, targetCenter, distanceSquared, tick);
 		}
 		run.clearApproach();
 		cancelNavigation();
-		if (!awaitBaritoneRelease(request, client, target, "waiting_to_break_after_baritone_release")) {
+		if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_break_after_baritone_release")) {
 			return Optional.empty();
 		}
 		clearApproachAssist();
-		if (tickGroundingForBreak(request, client, player, target, tick)) {
+		if (tickGroundingForBreak(request, minecraft, player, target, tick)) {
 			return Optional.empty();
 		}
-		movement.stop(client);
-		camera.lookAtBlock(client, target.pos());
-		var cursorHit = camera.blockHit(client, target.pos());
+		movement.stop(minecraft);
+		camera.lookAtBlock(minecraft, target.pos());
+		var cursorHit = camera.blockHit(minecraft, target.pos());
 		if (cursorHit.isEmpty()) return Optional.empty();
 		if (breakingTarget == null) {
-			if (!client.interactionManager.attackBlock(target.pos(), cursorHit.get().getSide())) {
+			if (!minecraft.gameMode.startDestroyBlock(target.pos(), cursorHit.get().getDirection())) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "break_start_failed targetPos=" + compactPos(target.pos())));
 			}
 			breakingTarget = target.pos();
@@ -248,11 +248,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (tick - breakStartedTick > BREAK_TIMEOUT_TICKS) {
 			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_timeout targetPos=" + compactPos(target.pos())));
 		}
-		client.interactionManager.updateBlockBreakingProgress(target.pos(), cursorHit.get().getSide());
-		player.swingHand(Hand.MAIN_HAND);
-		if (!spec.blockIds().contains(blockId(client.world.getBlockState(target.pos())))) {
+		minecraft.gameMode.continueDestroyBlock(target.pos(), cursorHit.get().getDirection());
+		player.swing(InteractionHand.MAIN_HAND);
+		if (!spec.blockIds().contains(blockId(minecraft.level.getBlockState(target.pos())))) {
 			harvestedBlocks++;
-			clearBreak(client);
+			clearBreak(minecraft);
 			// Breaking a source can expose water around other candidates. Re-scan
 			// from the immutable origin so dry-first ordering uses current fluid.
 			run.invalidateBatch();
@@ -262,27 +262,27 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "breaking targetPos=" + compactPos(target.pos())
-			+ " environment=" + target.environment().name().toLowerCase() + " air=" + player.getAir());
+			+ " environment=" + target.environment().name().toLowerCase() + " air=" + player.getAirSupply());
 		return Optional.empty();
 	}
 
 	private boolean tickGroundingForBreak(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		HarvestTarget target,
 		long tick
 	) {
-		BlockPos immutableTarget = target.pos().toImmutable();
+		BlockPos immutableTarget = target.pos().immutable();
 		if (!immutableTarget.equals(groundingTarget)) {
 			groundingTarget = immutableTarget;
 			groundingTicks = 0;
 		}
 		UnderwaterHarvestPolicy.GroundingDecision decision = UnderwaterHarvestPolicy.groundingDecision(
 			target.environment().underwater(),
-			player.isSubmergedInWater(),
-			player.isOnGround(),
-			hasSolidSupportDirectlyBelow(client, player),
+			player.isUnderWater(),
+			player.onGround(),
+			hasSolidSupportDirectlyBelow(minecraft, player),
 			groundingTicks
 		);
 		if (decision != UnderwaterHarvestPolicy.GroundingDecision.DESCEND) {
@@ -290,43 +290,43 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			return false;
 		}
 		groundingTicks++;
-		movement.moveDirectional(client, false, false, false, false, false, false, true, tick);
+		movement.moveDirectional(minecraft, false, false, false, false, false, false, true, tick);
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "descending_to_ground targetPos="
 			+ compactPos(target.pos()) + " groundingTicks=" + groundingTicks);
 		return true;
 	}
 
-	private static boolean hasSolidSupportDirectlyBelow(MinecraftClient client, ClientPlayerEntity player) {
-		if (client == null || client.world == null || player == null) {
+	private static boolean hasSolidSupportDirectlyBelow(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft == null || minecraft.level == null || player == null) {
 			return false;
 		}
-		BlockPos supportPos = player.getBlockPos().down();
-		return client.world.getBlockState(supportPos).isSideSolidFullSquare(client.world, supportPos, Direction.UP);
+		BlockPos supportPos = player.blockPosition().below();
+		return minecraft.level.getBlockState(supportPos).isFaceSturdy(minecraft.level, supportPos, Direction.UP);
 	}
 
 	private Optional<TaskTerminalEvent> tickApproach(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		HarvestTarget target,
-		Vec3d targetCenter,
+		Vec3 targetCenter,
 		double distanceSquared,
 		long tick
 	) {
 		if (run.prepareApproach(target.pos(), Math.sqrt(distanceSquared))) {
-			movement.stop(client);
+			movement.stop(minecraft);
 			clearApproachAssist();
 		}
 		UnderwaterHarvestPolicy.PositioningMode positioningMode = UnderwaterHarvestPolicy.positioningMode(target.environment());
 		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.BARITONE) {
 			if (!navigationStarted
-				&& !awaitBaritoneRelease(request, client, target, "waiting_to_start_dry_baritone")) {
+				&& !awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_dry_baritone")) {
 				return Optional.empty();
 			}
 		}
 		else {
 			cancelNavigation();
-			if (!awaitBaritoneRelease(request, client, target, "waiting_to_start_underwater_approach")) {
+			if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_underwater_approach")) {
 				return Optional.empty();
 			}
 		}
@@ -335,23 +335,23 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			String reason = run.approachProgress().activeTicks() >= UnderwaterHarvestPolicy.APPROACH_TIMEOUT_TICKS
 				? "approach_timeout"
 				: "approach_stalled";
-			return excludeTarget(request, client, target, reason);
+			return excludeTarget(request, minecraft, target, reason);
 		}
 		return routeApproachEffect(
 			target.environment(),
-			() -> tickDryApproach(request, client, target),
-			() -> tickUnderwaterApproach(request, client, player, target, targetCenter, tick)
+			() -> tickDryApproach(request, minecraft, target),
+			() -> tickUnderwaterApproach(request, minecraft, player, target, targetCenter, tick)
 		);
 	}
 
 	private Optional<TaskTerminalEvent> tickDryApproach(
 		WorldTaskRequest request,
-		MinecraftClient client,
+		Minecraft minecraft,
 		HarvestTarget target
 	) {
-		movement.stop(client);
+		movement.stop(minecraft);
 		if (baritone == null || !baritone.isLoaded()) {
-			return excludeTarget(request, client, target, "baritone_unavailable");
+			return excludeTarget(request, minecraft, target, "baritone_unavailable");
 		}
 		if (!navigationStarted) {
 			baritone.startNavigateNear(goalPosition(target.pos()), NAVIGATION_RADIUS_BLOCKS);
@@ -360,7 +360,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		Optional<String> event = baritone.pollPathEvent();
 		if (event.isPresent() && ("CALC_FAILED".equalsIgnoreCase(event.get())
 			|| "CANCELLED".equalsIgnoreCase(event.get()) || "CANCELED".equalsIgnoreCase(event.get()))) {
-			return excludeTarget(request, client, target, "baritone_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
+			return excludeTarget(request, minecraft, target, "baritone_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_dry_target_with_baritone targetPos=" + compactPos(target.pos())
 			+ " approachTicks=" + run.approachProgress().activeTicks());
@@ -369,49 +369,49 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> tickUnderwaterApproach(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		HarvestTarget target,
-		Vec3d targetCenter,
+		Vec3 targetCenter,
 		long tick
 	) {
-		camera.lookAt(client, targetCenter);
+		camera.lookAt(minecraft, targetCenter);
 		UnderwaterHarvestPolicy.VerticalMotion verticalMotion = moveUnderwaterToward(
-			client,
+			minecraft,
 			player,
 			target.pos(),
 			targetCenter,
 			tick
 		);
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_underwater_target targetPos=" + compactPos(target.pos())
-			+ " environment=" + target.environment().name().toLowerCase() + " air=" + player.getAir()
+			+ " environment=" + target.environment().name().toLowerCase() + " air=" + player.getAirSupply()
 			+ " verticalMotion=" + verticalMotion.name().toLowerCase()
 			+ " approachTicks=" + run.approachProgress().activeTicks());
 		return Optional.empty();
 	}
 
 	private UnderwaterHarvestPolicy.VerticalMotion moveUnderwaterToward(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		BlockPos targetPos,
-		Vec3d target,
+		Vec3 target,
 		long tick
 	) {
-		if (!player.isTouchingWater() && !player.isSubmergedInWater()) {
+		if (!player.isInWater() && !player.isUnderWater()) {
 			clearApproachAssist();
-			movement.moveForward(client, false, false, tick);
+			movement.moveForward(minecraft, false, false, tick);
 			return UnderwaterHarvestPolicy.VerticalMotion.LEVEL;
 		}
-		BlockPos immutableTarget = targetPos.toImmutable();
+		BlockPos immutableTarget = targetPos.immutable();
 		if (!immutableTarget.equals(assistedApproachTarget)) {
 			assistedApproachTarget = immutableTarget;
 			obstacleAscentTicksRemaining = 0;
 		}
-		boolean ascentClear = verticalClearance(client, player, 0.6D);
+		boolean ascentClear = verticalClearance(minecraft, player, 0.6D);
 		if (player.horizontalCollision && ascentClear) {
 			obstacleAscentTicksRemaining = UnderwaterHarvestPolicy.OBSTACLE_ASCENT_TICKS;
 		}
-		boolean descentClear = verticalClearance(client, player, -0.6D);
+		boolean descentClear = verticalClearance(minecraft, player, -0.6D);
 		UnderwaterHarvestPolicy.VerticalMotion motion = UnderwaterHarvestPolicy.underwaterVerticalMotion(
 			target.y - player.getEyeY(),
 			player.horizontalCollision,
@@ -426,7 +426,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			obstacleAscentTicksRemaining = 0;
 		}
 		movement.moveDirectional(
-			client,
+			minecraft,
 			true,
 			false,
 			false,
@@ -439,11 +439,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		return motion;
 	}
 
-	private static boolean verticalClearance(MinecraftClient client, ClientPlayerEntity player, double offsetY) {
-		return client != null
-			&& client.world != null
+	private static boolean verticalClearance(Minecraft minecraft, LocalPlayer player, double offsetY) {
+		return minecraft != null
+			&& minecraft.level != null
 			&& player != null
-			&& client.world.isSpaceEmpty(player, player.getBoundingBox().offset(0.0D, offsetY, 0.0D));
+			&& minecraft.level.noCollision(player, player.getBoundingBox().move(0.0D, offsetY, 0.0D));
 	}
 
 	static <T> T routeApproachEffect(
@@ -462,14 +462,14 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> excludeTarget(
 		WorldTaskRequest request,
-		MinecraftClient client,
+		Minecraft minecraft,
 		HarvestTarget target,
 		String reason
 	) {
 		run.excludeCurrentTarget(target.pos());
 		cancelNavigation();
-		clearBreak(client);
-		movement.stop(client);
+		clearBreak(minecraft);
+		movement.stop(minecraft);
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_excluded targetPos=" + compactPos(target.pos())
 			+ " reason=" + reason);
 		return Optional.empty();
@@ -477,26 +477,26 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> tickSurfacing(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		long tick
 	) {
 		if (!surfacing) {
 			cancelNavigation();
-			clearBreak(client);
+			clearBreak(minecraft);
 			clearApproachAssist();
-			underwaterEscape.reset(client);
+			underwaterEscape.reset(minecraft);
 			surfacing = true;
 		}
 		MinecraftUnderwaterEscapeController.Snapshot escape = underwaterEscape.tick(
-			client,
+			minecraft,
 			UnderwaterEscapeSearch.SearchMode.BREATHABLE,
-			player.getAir(),
+			player.getAirSupply(),
 			tick,
-			!player.isSubmergedInWater()
+			!player.isUnderWater()
 		);
 		boolean mayResume = UnderwaterHarvestPolicy.mayResumeHarvest(
-			player.isSubmergedInWater(), player.getAir(), player.getMaxAir());
+			player.isUnderWater(), player.getAirSupply(), player.getMaxAirSupply());
 		if (UnderwaterHarvestPolicy.recoveryComplete(
 			mayResume,
 			escape.navigation().phase() == UnderwaterEscapeNavigator.Phase.REACHED,
@@ -504,16 +504,16 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			escape.waitingForBaritoneRelease(),
 			BaritoneReleaseBarrier.released(baritone)
 		)) {
-			underwaterEscape.reset(client);
-			movement.stop(client);
+			underwaterEscape.reset(minecraft);
+			movement.stop(minecraft);
 			surfacing = false;
 			if (completionPending) {
-				return tickCompletion(request, client);
+				return tickCompletion(request, minecraft);
 			}
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, "air_replenished air=" + player.getAir());
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "air_replenished air=" + player.getAirSupply());
 			return Optional.empty();
 		}
-		snapshot = snapshot(TaskExecutionState.RUNNING, request, "surfacing_for_air air=" + player.getAir()
+		snapshot = snapshot(TaskExecutionState.RUNNING, request, "surfacing_for_air air=" + player.getAirSupply()
 			+ " reserve=" + UnderwaterHarvestPolicy.AIR_RESERVE_TICKS
 			+ " escapePhase=" + escape.navigation().phase().name().toLowerCase(java.util.Locale.ROOT)
 			+ " escapeCandidates=" + escape.candidateCount());
@@ -522,8 +522,8 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> tickPickup(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		GoalMineSpec spec,
 		long tick
 	) {
@@ -534,12 +534,12 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			completionMessage = "underwater_harvest_succeeded itemCount=" + inventoryCount
 				+ " targetCount=" + spec.quantity() + " harvestedBlocks=" + harvestedBlocks;
 			if (!UnderwaterHarvestPolicy.mayResumeHarvest(
-				player.isSubmergedInWater(), player.getAir(), player.getMaxAir())) {
-				return tickSurfacing(request, client, player, tick);
+				player.isUnderWater(), player.getAirSupply(), player.getMaxAirSupply())) {
+				return tickSurfacing(request, minecraft, player, tick);
 			}
-			return tickCompletion(request, client);
+			return tickCompletion(request, minecraft);
 		}
-		Optional<ItemEntity> drop = nearestMatchingDrop(client, player, spec.matchingItemIds(), unreachableDropIds);
+		Optional<ItemEntity> drop = nearestMatchingDrop(minecraft, player, spec.matchingItemIds(), unreachableDropIds);
 		UnderwaterHarvestPolicy.PickupDecision decision = UnderwaterHarvestPolicy.pickupDecision(
 			inventoryBeforeBreak,
 			inventoryCount,
@@ -547,32 +547,32 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			drop.isPresent()
 		);
 		if (decision == UnderwaterHarvestPolicy.PickupDecision.COLLECTED) {
-			movement.stop(client);
+			movement.stop(minecraft);
 			clearApproachAssist();
 			run.clearPickupWindow();
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "pickup_collected itemCount=" + inventoryCount + " targetCount=" + spec.quantity());
 			return Optional.empty();
 		}
 		if (decision == UnderwaterHarvestPolicy.PickupDecision.UNREACHABLE) {
-			movement.stop(client);
+			movement.stop(minecraft);
 			clearApproachAssist();
-			drop.ifPresent(entity -> unreachableDropIds.add(entity.getUuid()));
+			drop.ifPresent(entity -> unreachableDropIds.add(entity.getUUID()));
 			run.clearPickupWindow();
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "pickup_unreachable itemCount=" + inventoryCount + " targetCount=" + spec.quantity());
 			return Optional.empty();
 		}
 		run.tickPickup(false);
 		if (decision == UnderwaterHarvestPolicy.PickupDecision.APPROACH) {
-			Vec3d itemPos = drop.orElseThrow().getPos();
+			Vec3 itemPos = drop.orElseThrow().position();
 			UnderwaterHarvestPolicy.PickupTarget blockCenter = UnderwaterHarvestPolicy.pickupTarget(
 				itemPos.x,
 				itemPos.y,
 				itemPos.z
 			);
-			Vec3d target = new Vec3d(blockCenter.x(), blockCenter.y(), blockCenter.z());
-			camera.lookAt(client, target);
+			Vec3 target = new Vec3(blockCenter.x(), blockCenter.y(), blockCenter.z());
+			camera.lookAt(minecraft, target);
 			UnderwaterHarvestPolicy.VerticalMotion verticalMotion = moveUnderwaterToward(
-				client,
+				minecraft,
 				player,
 				new BlockPos(
 					(int) Math.floor(target.x),
@@ -586,14 +586,14 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 				+ " targetCount=" + spec.quantity() + " verticalMotion=" + verticalMotion.name().toLowerCase());
 			return Optional.empty();
 		}
-		movement.stop(client);
+		movement.stop(minecraft);
 		clearApproachAssist();
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_drop itemCount=" + inventoryCount);
 		return Optional.empty();
 	}
 
 	private static SourceScan selectBatch(
-		MinecraftClient client,
+		Minecraft minecraft,
 		GoalMineSpec spec,
 		BlockPos origin,
 		Set<BlockPos> excludedTargets
@@ -605,20 +605,20 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			for (int z = origin.getZ() - UnderwaterHarvestPolicy.HORIZONTAL_RADIUS; z <= origin.getZ() + UnderwaterHarvestPolicy.HORIZONTAL_RADIUS; z++) {
 				for (int y = origin.getY() - UnderwaterHarvestPolicy.VERTICAL_RADIUS; y <= origin.getY() + UnderwaterHarvestPolicy.VERTICAL_RADIUS; y++) {
 					BlockPos pos = new BlockPos(x, y, z);
-					if (!client.world.isInBuildLimit(pos) || !client.world.isChunkLoaded(pos)) {
+					if (!minecraft.level.isInWorldBounds(pos) || !minecraft.level.hasChunkAt(pos)) {
 						continue;
 					}
-					BlockState state = client.world.getBlockState(pos);
+					BlockState state = minecraft.level.getBlockState(pos);
 					String blockId = blockId(state);
 					if (!blockIds.contains(blockId)) {
 						continue;
 					}
-					discovered.add(pos.toImmutable());
+					discovered.add(pos.immutable());
 					if (excludedTargets.contains(pos)) {
 						continue;
 					}
 					Optional<UnderwaterHarvestPolicy.SourceEnvironment> environment =
-						MinecraftUnderwaterSourceClassifier.classify(client, pos, state);
+						MinecraftUnderwaterSourceClassifier.classify(minecraft, pos, state);
 					if (environment.isPresent()) {
 						candidates.add(new UnderwaterHarvestPolicy.Target(
 							new UnderwaterHarvestPolicy.Position(x, y, z),
@@ -641,24 +641,24 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static Optional<ItemEntity> nearestMatchingDrop(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		List<String> matchingItemIds,
 		Set<UUID> excludedDropIds
 	) {
 		Set<String> ids = new HashSet<>(matchingItemIds);
-		return client.world.getEntitiesByClass(
+		return minecraft.level.getEntitiesOfClass(
 			ItemEntity.class,
-			new Box(player.getBlockPos()).expand(8.0D),
-			entity -> ids.contains(itemId(entity.getStack())) && !excludedDropIds.contains(entity.getUuid())
-		).stream().min(java.util.Comparator.comparingDouble(player::squaredDistanceTo));
+			new AABB(player.blockPosition()).inflate(8.0D),
+			entity -> ids.contains(itemId(entity.getItem())) && !excludedDropIds.contains(entity.getUUID())
+		).stream().min(java.util.Comparator.comparingDouble(player::distanceToSqr));
 	}
 
-	private static int matchingInventoryCount(ClientPlayerEntity player, List<String> matchingItemIds) {
+	private static int matchingInventoryCount(LocalPlayer player, List<String> matchingItemIds) {
 		Set<String> ids = new HashSet<>(matchingItemIds);
 		int total = 0;
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			ItemStack stack = player.getInventory().getStack(slot);
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = player.getInventory().getItem(slot);
 			if (!stack.isEmpty() && ids.contains(itemId(stack))) {
 				total += stack.getCount();
 			}
@@ -666,52 +666,52 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		return total;
 	}
 
-	private static boolean selectRequiredTool(MinecraftClient client, ClientPlayerEntity player, List<String> requiredToolItemIds) {
+	private static boolean selectRequiredTool(Minecraft minecraft, LocalPlayer player, List<String> requiredToolItemIds) {
 		if (requiredToolItemIds == null || requiredToolItemIds.isEmpty()) {
 			return true;
 		}
 		Set<String> required = new HashSet<>(requiredToolItemIds);
-		if (matchesRequiredTool(player.getInventory().getSelectedStack(), required)) {
+		if (matchesRequiredTool(player.getInventory().getSelectedItem(), required)) {
 			return true;
 		}
-		ScreenHandler handler = player.currentScreenHandler;
-		int sourceSlot = findRequiredToolSlot(handler, required);
+		AbstractContainerMenu menu = player.containerMenu;
+		int sourceSlot = findRequiredToolSlot(menu, required);
 		if (sourceSlot < 0 || !isRequiredToolSourceSlot(sourceSlot)) {
 			return false;
 		}
 		int selectedHotbarSlot = player.getInventory().getSelectedSlot();
-		if (sourceSlot >= PlayerScreenHandler.HOTBAR_START && sourceSlot < PlayerScreenHandler.HOTBAR_END) {
-			selectAndSyncHotbarSlot(client, player, sourceSlot - PlayerScreenHandler.HOTBAR_START);
+		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
+			selectAndSyncHotbarSlot(minecraft, player, sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
 		}
 		else {
-			client.interactionManager.clickSlot(handler.syncId, sourceSlot, selectedHotbarSlot, SlotActionType.SWAP, player);
-			selectAndSyncHotbarSlot(client, player, selectedHotbarSlot);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, selectedHotbarSlot, ClickType.SWAP, player);
+			selectAndSyncHotbarSlot(minecraft, player, selectedHotbarSlot);
 		}
-		return matchesRequiredTool(player.getInventory().getSelectedStack(), required);
+		return matchesRequiredTool(player.getInventory().getSelectedItem(), required);
 	}
 
-	private static int findRequiredToolSlot(ScreenHandler handler, Set<String> requiredItemIds) {
-		if (!(handler instanceof PlayerScreenHandler)) {
+	private static int findRequiredToolSlot(AbstractContainerMenu menu, Set<String> requiredItemIds) {
+		if (!(menu instanceof InventoryMenu)) {
 			return -1;
 		}
-		for (int slot = PlayerScreenHandler.HOTBAR_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			if (matchesRequiredTool(handler.getSlot(slot).getStack(), requiredItemIds)) {
+		for (int slot = InventoryMenu.USE_ROW_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			if (matchesRequiredTool(menu.getSlot(slot).getItem(), requiredItemIds)) {
 				return slot;
 			}
 		}
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_START; slot++) {
-			if (matchesRequiredTool(handler.getSlot(slot).getStack(), requiredItemIds)) {
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_START; slot++) {
+			if (matchesRequiredTool(menu.getSlot(slot).getItem(), requiredItemIds)) {
 				return slot;
 			}
 		}
-		return matchesRequiredTool(handler.getSlot(PlayerScreenHandler.OFFHAND_ID).getStack(), requiredItemIds)
-			? PlayerScreenHandler.OFFHAND_ID
+		return matchesRequiredTool(menu.getSlot(InventoryMenu.SHIELD_SLOT).getItem(), requiredItemIds)
+			? InventoryMenu.SHIELD_SLOT
 			: -1;
 	}
 
 	static boolean isRequiredToolSourceSlot(int slot) {
-		return (slot >= PlayerScreenHandler.INVENTORY_START && slot < PlayerScreenHandler.HOTBAR_END)
-			|| slot == PlayerScreenHandler.OFFHAND_ID;
+		return (slot >= InventoryMenu.INV_SLOT_START && slot < InventoryMenu.USE_ROW_SLOT_END)
+			|| slot == InventoryMenu.SHIELD_SLOT;
 	}
 
 	private static boolean matchesRequiredTool(ItemStack stack, Set<String> requiredItemIds) {
@@ -720,26 +720,26 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			&& requiredItemIds.contains(itemId(stack));
 	}
 
-	private static void selectAndSyncHotbarSlot(MinecraftClient client, ClientPlayerEntity player, int hotbarSlot) {
+	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
 		if (player.getInventory().getSelectedSlot() == hotbarSlot) {
 			return;
 		}
 		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (client.getNetworkHandler() != null) {
-			client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(hotbarSlot));
+		if (minecraft.getConnection() != null) {
+			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
 		}
 	}
 
-	private Optional<TaskTerminalEvent> tickCompletion(WorldTaskRequest request, MinecraftClient client) {
+	private Optional<TaskTerminalEvent> tickCompletion(WorldTaskRequest request, Minecraft minecraft) {
 		cancelNavigation();
-		clearBreak(client);
-		movement.stop(client);
+		clearBreak(minecraft);
+		movement.stop(minecraft);
 		if (!BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_completion_baritone_release");
 			return Optional.empty();
 		}
-		underwaterEscape.reset(client);
-		ClientPlayerEntity player = client == null ? null : client.player;
+		underwaterEscape.reset(minecraft);
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		GoalMineSpec spec = request.goal() == null ? null : request.goal().mineSpec();
 		int inventoryCount = player == null || spec == null
 			? 0
@@ -777,9 +777,9 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.FAILED, failure.detail(), null, failure.code()));
 	}
 
-	private void clearBreak(MinecraftClient client) {
-		if (breakingTarget != null && client != null && client.interactionManager != null) {
-			client.interactionManager.cancelBlockBreaking();
+	private void clearBreak(Minecraft minecraft) {
+		if (breakingTarget != null && minecraft != null && minecraft.gameMode != null) {
+			minecraft.gameMode.stopDestroyBlock();
 		}
 		breakingTarget = null;
 		breakStartedTick = -1L;
@@ -805,14 +805,14 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private boolean awaitBaritoneRelease(
 		WorldTaskRequest request,
-		MinecraftClient client,
+		Minecraft minecraft,
 		HarvestTarget target,
 		String event
 	) {
 		if (BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
 			return true;
 		}
-		movement.stop(client);
+		movement.stop(minecraft);
 		snapshot = snapshot(
 			TaskExecutionState.RUNNING,
 			request,
@@ -822,11 +822,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void releaseControls() {
-		MinecraftClient client = clientSupplier.get();
+		Minecraft minecraft = clientSupplier.get();
 		cancelNavigation();
-		clearBreak(client);
-		underwaterEscape.reset(client);
-		movement.stop(client);
+		clearBreak(minecraft);
+		underwaterEscape.reset(minecraft);
+		movement.stop(minecraft);
 		clearApproachAssist();
 		clearGrounding();
 	}
@@ -873,11 +873,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static String blockId(BlockState state) {
-		return Registries.BLOCK.getId(state.getBlock()).toString();
+		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 	}
 
 	private static String itemId(ItemStack stack) {
-		return Registries.ITEM.getId(stack.getItem()).toString();
+		return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 	}
 
 	private static String compactPos(BlockPos pos) {
@@ -914,7 +914,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		private UnderwaterHarvestPolicy.ApproachProgress approachProgress;
 
 		HarvestRun(BlockPos searchOrigin) {
-			this.searchOrigin = Objects.requireNonNull(searchOrigin, "searchOrigin").toImmutable();
+			this.searchOrigin = Objects.requireNonNull(searchOrigin, "searchOrigin").immutable();
 		}
 
 		BlockPos searchOrigin() {
@@ -953,7 +953,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 
 		boolean prepareApproach(BlockPos target, double distanceBlocks) {
-			BlockPos immutableTarget = Objects.requireNonNull(target, "target").toImmutable();
+			BlockPos immutableTarget = Objects.requireNonNull(target, "target").immutable();
 			if (immutableTarget.equals(approachTarget)) {
 				return false;
 			}
@@ -982,7 +982,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 
 		void excludeCurrentTarget(BlockPos target) {
-			BlockPos immutableTarget = Objects.requireNonNull(target, "target").toImmutable();
+			BlockPos immutableTarget = Objects.requireNonNull(target, "target").immutable();
 			unreachableTargets.add(immutableTarget);
 			if (currentTarget().map(HarvestTarget::pos).filter(immutableTarget::equals).isPresent()) {
 				batchCursor++;
@@ -1040,9 +1040,9 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		UnderwaterHarvestPolicy.ApproachProgress approachProgress
 	) {
 		RunSnapshot {
-			searchOrigin = searchOrigin == null ? null : searchOrigin.toImmutable();
+			searchOrigin = searchOrigin == null ? null : searchOrigin.immutable();
 			unreachableTargets = Set.copyOf(unreachableTargets);
-			currentTarget = currentTarget == null ? null : currentTarget.toImmutable();
+			currentTarget = currentTarget == null ? null : currentTarget.immutable();
 		}
 	}
 
@@ -1052,7 +1052,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		UnderwaterHarvestPolicy.SourceEnvironment environment
 	) {
 		HarvestTarget {
-			pos = Objects.requireNonNull(pos, "pos").toImmutable();
+			pos = Objects.requireNonNull(pos, "pos").immutable();
 			Objects.requireNonNull(blockId, "blockId");
 			Objects.requireNonNull(environment, "environment");
 		}

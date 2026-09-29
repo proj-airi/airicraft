@@ -2,8 +2,8 @@ package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.JsonObject;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -27,10 +27,10 @@ public final class WorldQueryScriptToolProvider implements PlannerToolProvider {
 	}
 
 	public static WorldQueryScriptToolProvider forClient(LongSupplier serverTick, Consumer<List<BlockPos>> observed) {
-		return new WorldQueryScriptToolProvider(command -> MinecraftClient.getInstance().execute(command),
-			args -> WorldQuerySnapshot.capture(MinecraftClient.getInstance(), args, serverTick.getAsLong()),
+		return new WorldQueryScriptToolProvider(command -> Minecraft.getInstance().execute(command),
+			args -> WorldQuerySnapshot.capture(Minecraft.getInstance(), args, serverTick.getAsLong()),
 			snapshot -> {
-				if (MinecraftClient.getInstance().world != snapshot.world()) throw new IllegalStateException("world_changed");
+				if (Minecraft.getInstance().level != snapshot.world()) throw new IllegalStateException("world_changed");
 				observed.accept(snapshot.observedPositions());
 			});
 	}

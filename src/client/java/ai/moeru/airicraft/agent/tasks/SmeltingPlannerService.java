@@ -2,30 +2,30 @@ package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
-import net.minecraft.block.ShapeContext;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.AbstractFurnaceBlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.display.FurnaceRecipeDisplay;
-import net.minecraft.recipe.display.SlotDisplayContexts;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.AbstractFurnaceScreenHandler;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.display.FurnaceRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplayContext;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,48 +43,48 @@ public final class SmeltingPlannerService {
 	private ServerRecipeDisplayCatalog.Snapshot cachedKnownCatalog;
 	private List<SmeltingRecipeKnowledge> cachedKnownServerSmelts = List.of();
 
-	public String checkSmeltables(MinecraftClient client, SmeltingProcessManager manager, long tick) {
+	public String checkSmeltables(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
 		Objects.requireNonNull(manager, "manager");
-		ClientPlayerEntity player = client == null ? null : client.player;
-		ClientWorld world = client == null ? null : client.world;
-		if (player == null || world == null) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		ClientLevel level = minecraft == null ? null : minecraft.level;
+		if (player == null || level == null) {
 			manager.registerOptions(List.of());
 			return "Tool result for check_smeltables: SMELTING_UNAVAILABLE world_not_loaded";
 		}
 
 		ServerRecipeDisplayCatalog.Snapshot recipeCatalog = ServerRecipeDisplayCatalog.current();
-		List<SmeltableInput> inputs = smeltableInputs(player, world, recipeCatalog);
-		List<SmeltingStationCandidate> candidates = manager.rankCandidates(stationCandidates(client, manager, tick));
-		List<SmeltingOption> options = buildOptions(inputs, candidates, observeStations(client), manager, tick);
-		FuelInventorySummary fuelSummary = fuelInventorySummary(player, world);
+		List<SmeltableInput> inputs = smeltableInputs(player, level, recipeCatalog);
+		List<SmeltingStationCandidate> candidates = manager.rankCandidates(stationCandidates(minecraft, manager, tick));
+		List<SmeltingOption> options = buildOptions(inputs, candidates, observeStations(minecraft), manager, tick);
+		FuelInventorySummary fuelSummary = fuelInventorySummary(player, level);
 		manager.registerOptions(options);
 		return renderCheckSmeltables(options, candidates, fuelSummary);
 	}
 
-	public List<SmeltingOption> availableSmeltingOptions(MinecraftClient client, SmeltingProcessManager manager, long tick) {
-		return inspectOpportunities(client, manager, tick).availableSmelts();
+	public List<SmeltingOption> availableSmeltingOptions(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
+		return inspectOpportunities(minecraft, manager, tick).availableSmelts();
 	}
 
-	public SmeltingOpportunitySnapshot inspectOpportunities(MinecraftClient client, SmeltingProcessManager manager, long tick) {
+	public SmeltingOpportunitySnapshot inspectOpportunities(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
 		Objects.requireNonNull(manager, "manager");
-		ClientPlayerEntity player = client == null ? null : client.player;
-		ClientWorld world = client == null ? null : client.world;
-		if (player == null || world == null) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		ClientLevel level = minecraft == null ? null : minecraft.level;
+		if (player == null || level == null) {
 			manager.registerOptions(List.of());
 			return SmeltingOpportunitySnapshot.empty();
 		}
 		ServerRecipeDisplayCatalog.Snapshot recipeCatalog = ServerRecipeDisplayCatalog.current();
-		List<SmeltableInput> inputs = smeltableInputs(player, world, recipeCatalog);
-		List<SmeltingStationCandidate> candidates = manager.rankCandidates(stationCandidates(client, manager, tick));
-		List<SmeltingOption> options = buildOptions(inputs, candidates, observeStations(client), manager, tick);
+		List<SmeltableInput> inputs = smeltableInputs(player, level, recipeCatalog);
+		List<SmeltingStationCandidate> candidates = manager.rankCandidates(stationCandidates(minecraft, manager, tick));
+		List<SmeltingOption> options = buildOptions(inputs, candidates, observeStations(minecraft), manager, tick);
 		manager.registerOptions(options);
-		return new SmeltingOpportunitySnapshot(options, knownSmeltingRecipes(player, world, recipeCatalog));
+		return new SmeltingOpportunitySnapshot(options, knownSmeltingRecipes(player, level, recipeCatalog));
 	}
 
-	public String inspectSmelting(MinecraftClient client, SmeltingProcessManager manager, long tick) {
+	public String inspectSmelting(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
 		Objects.requireNonNull(manager, "manager");
 		StringBuilder builder = new StringBuilder(manager.inspectSummary());
-		List<SmeltingStationObservation> observations = observeStations(client);
+		List<SmeltingStationObservation> observations = observeStations(minecraft);
 		if (observations.isEmpty()) {
 			return builder.append("\nnearbyFurnaces=0").toString();
 		}
@@ -106,19 +106,19 @@ public final class SmeltingPlannerService {
 		return builder.toString();
 	}
 
-	public List<SmeltingOutputReadyEvent> pollTrackedOutputReady(MinecraftClient client, SmeltingProcessManager manager, long tick) {
+	public List<SmeltingOutputReadyEvent> pollTrackedOutputReady(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
 		Objects.requireNonNull(manager, "manager");
 		if (!manager.hasTrackedProcesses()) {
 			return List.of();
 		}
 		ArrayList<SmeltingStationObservation> observations = new ArrayList<>();
 		for (SmeltingStationKey key : manager.trackedStationKeys()) {
-			observeTrackedStation(client, key).ifPresent(observations::add);
+			observeTrackedStation(minecraft, key).ifPresent(observations::add);
 		}
 		return manager.markReadyOutputs(observations, tick);
 	}
 
-	public SmeltingActionResult startSmelting(MinecraftClient client, SmeltingProcessManager manager, SmeltItemsStepArgs request, long tick) {
+	public SmeltingActionResult startSmelting(Minecraft minecraft, SmeltingProcessManager manager, SmeltItemsStepArgs request, long tick) {
 		Objects.requireNonNull(manager, "manager");
 		Objects.requireNonNull(request, "request");
 		SmeltingOption option = manager.registeredOption(request.optionId());
@@ -128,12 +128,12 @@ public final class SmeltingPlannerService {
 		if (request.inputQuantity() > option.maxInputQuantity()) {
 			return SmeltingActionResult.failed("insufficient_input", "Requested inputQuantity exceeds available input items.");
 		}
-		SmeltingStationObservation latest = refreshObservation(client, option.stationObservation())
+		SmeltingStationObservation latest = refreshObservation(minecraft, option.stationObservation())
 			.orElse(option.stationObservation());
 		return manager.startProcess(request, latest, tick);
 	}
 
-	public SmeltingActionResult collectSmelted(MinecraftClient client, SmeltingProcessManager manager, CollectSmeltedItemsStepArgs request, long tick) {
+	public SmeltingActionResult collectSmelted(Minecraft minecraft, SmeltingProcessManager manager, CollectSmeltedItemsStepArgs request, long tick) {
 		Objects.requireNonNull(manager, "manager");
 		Objects.requireNonNull(request, "request");
 		if (request.processId() == null && request.confirmationToken() == null) {
@@ -149,13 +149,13 @@ public final class SmeltingPlannerService {
 			return SmeltingActionResult.accepted(request.processId(), "accepted processId=" + request.processId());
 		}
 		if (key != null) {
-			SmeltingStationObservation observation = refreshObservation(client, key).orElse(null);
+			SmeltingStationObservation observation = refreshObservation(minecraft, key).orElse(null);
 			if (observation == null) {
 				return SmeltingActionResult.failed("station_unavailable", "Smelting station is no longer loaded.");
 			}
 			return manager.collectUntrackedOutput(request, observation, tick);
 		}
-		List<SmeltingStationObservation> observations = observeStations(client).stream()
+		List<SmeltingStationObservation> observations = observeStations(minecraft).stream()
 			.filter(observation -> observation.slots().outputCount() > 0)
 			.sorted(Comparator.comparingDouble(SmeltingStationObservation::distance))
 			.toList();
@@ -165,90 +165,90 @@ public final class SmeltingPlannerService {
 		return manager.collectUntrackedOutput(request, observations.get(0), tick);
 	}
 
-	Optional<SmeltingStationObservation> refreshObservation(MinecraftClient client, SmeltingStationObservation previous) {
+	Optional<SmeltingStationObservation> refreshObservation(Minecraft minecraft, SmeltingStationObservation previous) {
 		if (previous == null || previous.key() == null) {
 			return Optional.empty();
 		}
-		return refreshObservation(client, previous.key());
+		return refreshObservation(minecraft, previous.key());
 	}
 
-	Optional<SmeltingStationObservation> refreshObservation(MinecraftClient client, SmeltingStationKey key) {
+	Optional<SmeltingStationObservation> refreshObservation(Minecraft minecraft, SmeltingStationKey key) {
 		if (key == null) {
 			return Optional.empty();
 		}
-		return observeStations(client).stream()
+		return observeStations(minecraft).stream()
 			.filter(observation -> key.equals(observation.key()))
 				.findFirst();
 	}
 
-	private Optional<SmeltingStationObservation> observeTrackedStation(MinecraftClient client, SmeltingStationKey key) {
-		ClientPlayerEntity player = client == null ? null : client.player;
-		ClientWorld world = client == null ? null : client.world;
-		if (player == null || world == null || key == null) {
+	private Optional<SmeltingStationObservation> observeTrackedStation(Minecraft minecraft, SmeltingStationKey key) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		ClientLevel level = minecraft == null ? null : minecraft.level;
+		if (player == null || level == null || key == null) {
 			return Optional.empty();
 		}
 		if (key.dimensionId() != null && key.dimensionId().contains("#open_screen")) {
-			return observeStations(client).stream()
+			return observeStations(minecraft).stream()
 				.filter(observation -> key.equals(observation.key()))
 				.findFirst();
 		}
-		if (!Objects.equals(world.getRegistryKey().getValue().toString(), key.dimensionId())) {
+		if (!Objects.equals(level.dimension().location().toString(), key.dimensionId())) {
 			return Optional.empty();
 		}
 		BlockPos pos = new BlockPos(key.x(), key.y(), key.z());
-		if (!world.isChunkLoaded(pos)) {
+		if (!level.hasChunkAt(pos)) {
 			return Optional.empty();
 		}
-		SmeltingStationKind kind = stationKind(world.getBlockState(pos)).orElse(null);
+		SmeltingStationKind kind = stationKind(level.getBlockState(pos)).orElse(null);
 		if (kind == null) {
 			return Optional.empty();
 		}
-		BlockEntity blockEntity = world.getBlockEntity(pos);
-		if (!(blockEntity instanceof Inventory inventory)) {
+		BlockEntity blockEntity = level.getBlockEntity(pos);
+		if (!(blockEntity instanceof Container container)) {
 			return Optional.empty();
 		}
 		return Optional.of(new SmeltingStationObservation(
 			key,
 			kind,
-			slotSnapshot(inventory, world.getBlockState(pos)),
+			slotSnapshot(container, level.getBlockState(pos)),
 			false,
-			player.squaredDistanceTo(Vec3d.ofCenter(pos)),
+			player.distanceToSqr(Vec3.atCenterOf(pos)),
 			false
 		));
 	}
 
-	List<SmeltingStationObservation> observeStations(MinecraftClient client) {
-		ClientPlayerEntity player = client == null ? null : client.player;
-		ClientWorld world = client == null ? null : client.world;
-		if (player == null || world == null) {
+	List<SmeltingStationObservation> observeStations(Minecraft minecraft) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		ClientLevel level = minecraft == null ? null : minecraft.level;
+		if (player == null || level == null) {
 			return List.of();
 		}
 		ArrayList<SmeltingStationObservation> observations = new ArrayList<>();
-		if (player.currentScreenHandler instanceof AbstractFurnaceScreenHandler furnaceHandler) {
-			observations.add(openScreenObservation(player, world, furnaceHandler));
+		if (player.containerMenu instanceof AbstractFurnaceMenu furnaceMenu) {
+			observations.add(openScreenObservation(player, level, furnaceMenu));
 		}
-		BlockPos origin = player.getBlockPos();
+		BlockPos origin = player.blockPosition();
 		for (int dx = -STATION_SEARCH_RADIUS; dx <= STATION_SEARCH_RADIUS; dx++) {
 			for (int dy = -STATION_SEARCH_VERTICAL_RADIUS; dy <= STATION_SEARCH_VERTICAL_RADIUS; dy++) {
 				for (int dz = -STATION_SEARCH_RADIUS; dz <= STATION_SEARCH_RADIUS; dz++) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					if (!world.isChunkLoaded(pos)) {
+					BlockPos pos = origin.offset(dx, dy, dz);
+					if (!level.hasChunkAt(pos)) {
 						continue;
 					}
-					SmeltingStationKind kind = stationKind(world.getBlockState(pos)).orElse(null);
+					SmeltingStationKind kind = stationKind(level.getBlockState(pos)).orElse(null);
 					if (kind == null) {
 						continue;
 					}
-					BlockEntity blockEntity = world.getBlockEntity(pos);
-					if (!(blockEntity instanceof Inventory inventory)) {
+					BlockEntity blockEntity = level.getBlockEntity(pos);
+					if (!(blockEntity instanceof Container container)) {
 						continue;
 					}
 					observations.add(new SmeltingStationObservation(
-						stationKey(world, pos),
+						stationKey(level, pos),
 						kind,
-						slotSnapshot(inventory, world.getBlockState(pos)),
+						slotSnapshot(container, level.getBlockState(pos)),
 						false,
-						player.squaredDistanceTo(Vec3d.ofCenter(pos)),
+						player.distanceToSqr(Vec3.atCenterOf(pos)),
 						false
 					));
 				}
@@ -257,14 +257,14 @@ public final class SmeltingPlannerService {
 		return List.copyOf(observations);
 	}
 
-	private List<SmeltingStationCandidate> stationCandidates(MinecraftClient client, SmeltingProcessManager manager, long tick) {
-		ClientPlayerEntity player = client == null ? null : client.player;
-		ClientWorld world = client == null ? null : client.world;
-		if (player == null || world == null) {
+	private List<SmeltingStationCandidate> stationCandidates(Minecraft minecraft, SmeltingProcessManager manager, long tick) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		ClientLevel level = minecraft == null ? null : minecraft.level;
+		if (player == null || level == null) {
 			return List.of();
 		}
 		ArrayList<SmeltingStationCandidate> candidates = new ArrayList<>();
-		for (SmeltingStationObservation observation : observeStations(client)) {
+		for (SmeltingStationObservation observation : observeStations(minecraft)) {
 			SmeltingStationState state = manager.classify(observation, tick);
 			candidates.add(new SmeltingStationCandidate(
 				observation.openScreen() ? SmeltingStationSource.OPEN_SCREEN : SmeltingStationSource.NEARBY_EXISTING,
@@ -275,12 +275,12 @@ public final class SmeltingPlannerService {
 				state == SmeltingStationState.OCCUPIED || state == SmeltingStationState.STALE
 			));
 		}
-		chooseFurnacePlacement(client, player).ifPresent(pos -> candidates.add(new SmeltingStationCandidate(
+		chooseFurnacePlacement(minecraft, player).ifPresent(pos -> candidates.add(new SmeltingStationCandidate(
 			SmeltingStationSource.PLACE_FROM_INVENTORY,
 			SmeltingStationState.EMPTY,
 			SmeltingStationKind.FURNACE,
-			stationKey(world, pos),
-			player.squaredDistanceTo(Vec3d.ofCenter(pos)),
+			stationKey(level, pos),
+			player.distanceToSqr(Vec3.atCenterOf(pos)),
 			false
 		)));
 		return List.copyOf(candidates);
@@ -336,8 +336,8 @@ public final class SmeltingPlannerService {
 	}
 
 	private List<SmeltableInput> smeltableInputs(
-		ClientPlayerEntity player,
-		ClientWorld world,
+		LocalPlayer player,
+		ClientLevel level,
 		ServerRecipeDisplayCatalog.Snapshot recipeCatalog
 	) {
 		Map<Item, Integer> inventoryCounts = inventoryCounts(player);
@@ -345,17 +345,17 @@ public final class SmeltingPlannerService {
 			return List.of();
 		}
 		Map<String, SmeltableInput> inputs = new LinkedHashMap<>();
-		var context = SlotDisplayContexts.createParameters(world);
+		var context = SlotDisplayContext.fromLevel(level);
 		for (RecipeDisplayEntry entry : recipeEntries(player, recipeCatalog)) {
 			if (!(entry.display() instanceof FurnaceRecipeDisplay display)) {
 				continue;
 			}
 			SmeltingStationKind stationKind = stationKind(display, context).orElse(null);
-			ItemStack result = display.result().getFirst(context);
+			ItemStack result = display.result().resolveForFirstStack(context);
 			if (stationKind == null || result.isEmpty()) {
 				continue;
 			}
-			for (ItemStack ingredient : display.ingredient().getStacks(context)) {
+			for (ItemStack ingredient : display.ingredient().resolveForStacks(context)) {
 				if (ingredient.isEmpty()) {
 					continue;
 				}
@@ -379,8 +379,8 @@ public final class SmeltingPlannerService {
 	}
 
 	private List<SmeltingRecipeKnowledge> knownSmeltingRecipes(
-		ClientPlayerEntity player,
-		ClientWorld world,
+		LocalPlayer player,
+		ClientLevel level,
 		ServerRecipeDisplayCatalog.Snapshot recipeCatalog
 	) {
 		List<SmeltingRecipeKnowledge> serverKnowledge;
@@ -388,12 +388,12 @@ public final class SmeltingPlannerService {
 			serverKnowledge = cachedKnownServerSmelts;
 		}
 		else {
-			serverKnowledge = extractKnownSmeltingRecipes(recipeCatalog.entries(), world);
+			serverKnowledge = extractKnownSmeltingRecipes(recipeCatalog.entries(), level);
 			cachedKnownCatalog = recipeCatalog;
 			cachedKnownServerSmelts = serverKnowledge;
 		}
 		return mergeKnownSmelts(
-			extractKnownSmeltingRecipes(recipeBookEntries(player), world),
+			extractKnownSmeltingRecipes(recipeBookEntries(player), level),
 			serverKnowledge
 		);
 	}
@@ -419,23 +419,23 @@ public final class SmeltingPlannerService {
 
 	private static List<SmeltingRecipeKnowledge> extractKnownSmeltingRecipes(
 		List<RecipeDisplayEntry> entries,
-		ClientWorld world
+		ClientLevel level
 	) {
-		if (entries == null || entries.isEmpty() || world == null) {
+		if (entries == null || entries.isEmpty() || level == null) {
 			return List.of();
 		}
 		Map<String, SmeltingRecipeKnowledge> recipes = new LinkedHashMap<>();
-		var context = SlotDisplayContexts.createParameters(world);
+		var context = SlotDisplayContext.fromLevel(level);
 		for (RecipeDisplayEntry entry : entries) {
 			if (!(entry.display() instanceof FurnaceRecipeDisplay display)
 				|| stationKind(display, context).orElse(null) != SmeltingStationKind.FURNACE) {
 				continue;
 			}
-			ItemStack result = display.result().getFirst(context);
+			ItemStack result = display.result().resolveForFirstStack(context);
 			if (result.isEmpty()) {
 				continue;
 			}
-			for (ItemStack ingredient : display.ingredient().getStacks(context)) {
+			for (ItemStack ingredient : display.ingredient().resolveForStacks(context)) {
 				if (ingredient.isEmpty()) {
 					continue;
 				}
@@ -447,7 +447,7 @@ public final class SmeltingPlannerService {
 					inputItemId,
 					outputItemId,
 					result.getCount(),
-					ingredient.getMaxCount(),
+					ingredient.getMaxStackSize(),
 					display.duration() <= 0 ? DEFAULT_COOK_TIME_TICKS : display.duration(),
 					"minecraft:furnace",
 					1
@@ -458,7 +458,7 @@ public final class SmeltingPlannerService {
 	}
 
 	private static List<RecipeDisplayEntry> recipeEntries(
-		ClientPlayerEntity player,
+		LocalPlayer player,
 		ServerRecipeDisplayCatalog.Snapshot recipeCatalog
 	) {
 		ArrayList<RecipeDisplayEntry> entries = new ArrayList<>(recipeBookEntries(player));
@@ -468,62 +468,62 @@ public final class SmeltingPlannerService {
 		return List.copyOf(entries);
 	}
 
-	private static List<RecipeDisplayEntry> recipeBookEntries(ClientPlayerEntity player) {
+	private static List<RecipeDisplayEntry> recipeBookEntries(LocalPlayer player) {
 		if (player == null) {
 			return List.of();
 		}
 		ArrayList<RecipeDisplayEntry> entries = new ArrayList<>();
-		for (RecipeResultCollection collection : player.getRecipeBook().getOrderedResults()) {
-			entries.addAll(collection.getAllRecipes());
+		for (RecipeCollection collection : player.getRecipeBook().getCollections()) {
+			entries.addAll(collection.getRecipes());
 		}
 		return List.copyOf(entries);
 	}
 
-	private static Optional<SmeltingStationKind> stationKind(FurnaceRecipeDisplay display, net.minecraft.util.context.ContextParameterMap context) {
-		for (ItemStack station : display.craftingStation().getStacks(context)) {
-			if (station.isOf(Items.FURNACE)) {
+	private static Optional<SmeltingStationKind> stationKind(FurnaceRecipeDisplay display, net.minecraft.util.context.ContextMap context) {
+		for (ItemStack station : display.craftingStation().resolveForStacks(context)) {
+			if (station.is(Items.FURNACE)) {
 				return Optional.of(SmeltingStationKind.FURNACE);
 			}
-			if (station.isOf(Items.BLAST_FURNACE)) {
+			if (station.is(Items.BLAST_FURNACE)) {
 				return Optional.of(SmeltingStationKind.BLAST_FURNACE);
 			}
-			if (station.isOf(Items.SMOKER)) {
+			if (station.is(Items.SMOKER)) {
 				return Optional.of(SmeltingStationKind.SMOKER);
 			}
 		}
 		return Optional.empty();
 	}
 
-	private static SmeltingStationObservation openScreenObservation(ClientPlayerEntity player, ClientWorld world, AbstractFurnaceScreenHandler handler) {
-		SmeltingStationKind kind = switch (handler) {
-			case net.minecraft.screen.BlastFurnaceScreenHandler ignored -> SmeltingStationKind.BLAST_FURNACE;
-			case net.minecraft.screen.SmokerScreenHandler ignored -> SmeltingStationKind.SMOKER;
+	private static SmeltingStationObservation openScreenObservation(LocalPlayer player, ClientLevel level, AbstractFurnaceMenu menu) {
+		SmeltingStationKind kind = switch (menu) {
+			case net.minecraft.world.inventory.BlastFurnaceMenu ignored -> SmeltingStationKind.BLAST_FURNACE;
+			case net.minecraft.world.inventory.SmokerMenu ignored -> SmeltingStationKind.SMOKER;
 			default -> SmeltingStationKind.FURNACE;
 		};
 		return new SmeltingStationObservation(
-			new SmeltingStationKey(world.getRegistryKey().getValue() + "#open_screen", handler.syncId, 0, 0),
+			new SmeltingStationKey(level.dimension().location() + "#open_screen", menu.containerId, 0, 0),
 			kind,
 			new SmeltingSlotSnapshot(
-				itemId(handler.getSlot(0).getStack()),
-				handler.getSlot(0).getStack().getCount(),
-				itemId(handler.getSlot(1).getStack()),
-				handler.getSlot(1).getStack().getCount(),
-				itemId(handler.getSlot(2).getStack()),
-				handler.getSlot(2).getStack().getCount(),
+				itemId(menu.getSlot(0).getItem()),
+				menu.getSlot(0).getItem().getCount(),
+				itemId(menu.getSlot(1).getItem()),
+				menu.getSlot(1).getItem().getCount(),
+				itemId(menu.getSlot(2).getItem()),
+				menu.getSlot(2).getItem().getCount(),
 				0,
 				DEFAULT_COOK_TIME_TICKS,
-				handler.isBurning()
+				menu.isLit()
 			),
 			true,
 			0.0D
 		);
 	}
 
-	private static SmeltingSlotSnapshot slotSnapshot(Inventory inventory, BlockState state) {
-		ItemStack input = inventory.getStack(0);
-		ItemStack fuel = inventory.getStack(1);
-		ItemStack output = inventory.getStack(2);
-		boolean burning = state.contains(Properties.LIT) && state.get(Properties.LIT);
+	private static SmeltingSlotSnapshot slotSnapshot(Container container, BlockState state) {
+		ItemStack input = container.getItem(0);
+		ItemStack fuel = container.getItem(1);
+		ItemStack output = container.getItem(2);
+		boolean burning = state.hasProperty(BlockStateProperties.LIT) && state.getValue(BlockStateProperties.LIT);
 		return new SmeltingSlotSnapshot(
 			itemId(input),
 			input.getCount(),
@@ -538,26 +538,26 @@ public final class SmeltingPlannerService {
 	}
 
 	private static Optional<SmeltingStationKind> stationKind(BlockState state) {
-		if (state.isOf(Blocks.FURNACE)) {
+		if (state.is(Blocks.FURNACE)) {
 			return Optional.of(SmeltingStationKind.FURNACE);
 		}
-		if (state.isOf(Blocks.BLAST_FURNACE)) {
+		if (state.is(Blocks.BLAST_FURNACE)) {
 			return Optional.of(SmeltingStationKind.BLAST_FURNACE);
 		}
-		if (state.isOf(Blocks.SMOKER)) {
+		if (state.is(Blocks.SMOKER)) {
 			return Optional.of(SmeltingStationKind.SMOKER);
 		}
 		return Optional.empty();
 	}
 
-	private static Optional<BlockPos> chooseFurnacePlacement(MinecraftClient client, ClientPlayerEntity player) {
-		if (!hasFurnaceItem(player.currentScreenHandler)) {
+	private static Optional<BlockPos> chooseFurnacePlacement(Minecraft minecraft, LocalPlayer player) {
+		if (!hasFurnaceItem(player.containerMenu)) {
 			return Optional.empty();
 		}
-		BlockPos origin = player.getBlockPos();
+		BlockPos origin = player.blockPosition();
 		for (BlockPos candidate : furnacePlacementCandidatePositions(origin)) {
-			if (canPlaceAt(client, candidate)) {
-				return Optional.of(candidate.toImmutable());
+			if (canPlaceAt(minecraft, candidate)) {
+				return Optional.of(candidate.immutable());
 			}
 		}
 		return Optional.empty();
@@ -566,14 +566,14 @@ public final class SmeltingPlannerService {
 	static List<BlockPos> furnacePlacementCandidatePositions(BlockPos origin) {
 		ArrayList<BlockPos> candidates = new ArrayList<>();
 		for (int yOffset : List.of(0, -1, 1, 2, -2)) {
-			for (Direction direction : Direction.Type.HORIZONTAL) {
-				candidates.add(origin.offset(direction).add(0, yOffset, 0));
+			for (Direction direction : Direction.Plane.HORIZONTAL) {
+				candidates.add(origin.relative(direction).offset(0, yOffset, 0));
 			}
 		}
 		for (int yOffset : List.of(0, -1, 1, 2, -2)) {
 			for (int dx = -2; dx <= 2; dx++) {
 				for (int dz = -2; dz <= 2; dz++) {
-					BlockPos candidate = origin.add(dx, yOffset, dz);
+					BlockPos candidate = origin.offset(dx, yOffset, dz);
 					if (!candidate.equals(origin)) {
 						candidates.add(candidate);
 					}
@@ -583,35 +583,35 @@ public final class SmeltingPlannerService {
 		return List.copyOf(candidates);
 	}
 
-	private static boolean hasFurnaceItem(ScreenHandler handler) {
-		if (!(handler instanceof PlayerScreenHandler)) {
+	private static boolean hasFurnaceItem(AbstractContainerMenu menu) {
+		if (!(menu instanceof InventoryMenu)) {
 			return false;
 		}
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
-			if (!stack.isEmpty() && stack.isOf(Items.FURNACE)) {
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
+			if (!stack.isEmpty() && stack.is(Items.FURNACE)) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	private static boolean canPlaceAt(MinecraftClient client, BlockPos pos) {
-		if (client == null || client.world == null || !client.world.isChunkLoaded(pos) || !client.world.isChunkLoaded(pos.down())) {
+	private static boolean canPlaceAt(Minecraft minecraft, BlockPos pos) {
+		if (minecraft == null || minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.hasChunkAt(pos.below())) {
 			return false;
 		}
-		if (WorldPlacePreservation.contains(client.world, pos)) return false;
-		BlockState target = client.world.getBlockState(pos);
-		BlockState support = client.world.getBlockState(pos.down());
-		return (target.isAir() || target.isReplaceable())
-			&& support.isSideSolidFullSquare(client.world, pos.down(), Direction.UP)
-			&& client.world.canPlace(Blocks.FURNACE.getDefaultState(), pos, ShapeContext.ofPlacement(client.player));
+		if (WorldPlacePreservation.contains(minecraft.level, pos)) return false;
+		BlockState target = minecraft.level.getBlockState(pos);
+		BlockState support = minecraft.level.getBlockState(pos.below());
+		return (target.isAir() || target.canBeReplaced())
+			&& support.isFaceSturdy(minecraft.level, pos.below(), Direction.UP)
+			&& minecraft.level.isUnobstructed(Blocks.FURNACE.defaultBlockState(), pos, CollisionContext.placementContext(minecraft.player));
 	}
 
-	private static Map<Item, Integer> inventoryCounts(ClientPlayerEntity player) {
+	private static Map<Item, Integer> inventoryCounts(LocalPlayer player) {
 		LinkedHashMap<Item, Integer> counts = new LinkedHashMap<>();
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			ItemStack stack = player.getInventory().getStack(slot);
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = player.getInventory().getItem(slot);
 			if (!stack.isEmpty()) {
 				counts.merge(stack.getItem(), stack.getCount(), Integer::sum);
 			}
@@ -619,15 +619,15 @@ public final class SmeltingPlannerService {
 		return Map.copyOf(counts);
 	}
 
-	private static FuelInventorySummary fuelInventorySummary(ClientPlayerEntity player, ClientWorld world) {
+	private static FuelInventorySummary fuelInventorySummary(LocalPlayer player, ClientLevel level) {
 		LinkedHashMap<String, FuelItemSummary> fuels = new LinkedHashMap<>();
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			ItemStack stack = player.getInventory().getStack(slot);
-			if (stack.isEmpty() || !world.getFuelRegistry().isFuel(stack)) {
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			ItemStack stack = player.getInventory().getItem(slot);
+			if (stack.isEmpty() || !level.fuelValues().isFuel(stack)) {
 				continue;
 			}
 			String itemId = itemId(stack);
-			int fuelTicks = world.getFuelRegistry().getFuelTicks(stack);
+			int fuelTicks = level.fuelValues().burnDuration(stack);
 			FuelItemSummary previous = fuels.get(itemId);
 			fuels.put(itemId, new FuelItemSummary(
 				itemId,
@@ -638,8 +638,8 @@ public final class SmeltingPlannerService {
 		return new FuelInventorySummary(fuels);
 	}
 
-	private static SmeltingStationKey stationKey(ClientWorld world, BlockPos pos) {
-		return new SmeltingStationKey(world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ());
+	private static SmeltingStationKey stationKey(ClientLevel level, BlockPos pos) {
+		return new SmeltingStationKey(level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
 	}
 
 	private static String renderCheckSmeltables(List<SmeltingOption> options, List<SmeltingStationCandidate> candidates, FuelInventorySummary fuelSummary) {
@@ -691,7 +691,7 @@ public final class SmeltingPlannerService {
 	}
 
 	private static String itemId(ItemStack stack) {
-		return stack == null || stack.isEmpty() ? null : Registries.ITEM.getId(stack.getItem()).toString();
+		return stack == null || stack.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 	}
 
 	private static String optionSegment(String itemId) {

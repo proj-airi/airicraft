@@ -1,13 +1,13 @@
 package ai.moeru.airicraft.agent.reflex;
 
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CombatStalemateTest {
-	private static final Vec3d PLAYER = new Vec3d(-34.511, 124, -38.573);
-	private static final Map<String, Vec3d> PILLAGER = Map.of("pillager", new Vec3d(-21.740, 123, -41.500));
+	private static final Vec3 PLAYER = new Vec3(-34.511, 124, -38.573);
+	private static final Map<String, Vec3> PILLAGER = Map.of("pillager", new Vec3(-21.740, 123, -41.500));
 
 	@Test void recordedStationaryPillagerEncounterYieldsOnceAfterTwentySeconds() {
 		CombatStalemate state = null;
@@ -25,7 +25,7 @@ class CombatStalemateTest {
 	@Test void meaningfulProgressRestartsObservationButTinyJitterDoesNot() {
 		var start = CombatStalemate.observe(null, 0, PLAYER, PILLAGER, false);
 		assertEquals(0, CombatStalemate.observe(start, 300, PLAYER.add(0.05, 0, 0), PILLAGER, false).sinceTick());
-		var closer = PLAYER.add(PILLAGER.get("pillager").subtract(PLAYER).normalize().multiply(1.5));
+		var closer = PLAYER.add(PILLAGER.get("pillager").subtract(PLAYER).normalize().scale(1.5));
 		var advanced = CombatStalemate.observe(start, 300, closer, PILLAGER, false);
 		assertEquals(300, advanced.sinceTick());
 		assertFalse(CombatStalemate.observe(advanced, 400, closer, PILLAGER, false).deferred());
@@ -44,13 +44,13 @@ class CombatStalemateTest {
 
 	@Test void repeatedClimbAndFallDoesNotCountAsCombatProgress() {
 		// Reduced from the live ledge cycle: a distant pillager stays below the player.
-		var threats = Map.of("pillager", new Vec3d(-13.26, 117, -36.30));
-		var low = new Vec3d(-4.50, 131, -7.57);
-		var climb = new Vec3d(-4.50, 131, -4.81);
-		var high = new Vec3d(-5.47, 134.42, -6.36);
+		var threats = Map.of("pillager", new Vec3(-13.26, 117, -36.30));
+		var low = new Vec3(-4.50, 131, -7.57);
+		var climb = new Vec3(-4.50, 131, -4.81);
+		var high = new Vec3(-5.47, 134.42, -6.36);
 		CombatStalemate state = null;
 		for (int tick = 0; tick <= 800; tick++) {
-			Vec3d position = switch (tick / 100 % 3) {
+			Vec3 position = switch (tick / 100 % 3) {
 				case 0 -> low;
 				case 1 -> climb;
 				default -> high;

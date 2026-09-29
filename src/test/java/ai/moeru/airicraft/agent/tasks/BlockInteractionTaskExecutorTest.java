@@ -3,11 +3,11 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,17 +22,17 @@ class BlockInteractionTaskExecutorTest {
 	@Test
 	void roofLipCanBeClickedBelowItsOccludedFaceCenter() {
 		BlockPos support = new BlockPos(0, 136, 4);
-		Vec3d eye = new Vec3d(-0.5D, 135.62D, 5.5D);
+		Vec3 eye = new Vec3(-0.5D, 135.62D, 5.5D);
 		List<BlockPos> roof = List.of(support, new BlockPos(-1, 136, 4), new BlockPos(-1, 136, 5));
-		Vec3d center = new Vec3d(0.5D, 136.5D, 5D);
+		Vec3 center = new Vec3(0.5D, 136.5D, 5D);
 		assertEquals(new BlockPos(-1, 136, 5), roofHit(roof, eye, center, Direction.SOUTH).getBlockPos());
-		Vec3d lower = new Vec3d(0.5D, 136.1D, 5D);
+		Vec3 lower = new Vec3(0.5D, 136.1D, 5D);
 		assertEquals(support, roofHit(roof, eye, lower, Direction.SOUTH).getBlockPos());
-		assertEquals(Direction.SOUTH, roofHit(roof, eye, lower, Direction.SOUTH).getSide());
+		assertEquals(Direction.SOUTH, roofHit(roof, eye, lower, Direction.SOUTH).getDirection());
 
-		Optional<Vec3d> selected = BlockInteractionTaskExecutor.selectPlacementHitPoint(support, Direction.SOUTH, point -> {
+		Optional<Vec3> selected = BlockInteractionTaskExecutor.selectPlacementHitPoint(support, Direction.SOUTH, point -> {
 			BlockHitResult hit = roofHit(roof, eye, point, Direction.SOUTH);
-			return hit != null && hit.getBlockPos().equals(support) && hit.getSide() == Direction.SOUTH;
+			return hit != null && hit.getBlockPos().equals(support) && hit.getDirection() == Direction.SOUTH;
 		});
 		assertTrue(selected.isPresent(), "A visible part of the roof face must not require climbing onto the roof");
 	}
@@ -41,18 +41,18 @@ class BlockInteractionTaskExecutorTest {
 	void seeingTheUndersideDoesNotExposeTheRequestedSideFace() {
 		BlockPos support = new BlockPos(0, 136, 4);
 		BlockHitResult underside = roofHit(List.of(support),
-			new Vec3d(0.5D, 135.62D, 4.5D), new Vec3d(0.5D, 136.5D, 5D), Direction.SOUTH);
-		assertEquals(Direction.DOWN, underside.getSide());
+			new Vec3(0.5D, 135.62D, 4.5D), new Vec3(0.5D, 136.5D, 5D), Direction.SOUTH);
+		assertEquals(Direction.DOWN, underside.getDirection());
 		assertFalse(BlockInteractionTaskExecutor.matchesSupportFace(underside, support, Direction.SOUTH));
 		assertTrue(BlockInteractionTaskExecutor.matchesSupportFace(underside, support, Direction.DOWN));
 	}
 
-	private static BlockHitResult roofHit(List<BlockPos> roof, Vec3d eye, Vec3d point, Direction face) {
-		Vec3d end = BlockInteractionTaskExecutor.supportRaycastEndpoint(point, face);
+	private static BlockHitResult roofHit(List<BlockPos> roof, Vec3 eye, Vec3 point, Direction face) {
+		Vec3 end = BlockInteractionTaskExecutor.supportRaycastEndpoint(point, face);
 		return roof.stream()
-			.map(pos -> Box.raycast(List.of(new Box(0, 0, 0, 1, 1, 1)), eye, end, pos))
+			.map(pos -> AABB.clip(List.of(new AABB(0, 0, 0, 1, 1, 1)), eye, end, pos))
 			.filter(java.util.Objects::nonNull)
-			.min(java.util.Comparator.comparingDouble(hit -> eye.squaredDistanceTo(hit.getPos())))
+			.min(java.util.Comparator.comparingDouble(hit -> eye.distanceToSqr(hit.getLocation())))
 			.orElse(null);
 	}
 
@@ -342,19 +342,19 @@ class BlockInteractionTaskExecutorTest {
 		var stand = target.south();
 		var current = new BlockPos(-228, 46, -1);
 		assertEquals(List.of(stand), BlockInteractionTaskExecutor.viablePlacementStandCandidates(
-			target, target.down(), current, Set.of(), stand::equals, p -> true, p -> true));
+			target, target.below(), current, Set.of(), stand::equals, p -> true, p -> true));
 		assertTrue(BlockInteractionTaskExecutor.viablePlacementStandCandidates(
-			target, target.down(), current, Set.of(), p -> false, p -> true, p -> true).isEmpty());
+			target, target.below(), current, Set.of(), p -> false, p -> true, p -> true).isEmpty());
 		assertTrue(BlockInteractionTaskExecutor.viablePlacementStandCandidates(
-			target, target.down(), current, Set.of(), stand::equals, p -> false, p -> true).isEmpty());
+			target, target.below(), current, Set.of(), stand::equals, p -> false, p -> true).isEmpty());
 		assertTrue(BlockInteractionTaskExecutor.viablePlacementStandCandidates(
-			target, target.down(), current, Set.of(), stand::equals, p -> true, p -> false).isEmpty());
+			target, target.below(), current, Set.of(), stand::equals, p -> true, p -> false).isEmpty());
 	}
 
 	@Test
 	void overheadPlacementPrefersReachableGroundStanceWithSupportFaceLineOfSight() {
 		BlockPos target = new BlockPos(35, 68, 155);
-		BlockPos support = target.down();
+		BlockPos support = target.below();
 		BlockPos current = new BlockPos(35, 66, 152);
 		BlockPos groundStance = new BlockPos(35, 66, 154);
 		BlockPos roofStance = new BlockPos(35, 69, 153);
@@ -375,7 +375,7 @@ class BlockInteractionTaskExecutorTest {
 	@Test
 	void overheadPlacementHasNoValidStanceWithoutSupportFaceLineOfSight() {
 		BlockPos target = new BlockPos(35, 68, 155);
-		BlockPos support = target.down();
+		BlockPos support = target.below();
 		BlockPos current = new BlockPos(35, 66, 152);
 		BlockPos groundStance = new BlockPos(35, 66, 154);
 		BlockPos roofStance = new BlockPos(35, 69, 153);
@@ -405,33 +405,33 @@ class BlockInteractionTaskExecutorTest {
 	void placementTargetDetectsOnlyActualPlayerHitboxOverlap() {
 		BlockPos target = new BlockPos(77, 68, -79);
 		assertTrue(BlockInteractionTaskExecutor.playerIntersectsPlacementTarget(
-			new Box(77.7D, 68.0D, -78.8D, 78.3D, 69.8D, -78.2D),
+			new AABB(77.7D, 68.0D, -78.8D, 78.3D, 69.8D, -78.2D),
 			target
 		));
 		assertFalse(BlockInteractionTaskExecutor.playerIntersectsPlacementTarget(
-			new Box(78.0D, 68.0D, -78.8D, 78.6D, 69.8D, -78.2D),
+			new AABB(78.0D, 68.0D, -78.8D, 78.6D, 69.8D, -78.2D),
 			target
 		));
 	}
 
 	@Test
 	void supportRaycastEndpointsMoveInsideEveryClickedFace() {
-		Vec3d surface = new Vec3d(1.5D, 2.5D, 3.5D);
-		assertEquals(new Vec3d(1.5D, 2.49D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.UP));
-		assertEquals(new Vec3d(1.5D, 2.51D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.DOWN));
-		assertEquals(new Vec3d(1.5D, 2.5D, 3.51D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.NORTH));
-		assertEquals(new Vec3d(1.5D, 2.5D, 3.49D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.SOUTH));
-		assertEquals(new Vec3d(1.51D, 2.5D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.WEST));
-		assertEquals(new Vec3d(1.49D, 2.5D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.EAST));
+		Vec3 surface = new Vec3(1.5D, 2.5D, 3.5D);
+		assertEquals(new Vec3(1.5D, 2.49D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.UP));
+		assertEquals(new Vec3(1.5D, 2.51D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.DOWN));
+		assertEquals(new Vec3(1.5D, 2.5D, 3.51D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.NORTH));
+		assertEquals(new Vec3(1.5D, 2.5D, 3.49D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.SOUTH));
+		assertEquals(new Vec3(1.51D, 2.5D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.WEST));
+		assertEquals(new Vec3(1.49D, 2.5D, 3.5D), BlockInteractionTaskExecutor.supportRaycastEndpoint(surface, Direction.EAST));
 	}
 
 	@Test
 	void interactionRayEndUsesThePlayersEyeAndVanillaReach() {
 		assertEquals(
-			new Vec3d(10.0D, 65.62D, -5.5D),
+			new Vec3(10.0D, 65.62D, -5.5D),
 			BlockInteractionTaskExecutor.interactionRayEnd(
-				new Vec3d(10.0D, 65.62D, -10.0D),
-				new Vec3d(0.0D, 0.0D, 1.0D),
+				new Vec3(10.0D, 65.62D, -10.0D),
+				new Vec3(0.0D, 0.0D, 1.0D),
 				4.5D
 			)
 		);

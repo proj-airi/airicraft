@@ -2,8 +2,8 @@ package ai.moeru.airicraft.mixin.client;
 
 import baritone.api.utils.IPlayerContext;
 import baritone.utils.pathing.Avoidance;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.mob.Monster;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.monster.Enemy;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -18,6 +18,6 @@ public abstract class BaritoneMobAvoidanceMixin {
 	private static Stream<Entity> airicraft$onlyMonsterAvoidance(IPlayerContext context) {
 		// Keep Baritone's subsequent enderman, zombified piglin and daylight-spider filters.
 		// Monster also covers slimes and ghasts, which do not extend HostileEntity.
-		return context.entitiesStream().filter(entity -> entity instanceof Monster);
+		return context.entitiesStream().filter(entity -> entity instanceof Enemy);
 	}
 }

@@ -5,23 +5,23 @@ import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.Objects;
@@ -38,7 +38,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private static final int UNDERWATER_ESCAPE_PHASE_TICKS = 20;
 	private static final double TARGET_FORWARD_HORIZONTAL_DISTANCE_SQUARED = 4.0D;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade baritoneFacade;
 	private final MovementController movementController = new MovementController();
 	private final CameraController cameraController;
@@ -59,18 +59,18 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public ReturnToSurfaceTaskExecutor(BaritoneFacade baritoneFacade) {
-		this(MinecraftClient::getInstance, baritoneFacade);
+		this(Minecraft::getInstance, baritoneFacade);
 	}
 
-	ReturnToSurfaceTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade baritoneFacade) {
+	ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade) {
 		this(clientSupplier, baritoneFacade, new CameraController());
 	}
 
 	public ReturnToSurfaceTaskExecutor(BaritoneFacade baritoneFacade, CameraController cameraController) {
-		this(MinecraftClient::getInstance, baritoneFacade, cameraController);
+		this(Minecraft::getInstance, baritoneFacade, cameraController);
 	}
 
-	private ReturnToSurfaceTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
+	private ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.baritoneFacade = baritoneFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
@@ -94,20 +94,20 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.world == null || client.interactionManager == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.level == null || minecraft.gameMode == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
 		ReturnToSurfaceStepArgs args = ((WorldTaskRequest.ReturnToSurface) request.task()).args();
-		if (isSurfaceReached(client, player)) {
+		if (isSurfaceReached(minecraft, player)) {
 			return complete(request, "surface_reached");
 		}
 		if (underwaterRecoveryStarted || shouldEnterUnderwaterRecovery(player)) {
 			Optional<TaskTerminalEvent> recoveryEvent = tickUnderwaterRecovery(
 				sessionSnapshot,
 				request,
-				client,
+				minecraft,
 				player,
 				args
 			);
@@ -121,19 +121,19 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		if (args.targetPosition() != null
 			&& !exactSurfaceNavigationStarted
 			&& reachedTarget(player, args.targetPosition())) {
-			return handleSurfaceTargetReached(request, client, player, args, canRefineSurfaceNavigation());
+			return handleSurfaceTargetReached(request, minecraft, player, args, canRefineSurfaceNavigation());
 		}
 		if (toweringStarted || shouldTowerFirst(args)) {
-			return tickTowering(request, client, player, args);
+			return tickTowering(request, minecraft, player, args);
 		}
 		if (args.targetPosition() == null) {
 			return args.useTowering()
-				? tickTowering(request, client, player, args)
+				? tickTowering(request, minecraft, player, args)
 				: fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "surface_target_unavailable"));
 		}
 		if (baritoneFacade == null || !baritoneFacade.isLoaded()) {
 			return args.useTowering()
-				? tickTowering(request, client, player, args)
+				? tickTowering(request, minecraft, player, args)
 					: fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "baritone_unavailable"));
 		}
 		if (!navigationStarted) {
@@ -146,7 +146,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			if ("AT_GOAL".equalsIgnoreCase(event)) {
 				return handleSurfaceTargetReached(
 					request,
-					client,
+					minecraft,
 					player,
 					args,
 					canRefineSurfaceNavigation()
@@ -154,7 +154,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			}
 			if ("CALC_FAILED".equalsIgnoreCase(event) || "CANCELLED".equalsIgnoreCase(event) || "CANCELED".equalsIgnoreCase(event)) {
 				return args.useTowering()
-					? tickTowering(request, client, player, args)
+					? tickTowering(request, minecraft, player, args)
 					: fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "surface_path_" + event.toLowerCase(java.util.Locale.ROOT)));
 			}
 		}
@@ -169,8 +169,8 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private Optional<TaskTerminalEvent> tickUnderwaterRecovery(
 		SessionSnapshot sessionSnapshot,
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		ReturnToSurfaceStepArgs args
 	) {
 		if (!underwaterRecoveryStarted) {
@@ -182,7 +182,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		}
 		if (isBreathable(player)) {
 			breathableTicks++;
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "underwater_recovery:breathable");
 			if (shouldExitUnderwaterRecovery(true, breathableTicks)) {
 				underwaterRecoveryStarted = false;
@@ -210,10 +210,10 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		}
 		UnderwaterRecoveryKeys keys = underwaterRecoveryKeys(recoveryMovement, underwaterStuckTicks);
 		if (recoveryMovement == RecoveryMovement.TOWARD_TARGET || (recoveryMovement == RecoveryMovement.STUCK && args.targetPosition() != null)) {
-			cameraController.lookAt(client, targetSwimPoint(args.targetPosition()));
+			cameraController.lookAt(minecraft, targetSwimPoint(args.targetPosition()));
 		}
 		movementController.swimUp(
-			client,
+			minecraft,
 			keys.forward(),
 			keys.sprint(),
 			keys.left(),
@@ -228,20 +228,20 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> handleSurfaceTargetReached(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		ReturnToSurfaceStepArgs args,
 		boolean canRefineNavigation
 	) {
 		return switch (surfaceTargetOutcome(
-			isSurfaceReached(client, player),
+			isSurfaceReached(minecraft, player),
 			args.useTowering(),
 			args.targetKind(),
 			canRefineNavigation
 		)) {
 			case COMPLETE -> complete(request, "surface_target_reached");
 			case NAVIGATE_EXACT -> startExactSurfaceNavigation(request, args.targetPosition());
-			case TOWER -> tickTowering(request, client, player, args);
+			case TOWER -> tickTowering(request, minecraft, player, args);
 			case FAIL -> fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "surface_target_not_surface"));
 		};
 	}
@@ -265,17 +265,17 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> tickTowering(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		ReturnToSurfaceStepArgs args
 	) {
 		if (!toweringStarted) {
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			cancelNavigationIfStarted();
 			toweringStarted = true;
 			towerStartY = player.getBlockY();
 		}
-		if (isSurfaceReached(client, player)) {
+		if (isSurfaceReached(minecraft, player)) {
 			return complete(request, "surface_reached_by_towering");
 		}
 		if (shouldStopToweringAtSurfaceTargetElevation(args, player.getBlockY())) {
@@ -284,7 +284,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		if (player.getBlockY() - towerStartY > MAX_TOWER_BLOCKS) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "tower_limit_reached"));
 		}
-		Optional<HeadroomClearance> headroomClearance = clearTowerHeadroom(client, player);
+		Optional<HeadroomClearance> headroomClearance = clearTowerHeadroom(minecraft, player);
 		if (headroomClearance.isPresent()) {
 			HeadroomClearance clearance = headroomClearance.get();
 			if (clearance.failed()) {
@@ -293,15 +293,15 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, clearance.event());
 			return Optional.empty();
 		}
-		Hand hand = selectFillerHand(client, player, args.fillerBlockIds());
+		InteractionHand hand = selectFillerHand(minecraft, player, args.fillerBlockIds());
 		if (hand == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "missing_filler_block fillerBlockIds=" + args.fillerBlockIds()));
 		}
-		jumpKeyControl.press(client.options.jumpKey);
-		PlacementAttempt placement = placeUnderFoot(client, player, hand);
+		jumpKeyControl.press(minecraft.options.keyJump);
+		PlacementAttempt placement = placeUnderFoot(minecraft, player, hand);
 		if (placement.accepted()) {
 			towerSupportUnavailableTicks = 0;
-			player.swingHand(hand);
+			player.swing(hand);
 		}
 		else if ("support_unavailable".equals(placement.reason())) {
 			towerSupportUnavailableTicks++;
@@ -316,37 +316,37 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
-	private Optional<HeadroomClearance> clearTowerHeadroom(MinecraftClient client, ClientPlayerEntity player) {
-		if (client == null || client.world == null || client.interactionManager == null || player == null) {
+	private Optional<HeadroomClearance> clearTowerHeadroom(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft == null || minecraft.level == null || minecraft.gameMode == null || player == null) {
 			return Optional.empty();
 		}
-		BlockPos target = headroomBreakTarget == null ? firstTowerHeadroomObstruction(client, player.getBlockPos()) : headroomBreakTarget;
+		BlockPos target = headroomBreakTarget == null ? firstTowerHeadroomObstruction(minecraft, player.blockPosition()) : headroomBreakTarget;
 		if (target == null) {
-			clearHeadroomBreakState(client);
+			clearHeadroomBreakState(minecraft);
 			return Optional.empty();
 		}
-		if (!client.world.isChunkLoaded(target)) {
-			clearHeadroomBreakState(client);
+		if (!minecraft.level.hasChunkAt(target)) {
+			clearHeadroomBreakState(minecraft);
 			return Optional.of(new HeadroomClearance(
 				"towering:headroom_unloaded", true,
 				TaskFailure.of(TaskFailureCode.ENVIRONMENT_CHANGED, "towering:headroom_unloaded")
 			));
 		}
-		BlockState state = client.world.getBlockState(target);
-		if (!shouldClearTowerHeadroom(!state.isAir(), state.isReplaceable(), !state.getFluidState().isEmpty())) {
-			clearHeadroomBreakState(client);
+		BlockState state = minecraft.level.getBlockState(target);
+		if (!shouldClearTowerHeadroom(!state.isAir(), state.canBeReplaced(), !state.getFluidState().isEmpty())) {
+			clearHeadroomBreakState(minecraft);
 			return Optional.of(new HeadroomClearance("towering:headroom_cleared", false, null));
 		}
-		MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(client, player, List.of(state));
+		MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, player, List.of(state));
 		if (!tool.ok()) {
-			clearHeadroomBreakState(client);
+			clearHeadroomBreakState(minecraft);
 			return Optional.of(new HeadroomClearance("towering:" + tool.message(), true,
 				TaskFailure.of(TaskFailureCode.MISSING_ITEM, tool.message())));
 		}
-		long tick = client.world.getTime();
+		long tick = minecraft.level.getGameTime();
 		if (headroomBreakTarget == null || !headroomBreakTarget.equals(target)) {
-			clearHeadroomBreakState(client);
-			boolean accepted = client.interactionManager.attackBlock(target, Direction.DOWN);
+			clearHeadroomBreakState(minecraft);
+			boolean accepted = minecraft.gameMode.startDestroyBlock(target, Direction.DOWN);
 			if (!accepted) {
 				return Optional.of(new HeadroomClearance(
 					"towering:headroom_break_start_failed", true,
@@ -357,18 +357,18 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			headroomBreakStartTick = tick;
 		}
 		if (tick - headroomBreakStartTick > HEADROOM_BREAK_TIMEOUT_TICKS) {
-			clearHeadroomBreakState(client);
+			clearHeadroomBreakState(minecraft);
 			return Optional.of(new HeadroomClearance(
 				"towering:headroom_break_timeout", true,
 				TaskFailure.of(TaskFailureCode.TRANSIENT, "towering:headroom_break_timeout")
 			));
 		}
-		jumpKeyControl.release(client.options.jumpKey);
-		client.interactionManager.updateBlockBreakingProgress(target, Direction.DOWN);
-		player.swingHand(Hand.MAIN_HAND);
-		BlockState after = client.world.isChunkLoaded(target) ? client.world.getBlockState(target) : state;
-		if (!shouldClearTowerHeadroom(!after.isAir(), after.isReplaceable(), !after.getFluidState().isEmpty())) {
-			clearHeadroomBreakState(client);
+		jumpKeyControl.release(minecraft.options.keyJump);
+		minecraft.gameMode.continueDestroyBlock(target, Direction.DOWN);
+		player.swing(InteractionHand.MAIN_HAND);
+		BlockState after = minecraft.level.hasChunkAt(target) ? minecraft.level.getBlockState(target) : state;
+		if (!shouldClearTowerHeadroom(!after.isAir(), after.canBeReplaced(), !after.getFluidState().isEmpty())) {
+			clearHeadroomBreakState(minecraft);
 			return Optional.of(new HeadroomClearance("towering:headroom_cleared", false, null));
 		}
 		return Optional.of(new HeadroomClearance("towering:clearing_headroom", false, null));
@@ -378,25 +378,25 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		return unavailableTicks >= TOWER_SUPPORT_UNAVAILABLE_TIMEOUT_TICKS;
 	}
 
-	private void clearHeadroomBreakState(MinecraftClient client) {
-		if (headroomBreakTarget != null && client != null && client.interactionManager != null) {
-			client.interactionManager.cancelBlockBreaking();
+	private void clearHeadroomBreakState(Minecraft minecraft) {
+		if (headroomBreakTarget != null && minecraft != null && minecraft.gameMode != null) {
+			minecraft.gameMode.stopDestroyBlock();
 		}
 		headroomBreakTarget = null;
 		headroomBreakStartTick = -1L;
 	}
 
-	private static BlockPos firstTowerHeadroomObstruction(MinecraftClient client, BlockPos feetPos) {
-		if (client == null || client.world == null || feetPos == null) {
+	private static BlockPos firstTowerHeadroomObstruction(Minecraft minecraft, BlockPos feetPos) {
+		if (minecraft == null || minecraft.level == null || feetPos == null) {
 			return null;
 		}
 		for (int offset = 1; offset <= 2; offset++) {
-			BlockPos candidate = feetPos.up(offset);
-			if (!client.world.isChunkLoaded(candidate)) {
+			BlockPos candidate = feetPos.above(offset);
+			if (!minecraft.level.hasChunkAt(candidate)) {
 				return candidate;
 			}
-			BlockState state = client.world.getBlockState(candidate);
-			if (shouldClearTowerHeadroom(!state.isAir(), state.isReplaceable(), !state.getFluidState().isEmpty())) {
+			BlockState state = minecraft.level.getBlockState(candidate);
+			if (shouldClearTowerHeadroom(!state.isAir(), state.canBeReplaced(), !state.getFluidState().isEmpty())) {
 				return candidate;
 			}
 		}
@@ -407,17 +407,17 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		return args != null && args.useTowering() && args.targetPosition() == null;
 	}
 
-	private static boolean shouldEnterUnderwaterRecovery(ClientPlayerEntity player) {
+	private static boolean shouldEnterUnderwaterRecovery(LocalPlayer player) {
 		return player != null
-			&& shouldEnterUnderwaterRecovery(player.isTouchingWater(), player.isSubmergedInWater(), isBreathable(player));
+			&& shouldEnterUnderwaterRecovery(player.isInWater(), player.isUnderWater(), isBreathable(player));
 	}
 
 	static boolean shouldEnterUnderwaterRecovery(boolean touchingWater, boolean submergedInWater, boolean breathable) {
 		return !breathable && (touchingWater || submergedInWater);
 	}
 
-	private static boolean isBreathable(ClientPlayerEntity player) {
-		return player != null && !player.isSubmergedInWater() && player.getAir() >= player.getMaxAir();
+	private static boolean isBreathable(LocalPlayer player) {
+		return player != null && !player.isUnderWater() && player.getAirSupply() >= player.getMaxAirSupply();
 	}
 
 	public static RecoveryMovement recoveryMovement(boolean underwater, boolean targetAvailable, double horizontalDistanceSquared, boolean stuck) {
@@ -456,7 +456,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		};
 	}
 
-	private static double horizontalDistanceSquared(ClientPlayerEntity player, GoalPosition target) {
+	private static double horizontalDistanceSquared(LocalPlayer player, GoalPosition target) {
 		if (player == null || target == null) {
 			return 0.0D;
 		}
@@ -465,8 +465,8 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		return dx * dx + dz * dz;
 	}
 
-	private static Vec3d targetSwimPoint(GoalPosition target) {
-		return new Vec3d(target.x() + 0.5D, target.y() + 1.0D, target.z() + 0.5D);
+	private static Vec3 targetSwimPoint(GoalPosition target) {
+		return new Vec3(target.x() + 0.5D, target.y() + 1.0D, target.z() + 0.5D);
 	}
 
 	private static String recoveryMovementEvent(RecoveryMovement recoveryMovement) {
@@ -478,92 +478,92 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		};
 	}
 
-	private static PlacementAttempt placeUnderFoot(MinecraftClient client, ClientPlayerEntity player, Hand hand) {
-		Optional<BlockPos> support = findTowerSupport(client, player, hand);
+	private static PlacementAttempt placeUnderFoot(Minecraft minecraft, LocalPlayer player, InteractionHand hand) {
+		Optional<BlockPos> support = findTowerSupport(minecraft, player, hand);
 		if (support.isEmpty()) {
 			return new PlacementAttempt(false, "support_unavailable");
 		}
 		BlockPos supportPos = support.get();
 		BlockHitResult hitResult = new BlockHitResult(
-			new Vec3d(supportPos.getX() + 0.5D, supportPos.getY() + 1.0D, supportPos.getZ() + 0.5D),
+			new Vec3(supportPos.getX() + 0.5D, supportPos.getY() + 1.0D, supportPos.getZ() + 0.5D),
 			Direction.UP,
 			supportPos,
 			false
 		);
-		ActionResult result = client.interactionManager.interactBlock(player, hand, hitResult);
-		return new PlacementAttempt(result.isAccepted(), result.isAccepted() ? "placed" : "interact_" + result);
+		InteractionResult result = minecraft.gameMode.useItemOn(player, hand, hitResult);
+		return new PlacementAttempt(result.consumesAction(), result.consumesAction() ? "placed" : "interact_" + result);
 	}
 
-	private static Optional<BlockPos> findTowerSupport(MinecraftClient client, ClientPlayerEntity player, Hand hand) {
+	private static Optional<BlockPos> findTowerSupport(Minecraft minecraft, LocalPlayer player, InteractionHand hand) {
 		if (player == null) {
 			return Optional.empty();
 		}
-		BlockPos feet = player.getBlockPos();
+		BlockPos feet = player.blockPosition();
 		for (int offset = 1; offset <= TOWER_SUPPORT_SEARCH_DEPTH; offset++) {
-			BlockPos support = feet.down(offset);
-			if (canPlaceAgainst(client, player, hand, support)) {
+			BlockPos support = feet.below(offset);
+			if (canPlaceAgainst(minecraft, player, hand, support)) {
 				return Optional.of(support);
 			}
 		}
 		return Optional.empty();
 	}
 
-	private static boolean canPlaceAgainst(MinecraftClient client, ClientPlayerEntity player, Hand hand, BlockPos support) {
-		if (client == null || client.world == null || player == null || support == null) {
+	private static boolean canPlaceAgainst(Minecraft minecraft, LocalPlayer player, InteractionHand hand, BlockPos support) {
+		if (minecraft == null || minecraft.level == null || player == null || support == null) {
 			return false;
 		}
-		BlockPos target = support.up();
-		if (!client.world.isChunkLoaded(support) || !client.world.isChunkLoaded(target)) {
+		BlockPos target = support.above();
+		if (!minecraft.level.hasChunkAt(support) || !minecraft.level.hasChunkAt(target)) {
 			return false;
 		}
-		BlockState supportState = client.world.getBlockState(support);
-		BlockState targetState = client.world.getBlockState(target);
-		ItemStack selected = hand == Hand.OFF_HAND ? player.getOffHandStack() : player.getMainHandStack();
+		BlockState supportState = minecraft.level.getBlockState(support);
+		BlockState targetState = minecraft.level.getBlockState(target);
+		ItemStack selected = hand == InteractionHand.OFF_HAND ? player.getOffhandItem() : player.getMainHandItem();
 		if (!(selected.getItem() instanceof BlockItem blockItem)) {
 			return false;
 		}
-		return supportState.isSideSolidFullSquare(client.world, support, Direction.UP)
-			&& (targetState.isAir() || targetState.isReplaceable())
-			&& client.world.canPlace(blockItem.getBlock().getDefaultState(), target, ShapeContext.of(player));
+		return supportState.isFaceSturdy(minecraft.level, support, Direction.UP)
+			&& (targetState.isAir() || targetState.canBeReplaced())
+			&& minecraft.level.isUnobstructed(blockItem.getBlock().defaultBlockState(), target, CollisionContext.of(player));
 	}
 
-	private static Hand selectFillerHand(MinecraftClient client, ClientPlayerEntity player, List<String> fillerBlockIds) {
-		if (matchesFiller(player.getOffHandStack(), fillerBlockIds)) {
-			return Hand.OFF_HAND;
+	private static InteractionHand selectFillerHand(Minecraft minecraft, LocalPlayer player, List<String> fillerBlockIds) {
+		if (matchesFiller(player.getOffhandItem(), fillerBlockIds)) {
+			return InteractionHand.OFF_HAND;
 		}
-		return selectHotbarFiller(client, player, fillerBlockIds) ? Hand.MAIN_HAND : null;
+		return selectHotbarFiller(minecraft, player, fillerBlockIds) ? InteractionHand.MAIN_HAND : null;
 	}
 
-	private static boolean selectHotbarFiller(MinecraftClient client, ClientPlayerEntity player, List<String> fillerBlockIds) {
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+	private static boolean selectHotbarFiller(Minecraft minecraft, LocalPlayer player, List<String> fillerBlockIds) {
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
-		ScreenHandler handler = player.currentScreenHandler;
-		int sourceSlot = findFillerSlot(handler, fillerBlockIds);
+		AbstractContainerMenu menu = player.containerMenu;
+		int sourceSlot = findFillerSlot(menu, fillerBlockIds);
 		if (sourceSlot < 0) {
 			return false;
 		}
 		int selectedHotbarSlot = player.getInventory().getSelectedSlot();
-		if (sourceSlot >= PlayerScreenHandler.HOTBAR_START && sourceSlot < PlayerScreenHandler.HOTBAR_END) {
-			selectAndSyncHotbarSlot(client, player, sourceSlot - PlayerScreenHandler.HOTBAR_START);
-			return matchesFiller(player.getInventory().getSelectedStack(), fillerBlockIds);
+		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
+			selectAndSyncHotbarSlot(minecraft, player, sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
+			return matchesFiller(player.getInventory().getSelectedItem(), fillerBlockIds);
 		}
-		client.interactionManager.clickSlot(handler.syncId, sourceSlot, selectedHotbarSlot, SlotActionType.SWAP, player);
-		selectAndSyncHotbarSlot(client, player, selectedHotbarSlot);
-		return matchesFiller(player.getInventory().getSelectedStack(), fillerBlockIds);
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, selectedHotbarSlot, ClickType.SWAP, player);
+		selectAndSyncHotbarSlot(minecraft, player, selectedHotbarSlot);
+		return matchesFiller(player.getInventory().getSelectedItem(), fillerBlockIds);
 	}
 
-	private static int findFillerSlot(ScreenHandler handler, List<String> fillerBlockIds) {
-		if (!(handler instanceof PlayerScreenHandler)) {
+	private static int findFillerSlot(AbstractContainerMenu menu, List<String> fillerBlockIds) {
+		if (!(menu instanceof InventoryMenu)) {
 			return -1;
 		}
-		for (int slot = PlayerScreenHandler.HOTBAR_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			if (matchesFiller(handler.getSlot(slot).getStack(), fillerBlockIds)) {
+		for (int slot = InventoryMenu.USE_ROW_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			if (matchesFiller(menu.getSlot(slot).getItem(), fillerBlockIds)) {
 				return slot;
 			}
 		}
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_START; slot++) {
-			if (matchesFiller(handler.getSlot(slot).getStack(), fillerBlockIds)) {
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_START; slot++) {
+			if (matchesFiller(menu.getSlot(slot).getItem(), fillerBlockIds)) {
 				return slot;
 			}
 		}
@@ -574,19 +574,19 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 		if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof BlockItem) || fillerBlockIds == null) {
 			return false;
 		}
-		String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+		String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 		return fillerBlockIds.stream().anyMatch(itemId::equals);
 	}
 
-	private static void selectAndSyncHotbarSlot(MinecraftClient client, ClientPlayerEntity player, int hotbarSlot) {
+	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
 		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (client.getNetworkHandler() != null) {
-			client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(hotbarSlot));
+		if (minecraft.getConnection() != null) {
+			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
 		}
 	}
 
-	private static boolean reachedTarget(ClientPlayerEntity player, GoalPosition position) {
-		return player != null && reachedTarget(player.getBlockPos(), position);
+	private static boolean reachedTarget(LocalPlayer player, GoalPosition position) {
+		return player != null && reachedTarget(player.blockPosition(), position);
 	}
 
 	static boolean reachedTarget(BlockPos playerPos, GoalPosition position) {
@@ -598,10 +598,10 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 			&& Math.abs(playerPos.getY() - position.y()) <= 2;
 	}
 
-	private static boolean isSurfaceReached(MinecraftClient client, ClientPlayerEntity player) {
+	private static boolean isSurfaceReached(Minecraft minecraft, LocalPlayer player) {
 		return player != null
-			&& player.isOnGround()
-			&& SurfaceMemory.isSurfaceStandingPosition(client, player.getBlockPos());
+			&& player.onGround()
+			&& SurfaceMemory.isSurfaceStandingPosition(minecraft, player.blockPosition());
 	}
 
 	static SurfaceTargetOutcome surfaceTargetOutcome(
@@ -661,12 +661,12 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void releaseMovementControls() {
-		MinecraftClient client = clientSupplier.get();
-		if (client != null) {
-			movementController.stop(client);
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft != null) {
+			movementController.stop(minecraft);
 		}
-		jumpKeyControl.release(client == null ? null : client.options.jumpKey);
-		clearHeadroomBreakState(client);
+		jumpKeyControl.release(minecraft == null ? null : minecraft.options.keyJump);
+		clearHeadroomBreakState(minecraft);
 	}
 
 	private void reset() {

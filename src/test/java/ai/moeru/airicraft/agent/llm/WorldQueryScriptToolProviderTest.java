@@ -3,7 +3,7 @@ package ai.moeru.airicraft.agent.llm;
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.concurrent.TimeUnit;

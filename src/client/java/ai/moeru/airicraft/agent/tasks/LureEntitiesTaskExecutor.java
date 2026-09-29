@@ -3,7 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -73,7 +73,7 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 		if (followers.stream().allMatch(Follower::inside)) return finish(true, "animals_arrived count=" + followers.size());
 		if (++activeTicks > 6000) return finish(false, "lure_timeout");
 		phaseTicks++;
-		Vec3d player = environment.position();
+		Vec3 player = environment.position();
 		String error = environment.holdItem();
 		if (error != null) return finish(false, error);
 		environment.beginTravel();
@@ -173,8 +173,8 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 				+ " lead=" + lead + " navigationGoal=" + navigationGoal + " phaseTicks=" + phaseTicks
 				+ " tried=" + triedLeadPositions + " activeTicks=" + activeTicks + " followers=" + followers, null, null);
 	}
-	private static double distance(Vec3d player, Follower follower) { return player.distanceTo(follower.position()); }
-	private static GoalPosition feet(Vec3d p) { return new GoalPosition((int)Math.floor(p.x), (int)Math.floor(p.y + 0.125), (int)Math.floor(p.z), true); }
+	private static double distance(Vec3 player, Follower follower) { return player.distanceTo(follower.position()); }
+	private static GoalPosition feet(Vec3 p) { return new GoalPosition((int)Math.floor(p.x), (int)Math.floor(p.y + 0.125), (int)Math.floor(p.z), true); }
 	private static double squaredDistance(GoalPosition a, GoalPosition b) {
 		double x = (double)a.x()-b.x(), y = (double)a.y()-b.y(), z = (double)a.z()-b.z();
 		return x*x+y*y+z*z;
@@ -183,10 +183,10 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 	@Override public void onWorldLeave() { release(); request = null; snapshot = TaskExecutionSnapshot.idle(); }
 	@Override public void shutdown() { onWorldLeave(); }
 	enum Phase { ACQUIRE, LEAD, WAIT }
-	record Follower(String uuid, Vec3d position, boolean inside, boolean visible) {}
+	record Follower(String uuid, Vec3 position, boolean inside, boolean visible) {}
 	interface Environment {
 		String initialize(LureEntitiesStepArgs args);
-		Vec3d position();
+		Vec3 position();
 		List<Follower> followers();
 		String holdItem();
 		List<GoalPosition> leadPositions(List<Follower> followers);

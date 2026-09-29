@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,10 +13,10 @@ final class AcquisitionExcavationSites {
 
 	static List<BlockPos> find(BlockPos source, Predicate<BlockPos> clearable, Predicate<BlockPos> supported) {
 		List<BlockPos> sites = new ArrayList<>();
-		for (Direction side : Direction.Type.HORIZONTAL) {
-			BlockPos beside = source.offset(side);
-			for (BlockPos feet : List.of(beside, beside.down())) {
-				if (clearable.test(feet) && clearable.test(feet.up()) && supported.test(feet.down())) sites.add(feet);
+		for (Direction side : Direction.Plane.HORIZONTAL) {
+			BlockPos beside = source.relative(side);
+			for (BlockPos feet : List.of(beside, beside.below())) {
+				if (clearable.test(feet) && clearable.test(feet.above()) && supported.test(feet.below())) sites.add(feet);
 			}
 		}
 		return List.copyOf(sites);

@@ -3,10 +3,10 @@ package ai.moeru.airicraft.agent.evaluation;
 import ai.moeru.airicraft.Airicraft;
 import com.google.gson.Gson;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.server.integrated.IntegratedServer;
-import net.minecraft.util.Util;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.Util;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -136,7 +136,7 @@ public final class EvaluationWorldFixtureService {
 	public Path openCurrentScenarioConfig() {
 		Path configPath = resolveCurrentScenarioConfig()
 			.orElseThrow(() -> new EvaluationWorldFixtureException("scenario_not_found", "No scenario config is associated with the current world"));
-		Util.getOperatingSystem().open(configPath);
+		Util.getPlatform().openPath(configPath);
 		return configPath;
 	}
 
@@ -217,12 +217,12 @@ public final class EvaluationWorldFixtureService {
 	}
 
 	private CurrentWorld requireCurrentIntegratedWorld() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.getServer() == null || !client.isIntegratedServerRunning()) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.getSingleplayerServer() == null || !minecraft.hasSingleplayerServer()) {
 			throw new EvaluationWorldFixtureException("world_not_loaded", "An integrated singleplayer world must be loaded");
 		}
-		IntegratedServer server = client.getServer();
-		Path worldPath = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
+		IntegratedServer server = minecraft.getSingleplayerServer();
+		Path worldPath = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
 		return new CurrentWorld(server, worldPath, worldPath.getFileName().toString());
 	}
 
@@ -245,10 +245,10 @@ public final class EvaluationWorldFixtureService {
 
 	private static void saveServer(IntegratedServer server) {
 		CompletableFuture<Boolean> future = new CompletableFuture<>();
-		server.executeSync(() -> {
+		server.executeIfPossible(() -> {
 			try {
-				server.getPlayerManager().saveAllPlayerData();
-				future.complete(server.save(false, true, true));
+				server.getPlayerList().saveAll();
+				future.complete(server.saveAllChunks(false, true, true));
 			}
 			catch (Throwable throwable) {
 				future.completeExceptionally(throwable);

@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.RecipeEntry;
-import net.minecraft.recipe.ServerRecipeManager;
-import net.minecraft.server.integrated.IntegratedServer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeManager;
+import net.minecraft.client.server.IntegratedServer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,24 +15,24 @@ final class ServerRecipeDisplayCatalog {
 	private static final Object CACHE_LOCK = new Object();
 	private static final Snapshot EMPTY = new Snapshot(List.of());
 	private static IntegratedServer cachedServer;
-	private static ServerRecipeManager cachedRecipeManager;
+	private static RecipeManager cachedRecipeManager;
 	private static Snapshot cachedSnapshot = EMPTY;
 
 	private ServerRecipeDisplayCatalog() {
 	}
 
 	static Snapshot current() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isIntegratedServerRunning()) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.hasSingleplayerServer()) {
 			clear();
 			return EMPTY;
 		}
-		IntegratedServer server = client.getServer();
+		IntegratedServer server = minecraft.getSingleplayerServer();
 		if (server == null) {
 			clear();
 			return EMPTY;
 		}
-		ServerRecipeManager recipeManager = server.getRecipeManager();
+		RecipeManager recipeManager = server.getRecipeManager();
 		synchronized (CACHE_LOCK) {
 			if (server == cachedServer && recipeManager == cachedRecipeManager) {
 				return cachedSnapshot;
@@ -40,12 +40,12 @@ final class ServerRecipeDisplayCatalog {
 		}
 
 		CompletableFuture<List<RecipeDisplayEntry>> future = new CompletableFuture<>();
-		server.executeSync(() -> {
+		server.executeIfPossible(() -> {
 			try {
-				List<RecipeEntry<?>> recipes = List.copyOf(recipeManager.values());
+				List<RecipeHolder<?>> recipes = List.copyOf(recipeManager.getRecipes());
 				List<RecipeDisplayEntry> entries = new ArrayList<>();
-				for (RecipeEntry<?> recipe : recipes) {
-					recipeManager.forEachRecipeDisplay(recipe.id(), entries::add);
+				for (RecipeHolder<?> recipe : recipes) {
+					recipeManager.listDisplaysForRecipe(recipe.id(), entries::add);
 				}
 				future.complete(List.copyOf(entries));
 			}

@@ -13,8 +13,8 @@ import ai.moeru.airicraft.agent.tasks.TaskExecutionSnapshot;
 import ai.moeru.airicraft.agent.tasks.TaskExecutionState;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexSnapshot;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +37,7 @@ public final class BehaviorTreeRuntime {
 	}
 
 	public void tick(
-		MinecraftClient client,
+		Minecraft minecraft,
 		SessionSnapshot sessionSnapshot,
 		DialogueRuntime dialogueRuntime,
 		ChatService chatService,
@@ -48,12 +48,12 @@ public final class BehaviorTreeRuntime {
 		long tick
 	) {
 		if (sessionSnapshot.requiresRespawn()) {
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			snapshot = new BehaviorTreeSnapshot(NodeStatus.RUNNING, List.of("Root", "WaitForRespawn"), movementController.snapshot());
 			return;
 		}
-		if (client == null || !sessionSnapshot.worldLoaded() || client.player == null) {
-			movementController.stop(client);
+		if (minecraft == null || !sessionSnapshot.worldLoaded() || minecraft.player == null) {
+			movementController.stop(minecraft);
 			snapshot = new BehaviorTreeSnapshot(NodeStatus.RUNNING, List.of("Root", "WaitForSession"), movementController.snapshot());
 			return;
 		}
@@ -64,15 +64,15 @@ public final class BehaviorTreeRuntime {
 			return;
 		}
 
-		movementController.stop(client);
+		movementController.stop(minecraft);
 		if (activeGoal.isEmpty() || taskExecutionSnapshot == null || taskExecutionSnapshot.state() == TaskExecutionState.IDLE) {
 			snapshot = new BehaviorTreeSnapshot(NodeStatus.RUNNING, List.of("Root", "ObserveAndWait"), movementController.snapshot());
 			return;
 		}
 
 		if (shouldLookAtFollowTarget(activeGoal.get(), followState)) {
-			Vec3d targetPos = new Vec3d(followState.targetX(), followState.targetY() + 1.62D, followState.targetZ());
-			cameraController.lookAt(client, targetPos);
+			Vec3 targetPos = new Vec3(followState.targetX(), followState.targetY() + 1.62D, followState.targetZ());
+			cameraController.lookAt(minecraft, targetPos);
 		}
 
 		snapshot = new BehaviorTreeSnapshot(
@@ -83,9 +83,9 @@ public final class BehaviorTreeRuntime {
 	}
 
 	/** Chat does not acquire movement or wait for gameplay/reflex ownership. */
-	public void tickChat(MinecraftClient client, SessionSnapshot sessionSnapshot,
+	public void tickChat(Minecraft minecraft, SessionSnapshot sessionSnapshot,
 		DialogueRuntime dialogueRuntime, ChatService chatService, AgentDebugRecorder debugRecorder, long tick) {
-		if (client == null || !sessionSnapshot.worldLoaded() || client.player == null) return;
+		if (minecraft == null || !sessionSnapshot.worldLoaded() || minecraft.player == null) return;
 
 		if (dialogueRuntime.hasPendingReply()) {
 			String source = dialogueRuntime.pendingReplyReason();
@@ -95,7 +95,7 @@ public final class BehaviorTreeRuntime {
 					String text = pendingReply.response().text();
 					String sanitizedText = ChatService.sanitizeForChat(text);
 					debugRecorder.recordChatAttempt(tick, sanitizedText, source, reusedPriorResponse);
-					boolean sent = chatService.send(client, text, tick);
+					boolean sent = chatService.send(minecraft, text, tick);
 					debugRecorder.recordChatResult(
 						tick,
 						sent ? chatService.lastChatText() : sanitizedText,
@@ -110,7 +110,7 @@ public final class BehaviorTreeRuntime {
 		}
 	}
 
-	public void reflectSurvivalReflex(MinecraftClient client, SurvivalReflexSnapshot reflexSnapshot) {
+	public void reflectSurvivalReflex(Minecraft minecraft, SurvivalReflexSnapshot reflexSnapshot) {
 		if (reflexSnapshot == null || reflexSnapshot.state() == SurvivalReflexState.IDLE) {
 			return;
 		}
@@ -122,7 +122,7 @@ public final class BehaviorTreeRuntime {
 			);
 			return;
 		}
-		movementController.stop(client);
+		movementController.stop(minecraft);
 		snapshot = new BehaviorTreeSnapshot(
 			NodeStatus.RUNNING,
 			List.of("Root", "AwaitingPlannerAfterReflex"),
@@ -134,8 +134,8 @@ public final class BehaviorTreeRuntime {
 		return snapshot;
 	}
 
-	public void stop(MinecraftClient client) {
-		movementController.stop(client);
+	public void stop(Minecraft minecraft) {
+		movementController.stop(minecraft);
 		snapshot = BehaviorTreeSnapshot.idle();
 	}
 

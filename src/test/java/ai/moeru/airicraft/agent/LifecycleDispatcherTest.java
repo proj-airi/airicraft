@@ -19,7 +19,7 @@ class LifecycleDispatcherTest {
 			var field = EmbodiedAgentRuntime.class.getDeclaredField("slowMiningObserver");
 			field.setAccessible(true);
 			field.set(harness.runtime, observer);
-			var sample = EmbodiedAgentRuntime.class.getDeclaredMethod("sampleSensor", String.class, net.minecraft.client.MinecraftClient.class);
+			var sample = EmbodiedAgentRuntime.class.getDeclaredMethod("sampleSensor", String.class, net.minecraft.client.Minecraft.class);
 			sample.setAccessible(true);
 
 			observer.observe(1, "stone", 100);

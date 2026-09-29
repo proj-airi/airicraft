@@ -3,9 +3,9 @@ package ai.moeru.airicraft.debug;
 import ai.moeru.airicraft.BridgeUnavailableException;
 import ai.moeru.airicraft.FirstPersonScreenshotService;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.multiplayer.ClientLevel;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -45,10 +45,10 @@ public final class ClientTickDebugRuntime {
 	}
 
 	public CompletableFuture<ClientTickDebugController.ClientTickCapture> pause(
-		MinecraftClient client,
+		Minecraft minecraft,
 		boolean capturePlayerActions
 	) {
-		requireWorld(client);
+		requireWorld(minecraft);
 		if (traceRecorder.status().active()) {
 			throw new BridgeUnavailableException("trace_active", "Stop the client tick trace before pausing client ticks");
 		}
@@ -65,11 +65,11 @@ public final class ClientTickDebugRuntime {
 	}
 
 	public CompletableFuture<ClientTickDebugController.ClientTickCapture> step(
-		MinecraftClient client,
+		Minecraft minecraft,
 		String debugSessionId,
 		long pauseEpoch
 	) {
-		requireWorld(client);
+		requireWorld(minecraft);
 		CompletableFuture<ClientTickDebugController.ClientTickCapture> capture = controller.step(debugSessionId, pauseEpoch);
 		try {
 			ServerTickDebugRuntime.controller().step(debugSessionId, pauseEpoch);
@@ -96,10 +96,10 @@ public final class ClientTickDebugRuntime {
 			&& controller.beginServerAlignedTick(ServerTickDebugRuntime.controller().status());
 	}
 
-	public void onClientTickCompleted(MinecraftClient client, EmbodiedAgentRuntime runtime) {
+	public void onClientTickCompleted(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
 		Optional<ClientTickDebugController.CaptureIntent> intent = controller.onClientTickCompleted();
 		if (intent.isPresent()) {
-			beginCapture(client, runtime, intent.get());
+			beginCapture(minecraft, runtime, intent.get());
 			if (!controller.capturesPlayerActions()) {
 				ClientTickPlayerActionEvents.clear();
 			}
@@ -107,7 +107,7 @@ public final class ClientTickDebugRuntime {
 		}
 		Optional<ClientTickTraceRecorder.ActiveTrace> trace = traceRecorder.activeTrace();
 		if (trace.isPresent()) {
-			captureTraceTick(client, runtime, trace.get());
+			captureTraceTick(minecraft, runtime, trace.get());
 			if (!trace.get().config().infos().contains(ClientTickTraceRecorder.TraceInfo.PLAYER_ACTIONS)) {
 				ClientTickPlayerActionEvents.clear();
 			}
@@ -126,10 +126,10 @@ public final class ClientTickDebugRuntime {
 	}
 
 	public ClientTickTraceRecorder.TraceStatus startTrace(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickTraceRecorder.TraceConfig config
 	) {
-		requireWorld(client);
+		requireWorld(minecraft);
 		ClientTickDebugController.DebugStatus debugStatus = controller.status();
 		if (debugStatus.phase() != ClientTickDebugController.Phase.RUNNING) {
 			throw new BridgeUnavailableException("debug_busy", "Continue normal client ticks before starting a trace");
@@ -166,7 +166,7 @@ public final class ClientTickDebugRuntime {
 	}
 
 	private void captureTraceTick(
-		MinecraftClient client,
+		Minecraft minecraft,
 		EmbodiedAgentRuntime runtime,
 		ClientTickTraceRecorder.ActiveTrace trace
 	) {
@@ -176,7 +176,7 @@ public final class ClientTickDebugRuntime {
 		ClientTickDebugController.ClientTickSnapshot snapshot;
 		try {
 			snapshot = captureSnapshot(
-				client,
+				minecraft,
 				runtime,
 				trace.traceId(),
 				captureId,
@@ -224,7 +224,7 @@ public final class ClientTickDebugRuntime {
 		if (infos.contains(ClientTickTraceRecorder.TraceInfo.ENTITIES)) {
 			try {
 				entities = entityQueryService.capture(
-					client,
+					minecraft,
 					snapshot,
 					trace.config().entityQuery().resolve(snapshot.player().position())
 				);
@@ -236,7 +236,7 @@ public final class ClientTickDebugRuntime {
 		if (infos.contains(ClientTickTraceRecorder.TraceInfo.BLOCKS)) {
 			try {
 				int blockCount = Math.toIntExact(trace.config().blockRegion().totalCellCount());
-				blocks = worldQueryService.scanBox(client, snapshot, trace.config().blockRegion(), 0L, blockCount);
+				blocks = worldQueryService.scanBox(minecraft, snapshot, trace.config().blockRegion(), 0L, blockCount);
 			}
 			catch (RuntimeException exception) {
 				errors.put(ClientTickTraceRecorder.TraceInfo.BLOCKS.wireName(), traceError(exception));
@@ -259,13 +259,13 @@ public final class ClientTickDebugRuntime {
 			errors
 		));
 		if (frame != null) {
-			requestTraceFrame(client, trace.traceId(), clientTickId);
+			requestTraceFrame(minecraft, trace.traceId(), clientTickId);
 		}
 	}
 
-	private void requestTraceFrame(MinecraftClient client, String traceId, long clientTickId) {
+	private void requestTraceFrame(Minecraft minecraft, String traceId, long clientTickId) {
 		try {
-			screenshotService.requestCapture(client).whenComplete((screenshot, throwable) -> {
+			screenshotService.requestCapture(minecraft).whenComplete((screenshot, throwable) -> {
 				if (throwable != null) {
 					BridgeUnavailableException failure = bridgeFailure(throwable);
 					traceRecorder.completeFrame(
@@ -315,19 +315,19 @@ public final class ClientTickDebugRuntime {
 	}
 
 	private void beginCapture(
-		MinecraftClient client,
+		Minecraft minecraft,
 		EmbodiedAgentRuntime runtime,
 		ClientTickDebugController.CaptureIntent intent
 	) {
 		ClientTickDebugController.ClientTickSnapshot snapshot = captureSnapshot(
-			client,
+			minecraft,
 			runtime,
 			intent,
 			controller.capturesPlayerActions()
 		);
 		controller.attachSnapshot(intent, snapshot);
 		try {
-			screenshotService.requestCapture(client).whenComplete((screenshot, throwable) -> {
+			screenshotService.requestCapture(minecraft).whenComplete((screenshot, throwable) -> {
 				try {
 					if (throwable != null) {
 						BridgeUnavailableException failure = bridgeFailure(throwable);
@@ -355,13 +355,13 @@ public final class ClientTickDebugRuntime {
 	}
 
 	private ClientTickDebugController.ClientTickSnapshot captureSnapshot(
-		MinecraftClient client,
+		Minecraft minecraft,
 		EmbodiedAgentRuntime runtime,
 		ClientTickDebugController.CaptureIntent intent,
 		boolean capturePlayerActions
 	) {
 		return captureSnapshot(
-			client,
+			minecraft,
 			runtime,
 			intent.debugSessionId(),
 			intent.captureId(),
@@ -372,7 +372,7 @@ public final class ClientTickDebugRuntime {
 	}
 
 	private ClientTickDebugController.ClientTickSnapshot captureSnapshot(
-		MinecraftClient client,
+		Minecraft minecraft,
 		EmbodiedAgentRuntime runtime,
 		String debugSessionId,
 		String captureId,
@@ -380,8 +380,8 @@ public final class ClientTickDebugRuntime {
 		long clientTickId,
 		boolean capturePlayerActions
 	) {
-		ClientWorld world = Objects.requireNonNull(client.world, "client.world");
-		ClientPlayerEntity player = Objects.requireNonNull(client.player, "client.player");
+		ClientLevel level = Objects.requireNonNull(minecraft.level, "client.world");
+		LocalPlayer player = Objects.requireNonNull(minecraft.player, "client.player");
 		var planner = runtime.plannerDebugSnapshot();
 		return new ClientTickDebugController.ClientTickSnapshot(
 			SNAPSHOT_SCHEMA_VERSION,
@@ -390,18 +390,18 @@ public final class ClientTickDebugRuntime {
 			snapshotId,
 			clientTickId,
 			System.currentTimeMillis(),
-			world.getRegistryKey().getValue().toString(),
-			world.getTime(),
-			world.getTimeOfDay(),
-			ClientTickPlayerSnapshotFactory.capture(client, player),
-			capturePlayerActions ? playerActionsCapture.capture(client, debugSessionId) : null,
+			level.dimension().location().toString(),
+			level.getGameTime(),
+			level.getDayTime(),
+			ClientTickPlayerSnapshotFactory.capture(minecraft, player),
+			capturePlayerActions ? playerActionsCapture.capture(minecraft, debugSessionId) : null,
 			planner.activeGeneration(),
 			planner.currentPhase()
 		);
 	}
 
-	private static void requireWorld(MinecraftClient client) {
-		if (client == null || client.world == null || client.player == null) {
+	private static void requireWorld(Minecraft minecraft) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
 	}

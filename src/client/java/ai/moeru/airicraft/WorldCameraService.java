@@ -1,15 +1,15 @@
 package ai.moeru.airicraft;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.ClipContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -109,34 +109,34 @@ public final class WorldCameraService {
 	 * Shoulder-surf pose: behind and to the right of the player's eye,
 	 * tracking the player's look direction each frame.
 	 */
-	public CameraPose shoulderPose(MinecraftClient client) {
-		if (client == null || client.player == null) {
+	public CameraPose shoulderPose(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null) {
 			return null;
 		}
-		Vec3d eye = client.player.getEyePos();
-		float yaw = client.player.getYaw();
-		float pitch = client.player.getPitch();
+		Vec3 eye = minecraft.player.getEyePosition();
+		float yaw = minecraft.player.getYRot();
+		float pitch = minecraft.player.getXRot();
 		double yawRad = Math.toRadians(yaw);
 		double pitchRad = Math.toRadians(pitch);
-		Vec3d forward = new Vec3d(
+		Vec3 forward = new Vec3(
 			-Math.sin(yawRad) * Math.cos(pitchRad),
 			-Math.sin(pitchRad),
 			Math.cos(yawRad) * Math.cos(pitchRad));
-		Vec3d right = new Vec3d(-forward.z, 0.0, forward.x);
-		Vec3d pos = eye.subtract(forward.multiply(4.0)).add(right.multiply(1.1)).add(0.0, 0.3, 0.0);
+		Vec3 right = new Vec3(-forward.z, 0.0, forward.x);
+		Vec3 pos = eye.subtract(forward.scale(4.0)).add(right.scale(1.1)).add(0.0, 0.3, 0.0);
 		// Steep look angles are hard to read from behind the shoulder;
 		// clamp to a shallow band around horizontal.
-		float clampedPitch = MathHelper.clamp(pitch, -30.0f, 30.0f);
+		float clampedPitch = Mth.clamp(pitch, -30.0f, 30.0f);
 		return new CameraPose(pos.x, pos.y, pos.z, yaw, clampedPitch);
 	}
 
 	private volatile CameraPose lastRenderedPose;
 
-	public synchronized CameraPose pose(MinecraftClient client) {
+	public synchronized CameraPose pose(Minecraft minecraft) {
 		CameraPose result;
 		if (shoulderActive) {
-			result = shoulderPose(client);
-			playerTranslucent = result != null && playerBlocksView(client, result);
+			result = shoulderPose(minecraft);
+			playerTranslucent = result != null && playerBlocksView(minecraft, result);
 		}
 		else {
 			playerTranslucent = false;
@@ -216,22 +216,22 @@ public final class WorldCameraService {
 	 * Project a world point into NDC [-1,1] for the given camera pose.
 	 * Returns null when the point is behind the camera.
 	 */
-	private static double[] projectNdc(Vec3d point, CameraPose cam, double tanHalfFovY, double aspect) {
+	private static double[] projectNdc(Vec3 point, CameraPose cam, double tanHalfFovY, double aspect) {
 		double yawRad = Math.toRadians(cam.yaw());
 		double pitchRad = Math.toRadians(cam.pitch());
-		Vec3d forward = new Vec3d(
+		Vec3 forward = new Vec3(
 			-Math.sin(yawRad) * Math.cos(pitchRad),
 			-Math.sin(pitchRad),
 			Math.cos(yawRad) * Math.cos(pitchRad));
-		Vec3d right = new Vec3d(-forward.z, 0.0, forward.x).normalize();
-		Vec3d up = right.crossProduct(forward);
-		Vec3d d = point.subtract(new Vec3d(cam.x(), cam.y(), cam.z()));
-		double cz = d.dotProduct(forward);
+		Vec3 right = new Vec3(-forward.z, 0.0, forward.x).normalize();
+		Vec3 up = right.cross(forward);
+		Vec3 d = point.subtract(new Vec3(cam.x(), cam.y(), cam.z()));
+		double cz = d.dot(forward);
 		if (cz < 0.05) {
 			return null;
 		}
-		double cx = d.dotProduct(right) / cz / (tanHalfFovY * aspect);
-		double cy = d.dotProduct(up) / cz / tanHalfFovY;
+		double cx = d.dot(right) / cz / (tanHalfFovY * aspect);
+		double cy = d.dot(up) / cz / tanHalfFovY;
 		return new double[] {cx, cy};
 	}
 
@@ -239,22 +239,22 @@ public final class WorldCameraService {
 	 * Translucent iff the player's screen rect covers a large fraction of the
 	 * frame, or fully contains the projection of some nearby solid block.
 	 */
-	private boolean playerBlocksView(MinecraftClient client, CameraPose cam) {
-		if (client.player == null || client.world == null) {
+	private boolean playerBlocksView(Minecraft minecraft, CameraPose cam) {
+		if (minecraft.player == null || minecraft.level == null) {
 			return false;
 		}
-		double fovY = client.options.getFov().getValue();
-		double aspect = client.getWindow().getFramebufferWidth()
-			/ (double) Math.max(1, client.getWindow().getFramebufferHeight());
+		double fovY = minecraft.options.fov().get();
+		double aspect = minecraft.getWindow().getWidth()
+			/ (double) Math.max(1, minecraft.getWindow().getHeight());
 		double tanHalfFovY = Math.tan(Math.toRadians(fovY) / 2.0);
 
-		Box box = client.player.getBoundingBox();
+		AABB box = minecraft.player.getBoundingBox();
 		double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE;
 		double minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
 		for (double x : new double[] {box.minX, box.maxX}) {
 			for (double y : new double[] {box.minY, box.maxY}) {
 				for (double z : new double[] {box.minZ, box.maxZ}) {
-					double[] ndc = projectNdc(new Vec3d(x, y, z), cam, tanHalfFovY, aspect);
+					double[] ndc = projectNdc(new Vec3(x, y, z), cam, tanHalfFovY, aspect);
 					if (ndc == null) {
 						// Corner behind the camera: the player fills the view.
 						return true;
@@ -274,15 +274,15 @@ public final class WorldCameraService {
 
 		// Whole-block test: does the player rect fully contain some nearby
 		// solid block's projection?
-		BlockPos center = client.player.getBlockPos();
-		for (BlockPos pos : BlockPos.iterate(center.add(-3, -2, -3), center.add(3, 2, 3))) {
-			var state = client.world.getBlockState(pos);
-			if (state.isAir() || state.getCollisionShape(client.world, pos).isEmpty()) {
+		BlockPos center = minecraft.player.blockPosition();
+		for (BlockPos pos : BlockPos.betweenClosed(center.offset(-3, -2, -3), center.offset(3, 2, 3))) {
+			var state = minecraft.level.getBlockState(pos);
+			if (state.isAir() || state.getCollisionShape(minecraft.level, pos).isEmpty()) {
 				continue;
 			}
 			boolean allInside = true;
 			for (int i = 0; i < 8 && allInside; i++) {
-				Vec3d corner = new Vec3d(
+				Vec3 corner = new Vec3(
 					pos.getX() + ((i & 1) == 0 ? 0 : 1),
 					pos.getY() + ((i & 2) == 0 ? 0 : 1),
 					pos.getZ() + ((i & 4) == 0 ? 0 : 1));
@@ -339,7 +339,7 @@ public final class WorldCameraService {
 	}
 
 
-	private volatile Box tintBox;
+	private volatile AABB tintBox;
 	private BlockPos tintBoundsMin;
 	private BlockPos tintBoundsMax;
 
@@ -347,22 +347,22 @@ public final class WorldCameraService {
 	 * Query-region tint: blocks inside this box get their vertex colors
 	 * blended toward blue during meshing. Null when inactive.
 	 */
-	public Box tintBox() {
+	public AABB tintBox() {
 		return tintBox;
 	}
 
-	public synchronized void setTintBox(MinecraftClient client, Box box, BlockPos boundsMin, BlockPos boundsMax) {
+	public synchronized void setTintBox(Minecraft minecraft, AABB box, BlockPos boundsMin, BlockPos boundsMax) {
 		BlockPos previousMin = tintBoundsMin;
 		BlockPos previousMax = tintBoundsMax;
 		tintBox = box;
 		tintBoundsMin = boundsMin;
 		tintBoundsMax = boundsMax;
-		scheduleRegionRemesh(client, previousMin, previousMax);
-		scheduleRegionRemesh(client, boundsMin, boundsMax);
+		scheduleRegionRemesh(minecraft, previousMin, previousMax);
+		scheduleRegionRemesh(minecraft, boundsMin, boundsMax);
 	}
 
 	public boolean tintContains(BlockPos pos) {
-		Box box = tintBox;
+		AABB box = tintBox;
 		return box != null && box.contains(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
 	}
 
@@ -370,34 +370,34 @@ public final class WorldCameraService {
 	 * True when the focus has no sky above it — caves, interiors, dense
 	 * enclosed spaces. Used to pick shallower camera pitches.
 	 */
-	public static boolean isUnderground(MinecraftClient client, Vec3d focus) {
-		if (client.world == null) {
+	public static boolean isUnderground(Minecraft minecraft, Vec3 focus) {
+		if (minecraft.level == null) {
 			return false;
 		}
-		return !client.world.isSkyVisible(BlockPos.ofFloored(focus));
+		return !minecraft.level.canSeeSky(BlockPos.containing(focus));
 	}
 
 	/**
 	 * Apply a fade filter and schedule remeshing of the affected region.
 	 * Client thread only.
 	 */
-	public synchronized void setFade(MinecraftClient client, FadeFilter filter, BlockPos boundsMin, BlockPos boundsMax) {
+	public synchronized void setFade(Minecraft minecraft, FadeFilter filter, BlockPos boundsMin, BlockPos boundsMax) {
 		fadeFilter = filter;
 		fadeBoundsMin = boundsMin;
 		fadeBoundsMax = boundsMax;
-		scheduleFadeRemesh(client);
+		scheduleFadeRemesh(minecraft);
 	}
 
-	private void scheduleFadeRemesh(MinecraftClient client) {
-		scheduleRegionRemesh(client, fadeBoundsMin, fadeBoundsMax);
+	private void scheduleFadeRemesh(Minecraft minecraft) {
+		scheduleRegionRemesh(minecraft, fadeBoundsMin, fadeBoundsMax);
 	}
 
-	private static void scheduleRegionRemesh(MinecraftClient client, BlockPos boundsMin, BlockPos boundsMax) {
-		if (client == null || client.worldRenderer == null || boundsMin == null || boundsMax == null) {
+	private static void scheduleRegionRemesh(Minecraft minecraft, BlockPos boundsMin, BlockPos boundsMax) {
+		if (minecraft == null || minecraft.levelRenderer == null || boundsMin == null || boundsMax == null) {
 			return;
 		}
 		// Expand by one: faces of neighbouring blocks become visible too.
-		client.worldRenderer.scheduleBlockRenders(
+		minecraft.levelRenderer.setBlocksDirty(
 			boundsMin.getX() - 1, boundsMin.getY() - 1, boundsMin.getZ() - 1,
 			boundsMax.getX() + 1, boundsMax.getY() + 1, boundsMax.getZ() + 1);
 	}
@@ -413,10 +413,10 @@ public final class WorldCameraService {
 		if (fadeFilter != null || tintBox != null) {
 			fadeFilter = null;
 			tintBox = null;
-			MinecraftClient client = MinecraftClient.getInstance();
-			if (client != null) {
-				scheduleFadeRemesh(client);
-				scheduleRegionRemesh(client, tintBoundsMin, tintBoundsMax);
+			Minecraft minecraft = Minecraft.getInstance();
+			if (minecraft != null) {
+				scheduleFadeRemesh(minecraft);
+				scheduleRegionRemesh(minecraft, tintBoundsMin, tintBoundsMax);
 			}
 			fadeBoundsMin = null;
 			fadeBoundsMax = null;
@@ -429,32 +429,32 @@ public final class WorldCameraService {
 	 * Every collidable block intersected by eye→sample rays, excluding the
 	 * sample's own block. These are the blocks to fade for this shot.
 	 */
-	public java.util.Set<BlockPos> computeOccluders(MinecraftClient client, CameraPose camera, List<SamplePoint> samples) {
+	public java.util.Set<BlockPos> computeOccluders(Minecraft minecraft, CameraPose camera, List<SamplePoint> samples) {
 		java.util.Set<BlockPos> occluders = new java.util.HashSet<>();
 		java.util.Set<BlockPos> sampleBlocks = new java.util.HashSet<>();
 		for (SamplePoint sample : samples) {
-			sampleBlocks.add(BlockPos.ofFloored(sample.pos()));
+			sampleBlocks.add(BlockPos.containing(sample.pos()));
 		}
-		Vec3d eye = new Vec3d(camera.x(), camera.y(), camera.z());
+		Vec3 eye = new Vec3(camera.x(), camera.y(), camera.z());
 		for (SamplePoint sample : samples) {
-			Vec3d target = sample.pos();
-			Vec3d delta = target.subtract(eye);
+			Vec3 target = sample.pos();
+			Vec3 delta = target.subtract(eye);
 			double distance = delta.length();
 			if (distance < 1.0E-6) {
 				continue;
 			}
-			Vec3d step = delta.normalize().multiply(0.4);
+			Vec3 step = delta.normalize().scale(0.4);
 			// Stop short of the target: the sample's own block is not an occluder.
 			int steps = (int) Math.max(0, (distance - 0.5) / 0.4);
-			Vec3d cursor = eye;
+			Vec3 cursor = eye;
 			for (int i = 0; i < steps; i++) {
 				cursor = cursor.add(step);
-				BlockPos pos = BlockPos.ofFloored(cursor);
+				BlockPos pos = BlockPos.containing(cursor);
 				if (sampleBlocks.contains(pos) || occluders.contains(pos)) {
 					continue;
 				}
-				var state = client.world.getBlockState(pos);
-				if (!state.isAir() && !state.getCollisionShape(client.world, pos).isEmpty()) {
+				var state = minecraft.level.getBlockState(pos);
+				if (!state.isAir() && !state.getCollisionShape(minecraft.level, pos).isEmpty()) {
 					occluders.add(pos);
 				}
 			}
@@ -465,15 +465,15 @@ public final class WorldCameraService {
 	/**
 	 * Re-collect samples for a focus region (exposed for occluder computation).
 	 */
-	public List<SamplePoint> samplesFor(MinecraftClient client, Vec3d focus, double radius, String purpose) {
-		return collectSamples(client, focus, MathHelper.clamp(radius, 4.0, MAX_RADIUS), purpose);
+	public List<SamplePoint> samplesFor(Minecraft minecraft, Vec3 focus, double radius, String purpose) {
+		return collectSamples(minecraft, focus, Mth.clamp(radius, 4.0, MAX_RADIUS), purpose);
 	}
 
 
 	/**
 	 * Called once per rendered world frame from the Camera mixin.
 	 */
-	public void onWorldFrame(MinecraftClient client) {
+	public void onWorldFrame(Minecraft minecraft) {
 		PendingCapture current;
 		synchronized (this) {
 			current = pending;
@@ -486,7 +486,7 @@ public final class WorldCameraService {
 			}
 			pending = null;
 		}
-		screenshotService.requestCapture(client).whenComplete((screenshot, throwable) -> {
+		screenshotService.requestCapture(minecraft).whenComplete((screenshot, throwable) -> {
 			restoreHud();
 			if (throwable == null) {
 				current.future().complete(screenshot);
@@ -502,7 +502,7 @@ public final class WorldCameraService {
 	 * (unless {@code keepPose}) restore the normal camera.
 	 */
 	public CompletableFuture<TacticalResult> capture(
-		MinecraftClient client,
+		Minecraft minecraft,
 		CameraPose nextPose,
 		FrameResult framing,
 		int settleFrames,
@@ -513,9 +513,9 @@ public final class WorldCameraService {
 				throw new BridgeUnavailableException("capture_in_progress", "A world camera capture is already in progress");
 			}
 			pose = nextPose;
-			if (!client.options.hudHidden) {
+			if (!minecraft.options.hideGui) {
 				hudHiddenSaved = true;
-				client.options.hudHidden = true;
+				minecraft.options.hideGui = true;
 			}
 			CompletableFuture<FirstPersonScreenshotService.CapturedScreenshot> future = new CompletableFuture<>();
 			pending = new PendingCapture(Math.max(0, settleFrames), future);
@@ -524,7 +524,7 @@ public final class WorldCameraService {
 					clear();
 				}
 				return new TacticalResult(framing, withCompass(screenshot, lastRenderedPose),
-					registerView(client, lastRenderedPose, screenshot));
+					registerView(minecraft, lastRenderedPose, screenshot));
 			});
 		}
 	}
@@ -533,7 +533,7 @@ public final class WorldCameraService {
 	 * each frame; the player renders semi-transparent via the entity mixin.
 	 */
 	public CompletableFuture<TacticalResult> captureShoulder(
-		MinecraftClient client,
+		Minecraft minecraft,
 		int settleFrames,
 		boolean keepPose
 	) {
@@ -542,9 +542,9 @@ public final class WorldCameraService {
 				throw new BridgeUnavailableException("capture_in_progress", "A world camera capture is already in progress");
 			}
 			shoulderActive = true;
-			if (!client.options.hudHidden) {
+			if (!minecraft.options.hideGui) {
 				hudHiddenSaved = true;
-				client.options.hudHidden = true;
+				minecraft.options.hideGui = true;
 			}
 			CompletableFuture<FirstPersonScreenshotService.CapturedScreenshot> future = new CompletableFuture<>();
 			pending = new PendingCapture(Math.max(0, settleFrames), future);
@@ -553,16 +553,16 @@ public final class WorldCameraService {
 					clear();
 				}
 				return new TacticalResult(null, withCompass(screenshot, lastRenderedPose),
-					registerView(client, lastRenderedPose, screenshot));
+					registerView(minecraft, lastRenderedPose, screenshot));
 			});
 		}
 	}
 
 
 	private void restoreHud() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (hudHiddenSaved && client != null) {
-			client.options.hudHidden = false;
+		Minecraft minecraft = Minecraft.getInstance();
+		if (hudHiddenSaved && minecraft != null) {
+			minecraft.options.hideGui = false;
 		}
 		hudHiddenSaved = false;
 	}
@@ -572,17 +572,17 @@ public final class WorldCameraService {
 	 * focus at several pitch/distance bands, score each by raycasting to
 	 * task-relevant sample points, and return the best.
 	 */
-	public FrameResult autoFrame(MinecraftClient client, Vec3d focus, double radius, String purpose) {
-		if (client.world == null || client.player == null) {
+	public FrameResult autoFrame(Minecraft minecraft, Vec3 focus, double radius, String purpose) {
+		if (minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
-		double r = MathHelper.clamp(radius, 4.0, MAX_RADIUS);
-		List<SamplePoint> samples = collectSamples(client, focus, r, purpose);
+		double r = Mth.clamp(radius, 4.0, MAX_RADIUS);
+		List<SamplePoint> samples = collectSamples(minecraft, focus, r, purpose);
 		if (samples.isEmpty()) {
 			throw new BridgeUnavailableException("no_samples", "No relevant geometry found around the focus");
 		}
 
-		boolean underground = isUnderground(client, focus);
+		boolean underground = isUnderground(minecraft, focus);
 		// Enclosed spaces read better from a shallow angle; open terrain
 		// benefits from the steeper tactical view.
 		double[] pitches = underground ? new double[] {15.0, 25.0, 35.0} : new double[] {45.0, 55.0, 65.0};
@@ -597,12 +597,12 @@ public final class WorldCameraService {
 		for (SamplePoint sample : samples) {
 			totalWeight += sample.weight();
 		}
-		List<Vec3d> focusSphere = focusSpherePoints(focus);
+		List<Vec3> focusSphere = focusSpherePoints(focus);
 		int candidates = 0;
 		for (double pitchDeg : pitches) {
 			double pitch = Math.toRadians(pitchDeg);
 			for (double scale : distanceScales) {
-				double distance = MathHelper.clamp(r * scale, MIN_DISTANCE, MAX_DISTANCE);
+				double distance = Mth.clamp(r * scale, MIN_DISTANCE, MAX_DISTANCE);
 				double dy = distance * Math.sin(pitch);
 				double horizontal = distance * Math.cos(pitch);
 				for (int i = 0; i < yawSteps; i++) {
@@ -615,8 +615,8 @@ public final class WorldCameraService {
 					double cy = focus.y + dy;
 					CameraPose candidate = new CameraPose(cx, cy, cz, (float) yawDeg, (float) pitchDeg);
 					candidates++;
-					PoseScore scored = scorePose(client, candidate, samples, distance, r);
-					boolean focusClear = focusSphereClear(client, candidate, focusSphere);
+					PoseScore scored = scorePose(minecraft, candidate, samples, distance, r);
+					boolean focusClear = focusSphereClear(minecraft, candidate, focusSphere);
 					// A pose that keeps the focus sphere fully visible always
 					// beats one that doesn't, regardless of aggregate score.
 					if ((focusClear && !bestFocusClear)
@@ -634,10 +634,10 @@ public final class WorldCameraService {
 		// every exterior ring pose is buried in solid geometry. Try air cells
 		// inside the volume looking back at the focus instead.
 		if (bestScore <= 0.0) {
-			for (CameraPose candidate : interiorCandidates(client, focus, r)) {
+			for (CameraPose candidate : interiorCandidates(minecraft, focus, r)) {
 				candidates++;
-				PoseScore scored = scorePose(client, candidate, samples, r, r);
-				boolean focusClear = focusSphereClear(client, candidate, focusSphere);
+				PoseScore scored = scorePose(minecraft, candidate, samples, r, r);
+				boolean focusClear = focusSphereClear(minecraft, candidate, focusSphere);
 				if ((focusClear && !bestFocusClear)
 					|| (focusClear == bestFocusClear && scored.score() > bestScore)) {
 					bestScore = scored.score();
@@ -659,7 +659,7 @@ public final class WorldCameraService {
 	 * All must be COLLIDER-visible for the focus to count as clear — leaves
 	 * and other VISUAL-transparent blocks still occlude the subject.
 	 */
-	private static List<Vec3d> focusSpherePoints(Vec3d focus) {
+	private static List<Vec3> focusSpherePoints(Vec3 focus) {
 		double r = 0.9;
 		return List.of(
 			focus,
@@ -668,18 +668,18 @@ public final class WorldCameraService {
 			focus.add(0, 0, r), focus.add(0, 0, -r));
 	}
 
-	private boolean focusSphereClear(MinecraftClient client, CameraPose candidate, List<Vec3d> sphere) {
-		Vec3d eye = new Vec3d(candidate.x(), candidate.y(), candidate.z());
-		for (Vec3d point : sphere) {
-			Vec3d delta = point.subtract(eye);
+	private boolean focusSphereClear(Minecraft minecraft, CameraPose candidate, List<Vec3> sphere) {
+		Vec3 eye = new Vec3(candidate.x(), candidate.y(), candidate.z());
+		for (Vec3 point : sphere) {
+			Vec3 delta = point.subtract(eye);
 			double distance = delta.length();
 			if (distance < 1.0E-6) {
 				continue;
 			}
-			Vec3d end = eye.add(delta.normalize().multiply(Math.max(0.0, distance - 0.3)));
-			BlockHitResult hit = client.world.raycast(new RaycastContext(
-				eye, end, RaycastContext.ShapeType.COLLIDER, RaycastContext.FluidHandling.NONE,
-				net.minecraft.block.ShapeContext.absent()));
+			Vec3 end = eye.add(delta.normalize().scale(Math.max(0.0, distance - 0.3)));
+			BlockHitResult hit = minecraft.level.clip(new ClipContext(
+				eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE,
+				net.minecraft.world.phys.shapes.CollisionContext.empty()));
 			if (hit.getType() != HitResult.Type.MISS) {
 				return false;
 			}
@@ -690,9 +690,9 @@ public final class WorldCameraService {
 	/**
 	 * Focus sphere as sample points for occluder computation.
 	 */
-	public List<SamplePoint> focusSphereSamples(Vec3d focus) {
+	public List<SamplePoint> focusSphereSamples(Vec3 focus) {
 		List<SamplePoint> samples = new ArrayList<>();
-		for (Vec3d point : focusSpherePoints(focus)) {
+		for (Vec3 point : focusSpherePoints(focus)) {
 			samples.add(new SamplePoint(point, 1.0));
 		}
 		return samples;
@@ -700,11 +700,11 @@ public final class WorldCameraService {
 	/**
 	 * Register a captured view for later back-projection. Returns its id.
 	 */
-	public synchronized String registerView(MinecraftClient client, CameraPose pose, FirstPersonScreenshotService.CapturedScreenshot screenshot) {
+	public synchronized String registerView(Minecraft minecraft, CameraPose pose, FirstPersonScreenshotService.CapturedScreenshot screenshot) {
 		String id = "view_" + (++viewSeq);
-		double fovY = client.options.getFov().getValue();
-		double aspect = client.getWindow().getFramebufferWidth()
-			/ (double) Math.max(1, client.getWindow().getFramebufferHeight());
+		double fovY = minecraft.options.fov().get();
+		double aspect = minecraft.getWindow().getWidth()
+			/ (double) Math.max(1, minecraft.getWindow().getHeight());
 		views.put(id, new ViewRecord(
 			id, pose, fovY, aspect,
 			screenshot.width(), screenshot.height(), screenshot.capturedAtMs()));
@@ -722,16 +722,16 @@ public final class WorldCameraService {
 	/**
 	 * Camera basis vectors for a pose: forward, right, up.
 	 */
-	private static Vec3d[] cameraBasis(CameraPose cam) {
+	private static Vec3[] cameraBasis(CameraPose cam) {
 		double yawRad = Math.toRadians(cam.yaw());
 		double pitchRad = Math.toRadians(cam.pitch());
-		Vec3d forward = new Vec3d(
+		Vec3 forward = new Vec3(
 			-Math.sin(yawRad) * Math.cos(pitchRad),
 			-Math.sin(pitchRad),
 			Math.cos(yawRad) * Math.cos(pitchRad));
-		Vec3d right = new Vec3d(-forward.z, 0.0, forward.x).normalize();
-		Vec3d up = right.crossProduct(forward);
-		return new Vec3d[] {forward, right, up};
+		Vec3 right = new Vec3(-forward.z, 0.0, forward.x).normalize();
+		Vec3 up = right.cross(forward);
+		return new Vec3[] {forward, right, up};
 	}
 
 	/**
@@ -742,13 +742,13 @@ public final class WorldCameraService {
 	 * blocks from the hits).
 	 */
 	public java.util.Map<String, Object> inspectRegion(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ViewRecord view,
 		double x1, double y1, double x2, double y2,
 		String expand
 	) {
-		Vec3d eye = new Vec3d(view.pose().x(), view.pose().y(), view.pose().z());
-		Vec3d[] basis = cameraBasis(view.pose());
+		Vec3 eye = new Vec3(view.pose().x(), view.pose().y(), view.pose().z());
+		Vec3[] basis = cameraBasis(view.pose());
 		double tanHalfFovY = Math.tan(Math.toRadians(view.fovY()) / 2.0);
 
 		java.util.Set<BlockPos> hits = new java.util.HashSet<>();
@@ -757,14 +757,14 @@ public final class WorldCameraService {
 			for (int gx = 0; gx <= grid; gx++) {
 				double nx = x1 + (x2 - x1) * gx / grid;
 				double ny = y1 + (y2 - y1) * gy / grid;
-				Vec3d dir = basis[0]
-					.add(basis[1].multiply(nx * tanHalfFovY * view.aspect()))
-					.add(basis[2].multiply(ny * tanHalfFovY))
+				Vec3 dir = basis[0]
+					.add(basis[1].scale(nx * tanHalfFovY * view.aspect()))
+					.add(basis[2].scale(ny * tanHalfFovY))
 					.normalize();
-				BlockHitResult hit = client.world.raycast(new RaycastContext(
-					eye, eye.add(dir.multiply(96.0)),
-					RaycastContext.ShapeType.VISUAL, RaycastContext.FluidHandling.NONE,
-					net.minecraft.block.ShapeContext.absent()));
+				BlockHitResult hit = minecraft.level.clip(new ClipContext(
+					eye, eye.add(dir.scale(96.0)),
+					ClipContext.Block.VISUAL, ClipContext.Fluid.NONE,
+					net.minecraft.world.phys.shapes.CollisionContext.empty()));
 				if (hit.getType() == HitResult.Type.BLOCK) {
 					hits.add(hit.getBlockPos());
 				}
@@ -781,10 +781,10 @@ public final class WorldCameraService {
 				minZ = Math.min(minZ, p.getZ()); maxZ = Math.max(maxZ, p.getZ());
 			}
 			result = new java.util.HashSet<>();
-			for (BlockPos p : BlockPos.iterate(
+			for (BlockPos p : BlockPos.betweenClosed(
 				new BlockPos(minX - 1, minY - 1, minZ - 1),
 				new BlockPos(maxX + 1, maxY + 1, maxZ + 1))) {
-				result.add(p.toImmutable());
+				result.add(p.immutable());
 			}
 		}
 		else if ("connected".equals(expand) && !hits.isEmpty()) {
@@ -795,9 +795,9 @@ public final class WorldCameraService {
 				if (!result.add(p)) {
 					continue;
 				}
-				for (var dir : net.minecraft.util.math.Direction.values()) {
-					BlockPos next = p.offset(dir);
-					var state = client.world.getBlockState(next);
+				for (var dir : net.minecraft.core.Direction.values()) {
+					BlockPos next = p.relative(dir);
+					var state = minecraft.level.getBlockState(next);
 					if (!state.isAir() && !result.contains(next)) {
 						queue.add(next);
 					}
@@ -807,7 +807,7 @@ public final class WorldCameraService {
 
 		java.util.Map<String, Integer> histogram = new java.util.TreeMap<>();
 		for (BlockPos p : result) {
-			String name = net.minecraft.registry.Registries.BLOCK.getId(client.world.getBlockState(p).getBlock()).toString();
+			String name = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(minecraft.level.getBlockState(p).getBlock()).toString();
 			histogram.merge(name, 1, Integer::sum);
 		}
 		java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
@@ -854,8 +854,8 @@ public final class WorldCameraService {
 				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 				double tanHalfFovY = Math.tan(Math.toRadians(fovY) / 2.0);
 				double w = image.getWidth(), h = image.getHeight();
-				Vec3d[] basis = cameraBasis(cam);
-				Vec3d eye = new Vec3d(cam.x(), cam.y(), cam.z());
+				Vec3[] basis = cameraBasis(cam);
+				Vec3 eye = new Vec3(cam.x(), cam.y(), cam.z());
 				// 8 corners, 12 edges, 6 faces.
 				double[][] c = new double[8][];
 				for (int i = 0; i < 8; i++) {
@@ -896,15 +896,15 @@ public final class WorldCameraService {
 	}
 
 	private static double[] projectToScreen(
-		double[] point, Vec3d eye, Vec3d[] basis, double tanHalfFovY, double aspect, double w, double h
+		double[] point, Vec3 eye, Vec3[] basis, double tanHalfFovY, double aspect, double w, double h
 	) {
-		Vec3d d = new Vec3d(point[0], point[1], point[2]).subtract(eye);
-		double cz = d.dotProduct(basis[0]);
+		Vec3 d = new Vec3(point[0], point[1], point[2]).subtract(eye);
+		double cz = d.dot(basis[0]);
 		if (cz < 0.05) {
 			return null;
 		}
-		double nx = d.dotProduct(basis[1]) / cz / (tanHalfFovY * aspect);
-		double ny = d.dotProduct(basis[2]) / cz / tanHalfFovY;
+		double nx = d.dot(basis[1]) / cz / (tanHalfFovY * aspect);
+		double ny = d.dot(basis[2]) / cz / tanHalfFovY;
 		return new double[] {(nx + 1.0) / 2.0 * w, (1.0 - ny) / 2.0 * h};
 	}
 
@@ -913,22 +913,22 @@ public final class WorldCameraService {
 	 * Air cells inside the focus volume, aimed back at the focus. Covers
 	 * tunnels and rooms where no exterior vantage exists.
 	 */
-	private List<CameraPose> interiorCandidates(MinecraftClient client, Vec3d focus, double radius) {
+	private List<CameraPose> interiorCandidates(Minecraft minecraft, Vec3 focus, double radius) {
 		List<CameraPose> candidates = new ArrayList<>();
 		int r = (int) Math.ceil(Math.min(radius, 12));
-		BlockPos origin = BlockPos.ofFloored(focus);
+		BlockPos origin = BlockPos.containing(focus);
 		for (int dx = -r; dx <= r; dx += 2) {
 			for (int dz = -r; dz <= r; dz += 2) {
 				for (int dy = -r; dy <= r; dy += 2) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					if (pos.getSquaredDistance(origin) > r * r) {
+					BlockPos pos = origin.offset(dx, dy, dz);
+					if (pos.distSqr(origin) > r * r) {
 						continue;
 					}
-					if (!client.world.getBlockState(pos).getCollisionShape(client.world, pos).isEmpty()) {
+					if (!minecraft.level.getBlockState(pos).getCollisionShape(minecraft.level, pos).isEmpty()) {
 						continue;
 					}
-					Vec3d eye = Vec3d.ofCenter(pos);
-					Vec3d delta = focus.subtract(eye);
+					Vec3 eye = Vec3.atCenterOf(pos);
+					Vec3 delta = focus.subtract(eye);
 					double horizontal = Math.hypot(delta.x, delta.z);
 					double distance = delta.length();
 					// Too close: the frame is just the player's head. Too far in
@@ -938,27 +938,27 @@ public final class WorldCameraService {
 					}
 					float yaw = (float) (Math.toDegrees(Math.atan2(-delta.x, delta.z)));
 					float pitch = (float) -Math.toDegrees(Math.atan2(delta.y, horizontal));
-					candidates.add(new CameraPose(eye.x, eye.y, eye.z, yaw, MathHelper.clamp(pitch, -90.0F, 90.0F)));
+					candidates.add(new CameraPose(eye.x, eye.y, eye.z, yaw, Mth.clamp(pitch, -90.0F, 90.0F)));
 				}
 			}
 		}
 		return candidates;
 	}
 
-	private record SamplePoint(Vec3d pos, double weight) {
+	private record SamplePoint(Vec3 pos, double weight) {
 	}
 
 	private record PoseScore(double score, double visibleWeight) {
 	}
 
-	private List<SamplePoint> collectSamples(MinecraftClient client, Vec3d focus, double radius, String purpose) {
+	private List<SamplePoint> collectSamples(Minecraft minecraft, Vec3 focus, double radius, String purpose) {
 		List<SamplePoint> samples = new ArrayList<>();
 		boolean nav = "navigation".equals(purpose) || "surroundings".equals(purpose);
 		boolean threats = "threats".equals(purpose);
 		boolean inspect = "inspect".equals(purpose) || "structure".equals(purpose);
 
 		int r = (int) Math.ceil(radius);
-		BlockPos origin = BlockPos.ofFloored(focus);
+		BlockPos origin = BlockPos.containing(focus);
 		int step = radius > 16 ? 2 : 1;
 		int vertical = Math.min(r, 8);
 		for (int dx = -r; dx <= r; dx += step) {
@@ -967,17 +967,17 @@ public final class WorldCameraService {
 					if (samples.size() >= MAX_SAMPLE_POINTS) {
 						break;
 					}
-					BlockPos pos = origin.add(dx, dy, dz);
-					var state = client.world.getBlockState(pos);
+					BlockPos pos = origin.offset(dx, dy, dz);
+					var state = minecraft.level.getBlockState(pos);
 					if (state.isAir()) {
 						continue;
 					}
-					if (!client.world.getBlockState(pos.up()).isAir()) {
+					if (!minecraft.level.getBlockState(pos.above()).isAir()) {
 						continue;
 					}
 					// Walkable floor heuristic: collidable top with two air above.
-					boolean walkable = !state.getCollisionShape(client.world, pos).isEmpty()
-						&& client.world.getBlockState(pos.up(2)).isAir();
+					boolean walkable = !state.getCollisionShape(minecraft.level, pos).isEmpty()
+						&& minecraft.level.getBlockState(pos.above(2)).isAir();
 					double weight = 1.0;
 					if (nav && walkable) {
 						weight = 2.0;
@@ -985,7 +985,7 @@ public final class WorldCameraService {
 					else if (inspect) {
 						weight = 1.5;
 					}
-					samples.add(new SamplePoint(Vec3d.ofCenter(pos, 1.0), weight));
+					samples.add(new SamplePoint(Vec3.upFromBottomCenterOf(pos, 1.0), weight));
 				}
 			}
 		}
@@ -994,27 +994,27 @@ public final class WorldCameraService {
 		// the player must be visible or the shot is useless.
 		samples.add(new SamplePoint(focus, 8.0));
 
-		Box entityBox = Box.of(focus, radius * 2, 16, radius * 2);
-		for (Entity entity : client.world.getEntities()) {
-			if (entity == client.player || !entityBox.contains(entity.getPos())) {
+		AABB entityBox = AABB.ofSize(focus, radius * 2, 16, radius * 2);
+		for (Entity entity : minecraft.level.entitiesForRendering()) {
+			if (entity == minecraft.player || !entityBox.contains(entity.position())) {
 				continue;
 			}
-			samples.add(new SamplePoint(entity.getEyePos(), threats ? 4.0 : 2.0));
+			samples.add(new SamplePoint(entity.getEyePosition(), threats ? 4.0 : 2.0));
 		}
 		return samples;
 	}
 
 	private PoseScore scorePose(
-		MinecraftClient client,
+		Minecraft minecraft,
 		CameraPose candidate,
 		List<SamplePoint> samples,
 		double distance,
 		double radius
 	) {
-		Vec3d eye = new Vec3d(candidate.x(), candidate.y(), candidate.z());
+		Vec3 eye = new Vec3(candidate.x(), candidate.y(), candidate.z());
 		// Hard penalty: camera inside any collidable geometry.
-		BlockPos eyeBlock = BlockPos.ofFloored(eye);
-		double penalty = client.world.getBlockState(eyeBlock).getCollisionShape(client.world, eyeBlock).isEmpty() ? 0.0 : 1.0;
+		BlockPos eyeBlock = BlockPos.containing(eye);
+		double penalty = minecraft.level.getBlockState(eyeBlock).getCollisionShape(minecraft.level, eyeBlock).isEmpty() ? 0.0 : 1.0;
 		// Preference for closer shots: tactical views should read, not survey.
 		penalty += 0.15 * (distance / radius - 0.6);
 		double totalWeight = 0.0;
@@ -1022,7 +1022,7 @@ public final class WorldCameraService {
 		// Camera forward vector (MC convention: yaw 0 = +Z, pitch + = down).
 		double yawRad = Math.toRadians(candidate.yaw());
 		double pitchRad = Math.toRadians(candidate.pitch());
-		Vec3d forward = new Vec3d(
+		Vec3 forward = new Vec3(
 			-Math.sin(yawRad) * Math.cos(pitchRad),
 			-Math.sin(pitchRad),
 			Math.cos(yawRad) * Math.cos(pitchRad));
@@ -1030,20 +1030,20 @@ public final class WorldCameraService {
 		double minDot = Math.cos(Math.toRadians(45.0));
 		for (SamplePoint sample : samples) {
 			totalWeight += sample.weight();
-			Vec3d target = sample.pos();
+			Vec3 target = sample.pos();
 			double targetDistance = eye.distanceTo(target);
-			Vec3d direction = target.subtract(eye).normalize();
-			if (forward.dotProduct(direction) < minDot) {
+			Vec3 direction = target.subtract(eye).normalize();
+			if (forward.dot(direction) < minDot) {
 				continue;
 			}
 			// Raycast slightly short of the target so the target block itself
 			// does not count as an occluder. VISUAL shape type means foliage
 			// and other non-opaque blocks do not count as occluders either —
 			// they are fadeable, not blocking.
-			Vec3d end = eye.add(direction.multiply(Math.max(0.0, targetDistance - 0.35)));
-			BlockHitResult hit = client.world.raycast(new RaycastContext(
-				eye, end, RaycastContext.ShapeType.VISUAL, RaycastContext.FluidHandling.NONE,
-				net.minecraft.block.ShapeContext.absent()));
+			Vec3 end = eye.add(direction.scale(Math.max(0.0, targetDistance - 0.35)));
+			BlockHitResult hit = minecraft.level.clip(new ClipContext(
+				eye, end, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE,
+				net.minecraft.world.phys.shapes.CollisionContext.empty()));
 			if (hit.getType() == HitResult.Type.MISS) {
 				visibleWeight += sample.weight();
 			}

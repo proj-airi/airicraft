@@ -368,10 +368,10 @@ class TargetAcquisitionTaskExecutorTest {
 	}
 
 	@Test void workSearchIncludesGroundFromWhichAnOverheadLogIsInEyeReach() {
-		var log = new net.minecraft.util.math.BlockPos(284,69,-138);
-		var feet = new net.minecraft.util.math.BlockPos(285,64,-138);
-		var eye = net.minecraft.util.math.Vec3d.ofBottomCenter(feet).add(0,1.62,0);
-		assertTrue(eye.squaredDistanceTo(net.minecraft.util.math.Vec3d.ofCenter(log)) <= 20.25);
+		var log = new net.minecraft.core.BlockPos(284,69,-138);
+		var feet = new net.minecraft.core.BlockPos(285,64,-138);
+		var eye = net.minecraft.world.phys.Vec3.atBottomCenterOf(feet).add(0,1.62,0);
+		assertTrue(eye.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(log)) <= 20.25);
 		boolean included = false;
 		for (var pos : MinecraftAcquisitionEnvironment.workPositions(log)) if (pos.equals(feet)) included = true;
 		assertTrue(included, "Reachable ground must be considered before requiring a higher platform");

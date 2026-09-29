@@ -1,12 +1,12 @@
 package ai.moeru.airicraft.debug;
 
 import ai.moeru.airicraft.BridgeUnavailableException;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -21,10 +21,10 @@ public final class ClientTickWorldQueryService {
 	public static final int MAX_PAGE_LIMIT = 4_096;
 
 	public Map<String, Object> metadata(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot
 	) {
-		ClientWorld world = requireMatchingWorld(client, snapshot);
+		ClientLevel level = requireMatchingWorld(minecraft, snapshot);
 		Map<String, Object> response = baseResponse(snapshot);
 		response.put("dimensionId", snapshot.dimensionId());
 		response.put("worldTime", snapshot.worldTime());
@@ -32,46 +32,46 @@ public final class ClientTickWorldQueryService {
 		response.put("player", snapshot.player());
 		response.put("plannerGeneration", snapshot.plannerGeneration());
 		response.put("plannerPhase", snapshot.plannerPhase());
-		response.put("bottomY", world.getBottomY());
-		response.put("topYInclusive", world.getTopYInclusive());
+		response.put("bottomY", level.getMinY());
+		response.put("topYInclusive", level.getMaxY());
 		return response;
 	}
 
 	public Map<String, Object> playerState(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot
 	) {
-		requireMatchingWorld(client, snapshot);
+		requireMatchingWorld(minecraft, snapshot);
 		Map<String, Object> response = baseResponse(snapshot);
 		response.put("player", snapshot.player());
 		return response;
 	}
 
 	public Map<String, Object> block(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		int x,
 		int y,
 		int z
 	) {
-		ClientWorld world = requireMatchingWorld(client, snapshot);
+		ClientLevel level = requireMatchingWorld(minecraft, snapshot);
 		Map<String, Object> response = baseResponse(snapshot);
-		response.put("block", blockPayload(world, new BlockPos(x, y, z)));
+		response.put("block", blockPayload(level, new BlockPos(x, y, z)));
 		return response;
 	}
 
 	public Map<String, Object> scanBox(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		RegionBounds bounds,
 		long cursor,
 		int limit
 	) {
-		ClientWorld world = requireMatchingWorld(client, snapshot);
+		ClientLevel level = requireMatchingWorld(minecraft, snapshot);
 		RegionPage page = bounds.page(cursor, limit);
 		List<Map<String, Object>> blocks = new ArrayList<>(page.count());
 		for (long index = page.startCursor(); index < page.endCursorExclusive(); index++) {
-			blocks.add(blockPayload(world, bounds.positionAt(index)));
+			blocks.add(blockPayload(level, bounds.positionAt(index)));
 		}
 		Map<String, Object> response = pageResponse(snapshot, bounds, page);
 		response.put("blocks", blocks);
@@ -79,28 +79,28 @@ public final class ClientTickWorldQueryService {
 	}
 
 	public Map<String, Object> findBlocks(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		RegionBounds bounds,
 		Set<String> blockIds,
 		long cursor,
 		int limit
 	) {
-		ClientWorld world = requireMatchingWorld(client, snapshot);
+		ClientLevel level = requireMatchingWorld(minecraft, snapshot);
 		Set<String> requestedIds = normalizedBlockIds(blockIds);
 		RegionPage page = bounds.page(cursor, limit);
 		List<Map<String, Object>> matches = new ArrayList<>();
 		int unloadedCount = 0;
 		for (long index = page.startCursor(); index < page.endCursorExclusive(); index++) {
 			BlockPos pos = bounds.positionAt(index);
-			if (!world.isChunkLoaded(pos)) {
+			if (!level.hasChunkAt(pos)) {
 				unloadedCount++;
 				continue;
 			}
-			BlockState state = world.getBlockState(pos);
-			String blockId = Registries.BLOCK.getId(state.getBlock()).toString();
+			BlockState state = level.getBlockState(pos);
+			String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 			if (requestedIds.contains(blockId)) {
-				matches.add(blockPayload(world, pos));
+				matches.add(blockPayload(level, pos));
 			}
 		}
 		Map<String, Object> response = pageResponse(snapshot, bounds, page);
@@ -112,24 +112,24 @@ public final class ClientTickWorldQueryService {
 	}
 
 	public Map<String, Object> regionStats(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		RegionBounds bounds,
 		long cursor,
 		int limit
 	) {
-		ClientWorld world = requireMatchingWorld(client, snapshot);
+		ClientLevel level = requireMatchingWorld(minecraft, snapshot);
 		RegionPage page = bounds.page(cursor, limit);
 		Map<String, Integer> blockCounts = new LinkedHashMap<>();
 		int unloadedCount = 0;
 		for (long index = page.startCursor(); index < page.endCursorExclusive(); index++) {
 			BlockPos pos = bounds.positionAt(index);
-			if (!world.isChunkLoaded(pos)) {
+			if (!level.hasChunkAt(pos)) {
 				unloadedCount++;
 				continue;
 			}
-			BlockState state = world.getBlockState(pos);
-			String blockId = Registries.BLOCK.getId(state.getBlock()).toString();
+			BlockState state = level.getBlockState(pos);
+			String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 			blockCounts.merge(blockId, 1, Integer::sum);
 		}
 		Map<String, Object> response = pageResponse(snapshot, bounds, page);
@@ -138,18 +138,18 @@ public final class ClientTickWorldQueryService {
 		return response;
 	}
 
-	static ClientWorld requireMatchingWorld(
-		MinecraftClient client,
+	static ClientLevel requireMatchingWorld(
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot
 	) {
-		if (client == null || client.world == null || client.player == null) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
-		String currentDimension = client.world.getRegistryKey().getValue().toString();
+		String currentDimension = minecraft.level.dimension().location().toString();
 		if (!Objects.equals(currentDimension, snapshot.dimensionId())) {
 			throw new BridgeUnavailableException("stale_snapshot", "The world dimension changed after the snapshot");
 		}
-		return client.world;
+		return minecraft.level;
 	}
 
 	static Map<String, Object> baseResponse(ClientTickDebugController.ClientTickSnapshot snapshot) {
@@ -177,21 +177,21 @@ public final class ClientTickWorldQueryService {
 		return response;
 	}
 
-	private static Map<String, Object> blockPayload(ClientWorld world, BlockPos pos) {
+	private static Map<String, Object> blockPayload(ClientLevel level, BlockPos pos) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("pos", Map.of("x", pos.getX(), "y", pos.getY(), "z", pos.getZ()));
-		boolean loaded = world.isChunkLoaded(pos);
+		boolean loaded = level.hasChunkAt(pos);
 		payload.put("loaded", loaded);
 		if (!loaded) {
 			return payload;
 		}
-		BlockState state = world.getBlockState(pos);
-		payload.put("id", Registries.BLOCK.getId(state.getBlock()).toString());
+		BlockState state = level.getBlockState(pos);
+		payload.put("id", BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
 		payload.put("properties", blockProperties(state));
 		payload.put("isAir", state.isAir());
-		payload.put("isReplaceable", state.isReplaceable());
-		payload.put("fluidId", Registries.FLUID.getId(state.getFluidState().getFluid()).toString());
-		payload.put("light", world.getLightLevel(pos));
+		payload.put("isReplaceable", state.canBeReplaced());
+		payload.put("fluidId", BuiltInRegistries.FLUID.getKey(state.getFluidState().getType()).toString());
+		payload.put("light", level.getMaxLocalRawBrightness(pos));
 		return payload;
 	}
 
@@ -204,7 +204,7 @@ public final class ClientTickWorldQueryService {
 	}
 
 	private static <T extends Comparable<T>> String propertyValue(BlockState state, Property<T> property) {
-		return property.name(state.get(property));
+		return property.getName(state.getValue(property));
 	}
 
 	private static Set<String> normalizedBlockIds(Set<String> blockIds) {

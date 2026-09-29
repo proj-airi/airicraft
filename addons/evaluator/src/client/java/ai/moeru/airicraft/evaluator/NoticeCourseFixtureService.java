@@ -1,21 +1,21 @@
 package ai.moeru.airicraft.evaluator;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.s2c.play.PositionFlag;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.entity.Relative;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.GameMode;
-import net.minecraft.world.World;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -39,7 +39,7 @@ final class NoticeCourseFixtureService {
 	static final String COURSE = "notice_walk";
 	private static final int COURSE_Y = 200;
 	static final int RUN_SPACING = 64;
-	private static final int PLACE_FLAGS = Block.NOTIFY_LISTENERS;
+	private static final int PLACE_FLAGS = Block.UPDATE_CLIENTS;
 	// Course-local bounds: a solid stone box with a corridor carved through it.
 	private static final int MIN_X = 0, MAX_X = 30, MIN_Y = 0, MAX_Y = 4, MIN_Z = -4, MAX_Z = 5;
 	private static final List<int[]> VEIN = List.of(new int[] {10, 1, -1}, new int[] {11, 1, -1}, new int[] {11, 2, -1});
@@ -49,7 +49,7 @@ final class NoticeCourseFixtureService {
 
 	private Origin origin;
 	private BlockPos base;
-	private RegistryKey<World> builtIn;
+	private ResourceKey<Level> builtIn;
 
 	Map<String, Object> apply(Request request) {
 		String action = request == null || request.action() == null || request.action().isBlank()
@@ -58,51 +58,51 @@ final class NoticeCourseFixtureService {
 			return Map.of("available", true, "action", "list", "courses", List.of(Map.of("course", COURSE,
 				"description", "Walk a dark corridor past an exposed diamond vein, a sealed emerald ore, bread and cobblestone.")));
 		}
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client.player == null || client.world == null || client.getServer() == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.player == null || minecraft.level == null || minecraft.getSingleplayerServer() == null) {
 			throw new FixtureException("world_not_loaded", "A singleplayer world must be loaded");
 		}
-		ServerWorld world = client.getServer().getWorld(client.world.getRegistryKey());
-		ServerPlayerEntity player = world == null ? null : world.getServer().getPlayerManager().getPlayer(client.player.getUuid());
-		if (world == null || player == null) throw new FixtureException("player_not_loaded", "The integrated server player is unavailable");
+		ServerLevel level = minecraft.getSingleplayerServer().getLevel(minecraft.level.dimension());
+		ServerPlayer player = level == null ? null : level.getServer().getPlayerList().getPlayer(minecraft.player.getUUID());
+		if (level == null || player == null) throw new FixtureException("player_not_loaded", "The integrated server player is unavailable");
 		return switch (action) {
 			case "build" -> {
 				if (request.course() != null && !request.course().isBlank() && !COURSE.equals(request.course().trim())) {
 					throw new FixtureException("unknown_course", "Unknown notice course: " + request.course());
 				}
-				yield build(world, player, Math.max(0, request.run()));
+				yield build(level, player, Math.max(0, request.run()));
 			}
 			case "cleanup" -> {
-				cleanup(world, player);
+				cleanup(level, player);
 				yield Map.of("available", true, "action", "cleanup");
 			}
 			default -> throw new FixtureException("invalid_request", "action must be build, cleanup, or list");
 		};
 	}
 
-	private Map<String, Object> build(ServerWorld world, ServerPlayerEntity player, int run) {
-		clear(world);
-		if (origin == null) origin = new Origin(world.getRegistryKey(), player.getPos(), player.getYaw(), player.getPitch());
-		base = new BlockPos(MathHelper.floor(origin.position().x), COURSE_Y, MathHelper.floor(origin.position().z) + run * RUN_SPACING);
-		builtIn = world.getRegistryKey();
-		for (BlockPos pos : BlockPos.iterate(at(MIN_X, MIN_Y, MIN_Z), at(MAX_X, MAX_Y, MAX_Z))) {
-			world.setBlockState(pos, Blocks.STONE.getDefaultState(), PLACE_FLAGS);
+	private Map<String, Object> build(ServerLevel level, ServerPlayer player, int run) {
+		clear(level);
+		if (origin == null) origin = new Origin(level.dimension(), player.position(), player.getYRot(), player.getXRot());
+		base = new BlockPos(Mth.floor(origin.position().x), COURSE_Y, Mth.floor(origin.position().z) + run * RUN_SPACING);
+		builtIn = level.dimension();
+		for (BlockPos pos : BlockPos.betweenClosed(at(MIN_X, MIN_Y, MIN_Z), at(MAX_X, MAX_Y, MAX_Z))) {
+			level.setBlock(pos, Blocks.STONE.defaultBlockState(), PLACE_FLAGS);
 		}
-		for (BlockPos pos : BlockPos.iterate(at(1, 1, 0), at(29, 2, 2))) world.setBlockState(pos, Blocks.AIR.getDefaultState(), PLACE_FLAGS);
-		for (int[] cell : VEIN) world.setBlockState(at(cell[0], cell[1], cell[2]), Blocks.DIAMOND_ORE.getDefaultState(), PLACE_FLAGS);
-		world.setBlockState(at(SEALED[0], SEALED[1], SEALED[2]), Blocks.EMERALD_ORE.getDefaultState(), PLACE_FLAGS);
+		for (BlockPos pos : BlockPos.betweenClosed(at(1, 1, 0), at(29, 2, 2))) level.setBlock(pos, Blocks.AIR.defaultBlockState(), PLACE_FLAGS);
+		for (int[] cell : VEIN) level.setBlock(at(cell[0], cell[1], cell[2]), Blocks.DIAMOND_ORE.defaultBlockState(), PLACE_FLAGS);
+		level.setBlock(at(SEALED[0], SEALED[1], SEALED[2]), Blocks.EMERALD_ORE.defaultBlockState(), PLACE_FLAGS);
 		var items = new ArrayList<Map<String, Object>>();
-		items.add(drop(world, new ItemStack(Items.BREAD, 3), 16.5, 2.4, "noticed"));
-		items.add(drop(world, new ItemStack(Items.COBBLESTONE, 8), 17.5, 2.4, "garbage"));
+		items.add(drop(level, new ItemStack(Items.BREAD, 3), 16.5, 2.4, "noticed"));
+		items.add(drop(level, new ItemStack(Items.COBBLESTONE, 8), 17.5, 2.4, "garbage"));
 
-		world.getServer().setDifficulty(Difficulty.PEACEFUL, false);
-		world.setTimeOfDay(1000L);
-		player.changeGameMode(GameMode.SURVIVAL);
-		player.getInventory().clear();
+		level.getServer().setDifficulty(Difficulty.PEACEFUL, false);
+		level.setDayTime(1000L);
+		player.setGameMode(GameType.SURVIVAL);
+		player.getInventory().clearContent();
 		player.setHealth(player.getMaxHealth());
-		player.getHungerManager().setFoodLevel(20);
-		player.setVelocity(Vec3d.ZERO);
-		teleport(player, world, Vec3d.of(at(START[0], START[1], START[2])).add(.5, 0, .5), -90F, 0F);
+		player.getFoodData().setFoodLevel(20);
+		player.setDeltaMovement(Vec3.ZERO);
+		teleport(player, level, Vec3.atLowerCornerOf(at(START[0], START[1], START[2])).add(.5, 0, .5), -90F, 0F);
 
 		var payload = new LinkedHashMap<String, Object>();
 		payload.put("available", true);
@@ -119,48 +119,48 @@ final class NoticeCourseFixtureService {
 		return payload;
 	}
 
-	private Map<String, Object> drop(ServerWorld world, ItemStack stack, double x, double z, String expectation) {
+	private Map<String, Object> drop(ServerLevel level, ItemStack stack, double x, double z, String expectation) {
 		BlockPos floor = at(0, 1, 0);
-		var entity = new ItemEntity(world, base.getX() + x, floor.getY() + .05, base.getZ() + z, stack, 0, 0, 0);
-		entity.setPickupDelayInfinite();
-		entity.setNeverDespawn();
-		world.spawnEntity(entity);
-		return Map.of("itemId", net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), "count", stack.getCount(),
-			"uuid", entity.getUuid().toString(), "expect", expectation);
+		var entity = new ItemEntity(level, base.getX() + x, floor.getY() + .05, base.getZ() + z, stack, 0, 0, 0);
+		entity.setNeverPickUp();
+		entity.setUnlimitedLifetime();
+		level.addFreshEntity(entity);
+		return Map.of("itemId", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), "count", stack.getCount(),
+			"uuid", entity.getUUID().toString(), "expect", expectation);
 	}
 
-	private void cleanup(ServerWorld world, ServerPlayerEntity player) {
-		clear(world);
+	private void cleanup(ServerLevel level, ServerPlayer player) {
+		clear(level);
 		if (origin != null) {
-			ServerWorld originWorld = world.getServer().getWorld(origin.world());
-			if (originWorld != null) teleport(player, originWorld, origin.position(), origin.yaw(), origin.pitch());
+			ServerLevel originLevel = level.getServer().getLevel(origin.world());
+			if (originLevel != null) teleport(player, originLevel, origin.position(), origin.yaw(), origin.pitch());
 		}
 		origin = null;
 	}
 
-	private void clear(ServerWorld current) {
+	private void clear(ServerLevel current) {
 		if (base == null || builtIn == null) return;
-		ServerWorld world = current.getServer().getWorld(builtIn);
-		if (world != null) {
+		ServerLevel level = current.getServer().getLevel(builtIn);
+		if (level != null) {
 			BlockPos min = at(MIN_X, MIN_Y, MIN_Z), max = at(MAX_X, MAX_Y, MAX_Z);
-			world.getEntitiesByClass(ItemEntity.class, new net.minecraft.util.math.Box(Vec3d.of(min), Vec3d.of(max.add(1, 1, 1))), entity -> true)
+			level.getEntitiesOfClass(ItemEntity.class, new net.minecraft.world.phys.AABB(Vec3.atLowerCornerOf(min), Vec3.atLowerCornerOf(max.offset(1, 1, 1))), entity -> true)
 				.forEach(ItemEntity::discard);
-			for (BlockPos pos : BlockPos.iterate(min, max)) world.setBlockState(pos, Blocks.AIR.getDefaultState(), PLACE_FLAGS);
+			for (BlockPos pos : BlockPos.betweenClosed(min, max)) level.setBlock(pos, Blocks.AIR.defaultBlockState(), PLACE_FLAGS);
 		}
 		base = null;
 		builtIn = null;
 	}
 
 	private BlockPos at(int x, int y, int z) {
-		return base.add(x, y, z);
+		return base.offset(x, y, z);
 	}
 
 	private static Map<String, Object> point(BlockPos pos) {
 		return Map.of("x", pos.getX(), "y", pos.getY(), "z", pos.getZ());
 	}
 
-	private static void teleport(ServerPlayerEntity player, ServerWorld world, Vec3d position, float yaw, float pitch) {
-		if (!player.teleport(world, position.x, position.y, position.z, Set.<PositionFlag>of(), yaw, pitch, true)) {
+	private static void teleport(ServerPlayer player, ServerLevel level, Vec3 position, float yaw, float pitch) {
+		if (!player.teleportTo(level, position.x, position.y, position.z, Set.<Relative>of(), yaw, pitch, true)) {
 			throw new FixtureException("fixture_setup_failed", "Failed to teleport the notice course player");
 		}
 	}
@@ -168,7 +168,7 @@ final class NoticeCourseFixtureService {
 	record Request(String action, String course, int run) {
 	}
 
-	private record Origin(RegistryKey<World> world, Vec3d position, float yaw, float pitch) {
+	private record Origin(ResourceKey<Level> world, Vec3 position, float yaw, float pitch) {
 	}
 
 	static final class FixtureException extends RuntimeException {

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -17,7 +17,7 @@ class AcquisitionPickupSitesTest {
 
 	@Test void keepsSeparateAlternativesWhenOneApproachCannotBePathed() {
 		BlockPos drop = new BlockPos(0, 64, 0);
-		Set<BlockPos> supported = Set.of(drop, drop.east(), drop.north().up());
+		Set<BlockPos> supported = Set.of(drop, drop.east(), drop.north().above());
 		var sites = AcquisitionPickupSites.find(drop, supported::contains);
 		assertEquals(supported, Set.copyOf(sites));
 		assertEquals(3, sites.size());
@@ -25,7 +25,7 @@ class AcquisitionPickupSitesTest {
 
 	@Test void doesNotOfferUnsupportedOrDistantLandings() {
 		BlockPos drop = new BlockPos(0, 64, 0);
-		Set<BlockPos> distant = Set.of(drop.down(), drop.up(2), drop.east(2));
+		Set<BlockPos> distant = Set.of(drop.below(), drop.above(2), drop.east(2));
 		assertTrue(AcquisitionPickupSites.find(drop, distant::contains).isEmpty());
 		assertTrue(AcquisitionPickupSites.find(drop, pos -> false).isEmpty());
 	}

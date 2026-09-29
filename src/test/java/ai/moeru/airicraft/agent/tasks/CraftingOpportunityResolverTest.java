@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.recipe.RecipeFinder;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.world.entity.player.StackedItemContents;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -24,7 +24,7 @@ class CraftingOpportunityResolverTest {
 	void emptyRecipeBookHasNoAvailableCrafts() {
 		assertEquals(
 			List.of(),
-			CraftingOpportunityResolver.availableCrafts(List.of(RecipeResultCollection.EMPTY), new RecipeFinder())
+			CraftingOpportunityResolver.availableCrafts(List.of(RecipeCollection.EMPTY), new StackedItemContents())
 		);
 	}
 
@@ -32,7 +32,7 @@ class CraftingOpportunityResolverTest {
 	void emptyRecipeBookHasNoKnownCrafts() {
 		assertEquals(
 			List.of(),
-			CraftingOpportunityResolver.knownCrafts(List.of(RecipeResultCollection.EMPTY))
+			CraftingOpportunityResolver.knownCrafts(List.of(RecipeCollection.EMPTY))
 		);
 	}
 
@@ -88,7 +88,7 @@ class CraftingOpportunityResolverTest {
 	void invalidRequestedItemIdReturnsRecipeNotFound() {
 		assertEquals(
 			"recipe_not_found",
-			CraftingOpportunityResolver.resolve(List.of(RecipeResultCollection.EMPTY), new RecipeFinder(), "not an id", 1).failureReason()
+			CraftingOpportunityResolver.resolve(List.of(RecipeCollection.EMPTY), new StackedItemContents(), "not an id", 1).failureReason()
 		);
 	}
 

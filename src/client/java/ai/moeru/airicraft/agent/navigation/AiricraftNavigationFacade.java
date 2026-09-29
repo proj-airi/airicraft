@@ -11,9 +11,9 @@ import ai.moeru.airicraft.navigation.Path;
 import ai.moeru.airicraft.navigation.PathFollower;
 import ai.moeru.airicraft.navigation.SearchBudget;
 import ai.moeru.airicraft.navigation.SearchResult;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.player.Player;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -132,8 +132,8 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		stop();
 		events.clear();
 		cancellations++;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client != null && client.isOnThread()) motor.release(client);
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft != null && minecraft.isSameThread()) motor.release(minecraft);
 		return false;
 	}
 
@@ -163,15 +163,15 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 
 	@Override
 	public Optional<NavigationProgress> navigationProgress() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (mode == Mode.IDLE || client == null || client.player == null) return Optional.empty();
-		ClientPlayerEntity player = client.player;
+		Minecraft minecraft = Minecraft.getInstance();
+		if (mode == Mode.IDLE || minecraft == null || minecraft.player == null) return Optional.empty();
+		LocalPlayer player = minecraft.player;
 		BodyState body = body(player);
 		if (goal != null && body.supported() && goal.isGoal(body.feet())) return Optional.empty();
 		String breakingTarget = null;
 		float progress = 0;
-		if (motor.breaking() != null && client.interactionManager != null) {
-			var accessor = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) client.interactionManager;
+		if (motor.breaking() != null && minecraft.gameMode != null) {
+			var accessor = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
 			if (accessor.airicraft$breakingBlock()) {
 				breakingTarget = accessor.airicraft$currentBreakingPos().toShortString();
 				progress = accessor.airicraft$currentBreakingProgress();
@@ -182,9 +182,9 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 
 	@Override
 	public boolean navigationGoalReached(GoalPosition position) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (position == null || client == null || client.player == null) return false;
-		BodyState body = body(client.player);
+		Minecraft minecraft = Minecraft.getInstance();
+		if (position == null || minecraft == null || minecraft.player == null) return false;
+		BodyState body = body(minecraft.player);
 		if (!body.supported()) return false;
 		GridPos feet = body.feet();
 		return feet.x() == position.x() && feet.z() == position.z() && (!position.exactY() || feet.y() == position.y());
@@ -212,43 +212,43 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 	 * Lets go of keys still held from a navigation that stopped outside this backend's tick. Runs
 	 * before other actuators write this tick's input, so the release never overwrites theirs.
 	 */
-	public void releaseIfIdle(MinecraftClient client) {
-		if (mode == Mode.IDLE) motor.release(client);
+	public void releaseIfIdle(Minecraft minecraft) {
+		if (mode == Mode.IDLE) motor.release(minecraft);
 	}
 
-	public void tick(MinecraftClient client) {
+	public void tick(Minecraft minecraft) {
 		ticks++;
-		ClientPlayerEntity player = client.player;
-		if (player == null || client.world == null) {
+		LocalPlayer player = minecraft.player;
+		if (player == null || minecraft.level == null) {
 			if (mode != Mode.IDLE) stop();
 			liveWorld = null;
 			return;
 		}
 		if (mode == Mode.IDLE) return;
 		BodyState body = body(player);
-		if (mode == Mode.FOLLOW && !retarget(client)) {
-			motor.apply(client, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
+		if (mode == Mode.FOLLOW && !retarget(minecraft)) {
+			motor.apply(minecraft, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
 			return;
 		}
 		GridPos feet = body.feet();
 		if (goal.isGoal(feet) && body.supported()) {
 			if (mode == Mode.NAVIGATE) {
 				finish("AT_GOAL", null);
-				motor.release(client);
+				motor.release(minecraft);
 				return;
 			}
 			cancelPlanning();
 			follower = null;
-			motor.apply(client, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
+			motor.apply(minecraft, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
 			return;
 		}
-		if (follower == null && !plan(client, player, body)) return;
+		if (follower == null && !plan(minecraft, player, body)) return;
 
-		PathFollower.Tick next = follower.tick(body, liveTerrain(client), plannedPolicy);
-		String actionFailure = motor.apply(client, next.intent());
+		PathFollower.Tick next = follower.tick(body, liveTerrain(minecraft), plannedPolicy);
+		String actionFailure = motor.apply(minecraft, next.intent());
 		if (actionFailure != null) {
 			finish("CALC_FAILED", actionFailure);
-			motor.release(client);
+			motor.release(minecraft);
 			return;
 		}
 		switch (next.status()) {
@@ -264,33 +264,33 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 			}
 			case FAILED -> finish("CALC_FAILED", next.detail());
 		}
-		if (mode == Mode.IDLE) motor.release(client);
+		if (mode == Mode.IDLE) motor.release(minecraft);
 	}
 
 	/** Starts or polls a plan. Returns true once a follower is ready this tick. */
-	private boolean plan(MinecraftClient client, ClientPlayerEntity player, BodyState body) {
+	private boolean plan(Minecraft minecraft, LocalPlayer player, BodyState body) {
 		if (pending == null) {
 			if (!body.supported() && supportWait++ < SUPPORT_WAIT_TICKS) {
-				motor.apply(client, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
+				motor.apply(minecraft, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
 				return false;
 			}
 			supportWait = 0;
-			MovementPolicy policy = NavigationPolicies.forPlayer(client, waterPenalty);
+			MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, waterPenalty);
 			if (policy == null) {
 				finish("CALC_FAILED", "travel_policy_unavailable");
-				motor.release(client);
+				motor.release(minecraft);
 				return false;
 			}
 			GridPos start = body.feet();
 			GridPos target = goalHasY ? goalCell : new GridPos(goalCell.x(), start.y(), goalCell.z());
-			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, goalHasY,
+			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(minecraft.level, start, target, goalHasY,
 				MinecraftCellClassifier.forPlayer(player));
 			plannedPolicy = policy;
 			pending = planner.submit(snapshot, policy, start, goal, target, BUDGET);
 			pendingCaptureMillis = snapshot.captureMillis();
 		}
 		if (!pending.done()) {
-			motor.apply(client, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
+			motor.apply(minecraft, ai.moeru.airicraft.navigation.MotorIntent.IDLE);
 			return false;
 		}
 		SearchResult result = pending.result();
@@ -298,7 +298,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		pending = null;
 		if (result == null) {
 			finish("CALC_FAILED", "planner_error");
-			motor.release(client);
+			motor.release(minecraft);
 			return false;
 		}
 		record(result, start);
@@ -316,7 +316,7 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		};
 		if (path == null) {
 			finish("CALC_FAILED", result instanceof SearchResult.Partial ? "no_progress" : "unreachable " + reason(result));
-			motor.release(client);
+			motor.release(minecraft);
 			return false;
 		}
 		follower = new PathFollower(path);
@@ -336,10 +336,10 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 	}
 
 	/** Follow targets the named player's cell and replans once it has moved a few blocks. */
-	private boolean retarget(MinecraftClient client) {
-		PlayerEntity target = null;
-		for (PlayerEntity candidate : client.world.getPlayers()) {
-			if (candidate != client.player && candidate.getName() != null && followName.equalsIgnoreCase(candidate.getName().getString())) {
+	private boolean retarget(Minecraft minecraft) {
+		Player target = null;
+		for (Player candidate : minecraft.level.players()) {
+			if (candidate != minecraft.player && candidate.getName() != null && followName.equalsIgnoreCase(candidate.getName().getString())) {
 				target = candidate;
 				break;
 			}
@@ -391,17 +391,17 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 		};
 	}
 
-	private LiveWorldTerrain liveTerrain(MinecraftClient client) {
-		if (liveWorld != client.world || liveClassifier == null || ticks % 200 == 0) {
-			liveWorld = client.world;
-			liveClassifier = MinecraftCellClassifier.forPlayer(client.player);
+	private LiveWorldTerrain liveTerrain(Minecraft minecraft) {
+		if (liveWorld != minecraft.level || liveClassifier == null || ticks % 200 == 0) {
+			liveWorld = minecraft.level;
+			liveClassifier = MinecraftCellClassifier.forPlayer(minecraft.player);
 		}
-		return new LiveWorldTerrain(client.world, liveClassifier);
+		return new LiveWorldTerrain(minecraft.level, liveClassifier);
 	}
 
-	private BodyState body(ClientPlayerEntity player) {
-		return new BodyState(player.getX(), player.getY(), player.getZ(), player.getVelocity().y, player.isOnGround(),
-			player.isTouchingWater(), player.isClimbing(), player.horizontalCollision, ticks);
+	private BodyState body(LocalPlayer player) {
+		return new BodyState(player.getX(), player.getY(), player.getZ(), player.getDeltaMovement().y, player.onGround(),
+			player.isInWater(), player.onClimbable(), player.horizontalCollision, ticks);
 	}
 
 	private void begin(Mode next, Goal target, GridPos cell, boolean hasY) {

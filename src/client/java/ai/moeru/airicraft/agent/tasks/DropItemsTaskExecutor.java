@@ -5,18 +5,18 @@ import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,7 +33,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	private static final String INVENTORY_BUSY_SCREEN = "inventory_busy_screen";
 	private static final String INVENTORY_SCREEN_DISMISSED = "inventory_screen_dismissed";
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade navigationFacade;
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController();
@@ -50,22 +50,22 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public DropItemsTaskExecutor() {
-		this(MinecraftClient::getInstance, null, new CameraController());
+		this(Minecraft::getInstance, null, new CameraController());
 	}
 
 	public DropItemsTaskExecutor(BaritoneFacade navigationFacade) {
-		this(MinecraftClient::getInstance, navigationFacade, new CameraController());
+		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
 	public DropItemsTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
-		this(MinecraftClient::getInstance, navigationFacade, cameraController);
+		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
-	DropItemsTaskExecutor(Supplier<MinecraftClient> clientSupplier) {
+	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier) {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	DropItemsTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
@@ -96,17 +96,17 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.interactionManager == null || player == null || client.world == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.gameMode == null || player == null || minecraft.level == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
-		if (dismissCurrentScreenIfSafe(client, player)) {
+		if (dismissCurrentScreenIfSafe(minecraft, player)) {
 			busyScreenTicks = 0;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, INVENTORY_SCREEN_DISMISSED);
 			return Optional.empty();
 		}
-		Optional<String> readinessFailure = readinessFailure(client, player);
+		Optional<String> readinessFailure = readinessFailure(minecraft, player);
 		if (readinessFailure.isPresent()) {
 			if (INVENTORY_BUSY_SCREEN.equals(readinessFailure.get()) && shouldWaitForBusyScreen(busyScreenTicks)) {
 				busyScreenTicks++;
@@ -118,11 +118,11 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		busyScreenTicks = 0;
 
 		DropItemsStepArgs args = ((WorldTaskRequest.DropItems) request.task()).args();
-		ScreenHandler handler = player.currentScreenHandler;
-		List<DropSlot> matchingSlots = matchingSlots(handler, args.itemId());
+		AbstractContainerMenu menu = player.containerMenu;
+		List<DropSlot> matchingSlots = matchingSlots(menu, args.itemId());
 		int available = matchingSlots.stream().mapToInt(DropSlot::count).sum();
 		if (args.targetPlayer() != null) {
-			return tickDelivery(client, player, request, args, available, sessionSnapshot.tickCount());
+			return tickDelivery(minecraft, player, request, args, available, sessionSnapshot.tickCount());
 		}
 		if (available < args.quantity()) {
 			return fail(request, available == 0
@@ -131,20 +131,20 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		}
 
 		for (DropClick click : planDropClicks(matchingSlots, args.quantity())) {
-			performDropClick(client, player, handler, click);
+			performDropClick(minecraft, player, menu, click);
 		}
 		return complete(request);
 	}
 
 	private Optional<TaskTerminalEvent> tickDelivery(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		WorldTaskRequest request,
 		DropItemsStepArgs args,
 		int available,
 		long tick
 	) {
-		Optional<AbstractClientPlayerEntity> target = findTarget(client, args.targetPlayer());
+		Optional<AbstractClientPlayer> target = findTarget(minecraft, args.targetPlayer());
 		Optional<PlayerItemDeliveryPolicy.TargetObservation> targetObservation = target.map(this::observeTarget);
 		PlayerItemDeliveryPolicy.Observation observation = new PlayerItemDeliveryPolicy.Observation(
 			player.getX(),
@@ -152,15 +152,15 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 			player.getZ(),
 			available,
 			targetObservation,
-			observeDroppedItems(client, args),
+			observeDroppedItems(minecraft, args),
 			List.copyOf(pendingPickupEvidence)
 		);
 		PlayerItemDeliveryPolicy.Decision decision = PlayerItemDeliveryPolicy.decide(deliveryState, observation);
 		pendingPickupEvidence.clear();
 		if (decision.command() == PlayerItemDeliveryPolicy.Command.DROP && target.isPresent()) {
-			cameraController.lookAt(client, targetAimPoint(target.get()));
-			if (!cameraController.isLookingAt(client, targetAimPoint(target.get()), 5.0F)) {
-				stopApproach(client);
+			cameraController.lookAt(minecraft, targetAimPoint(target.get()));
+			if (!cameraController.isLookingAt(minecraft, targetAimPoint(target.get()), 5.0F)) {
+				stopApproach(minecraft);
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "aiming_at_recipient");
 				return Optional.empty();
 			}
@@ -171,27 +171,27 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 				if (target.isEmpty()) {
 					yield fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_not_found"));
 				}
-				yield approachTarget(client, target.get(), request, decision.reason(), tick);
+				yield approachTarget(minecraft, target.get(), request, decision.reason(), tick);
 			}
 			case AIM -> {
-				stopApproach(client);
-				target.ifPresent(value -> cameraController.lookAt(client, targetAimPoint(value)));
+				stopApproach(minecraft);
+				target.ifPresent(value -> cameraController.lookAt(minecraft, targetAimPoint(value)));
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, decision.reason());
 				yield Optional.empty();
 			}
 			case DROP -> {
-				stopApproach(client);
-				target.ifPresent(value -> cameraController.lookAt(client, targetAimPoint(value)));
-				baselineItemEntityCounts = itemEntityCounts(client, args.itemId());
-				ScreenHandler handler = player.currentScreenHandler;
-				for (DropClick click : planDropClicks(matchingSlots(handler, args.itemId()), args.quantity())) {
-					performDropClick(client, player, handler, click);
+				stopApproach(minecraft);
+				target.ifPresent(value -> cameraController.lookAt(minecraft, targetAimPoint(value)));
+				baselineItemEntityCounts = itemEntityCounts(minecraft, args.itemId());
+				AbstractContainerMenu menu = player.containerMenu;
+				for (DropClick click : planDropClicks(matchingSlots(menu, args.itemId()), args.quantity())) {
+					performDropClick(minecraft, player, menu, click);
 				}
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "dropped_items_waiting_for_delivery");
 				yield Optional.empty();
 			}
 			case WAIT -> {
-				target.ifPresent(value -> cameraController.lookAt(client, targetAimPoint(value)));
+				target.ifPresent(value -> cameraController.lookAt(minecraft, targetAimPoint(value)));
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, decision.reason());
 				yield Optional.empty();
 			}
@@ -201,27 +201,27 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> approachTarget(
-		MinecraftClient client,
-		AbstractClientPlayerEntity target,
+		Minecraft minecraft,
+		AbstractClientPlayer target,
 		WorldTaskRequest request,
 		String reason,
 		long tick
 	) {
-		double distance = client.player.distanceTo(target);
+		double distance = minecraft.player.distanceTo(target);
 		if (distance <= 10.0D && !movementController.snapshot().stuck()) {
-			cameraController.lookAt(client, targetAimPoint(target));
+			cameraController.lookAt(minecraft, targetAimPoint(target));
 			cancelBaritoneChase();
-			movementController.moveForward(client, true, false, tick);
+			movementController.moveForward(minecraft, true, false, tick);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " direct_chase");
 			return Optional.empty();
 		}
 		if (navigationFacade != null && navigationFacade.isLoaded()) {
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			Optional<String> pathEvent = navigationFacade.pollPathEvent();
 			if (pathEvent.map(event -> "CALC_FAILED".equalsIgnoreCase(event.trim())).orElse(false)) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_unreachable"));
 			}
-			GoalPosition nextGoal = new GoalPosition(target.getBlockPos().getX(), target.getBlockPos().getY(), target.getBlockPos().getZ(), false);
+			GoalPosition nextGoal = new GoalPosition(target.blockPosition().getX(), target.blockPosition().getY(), target.blockPosition().getZ(), false);
 			if (chaseGoal == null || !chaseGoal.equals(nextGoal) || chaseGoalRefreshTicks >= 10) {
 				navigationFacade.startNavigateNear(nextGoal, 2);
 				chaseGoal = nextGoal;
@@ -233,27 +233,27 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " baritone_chase");
 			return Optional.empty();
 		}
-		movementController.moveForward(client, true, false, tick);
+		movementController.moveForward(minecraft, true, false, tick);
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " direct_chase");
 		return Optional.empty();
 	}
 
-	private Optional<AbstractClientPlayerEntity> findTarget(MinecraftClient client, String targetName) {
-		for (AbstractClientPlayerEntity candidate : client.world.getPlayers()) {
+	private Optional<AbstractClientPlayer> findTarget(Minecraft minecraft, String targetName) {
+		for (AbstractClientPlayer candidate : minecraft.level.players()) {
 			if (!candidate.getName().getString().equals(targetName) || !candidate.isAlive()) {
 				continue;
 			}
 			if (targetUuid == null) {
-				targetUuid = candidate.getUuid();
+				targetUuid = candidate.getUUID();
 			}
 			return Optional.of(candidate);
 		}
 		return Optional.empty();
 	}
 
-	private PlayerItemDeliveryPolicy.TargetObservation observeTarget(AbstractClientPlayerEntity target) {
+	private PlayerItemDeliveryPolicy.TargetObservation observeTarget(AbstractClientPlayer target) {
 		return new PlayerItemDeliveryPolicy.TargetObservation(
-			target.getUuid(),
+			target.getUUID(),
 			target.getName().getString(),
 			target.getX(),
 			target.getY(),
@@ -262,28 +262,28 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private List<PlayerItemDeliveryPolicy.DroppedItemEvidence> observeDroppedItems(
-		MinecraftClient client,
+		Minecraft minecraft,
 		DropItemsStepArgs args
 	) {
 		if (deliveryState == null || deliveryState.phase() != PlayerItemDeliveryPolicy.Phase.AWAIT_DELIVERY) {
 			return List.of();
 		}
-		Box area = client.player.getBoundingBox().expand(64.0D);
+		AABB area = minecraft.player.getBoundingBox().inflate(64.0D);
 		ArrayList<PlayerItemDeliveryPolicy.DroppedItemEvidence> evidence = new ArrayList<>();
-		for (ItemEntity itemEntity : client.world.getEntitiesByClass(ItemEntity.class, area, value -> true)) {
-			ItemStack stack = itemEntity.getStack();
-			String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+		for (ItemEntity itemEntity : minecraft.level.getEntitiesOfClass(ItemEntity.class, area, value -> true)) {
+			ItemStack stack = itemEntity.getItem();
+			String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 			if (!args.itemId().equals(itemId)) {
 				continue;
 			}
 			int droppedCount = agentAttributedQuantity(
-				new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUuid()),
+				new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUUID()),
 				stack.getCount(),
 				baselineItemEntityCounts
 			);
 			if (droppedCount > 0) {
 				evidence.add(new PlayerItemDeliveryPolicy.DroppedItemEvidence(
-					new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUuid()),
+					new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUUID()),
 					itemId,
 					droppedCount,
 					itemEntity.getX(),
@@ -344,54 +344,54 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		return Math.max(0, observedEntityStackCount - baselineCount);
 	}
 
-	private static Map<PlayerItemDeliveryPolicy.EntityGeneration, Integer> itemEntityCounts(MinecraftClient client, String itemId) {
+	private static Map<PlayerItemDeliveryPolicy.EntityGeneration, Integer> itemEntityCounts(Minecraft minecraft, String itemId) {
 		Map<PlayerItemDeliveryPolicy.EntityGeneration, Integer> counts = new HashMap<>();
-		Box area = client.player.getBoundingBox().expand(64.0D);
-		for (ItemEntity itemEntity : client.world.getEntitiesByClass(ItemEntity.class, area, value -> true)) {
-			if (itemId.equals(Registries.ITEM.getId(itemEntity.getStack().getItem()).toString())) {
-				counts.put(new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUuid()), itemEntity.getStack().getCount());
+		AABB area = minecraft.player.getBoundingBox().inflate(64.0D);
+		for (ItemEntity itemEntity : minecraft.level.getEntitiesOfClass(ItemEntity.class, area, value -> true)) {
+			if (itemId.equals(BuiltInRegistries.ITEM.getKey(itemEntity.getItem().getItem()).toString())) {
+				counts.put(new PlayerItemDeliveryPolicy.EntityGeneration(itemEntity.getId(), itemEntity.getUUID()), itemEntity.getItem().getCount());
 			}
 		}
 		return Map.copyOf(counts);
 	}
 
-	private static Vec3d targetAimPoint(AbstractClientPlayerEntity target) {
+	private static Vec3 targetAimPoint(AbstractClientPlayer target) {
 		return target.getBoundingBox().getCenter();
 	}
 
-	private static Optional<String> readinessFailure(MinecraftClient client, ClientPlayerEntity player) {
-		if (player.currentScreenHandler != player.playerScreenHandler) {
+	private static Optional<String> readinessFailure(Minecraft minecraft, LocalPlayer player) {
+		if (player.containerMenu != player.inventoryMenu) {
 			return Optional.of(INVENTORY_BUSY);
 		}
-		if (client.currentScreen != null && !(client.currentScreen instanceof InventoryScreen)) {
+		if (minecraft.screen != null && !(minecraft.screen instanceof InventoryScreen)) {
 			return Optional.of(INVENTORY_BUSY_SCREEN);
 		}
-		if (!player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (!player.containerMenu.getCarried().isEmpty()) {
 			return Optional.of(INVENTORY_BUSY);
 		}
 		return Optional.empty();
 	}
 
-	private static boolean dismissCurrentScreenIfSafe(MinecraftClient client, ClientPlayerEntity player) {
-		if (!shouldDismissBusyScreen(currentScreenName(client))) {
+	private static boolean dismissCurrentScreenIfSafe(Minecraft minecraft, LocalPlayer player) {
+		if (!shouldDismissBusyScreen(currentScreenName(minecraft))) {
 			return false;
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler) {
+		if (player.containerMenu != player.inventoryMenu) {
 			return false;
 		}
-		if (!player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (!player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
-		ScreenCloseSafety.clearScreen(client, "drop_items_screen_dismiss");
+		ScreenCloseSafety.clearScreen(minecraft, "drop_items_screen_dismiss");
 		return true;
 	}
 
-	private static String currentScreenName(MinecraftClient client) {
-		return client.currentScreen == null ? null : client.currentScreen.getClass().getSimpleName();
+	private static String currentScreenName(Minecraft minecraft) {
+		return minecraft.screen == null ? null : minecraft.screen.getClass().getSimpleName();
 	}
 
 	static boolean shouldDismissBusyScreen(String screenName) {
-		return "ChatScreen".equals(screenName) || "GameMenuScreen".equals(screenName);
+		return "ChatScreen".equals(screenName) || "PauseScreen".equals(screenName);
 	}
 
 	static boolean itemDropActuationAllowed(SessionSnapshot sessionSnapshot) {
@@ -402,14 +402,14 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		return busyScreenTicks < BUSY_SCREEN_TIMEOUT_TICKS;
 	}
 
-	private static List<DropSlot> matchingSlots(ScreenHandler handler, String itemId) {
+	private static List<DropSlot> matchingSlots(AbstractContainerMenu menu, String itemId) {
 		ArrayList<DropSlot> slots = new ArrayList<>();
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
 			if (stack.isEmpty()) {
 				continue;
 			}
-			String stackItemId = Registries.ITEM.getId(stack.getItem()).toString();
+			String stackItemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 			if (itemId.equals(stackItemId)) {
 				slots.add(new DropSlot(slot, stack.getCount()));
 			}
@@ -433,17 +433,17 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		return List.copyOf(clicks);
 	}
 
-	private static void performDropClick(MinecraftClient client, ClientPlayerEntity player, ScreenHandler handler, DropClick click) {
+	private static void performDropClick(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, DropClick click) {
 		int remaining = click.count();
 		while (remaining > 0) {
-			ItemStack currentStack = handler.getSlot(click.slotId()).getStack();
+			ItemStack currentStack = menu.getSlot(click.slotId()).getItem();
 			if (!currentStack.isEmpty() && remaining >= currentStack.getCount()) {
 				int stackCount = currentStack.getCount();
-				client.interactionManager.clickSlot(handler.syncId, click.slotId(), 1, SlotActionType.THROW, player);
+				minecraft.gameMode.handleInventoryMouseClick(menu.containerId, click.slotId(), 1, ClickType.THROW, player);
 				remaining -= stackCount;
 			}
 			else {
-				client.interactionManager.clickSlot(handler.syncId, click.slotId(), 0, SlotActionType.THROW, player);
+				minecraft.gameMode.handleInventoryMouseClick(menu.containerId, click.slotId(), 0, ClickType.THROW, player);
 				remaining--;
 			}
 		}
@@ -530,8 +530,8 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		snapshot = TaskExecutionSnapshot.idle();
 	}
 
-	private void stopApproach(MinecraftClient client) {
-		movementController.stop(client);
+	private void stopApproach(Minecraft minecraft) {
+		movementController.stop(minecraft);
 		cancelBaritoneChase();
 	}
 

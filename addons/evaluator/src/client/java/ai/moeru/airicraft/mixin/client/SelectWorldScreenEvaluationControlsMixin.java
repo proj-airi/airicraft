@@ -3,14 +3,14 @@ package ai.moeru.airicraft.mixin.client;
 import ai.moeru.airicraft.Airicraft;
 import ai.moeru.airicraft.agent.evaluation.EvaluationWorldFixtureService;
 import ai.moeru.airicraft.agent.evaluation.EvaluationWorldListUiState;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.world.SelectWorldScreen;
-import net.minecraft.client.gui.screen.world.WorldListWidget;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.toast.SystemToast;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldSelectionList;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,15 +22,15 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 	private static final EvaluationWorldFixtureService AIRICRAFT_FIXTURES = EvaluationWorldFixtureService.createDefault();
 
 	@Shadow
-	protected TextFieldWidget searchBox;
+	protected EditBox searchBox;
 
 	@Shadow
-	private WorldListWidget levelList;
+	private WorldSelectionList list;
 
-	private ButtonWidget airicraft$evalCopiesToggleButton;
-	private ButtonWidget airicraft$cleanupEvalCopiesButton;
+	private Button airicraft$evalCopiesToggleButton;
+	private Button airicraft$cleanupEvalCopiesButton;
 
-	protected SelectWorldScreenEvaluationControlsMixin(Text title) {
+	protected SelectWorldScreenEvaluationControlsMixin(Component title) {
 		super(title);
 	}
 
@@ -43,7 +43,7 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 			y = this.height - 76;
 		}
 
-		airicraft$evalCopiesToggleButton = addDrawableChild(ButtonWidget.builder(
+		airicraft$evalCopiesToggleButton = addRenderableWidget(Button.builder(
 				airicraft$toggleMessage(),
 				button -> {
 					EvaluationWorldListUiState.toggleEvaluationCopies();
@@ -51,15 +51,15 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 					airicraft$reloadWorldList();
 				}
 			)
-			.dimensions(x, y, 72, 20)
-			.tooltip(Tooltip.of(Text.literal("Show or hide Airicraft eval copies")))
+			.bounds(x, y, 72, 20)
+			.tooltip(Tooltip.create(Component.literal("Show or hide Airicraft eval copies")))
 			.build());
-		airicraft$cleanupEvalCopiesButton = addDrawableChild(ButtonWidget.builder(
-				Text.literal("Clean Eval"),
+		airicraft$cleanupEvalCopiesButton = addRenderableWidget(Button.builder(
+				Component.literal("Clean Eval"),
 				button -> airicraft$cleanupEvalCopies()
 			)
-			.dimensions(x + 76, y, 72, 20)
-			.tooltip(Tooltip.of(Text.literal("Delete all Airicraft eval copies")))
+			.bounds(x + 76, y, 72, 20)
+			.tooltip(Tooltip.create(Component.literal("Delete all Airicraft eval copies")))
 			.build());
 		airicraft$updateEvaluationControls();
 	}
@@ -93,27 +93,27 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 	}
 
 	private void airicraft$reloadWorldList() {
-		if (levelList != null) {
-			((WorldListWidgetInvoker) levelList).airicraft$load();
+		if (list != null) {
+			((WorldListWidgetInvoker) list).airicraft$load();
 		}
-		if (searchBox != null && levelList != null) {
-			levelList.setSearch(searchBox.getText());
+		if (searchBox != null && list != null) {
+			list.updateFilter(searchBox.getValue());
 		}
 	}
 
-	private Text airicraft$toggleMessage() {
-		return Text.literal(EvaluationWorldListUiState.showEvaluationCopies() ? "Eval: On" : "Eval: Off");
+	private Component airicraft$toggleMessage() {
+		return Component.literal(EvaluationWorldListUiState.showEvaluationCopies() ? "Eval: On" : "Eval: Off");
 	}
 
 	private void airicraft$showToast(String title, String message) {
-		if (client == null) {
+		if (minecraft == null) {
 			return;
 		}
 		SystemToast.add(
-			client.getToastManager(),
-			SystemToast.Type.PERIODIC_NOTIFICATION,
-			Text.literal(title),
-			Text.literal(message == null || message.isBlank() ? "" : message)
+			minecraft.getToastManager(),
+			SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+			Component.literal(title),
+			Component.literal(message == null || message.isBlank() ? "" : message)
 		);
 	}
 }

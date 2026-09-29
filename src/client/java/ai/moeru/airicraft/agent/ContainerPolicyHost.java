@@ -4,9 +4,9 @@ import ai.moeru.airicraft.policy.PolicyRuntime;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.server.MinecraftServer;
 
 import java.util.List;
@@ -19,11 +19,11 @@ final class ContainerPolicyHost implements PolicyRuntime.Host {
 	private enum Phase { IDLE, OBSERVE, BEFORE_WITHDRAW, VERIFY_WITHDRAW, VERIFY_CLOSE, CLOSED }
 	record View(int syncId, Map<String, Integer> container, Map<String, Integer> inventory) { }
 	private static final Gson JSON = new Gson();
-	private final MinecraftClient client;
+	private final Minecraft minecraft;
 	private final MinecraftServer server;
-	private final GenericContainerScreenHandler screen;
+	private final ChestMenu screen;
 	private final java.util.UUID playerId;
-	private GenericContainerScreenHandler serverScreen; // Read and assigned only on the server thread.
+	private ChestMenu serverScreen; // Read and assigned only on the server thread.
 	private Phase phase = Phase.IDLE;
 	private CompletableFuture<View> reading;
 	private CompletableFuture<JsonElement> result;
@@ -31,16 +31,16 @@ final class ContainerPolicyHost implements PolicyRuntime.Host {
 	private View expected;
 	private int elapsed;
 
-	ContainerPolicyHost(MinecraftClient client) {
-		if (client == null || client.world == null || client.player == null || client.getServer() == null)
+	ContainerPolicyHost(Minecraft minecraft) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null || minecraft.getSingleplayerServer() == null)
 			throw new IllegalStateException("policy_requires_singleplayer");
-		if (!(client.player.currentScreenHandler instanceof GenericContainerScreenHandler handler))
+		if (!(minecraft.player.containerMenu instanceof ChestMenu menu))
 			throw new IllegalStateException("policy_requires_open_container");
-		if (!handler.getCursorStack().isEmpty()) throw new IllegalStateException("cursor_not_empty");
-		this.client = client;
-		server = client.getServer();
-		screen = handler;
-		playerId = client.player.getUuid();
+		if (!menu.getCarried().isEmpty()) throw new IllegalStateException("cursor_not_empty");
+		this.minecraft = minecraft;
+		server = minecraft.getSingleplayerServer();
+		screen = menu;
+		playerId = minecraft.player.getUUID();
 	}
 
 	@Override public CompletableFuture<JsonElement> execute(JsonObject effect) {
@@ -72,7 +72,7 @@ final class ContainerPolicyHost implements PolicyRuntime.Host {
 			case "close_container" -> {
 				if (!args.keySet().equals(java.util.Set.of("syncId"))) throw new IllegalArgumentException("invalid_close_arguments");
 				requireSyncId(args);
-				ContainerInventoryController.close(client);
+				ContainerInventoryController.close(minecraft);
 				phase = Phase.VERIFY_CLOSE;
 			}
 			default -> throw new IllegalArgumentException("unsupported_policy_operation: " + operation);
@@ -86,21 +86,21 @@ final class ContainerPolicyHost implements PolicyRuntime.Host {
 	@Override public void tick() {
 		if (phase == Phase.IDLE || phase == Phase.CLOSED) return;
 		if (++elapsed > 100) throw new IllegalStateException("container_confirmation_timeout; inspect current counts before retrying");
-		if (client.getServer() != server || client.player == null) throw new IllegalStateException("world_changed");
+		if (minecraft.getSingleplayerServer() != server || minecraft.player == null) throw new IllegalStateException("world_changed");
 		if (phase != Phase.VERIFY_CLOSE) requireBoundScreen();
 		if (!reading.isDone()) return;
 		View observed = reading.join();
 		if (phase == Phase.VERIFY_CLOSE) {
-			if (observed == null) { complete(JSON.toJsonTree(Map.of("closed", true, "syncId", screen.syncId))); return; }
+			if (observed == null) { complete(JSON.toJsonTree(Map.of("closed", true, "syncId", screen.containerId))); return; }
 		} else {
 			if (observed == null) throw new IllegalStateException("server_container_changed");
 			if (phase == Phase.OBSERVE) { complete(JSON.toJsonTree(observed)); return; }
 			if (phase == Phase.BEFORE_WITHDRAW) {
 				// Do not plan clicks against speculative client contents.
-				View local = view(screen, client.player.getInventory());
+				View local = view(screen, minecraft.player.getInventory());
 				if (!local.equals(observed)) { reading = readServer(); return; }
 				expected = afterWithdrawal(observed, items);
-				ContainerInventoryController.transfer(client, screen.syncId, "withdraw", items);
+				ContainerInventoryController.transfer(minecraft, screen.containerId, "withdraw", items);
 				phase = Phase.VERIFY_WITHDRAW;
 			} else if (expected.equals(observed)) {
 				complete(JSON.toJsonTree(observed));
@@ -124,35 +124,35 @@ final class ContainerPolicyHost implements PolicyRuntime.Host {
 
 	private CompletableFuture<View> readServer() {
 		return CompletableFuture.supplyAsync(() -> {
-			var player = server.getPlayerManager().getPlayer(playerId);
-			if (player == null || !(player.currentScreenHandler instanceof GenericContainerScreenHandler handler) || handler.syncId != screen.syncId)
+			var player = server.getPlayerList().getPlayer(playerId);
+			if (player == null || !(player.containerMenu instanceof ChestMenu menu) || menu.containerId != screen.containerId)
 				return null;
-			if (serverScreen == null) serverScreen = handler;
-			if (handler != serverScreen) throw new IllegalStateException("server_container_replaced");
-			return view(handler, player.getInventory());
+			if (serverScreen == null) serverScreen = menu;
+			if (menu != serverScreen) throw new IllegalStateException("server_container_replaced");
+			return view(menu, player.getInventory());
 		}, server::execute);
 	}
 
-	private static View view(GenericContainerScreenHandler handler, net.minecraft.entity.player.PlayerInventory playerInventory) {
+	private static View view(ChestMenu menu, net.minecraft.world.entity.player.Inventory playerInventory) {
 		var container = new TreeMap<String, Integer>();
 		var inventory = new TreeMap<String, Integer>();
-		for (var slot : handler.slots) {
-			var stack = slot.getStack();
+		for (var slot : menu.slots) {
+			var stack = slot.getItem();
 			if (stack.isEmpty()) continue;
-			String id = Registries.ITEM.getId(stack.getItem()).toString();
-			if (slot.id < handler.getRows() * 9) container.merge(id, stack.getCount(), Integer::sum);
-			else if (slot.inventory == playerInventory && slot.getIndex() < 36) inventory.merge(id, stack.getCount(), Integer::sum);
+			String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+			if (slot.index < menu.getRowCount() * 9) container.merge(id, stack.getCount(), Integer::sum);
+			else if (slot.container == playerInventory && slot.getContainerSlot() < 36) inventory.merge(id, stack.getCount(), Integer::sum);
 		}
-		return new View(handler.syncId, Map.copyOf(container), Map.copyOf(inventory));
+		return new View(menu.containerId, Map.copyOf(container), Map.copyOf(inventory));
 	}
 
 	private void requireSyncId(JsonObject args) {
-		if (args.get("syncId").getAsBigDecimal().intValueExact() != screen.syncId) throw new IllegalStateException("container_identity_mismatch");
+		if (args.get("syncId").getAsBigDecimal().intValueExact() != screen.containerId) throw new IllegalStateException("container_identity_mismatch");
 	}
 
 	private void requireBoundScreen() {
-		if (client.player == null || client.player.currentScreenHandler != screen) throw new IllegalStateException("container_changed");
-		if (!screen.getCursorStack().isEmpty()) throw new IllegalStateException("cursor_not_empty");
+		if (minecraft.player == null || minecraft.player.containerMenu != screen) throw new IllegalStateException("container_changed");
+		if (!screen.getCarried().isEmpty()) throw new IllegalStateException("cursor_not_empty");
 	}
 
 	private void complete(JsonElement value) {

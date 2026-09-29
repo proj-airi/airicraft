@@ -6,7 +6,7 @@ import journeymap.api.v2.client.event.MappingEvent;
 import journeymap.api.v2.common.event.ClientEventRegistry;
 import journeymap.api.v2.common.event.CommonEventRegistry;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import journeymap.api.v2.client.IClientAPI;
 import journeymap.api.v2.client.IClientPlugin;
 import journeymap.api.v2.client.JourneyMapPlugin;
@@ -30,23 +30,23 @@ public final class AiricraftJourneyMapPlugin implements IClientPlugin {
 		this.jmAPI = jmClientApi;
 		MapIntegrationBridge.setProviders(List.of(new JourneyMapIntegrationProvider(jmAPI)));
 		LocationMemoryBridge.registerJourneyMap(new JourneyMapLocationMemoryProvider(jmAPI, () -> {
-			var world = MinecraftClient.getInstance().world;
-			return world != null && world == mappedWorld;
+			var level = Minecraft.getInstance().level;
+			return level != null && level == mappedWorld;
 		}));
 		ClientEventRegistry.MAPPING_EVENT.subscribe(MOD_ID, event -> {
-			var client = MinecraftClient.getInstance();
-			var world = client.world;
-			client.execute(() -> {
-				if (client.world != world) return;
+			var minecraft = Minecraft.getInstance();
+			var level = minecraft.level;
+			minecraft.execute(() -> {
+				if (minecraft.level != level) return;
 				if (event.getStage() == MappingEvent.Stage.MAPPING_STARTED) {
-					if (world != null && world.getRegistryKey().equals(event.dimension)) mappedWorld = world;
+					if (level != null && level.dimension().equals(event.dimension)) mappedWorld = level;
 				}
-				else if (world == null || world.getRegistryKey().equals(event.dimension)) mappedWorld = null;
+				else if (level == null || level.dimension().equals(event.dimension)) mappedWorld = null;
 				LocationMemoryBridge.changed();
 			});
 		});
 		CommonEventRegistry.WAYPOINT_EVENT.subscribe(MOD_ID, event -> LocationMemoryBridge.changed());
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+		ClientPlayConnectionEvents.DISCONNECT.register((listener, minecraft) -> {
 			mappedWorld = null;
 			LocationMemoryBridge.changed();
 		});

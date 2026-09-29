@@ -8,12 +8,12 @@ import me.shedaniel.clothconfig2.gui.ClothConfigScreen;
 import me.shedaniel.clothconfig2.gui.entries.BooleanListEntry;
 import me.shedaniel.clothconfig2.gui.entries.SelectionListEntry;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.NoticeScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.AlertScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -24,9 +24,9 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	private static final String AGENT = "agent.yml";
 	private final SettingsDraft draft;
 	private final SettingsProfiles profiles;
-	private ButtonWidget saveButton;
-	private ButtonWidget profilesButton;
-	private ButtonWidget onboardingButton;
+	private Button saveButton;
+	private Button profilesButton;
+	private Button onboardingButton;
 
 	private AiricraftSettingsScreen(Screen parent, Form form) {
 		this(parent, form, new SettingsProfiles(form.draft));
@@ -45,7 +45,7 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 			return new AiricraftSettingsScreen(parent, new Form(SettingsDraft.open(
 				FabricLoader.getInstance().getConfigDir().resolve("airicraft"))));
 		} catch (IOException | RuntimeException exception) {
-			return new NoticeScreen(() -> MinecraftClient.getInstance().setScreen(parent),
+			return new AlertScreen(() -> Minecraft.getInstance().setScreen(parent),
 				text("open_failed", "Could not open Airicraft settings"),
 				text("open_failed.detail", "The settings files could not be read. Check their format and file permissions; no changes were made."));
 		}
@@ -54,40 +54,40 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 	@Override
 	protected void init() {
 		super.init();
-		var reportButton = addDrawableChild(ButtonWidget.builder(text("report", "Report a problem"), ignored -> saveReport())
-			.dimensions(4, 4, 104, 20).build());
-		reportButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(text("report.detail",
+		var reportButton = addRenderableWidget(Button.builder(text("report", "Report a problem"), ignored -> saveReport())
+			.bounds(4, 4, 104, 20).build());
+		reportButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(text("report.detail",
 			"Mark this moment, choose attachments and preview before saving locally.")));
-		profilesButton = addDrawableChild(ButtonWidget.builder(text("profiles", "Profiles…"), ignored -> {
+		profilesButton = addRenderableWidget(Button.builder(text("profiles", "Profiles…"), ignored -> {
 			if (hasErrors()) return;
 			super.saveAll(false);
 			profiles.stage();
-			client.setScreen(new SettingsProfilesScreen(profiles, () ->
-				client.setScreen(new AiricraftSettingsScreen(parent, new Form(draft), profiles))));
-		}).dimensions(width - 104, 4, 100, 20).build());
-		profilesButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Active profile: " + profiles.active())));
+			minecraft.setScreen(new SettingsProfilesScreen(profiles, () ->
+				minecraft.setScreen(new AiricraftSettingsScreen(parent, new Form(draft), profiles))));
+		}).bounds(width - 104, 4, 100, 20).build());
+		profilesButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Active profile: " + profiles.active())));
 		if (!(parent instanceof OnboardingScreen)) {
-			onboardingButton = addDrawableChild(ButtonWidget.builder(Text.literal("Setup & checks"), ignored -> client.setScreen(OnboardingScreen.create(this)))
-				.dimensions(width / 2 - 51, 4, 102, 20).build());
-			onboardingButton.setTooltip(net.minecraft.client.gui.tooltip.Tooltip.of(Text.literal("Save or cancel pending edits before checking saved connections.")));
+			onboardingButton = addRenderableWidget(Button.builder(Component.literal("Setup & checks"), ignored -> minecraft.setScreen(OnboardingScreen.create(this)))
+				.bounds(width / 2 - 51, 4, 102, 20).build());
+			onboardingButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Save or cancel pending edits before checking saved connections.")));
 		}
 		// Cloth recreates the bottom-right save button with a dynamic label on each init.
 		for (var child : java.util.List.copyOf(children())) {
-			if (child instanceof ButtonWidget button && button.getY() == height - 26 && button.getX() > width / 2) {
-				remove(button);
-				saveButton = addDrawableChild(ButtonWidget.builder(text("save", "Save & reload agent"), ignored -> saveAll(true))
-					.dimensions(button.getX(), button.getY(), button.getWidth(), button.getHeight()).build());
+			if (child instanceof Button button && button.getY() == height - 26 && button.getX() > width / 2) {
+				removeWidget(button);
+				saveButton = addRenderableWidget(Button.builder(text("save", "Save & reload agent"), ignored -> saveAll(true))
+					.bounds(button.getX(), button.getY(), button.getWidth(), button.getHeight()).build());
 			}
 		}
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+	public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
 		boolean valid = !hasErrors();
 		saveButton.active = isEdited() && valid;
 		profilesButton.active = valid;
 		if (onboardingButton != null) onboardingButton.active = valid && !isEdited();
-		super.render(context, mouseX, mouseY, delta);
+		super.render(graphics, mouseX, mouseY, delta);
 	}
 
 	@Override
@@ -108,23 +108,23 @@ public final class AiricraftSettingsScreen extends ClothConfigScreen {
 			super.saveAll(false);
 			profiles.stage();
 			boolean saved = draft.saveAndReload(() -> AiricraftClient.runtimeController().reload());
-			if (saved) client.inGameHud.setOverlayMessage(text("saved", "Airicraft settings saved. Agent reloaded."), false);
-			client.setScreen(parent);
+			if (saved) minecraft.gui.setOverlayMessage(text("saved", "Airicraft settings saved. Agent reloaded."), false);
+			minecraft.setScreen(parent);
 		} catch (IOException | RuntimeException exception) {
 			// Parser exceptions can contain API keys. Never display or log their raw text.
-			client.setScreen(new NoticeScreen(() -> client.setScreen(this),
+			minecraft.setScreen(new AlertScreen(() -> minecraft.setScreen(this),
 				text("save_failed", "Could not apply Airicraft settings"),
 				text("save_failed.detail", "Your edits are still in this menu. Check the values and file permissions. If settings were edited elsewhere, close and reopen this menu."),
-				Text.translatable("gui.back"), true));
+				Component.translatable("gui.back"), true));
 		}
 	}
 
 	private void saveReport() {
-		client.setScreen(new DiagnosticReportScreen(this, AiricraftClient.runtimeController().markDiagnosticReport()));
+		minecraft.setScreen(new DiagnosticReportScreen(this, AiricraftClient.runtimeController().markDiagnosticReport()));
 	}
 
-	private static Text text(String key, String fallback) {
-		return Text.translatableWithFallback("airicraft.settings." + key, fallback);
+	private static Component text(String key, String fallback) {
+		return Component.translatableWithFallback("airicraft.settings." + key, fallback);
 	}
 
 	private static final class Form {

@@ -6,8 +6,8 @@ import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -72,12 +72,12 @@ class UnderwaterHarvestTaskExecutorTest {
 
 	@Test
 	void requiredToolSourcesIncludeOffhandButExcludeEquipmentAndCraftingSlots() {
-		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.INVENTORY_START));
-		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.HOTBAR_START));
-		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.HOTBAR_END - 1));
-		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.OFFHAND_ID));
-		assertFalse(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.EQUIPMENT_START));
-		assertFalse(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(PlayerScreenHandler.CRAFTING_INPUT_START));
+		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.INV_SLOT_START));
+		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.USE_ROW_SLOT_START));
+		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.USE_ROW_SLOT_END - 1));
+		assertTrue(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.SHIELD_SLOT));
+		assertFalse(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.ARMOR_SLOT_START));
+		assertFalse(UnderwaterHarvestTaskExecutor.isRequiredToolSourceSlot(InventoryMenu.CRAFT_SLOT_START));
 	}
 
 	@Test

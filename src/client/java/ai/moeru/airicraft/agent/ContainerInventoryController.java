@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ClickType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,63 +13,63 @@ import java.util.Objects;
 /** Ordinary screen clicks only; no access to unopened block or entity inventories. */
 final class ContainerInventoryController {
 
-	static String close(MinecraftClient client) {
-		var handler = requireContainer(client);
-		if (!handler.getCursorStack().isEmpty()) throw new IllegalStateException("cursor_not_empty");
-		client.player.closeHandledScreen();
-		return "Tool result for close_container: closed syncId=" + handler.syncId;
+	static String close(Minecraft minecraft) {
+		var menu = requireContainer(minecraft);
+		if (!menu.getCarried().isEmpty()) throw new IllegalStateException("cursor_not_empty");
+		minecraft.player.closeContainer();
+		return "Tool result for close_container: closed syncId=" + menu.containerId;
 	}
 
-	static String inspect(MinecraftClient client) {
-		var handler = requireContainer(client);
-		var slots = slots(client, handler);
-		return "Tool result for inspect_container: syncId=" + handler.syncId
-			+ " containerSlots=" + handler.getRows() * 9
-			+ " cursorEmpty=" + handler.getCursorStack().isEmpty()
+	static String inspect(Minecraft minecraft) {
+		var menu = requireContainer(minecraft);
+		var slots = slots(minecraft, menu);
+		return "Tool result for inspect_container: syncId=" + menu.containerId
+			+ " containerSlots=" + menu.getRowCount() * 9
+			+ " cursorEmpty=" + menu.getCarried().isEmpty()
 			+ " slots=" + slots.stream().filter(slot -> slot.count() > 0).map(slot ->
 				"{slot=" + slot.id() + ", side=" + (slot.container() ? "container" : "inventory")
 					+ ", itemId=" + slot.itemId() + ", count=" + slot.count() + "}").toList();
 	}
 
-	static String transfer(MinecraftClient client, int syncId, String direction, List<TransferItem> items) {
-		var handler = requireContainer(client);
-		if (handler.syncId != syncId) throw new IllegalStateException("container_changed inspect_container_again");
-		if (!handler.getCursorStack().isEmpty()) throw new IllegalStateException("cursor_not_empty");
-		if (client.interactionManager == null) throw new IllegalStateException("interaction_manager_unavailable");
-		List<Move> moves = planBatch(slots(client, handler), direction, items);
+	static String transfer(Minecraft minecraft, int syncId, String direction, List<TransferItem> items) {
+		var menu = requireContainer(minecraft);
+		if (menu.containerId != syncId) throw new IllegalStateException("container_changed inspect_container_again");
+		if (!menu.getCarried().isEmpty()) throw new IllegalStateException("cursor_not_empty");
+		if (minecraft.gameMode == null) throw new IllegalStateException("interaction_manager_unavailable");
+		List<Move> moves = planBatch(slots(minecraft, menu), direction, items);
 		for (Move move : moves) {
-			int sourceCount = handler.getSlot(move.source()).getStack().getCount();
-			client.interactionManager.clickSlot(syncId, move.source(), 0, SlotActionType.PICKUP, client.player);
+			int sourceCount = menu.getSlot(move.source()).getItem().getCount();
+			minecraft.gameMode.handleInventoryMouseClick(syncId, move.source(), 0, ClickType.PICKUP, minecraft.player);
 			if (move.count() == sourceCount) {
-				client.interactionManager.clickSlot(syncId, move.target(), 0, SlotActionType.PICKUP, client.player);
+				minecraft.gameMode.handleInventoryMouseClick(syncId, move.target(), 0, ClickType.PICKUP, minecraft.player);
 			} else {
 				for (int i = 0; i < move.count(); i++)
-					client.interactionManager.clickSlot(syncId, move.target(), 1, SlotActionType.PICKUP, client.player);
+					minecraft.gameMode.handleInventoryMouseClick(syncId, move.target(), 1, ClickType.PICKUP, minecraft.player);
 			}
-			if (!handler.getCursorStack().isEmpty())
-				client.interactionManager.clickSlot(syncId, move.source(), 0, SlotActionType.PICKUP, client.player);
+			if (!menu.getCarried().isEmpty())
+				minecraft.gameMode.handleInventoryMouseClick(syncId, move.source(), 0, ClickType.PICKUP, minecraft.player);
 		}
-		if (!handler.getCursorStack().isEmpty()) throw new IllegalStateException("transfer_cursor_not_empty");
+		if (!menu.getCarried().isEmpty()) throw new IllegalStateException("transfer_cursor_not_empty");
 		return "Tool result for transfer_container: submitted syncId=" + syncId + " direction=" + direction
 			+ " items=" + items
 			+ ". Inspect container again to verify settled source/destination counts before reporting completion.";
 	}
 
-	private static GenericContainerScreenHandler requireContainer(MinecraftClient client) {
-		if (client == null || client.world == null || client.player == null) throw new IllegalStateException("world_not_loaded");
-		if (!(client.player.currentScreenHandler instanceof GenericContainerScreenHandler handler))
+	private static ChestMenu requireContainer(Minecraft minecraft) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) throw new IllegalStateException("world_not_loaded");
+		if (!(minecraft.player.containerMenu instanceof ChestMenu menu))
 			throw new IllegalStateException("container_not_open use_block_for_chests_or_use_entity_for_chest_minecarts_first");
-		return handler;
+		return menu;
 	}
 
-	private static List<Slot> slots(MinecraftClient client, GenericContainerScreenHandler handler) {
+	private static List<Slot> slots(Minecraft minecraft, ChestMenu menu) {
 		List<Slot> result = new ArrayList<>();
-		for (var slot : handler.slots) {
-			boolean container = slot.id < handler.getRows() * 9;
-			if (!container && (slot.inventory != client.player.getInventory() || slot.getIndex() >= 36)) continue;
-			ItemStack stack = slot.getStack();
-			result.add(new Slot(slot.id, container, Registries.ITEM.getId(stack.getItem()).toString(),
-				stack.getComponents(), stack.getCount(), stack.isEmpty() ? slot.getMaxItemCount() : slot.getMaxItemCount(stack)));
+		for (var slot : menu.slots) {
+			boolean container = slot.index < menu.getRowCount() * 9;
+			if (!container && (slot.container != minecraft.player.getInventory() || slot.getContainerSlot() >= 36)) continue;
+			ItemStack stack = slot.getItem();
+			result.add(new Slot(slot.index, container, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+				stack.getComponents(), stack.getCount(), stack.isEmpty() ? slot.getMaxStackSize() : slot.getMaxStackSize(stack)));
 		}
 		return result;
 	}

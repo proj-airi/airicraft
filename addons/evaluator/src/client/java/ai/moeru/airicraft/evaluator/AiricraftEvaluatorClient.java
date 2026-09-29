@@ -9,7 +9,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 public final class AiricraftEvaluatorClient implements ClientModInitializer {
 	private static final EvaluationAddonRuntime RUNTIME = new EvaluationAddonRuntime();
@@ -35,7 +35,7 @@ public final class AiricraftEvaluatorClient implements ClientModInitializer {
 	}
 
 	private static void registerCommands() {
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+		ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> {
 			CommandNode<FabricClientCommandSource> root = dispatcher.getRoot().getChild("airicraft");
 			if (root == null) {
 				root = dispatcher.register(ClientCommandManager.literal("airicraft"));
@@ -44,12 +44,12 @@ public final class AiricraftEvaluatorClient implements ClientModInitializer {
 				.executes(context -> {
 					try {
 						var result = RUNTIME.fixtures().freezeCurrentWorld();
-						context.getSource().sendFeedback(Text.literal("Airicraft scenario frozen: " + result.scenarioId()));
+						context.getSource().sendFeedback(Component.literal("Airicraft scenario frozen: " + result.scenarioId()));
 						return 1;
 					}
 					catch (EvaluationWorldFixtureService.EvaluationWorldFixtureException exception) {
 						Airicraft.LOGGER.error("Airicraft freeze failed", exception);
-						context.getSource().sendError(Text.literal("Airicraft freeze failed: " + exception.getMessage()));
+						context.getSource().sendError(Component.literal("Airicraft freeze failed: " + exception.getMessage()));
 						return 0;
 					}
 				})
@@ -58,12 +58,12 @@ public final class AiricraftEvaluatorClient implements ClientModInitializer {
 				.executes(context -> {
 					try {
 						var result = RUNTIME.fixtures().unfreezeCurrentWorld();
-						context.getSource().sendFeedback(Text.literal("Airicraft scenario unfrozen: " + result.scenarioId()));
+						context.getSource().sendFeedback(Component.literal("Airicraft scenario unfrozen: " + result.scenarioId()));
 						return 1;
 					}
 					catch (EvaluationWorldFixtureService.EvaluationWorldFixtureException exception) {
 						Airicraft.LOGGER.error("Airicraft unfreeze failed", exception);
-						context.getSource().sendError(Text.literal("Airicraft unfreeze failed: " + exception.getMessage()));
+						context.getSource().sendError(Component.literal("Airicraft unfreeze failed: " + exception.getMessage()));
 						return 0;
 					}
 				})
@@ -73,12 +73,12 @@ public final class AiricraftEvaluatorClient implements ClientModInitializer {
 					.executes(context -> {
 						try {
 							var path = RUNTIME.fixtures().openCurrentScenarioConfig();
-							context.getSource().sendFeedback(Text.literal("Opened Airicraft scenario config: " + path));
+							context.getSource().sendFeedback(Component.literal("Opened Airicraft scenario config: " + path));
 							return 1;
 						}
 						catch (EvaluationWorldFixtureService.EvaluationWorldFixtureException exception) {
 							Airicraft.LOGGER.error("Airicraft scenario config failed", exception);
-							context.getSource().sendError(Text.literal("Airicraft scenario config failed: " + exception.getMessage()));
+							context.getSource().sendError(Component.literal("Airicraft scenario config failed: " + exception.getMessage()));
 							return 0;
 						}
 					}))

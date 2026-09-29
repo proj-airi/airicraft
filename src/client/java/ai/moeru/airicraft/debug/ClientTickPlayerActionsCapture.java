@@ -1,9 +1,9 @@
 package ai.moeru.airicraft.debug;
 
 import ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,7 +18,7 @@ final class ClientTickPlayerActionsCapture {
 	private Map<String, Boolean> previousActions = Map.of();
 	private ClientTickPlayerActionsSnapshot.BreakProgress previousBreakProgress;
 
-	ClientTickPlayerActionsSnapshot capture(MinecraftClient client, String nextCaptureId) {
+	ClientTickPlayerActionsSnapshot capture(Minecraft minecraft, String nextCaptureId) {
 		if (!Objects.equals(captureId, nextCaptureId)) {
 			captureId = nextCaptureId;
 			initialized = false;
@@ -26,7 +26,7 @@ final class ClientTickPlayerActionsCapture {
 			previousBreakProgress = null;
 		}
 
-		Map<String, Boolean> currentActions = actions(client);
+		Map<String, Boolean> currentActions = actions(minecraft);
 		ClientTickPlayerActionEvents.EventBatch events = ClientTickPlayerActionEvents.take();
 		Set<String> startedInteractions = events.startedActions();
 		for (String action : startedInteractions) {
@@ -34,7 +34,7 @@ final class ClientTickPlayerActionsCapture {
 		}
 		ClientTickPlayerActionsSnapshot.BreakProgress breakProgress = events.breakProgress();
 		if (breakProgress == null) {
-			breakProgress = breakProgress(client);
+			breakProgress = breakProgress(minecraft);
 		}
 		boolean breakStarted = initialized
 			&& breakProgress != null
@@ -65,28 +65,28 @@ final class ClientTickPlayerActionsCapture {
 		return new ClientTickPlayerActionsSnapshot(actions, breakProgress);
 	}
 
-	private static Map<String, Boolean> actions(MinecraftClient client) {
+	private static Map<String, Boolean> actions(Minecraft minecraft) {
 		Map<String, Boolean> actions = new LinkedHashMap<>();
-		if (client == null || client.options == null) {
+		if (minecraft == null || minecraft.options == null) {
 			return actions;
 		}
-		add(actions, "attack", client.options.attackKey);
-		add(actions, "use", client.options.useKey);
-		add(actions, "pick_item", client.options.pickItemKey);
-		add(actions, "drop_item", client.options.dropKey);
-		add(actions, "swap_hands", client.options.swapHandsKey);
-		for (int index = 0; index < client.options.hotbarKeys.length; index++) {
-			add(actions, "hotbar_" + (index + 1), client.options.hotbarKeys[index]);
+		add(actions, "attack", minecraft.options.keyAttack);
+		add(actions, "use", minecraft.options.keyUse);
+		add(actions, "pick_item", minecraft.options.keyPickItem);
+		add(actions, "drop_item", minecraft.options.keyDrop);
+		add(actions, "swap_hands", minecraft.options.keySwapOffhand);
+		for (int index = 0; index < minecraft.options.keyHotbarSlots.length; index++) {
+			add(actions, "hotbar_" + (index + 1), minecraft.options.keyHotbarSlots[index]);
 		}
 		return actions;
 	}
 
-	private static void add(Map<String, Boolean> actions, String action, KeyBinding keyBinding) {
-		actions.put(action, keyBinding != null && keyBinding.isPressed());
+	private static void add(Map<String, Boolean> actions, String action, KeyMapping keyMapping) {
+		actions.put(action, keyMapping != null && keyMapping.isDown());
 	}
 
-	private static ClientTickPlayerActionsSnapshot.BreakProgress breakProgress(MinecraftClient client) {
-		if (client == null || !(client.interactionManager instanceof ClientPlayerInteractionManagerAccessor accessor)) {
+	private static ClientTickPlayerActionsSnapshot.BreakProgress breakProgress(Minecraft minecraft) {
+		if (minecraft == null || !(minecraft.gameMode instanceof ClientPlayerInteractionManagerAccessor accessor)) {
 			return null;
 		}
 		BlockPos position = accessor.airicraft$currentBreakingPos();

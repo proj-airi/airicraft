@@ -14,10 +14,10 @@ import journeymap.api.v2.client.display.Context;
 import journeymap.api.v2.client.IClientAPI;
 import journeymap.api.v2.common.waypoint.Waypoint;
 import journeymap.api.v2.common.waypoint.WaypointFactory;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.core.BlockPos;
 
 import javax.imageio.ImageIO;
 import java.awt.BasicStroke;
@@ -136,11 +136,11 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 		if (!"worldmap".equals(kind) && !"minimap".equals(kind)) {
 			return CompletableFuture.failedFuture(new BridgeUnavailableException("map_kind_unavailable", "JourneyMap map capture supports worldmap and minimap"));
 		}
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.failedFuture(new BridgeUnavailableException("world_not_loaded", "No world is currently loaded"));
 		}
-		String currentDimension = client.world.getRegistryKey().getValue().toString();
+		String currentDimension = minecraft.level.dimension().location().toString();
 		if (safeRequest.dimension() != null && !safeRequest.dimension().isBlank() && !currentDimension.equals(safeRequest.dimension())) {
 			return CompletableFuture.failedFuture(new BridgeUnavailableException("map_dimension_unavailable", "JourneyMap capture currently requires the active dimension"));
 		}
@@ -148,12 +148,12 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 			return CompletableFuture.failedFuture(new BridgeUnavailableException("invalid_request", "Map image origin requires both originX and originZ"));
 		}
 
-		return captureApiMapTile(client, kind, safeRequest);
+		return captureApiMapTile(minecraft, kind, safeRequest);
 	}
 
-	private CompletableFuture<MapImageCapture> captureApiMapTile(MinecraftClient client, String kind, MapImageRequest safeRequest) {
+	private CompletableFuture<MapImageCapture> captureApiMapTile(Minecraft minecraft, String kind, MapImageRequest safeRequest) {
 		MapCaptureGeometry geometry = captureGeometry(kind, safeRequest);
-		BlockPos playerBlock = client.player.getBlockPos();
+		BlockPos playerBlock = minecraft.player.blockPosition();
 		int originBlockX = safeRequest.originX() == null ? playerBlock.getX() : safeRequest.originX();
 		int originBlockZ = safeRequest.originZ() == null ? playerBlock.getZ() : safeRequest.originZ();
 		int radiusChunks = Math.max(1, Math.min(96, safeRequest.radiusChunks()));
@@ -165,7 +165,7 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 		try {
 			jmAPI.requestMapTile(
 				AIRICRAFT_MOD_ID,
-				client.world.getRegistryKey(),
+				minecraft.level.dimension(),
 				Context.MapType.Day,
 				startChunk,
 				endChunk,
@@ -180,8 +180,8 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 					endChunk,
 					playerBlock.getX(),
 					playerBlock.getZ(),
-					client.player.getYaw(),
-					client.world.getRegistryKey().getValue().toString(),
+					minecraft.player.getYRot(),
+					minecraft.level.dimension().location().toString(),
 					originBlockX,
 					originBlockZ,
 					geometry
@@ -216,10 +216,10 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 			BufferedImage image = nativeImageToBufferedImage(nativeImage);
 			annotateApiMapImage(
 				image,
-				startChunk.getStartX(),
-				startChunk.getStartZ(),
-				endChunk.getEndX(),
-				endChunk.getEndZ(),
+				startChunk.getMinBlockX(),
+				startChunk.getMinBlockZ(),
+				endChunk.getMaxBlockX(),
+				endChunk.getMaxBlockZ(),
 				playerBlockX,
 				playerBlockZ,
 				yawDegrees,
@@ -761,7 +761,7 @@ public final class JourneyMapIntegrationProvider implements MapIntegrationProvid
 
 	private static BufferedImage nativeImageToBufferedImage(NativeImage nativeImage) {
 		BufferedImage image = new BufferedImage(nativeImage.getWidth(), nativeImage.getHeight(), BufferedImage.TYPE_INT_ARGB);
-		image.setRGB(0, 0, nativeImage.getWidth(), nativeImage.getHeight(), nativeImage.copyPixelsArgb(), 0, nativeImage.getWidth());
+		image.setRGB(0, 0, nativeImage.getWidth(), nativeImage.getHeight(), nativeImage.getPixels(), 0, nativeImage.getWidth());
 		return image;
 	}
 

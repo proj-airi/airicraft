@@ -1,16 +1,16 @@
 package ai.moeru.airicraft.agent.actions;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.EmptyBlockView;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.EmptyBlockGetter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,9 +33,9 @@ public final class MinecraftBlockAcquisitionLoader {
 	public static BlockAcquisitionIndex load(ResourceManager resourceManager) {
 		List<ToolCandidate> toolCandidates = toolCandidates();
 		ArrayList<BlockLootTableSource> sources = new ArrayList<>();
-		Registries.BLOCK.getEntrySet().stream()
-			.sorted(Map.Entry.comparingByKey(Comparator.comparing(key -> key.getValue().toString())))
-			.forEach(entry -> captureBlockSource(resourceManager, entry.getValue(), entry.getKey().getValue().toString(), toolCandidates)
+		BuiltInRegistries.BLOCK.entrySet().stream()
+			.sorted(Map.Entry.comparingByKey(Comparator.comparing(key -> key.location().toString())))
+			.forEach(entry -> captureBlockSource(resourceManager, entry.getValue(), entry.getKey().location().toString(), toolCandidates)
 				.ifPresent(sources::add));
 		return BlockLootTableCompiler.compile(sources, itemTags());
 	}
@@ -46,9 +46,9 @@ public final class MinecraftBlockAcquisitionLoader {
 		String blockId,
 		List<ToolCandidate> toolCandidates
 	) {
-		return block.getLootTableKey().flatMap(lootTableKey -> {
-			Identifier lootTableId = lootTableKey.getValue();
-			Identifier resourceId = Identifier.of(
+		return block.getLootTable().flatMap(lootTableKey -> {
+			ResourceLocation lootTableId = lootTableKey.location();
+			ResourceLocation resourceId = ResourceLocation.fromNamespaceAndPath(
 				lootTableId.getNamespace(),
 				"loot_table/" + lootTableId.getPath() + ".json"
 			);
@@ -56,24 +56,24 @@ public final class MinecraftBlockAcquisitionLoader {
 			if (json.isEmpty()) {
 				return Optional.empty();
 			}
-			BlockState state = block.getDefaultState();
-			float hardness = state.getHardness(EmptyBlockView.INSTANCE, BlockPos.ORIGIN);
+			BlockState state = block.defaultBlockState();
+			float hardness = state.getDestroySpeed(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
 			int emptyHandBreakTicks = BlockMiningTime.baselineBreakTicks(
 				hardness,
 				1.0,
-				!state.isToolRequired()
+				!state.requiresCorrectToolForDrops()
 			);
 			LinkedHashMap<String, Integer> breakTicksByTool = new LinkedHashMap<>();
 			for (ToolCandidate candidate : toolCandidates) {
 				breakTicksByTool.put(candidate.itemId(), BlockMiningTime.baselineBreakTicks(
 					hardness,
-					candidate.stack().getMiningSpeedMultiplier(state),
-					!state.isToolRequired() || candidate.stack().isSuitableFor(state)
+					candidate.stack().getDestroySpeed(state),
+					!state.requiresCorrectToolForDrops() || candidate.stack().isCorrectToolForDrops(state)
 				));
 			}
-			List<String> suitableTools = state.isToolRequired()
+			List<String> suitableTools = state.requiresCorrectToolForDrops()
 				? toolCandidates.stream()
-					.filter(candidate -> candidate.stack().isSuitableFor(state))
+					.filter(candidate -> candidate.stack().isCorrectToolForDrops(state))
 					.map(ToolCandidate::itemId)
 					.toList()
 				: List.of();
@@ -81,7 +81,7 @@ public final class MinecraftBlockAcquisitionLoader {
 				blockId,
 				lootTableId.toString(),
 				json.get(),
-				state.isToolRequired(),
+				state.requiresCorrectToolForDrops(),
 				suitableTools,
 				emptyHandBreakTicks,
 				breakTicksByTool
@@ -90,21 +90,21 @@ public final class MinecraftBlockAcquisitionLoader {
 	}
 
 	private static List<ToolCandidate> toolCandidates() {
-		return Registries.ITEM.getEntrySet().stream()
-			.sorted(Map.Entry.comparingByKey(Comparator.comparing(key -> key.getValue().toString())))
-			.map(entry -> new ToolCandidate(entry.getKey().getValue().toString(), new ItemStack(entry.getValue())))
-			.filter(candidate -> candidate.stack().get(DataComponentTypes.TOOL) != null)
+		return BuiltInRegistries.ITEM.entrySet().stream()
+			.sorted(Map.Entry.comparingByKey(Comparator.comparing(key -> key.location().toString())))
+			.map(entry -> new ToolCandidate(entry.getKey().location().toString(), new ItemStack(entry.getValue())))
+			.filter(candidate -> candidate.stack().get(DataComponents.TOOL) != null)
 			.toList();
 	}
 
 	private static Map<String, List<String>> itemTags() {
 		LinkedHashMap<String, List<String>> tags = new LinkedHashMap<>();
-		Registries.ITEM.streamTags()
-			.sorted(Comparator.comparing(named -> named.getTag().id().toString()))
+		BuiltInRegistries.ITEM.getTags()
+			.sorted(Comparator.comparing(named -> named.key().location().toString()))
 			.forEach(named -> tags.put(
-				named.getTag().id().toString(),
+				named.key().location().toString(),
 				named.stream()
-					.map(entry -> Registries.ITEM.getId(entry.value()).toString())
+					.map(holder -> BuiltInRegistries.ITEM.getKey(holder.value()).toString())
 					.distinct()
 					.sorted()
 					.toList()
@@ -112,11 +112,11 @@ public final class MinecraftBlockAcquisitionLoader {
 		return Collections.unmodifiableMap(tags);
 	}
 
-	private static Optional<String> readResource(ResourceManager resourceManager, Identifier resourceId) {
+	private static Optional<String> readResource(ResourceManager resourceManager, ResourceLocation resourceId) {
 		if (resourceManager != null) {
 			Optional<Resource> loaded = resourceManager.getResource(resourceId);
 			if (loaded.isPresent()) {
-				try (InputStream input = loaded.get().getInputStream()) {
+				try (InputStream input = loaded.get().open()) {
 					return Optional.of(new String(input.readAllBytes(), StandardCharsets.UTF_8));
 				}
 				catch (IOException ignored) {

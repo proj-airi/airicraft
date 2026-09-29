@@ -4,16 +4,16 @@ import ai.moeru.airicraft.agent.LifecycleBoundary;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Supplier;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.tags.TagKey;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.ClipContext;
 
 /**
  * Notable blocks with an exposed face in line of sight (spec section 5). The salience module's {@code interests}
@@ -26,8 +26,8 @@ public final class NotableBlockSensor implements Sensor {
 	private final Supplier<Set<String>> interests;
 	/** Interests resolved to block objects and tags once per change, so the scan compares objects, not id strings. */
 	private Set<String> resolvedFor = Set.of();
-	private Set<net.minecraft.block.Block> interestingBlocks = Set.of();
-	private java.util.List<TagKey<net.minecraft.block.Block>> interestingTags = java.util.List.of();
+	private Set<net.minecraft.world.level.block.Block> interestingBlocks = Set.of();
+	private java.util.List<TagKey<net.minecraft.world.level.block.Block>> interestingTags = java.util.List.of();
 
 	public NotableBlockSensor(Supplier<Set<String>> interests) {
 		this.interests = interests;
@@ -42,35 +42,35 @@ public final class NotableBlockSensor implements Sensor {
 	}
 
 	@Override public void sample(SensorContext context, PerceptSink sink) {
-		var client = context.client();
-		if (!Scopes.ready(client)) return;
+		var minecraft = context.client();
+		if (!Scopes.ready(minecraft)) return;
 		Set<String> wanted = interests.get();
 		if (wanted.isEmpty()) return;
 		resolve(wanted);
-		var world = client.world;
-		var player = client.player;
-		Vec3d eye = player.getEyePos();
-		var pos = new BlockPos.Mutable();
+		var level = minecraft.level;
+		var player = minecraft.player;
+		Vec3 eye = player.getEyePosition();
+		var pos = new BlockPos.MutableBlockPos();
 		var budgets = context.budgets();
 		NotableBlockScanner.Blocks blocks = new NotableBlockScanner.Blocks() {
 			@Override public String blockId(int x, int y, int z) {
-				BlockState state = world.getBlockState(pos.set(x, y, z));
-				return state.isAir() ? null : interesting(state) ? Registries.BLOCK.getId(state.getBlock()).toString() : "";
+				BlockState state = level.getBlockState(pos.set(x, y, z));
+				return state.isAir() ? null : interesting(state) ? BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString() : "";
 			}
 
 			@Override public boolean opaque(int x, int y, int z) {
-				return world.getBlockState(pos.set(x, y, z)).isOpaque();
+				return level.getBlockState(pos.set(x, y, z)).canOcclude();
 			}
 		};
 		NotableBlockScanner.Sight sight = (eyeX, eyeY, eyeZ, x, y, z, face) -> {
 			var target = new BlockPos(x, y, z);
 			// Aim just inside the face so the ray ends on this block, not its neighbour.
-			var aim = new Vec3d(x + .5 + face.dx * .49, y + .5 + face.dy * .49, z + .5 + face.dz * .49);
-			BlockHitResult hit = world.raycast(new RaycastContext(eye, aim, RaycastContext.ShapeType.VISUAL,
-				RaycastContext.FluidHandling.NONE, player));
+			var aim = new Vec3(x + .5 + face.dx * .49, y + .5 + face.dy * .49, z + .5 + face.dz * .49);
+			BlockHitResult hit = level.clip(new ClipContext(eye, aim, ClipContext.Block.VISUAL,
+				ClipContext.Fluid.NONE, player));
 			return hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(target);
 		};
-		for (var candidate : scanner.scan(context.tick(), Scopes.of(client), eye.x, eye.y, eye.z, budgets.radius(),
+		for (var candidate : scanner.scan(context.tick(), Scopes.of(minecraft), eye.x, eye.y, eye.z, budgets.radius(),
 			budgets.positionsPerTick(), budgets.raycastsPerTick(), id -> !id.isEmpty(), blocks, sight)) {
 			sink.candidate(candidate);
 		}
@@ -78,19 +78,19 @@ public final class NotableBlockSensor implements Sensor {
 
 	private boolean interesting(BlockState state) {
 		if (interestingBlocks.contains(state.getBlock())) return true;
-		for (var tag : interestingTags) if (state.isIn(tag)) return true;
+		for (var tag : interestingTags) if (state.is(tag)) return true;
 		return false;
 	}
 
 	private void resolve(Set<String> wanted) {
 		if (wanted.equals(resolvedFor)) return;
-		var blocks = new java.util.HashSet<net.minecraft.block.Block>();
-		var tags = new java.util.ArrayList<TagKey<net.minecraft.block.Block>>();
+		var blocks = new java.util.HashSet<net.minecraft.world.level.block.Block>();
+		var tags = new java.util.ArrayList<TagKey<net.minecraft.world.level.block.Block>>();
 		for (String entry : wanted) {
-			Identifier id = Identifier.tryParse(entry.startsWith("#") ? entry.substring(1) : entry);
+			ResourceLocation id = ResourceLocation.tryParse(entry.startsWith("#") ? entry.substring(1) : entry);
 			if (id == null) continue;
-			if (entry.startsWith("#")) tags.add(TagKey.of(RegistryKeys.BLOCK, id));
-			else Registries.BLOCK.getOptionalValue(id).ifPresent(blocks::add);
+			if (entry.startsWith("#")) tags.add(TagKey.create(Registries.BLOCK, id));
+			else BuiltInRegistries.BLOCK.getOptional(id).ifPresent(blocks::add);
 		}
 		interestingBlocks = Set.copyOf(blocks);
 		interestingTags = java.util.List.copyOf(tags);

@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent;
 
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.registry.Registries;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -43,16 +43,16 @@ final class LocalDamageTracker {
 		if (damageSource == null) {
 			return;
 		}
-		Entity attacker = damageSource.getAttacker();
+		Entity attacker = damageSource.getEntity();
 		observeDamage(
 			tick,
 			damageTypeId(damageSource),
 			entityUuid(attacker),
 			entityName(attacker),
 			entityTypeId(attacker),
-			entityTypeId(damageSource.getSource()),
+			entityTypeId(damageSource.getDirectEntity()),
 			attacker instanceof LivingEntity,
-			attacker instanceof PlayerEntity
+			attacker instanceof Player
 		);
 	}
 
@@ -143,10 +143,10 @@ final class LocalDamageTracker {
 		if (damageSource == null) {
 			return null;
 		}
-		return damageSource.getTypeRegistryEntry()
-			.getKey()
-			.map(key -> key.getValue().toString())
-			.orElseGet(damageSource::getName);
+		return damageSource.typeHolder()
+			.unwrapKey()
+			.map(key -> key.location().toString())
+			.orElseGet(damageSource::getMsgId);
 	}
 
 	private static String entityName(Entity entity) {
@@ -157,14 +157,14 @@ final class LocalDamageTracker {
 	}
 
 	private static String entityUuid(Entity entity) {
-		return entity == null ? null : blankToNull(entity.getUuidAsString());
+		return entity == null ? null : blankToNull(entity.getStringUUID());
 	}
 
 	private static String entityTypeId(Entity entity) {
 		if (entity == null || entity.getType() == null) {
 			return null;
 		}
-		return blankToNull(Registries.ENTITY_TYPE.getId(entity.getType()).toString());
+		return blankToNull(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
 	}
 
 	private static void putIfPresent(Map<String, Object> payload, String key, Object value) {

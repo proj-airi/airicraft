@@ -27,14 +27,14 @@ class SurvivalReflexRuntimeTest {
 		assertNull(SurvivalReflexRuntime.noProgressTicks(null, null, 7609));
 		var progressing = new CombatProgress(7500, java.util.Map.of(), false);
 		var approaching = new CombatStalemate(CombatStalemate.Phase.APPROACHING, 7400,
-			net.minecraft.util.math.Vec3d.ZERO, java.util.Map.of());
+			net.minecraft.world.phys.Vec3.ZERO, java.util.Map.of());
 		assertNull(SurvivalReflexRuntime.noProgressTicks(progressing, approaching, 7609));
 	}
 
 	@Test void resolvedStalemateReportsItsDurationWithCombatProgressTakingPrecedence() {
 		var stalled = new CombatProgress(7400, java.util.Map.of(), true);
 		var deferred = new CombatStalemate(CombatStalemate.Phase.DEFERRED, 7000,
-			net.minecraft.util.math.Vec3d.ZERO, java.util.Map.of());
+			net.minecraft.world.phys.Vec3.ZERO, java.util.Map.of());
 		assertEquals(Long.valueOf(209), SurvivalReflexRuntime.noProgressTicks(stalled, deferred, 7609));
 		assertEquals(Long.valueOf(609), SurvivalReflexRuntime.noProgressTicks(null, deferred, 7609));
 	}
@@ -60,8 +60,8 @@ class SurvivalReflexRuntimeTest {
 		snapshotField.set(runtime, new SurvivalReflexSnapshot(SurvivalReflexState.AWAITING_PLANNER,
 			SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, 3, "hold", "job", null,
 			List.of(), 20F, 20F, 300, 300, 0, 400, 0, null));
-		var deferred = new CombatStalemate(CombatStalemate.Phase.DEFERRED, 0, net.minecraft.util.math.Vec3d.ZERO,
-			java.util.Map.of("pillager", new net.minecraft.util.math.Vec3d(13, 0, 0)));
+		var deferred = new CombatStalemate(CombatStalemate.Phase.DEFERRED, 0, net.minecraft.world.phys.Vec3.ZERO,
+			java.util.Map.of("pillager", new net.minecraft.world.phys.Vec3(13, 0, 0)));
 		var stateField = SurvivalReflexRuntime.class.getDeclaredField("combatStalemate");
 		stateField.setAccessible(true);
 		stateField.set(runtime, deferred);
@@ -112,18 +112,18 @@ class SurvivalReflexRuntimeTest {
 	}
 
 	@Test void shieldFacesTheShooterAtEyeLevelInsteadOfTrackingArrowPosition() {
-		var eye = new net.minecraft.util.math.Vec3d(146, 33, 401);
-		var shooter = new net.minecraft.util.math.Vec3d(141, 41, 397);
-		var heading = new net.minecraft.util.math.Vec3d(141, 33, 397);
-		assertEquals(heading, SurvivalReflexRuntime.shieldFacingPoint(eye, shooter, new net.minecraft.util.math.Vec3d(1, -2, 1)));
-		assertEquals(heading, SurvivalReflexRuntime.shieldFacingPoint(eye, shooter, new net.minecraft.util.math.Vec3d(2, -3, 2)));
-		assertEquals(new net.minecraft.util.math.Vec3d(138, 33, 401),
-			SurvivalReflexRuntime.shieldFacingPoint(eye, null, new net.minecraft.util.math.Vec3d(2, -1, 0)));
-		assertNull(SurvivalReflexRuntime.shieldFacingPoint(eye, null, new net.minecraft.util.math.Vec3d(0, -1, 0)));
+		var eye = new net.minecraft.world.phys.Vec3(146, 33, 401);
+		var shooter = new net.minecraft.world.phys.Vec3(141, 41, 397);
+		var heading = new net.minecraft.world.phys.Vec3(141, 33, 397);
+		assertEquals(heading, SurvivalReflexRuntime.shieldFacingPoint(eye, shooter, new net.minecraft.world.phys.Vec3(1, -2, 1)));
+		assertEquals(heading, SurvivalReflexRuntime.shieldFacingPoint(eye, shooter, new net.minecraft.world.phys.Vec3(2, -3, 2)));
+		assertEquals(new net.minecraft.world.phys.Vec3(138, 33, 401),
+			SurvivalReflexRuntime.shieldFacingPoint(eye, null, new net.minecraft.world.phys.Vec3(2, -1, 0)));
+		assertNull(SurvivalReflexRuntime.shieldFacingPoint(eye, null, new net.minecraft.world.phys.Vec3(0, -1, 0)));
 	}
 
 	@Test void retainsRaisedShieldAcrossTheRecordedBowReleaseGap() {
-		var shooter = new net.minecraft.util.math.Vec3d(141, 38, 397);
+		var shooter = new net.minecraft.world.phys.Vec3(141, 38, 397);
 		var guard = SurvivalReflexRuntime.nextShieldGuard(null, shooter, "skeleton", 14962);
 		guard = SurvivalReflexRuntime.nextShieldGuard(guard, null, null, 14963);
 		assertNotNull(guard, "Releasing here restarts shield startup before the incoming arrow");
@@ -134,12 +134,12 @@ class SurvivalReflexRuntimeTest {
 	}
 
 	@Test void incomingArrowsExcludeRecedingStoppedAndPassingProjectiles() {
-		var ahead = new net.minecraft.util.math.Vec3d(0, 0, 12);
-		assertEquals(4.0, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.util.math.Vec3d(0, 0, 3)));
-		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.util.math.Vec3d(0, 0, -3)));
-		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, net.minecraft.util.math.Vec3d.ZERO));
-		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(new net.minecraft.util.math.Vec3d(3, 0, 12), new net.minecraft.util.math.Vec3d(0, 0, 3)));
-		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.util.math.Vec3d(0, 0, 1)));
+		var ahead = new net.minecraft.world.phys.Vec3(0, 0, 12);
+		assertEquals(4.0, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.world.phys.Vec3(0, 0, 3)));
+		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.world.phys.Vec3(0, 0, -3)));
+		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, net.minecraft.world.phys.Vec3.ZERO));
+		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(new net.minecraft.world.phys.Vec3(3, 0, 12), new net.minecraft.world.phys.Vec3(0, 0, 3)));
+		assertEquals(Double.POSITIVE_INFINITY, SurvivalReflexRuntime.incomingProjectileTicks(ahead, new net.minecraft.world.phys.Vec3(0, 0, 1)));
 	}
 
 	@Test void combatCanRetrieveSwordFromMainInventory() {

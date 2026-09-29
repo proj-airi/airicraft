@@ -4,13 +4,13 @@ import ai.moeru.airicraft.agent.spatial.VisibleSurfaceSampler;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.registry.Registries;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.ClipContext;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -33,53 +33,53 @@ public final class CaveSurveyToolProvider implements PlannerToolProvider {
 	}
 	@Override public CompletableFuture<String> execute(PlannerToolCall call) {
 		CompletableFuture<String> result = new CompletableFuture<>();
-		MinecraftClient client = MinecraftClient.getInstance();
-		client.execute(() -> {
-			try { result.complete(survey(client, radius(call.arguments()))); }
+		Minecraft minecraft = Minecraft.getInstance();
+		minecraft.execute(() -> {
+			try { result.complete(survey(minecraft, radius(call.arguments()))); }
 			catch (RuntimeException exception) { result.complete("TOOL_ERROR: survey_cave " + exception.getMessage()); }
 		});
 		return result;
 	}
-	private String survey(MinecraftClient client, int radius) {
-		if (client.world == null || client.player == null) throw new IllegalStateException("world_not_loaded");
-		var player = client.player;
-		var world = client.world;
-		Vec3d eye = player.getEyePos();
+	private String survey(Minecraft minecraft, int radius) {
+		if (minecraft.level == null || minecraft.player == null) throw new IllegalStateException("world_not_loaded");
+		var player = minecraft.player;
+		var level = minecraft.level;
+		Vec3 eye = player.getEyePosition();
 		Map<BlockPos, String> resources = new LinkedHashMap<>();
 		Map<BlockPos, String> hazards = new LinkedHashMap<>();
 		List<BlockPos> floors = new ArrayList<>();
 		for (var hit : VisibleSurfaceSampler.sample(eye, radius, (start, end) ->
-			world.raycast(new RaycastContext(start, end, RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.ANY, player)))) {
-			if (hit.getType() != HitResult.Type.BLOCK || !world.isChunkLoaded(hit.getBlockPos())) continue;
-			BlockPos pos = hit.getBlockPos().toImmutable();
-			var state = world.getBlockState(pos);
-			String id = Registries.BLOCK.getId(state.getBlock()).toString();
+			level.clip(new ClipContext(start, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.ANY, player)))) {
+			if (hit.getType() != HitResult.Type.BLOCK || !level.hasChunkAt(hit.getBlockPos())) continue;
+			BlockPos pos = hit.getBlockPos().immutable();
+			var state = level.getBlockState(pos);
+			String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 			if (id.endsWith("_ore")) resources.put(pos, id);
 			if (!state.getFluidState().isEmpty() || dangerous(id)) hazards.put(pos, id);
-			if (hit.getSide() != Direction.UP || dangerous(id) || !state.getFluidState().isEmpty()
-				|| !state.isSideSolidFullSquare(world, pos, Direction.UP)) continue;
-			BlockPos feet = pos.up();
-			if (dangerous(Registries.BLOCK.getId(world.getBlockState(feet).getBlock()).toString())
-				|| dangerous(Registries.BLOCK.getId(world.getBlockState(feet.up()).getBlock()).toString())
-				|| !world.getBlockState(feet).getCollisionShape(world, feet).isEmpty()
-				|| !world.getBlockState(feet.up()).getCollisionShape(world, feet.up()).isEmpty()
-				|| !world.getFluidState(feet).isEmpty() || !world.getFluidState(feet.up()).isEmpty()) continue;
-			if (clearRay(client, eye, Vec3d.ofBottomCenter(feet).add(0, 0.2, 0))
-				&& clearRay(client, eye, Vec3d.ofBottomCenter(feet).add(0, 1.62, 0))) floors.add(feet);
+			if (hit.getDirection() != Direction.UP || dangerous(id) || !state.getFluidState().isEmpty()
+				|| !state.isFaceSturdy(level, pos, Direction.UP)) continue;
+			BlockPos feet = pos.above();
+			if (dangerous(BuiltInRegistries.BLOCK.getKey(level.getBlockState(feet).getBlock()).toString())
+				|| dangerous(BuiltInRegistries.BLOCK.getKey(level.getBlockState(feet.above()).getBlock()).toString())
+				|| !level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+				|| !level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty()
+				|| !level.getFluidState(feet).isEmpty() || !level.getFluidState(feet.above()).isEmpty()) continue;
+			if (clearRay(minecraft, eye, Vec3.atBottomCenterOf(feet).add(0, 0.2, 0))
+				&& clearRay(minecraft, eye, Vec3.atBottomCenterOf(feet).add(0, 1.62, 0))) floors.add(feet);
 		}
-		List<BlockPos> waypoints = selectWaypoints(player.getBlockPos(), floors);
+		List<BlockPos> waypoints = selectWaypoints(player.blockPosition(), floors);
 		List<Map<String, Object>> ores = records(resources, 16), dangers = records(hazards, 12);
 		List<BlockPos> evidence = new ArrayList<>(resources.keySet().stream().limit(16).toList());
 		evidence.addAll(hazards.keySet().stream().limit(12).toList());
 		evidence.addAll(waypoints);
 		observed.accept(List.copyOf(evidence));
 		Map<String, Object> output = new LinkedHashMap<>();
-		output.put("position", position(player.getBlockPos()));
-		output.put("dimension", world.getRegistryKey().getValue().toString());
+		output.put("position", position(player.blockPosition()));
+		output.put("dimension", level.dimension().location().toString());
 		output.put("radius", radius);
 		output.put("sampledRays", 495);
-		output.put("lightAtPlayer", world.getLightLevel(player.getBlockPos()));
-		output.put("standingCandidates", waypoints.stream().map(pos -> Map.of("position", position(pos), "light", world.getLightLevel(pos))).toList());
+		output.put("lightAtPlayer", level.getMaxLocalRawBrightness(player.blockPosition()));
+		output.put("standingCandidates", waypoints.stream().map(pos -> Map.of("position", position(pos), "light", level.getMaxLocalRawBrightness(pos))).toList());
 		output.put("exposedOre", ores);
 		output.put("hazards", dangers);
 		output.put("routeValidated", false);
@@ -92,13 +92,13 @@ public final class CaveSurveyToolProvider implements PlannerToolProvider {
 			if (dx * dx + dz * dz < 4) continue;
 			int sector = Math.floorMod((int) Math.round(Math.atan2(dz, dx) / (Math.PI / 4)), 8);
 			BlockPos previous = sectors.get(sector);
-			if (previous == null || pos.getSquaredDistance(origin) > previous.getSquaredDistance(origin)) sectors.put(sector, pos.toImmutable());
+			if (previous == null || pos.distSqr(origin) > previous.distSqr(origin)) sectors.put(sector, pos.immutable());
 		}
 		return List.copyOf(sectors.values());
 	}
-	private static boolean clearRay(MinecraftClient client, Vec3d eye, Vec3d end) {
-		return client.world.raycast(new RaycastContext(eye, end, RaycastContext.ShapeType.COLLIDER,
-			RaycastContext.FluidHandling.ANY, client.player)).getType() == HitResult.Type.MISS;
+	private static boolean clearRay(Minecraft minecraft, Vec3 eye, Vec3 end) {
+		return minecraft.level.clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER,
+			ClipContext.Fluid.ANY, minecraft.player)).getType() == HitResult.Type.MISS;
 	}
 	private static boolean dangerous(String id) {
 		return Set.of("minecraft:lava", "minecraft:fire", "minecraft:soul_fire", "minecraft:magma_block", "minecraft:campfire",

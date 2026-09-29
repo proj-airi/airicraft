@@ -7,7 +7,7 @@ import ai.moeru.airicraft.agent.session.*;
 import ai.moeru.airicraft.agent.wakes.*;
 import java.time.Duration;
 import java.util.Map;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 final class WakeScenarioHarness implements AutoCloseable {
 	final MutableClock clock = new MutableClock();
@@ -79,7 +79,7 @@ final class WakeScenarioHarness implements AutoCloseable {
 	}
 	void advanceWallClock(Duration duration) { clock.advance(duration); }
 	void chat(String sender, String text) {
-		runtime.injectNearbyPlayerForTests(sender, Vec3d.ZERO);
+		runtime.injectNearbyPlayerForTests(sender, Vec3.ZERO);
 		runtime.onChatReceived(sender, text);
 		settle();
 	}

@@ -1,9 +1,9 @@
 package ai.moeru.airicraft.dashboard;
 
 import ai.moeru.airicraft.LetterboxImageScaler;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.ScreenshotRecorder;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Screenshot;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -37,8 +37,8 @@ final class DashboardFrameCapture {
 		this.store = store;
 	}
 
-	void onRenderedFrame(MinecraftClient client, long agentTick, long serverTick, boolean paused, DebugDashboardConfig config) {
-		if (!config.visualCaptureEnabled() || client.world == null || client.player == null || client.getServer() == null) {
+	void onRenderedFrame(Minecraft minecraft, long agentTick, long serverTick, boolean paused, DebugDashboardConfig config) {
+		if (!config.visualCaptureEnabled() || minecraft.level == null || minecraft.player == null || minecraft.getSingleplayerServer() == null) {
 			return;
 		}
 		String session = store.sessionId();
@@ -56,7 +56,7 @@ final class DashboardFrameCapture {
 		lastCaptureTick = serverTick;
 		long capturedAtMs = System.currentTimeMillis();
 		try {
-			ScreenshotRecorder.takeScreenshot(client.getFramebuffer(), image -> {
+			Screenshot.takeScreenshot(minecraft.getMainRenderTarget(), image -> {
 				try {
 					encoder.execute(() -> encode(image, session, agentTick, serverTick, capturedAtMs));
 				}
@@ -78,7 +78,7 @@ final class DashboardFrameCapture {
 				return;
 			}
 			BufferedImage source = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
-			source.setRGB(0, 0, image.getWidth(), image.getHeight(), image.copyPixelsArgb(), 0, image.getWidth());
+			source.setRGB(0, 0, image.getWidth(), image.getHeight(), image.getPixels(), 0, image.getWidth());
 			BufferedImage scaled = LetterboxImageScaler.scaleToCanvas(source, 640, 360);
 			int[] pixels = scaled.getRGB(0, 0, scaled.getWidth(), scaled.getHeight(), null, 0, scaled.getWidth());
 			if (!unchanged.changed(session, pixels) && store.extendFrame(session, lastFrameSequence, serverTick)) {

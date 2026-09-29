@@ -5,8 +5,8 @@ import ai.moeru.airicraft.memory.InteractionLogbook;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -43,14 +43,14 @@ public final class InteractionLogbookToolProvider implements PlannerToolProvider
 		return "Before a long supply trip, inspect inventory and use containers to store surplus while keeping tools, shield, food, torches and building blocks. Open a known chest/barrel with use_block. For chest minecarts or chest boats, inspect_nearby_entities, copy uuid and use_entity to approach/open; do not break the vehicle to access loot. Then inspect_container, transfer_container with its exact syncId, inspect_container again to verify settled counts and close_container before other work. read_logbook retrieves automatic world-persistent history; query a remembered place and item before reacquiring supplies. Entity containers retain identity by containerEntityUuid when they move; coordinates describe the recorded interaction location. Container contents are last-seen stock at worldTick, not current truth: reopen and inspect before relying on them. Logbook entries cannot be written or deleted by planner tools.";
 	}
 	@Override public CompletableFuture<String> execute(PlannerToolCall call) {
-		MinecraftClient client = MinecraftClient.getInstance();
+		Minecraft minecraft = Minecraft.getInstance();
 		CompletableFuture<String> result = new CompletableFuture<>();
-		client.execute(() -> {
+		minecraft.execute(() -> {
 			try {
-				if (client.world == null || client.player == null || client.getServer() == null)
+				if (minecraft.level == null || minecraft.player == null || minecraft.getSingleplayerServer() == null)
 					throw new IllegalStateException("logbook requires a locally hosted world save");
-				var directory = client.getServer().getSavePath(WorldSavePath.ROOT);
-				String actor = client.player.getUuidAsString();
+				var directory = minecraft.getSingleplayerServer().getWorldPath(LevelResource.ROOT);
+				String actor = minecraft.player.getStringUUID();
 				JsonObject args = call.arguments();
 				String item = text(args, "itemId");
 				var itemHistory = InteractionLogbook.matchingItemHistory(item);
@@ -58,7 +58,7 @@ public final class InteractionLogbookToolProvider implements PlannerToolProvider
 				String place = text(args, "place");
 				String placeId = text(args, "placeId");
 				LocationMemoryProvider.Location center = place.isEmpty() && placeId.isEmpty() ? null
-					: LocationMemoryBridge.forClient(client).recall(placeId.isEmpty() ? null : placeId, place.isEmpty() ? null : place);
+					: LocationMemoryBridge.forClient(minecraft).recall(placeId.isEmpty() ? null : placeId, place.isEmpty() ? null : place);
 				int radius = integer(args, "radius", 16, 0, 128);
 				InteractionLogbook.query(directory, entry -> entry.actor().equals(actor)
 					&& itemHistory.test(entry)

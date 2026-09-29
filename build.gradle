@@ -385,6 +385,20 @@ tasks.named("runClient").configure {
 allprojects {
 	apply plugin: 'java'
 
+	// Only the Loom projects resolve mappings. Any project-level repository makes Gradle ignore the settings-level
+	// ones (mavenCentral), so non-Loom projects such as wrapper and navigation-core must stay out of this.
+	plugins.withId('net.fabricmc.fabric-loom-remap') {
+		repositories {
+			maven {
+				name = 'ParchmentMC'
+				url = 'https://maven.parchmentmc.org'
+				content {
+					includeGroup 'org.parchmentmc.data'
+				}
+			}
+		}
+	}
+
 	if (project != rootProject) {
 		// Gradle's unqualified `runClient` selects matching subproject tasks too.
 		// Addons cannot run alone; only the root profile should launch a client.
@@ -552,7 +566,10 @@ tasks.register("arthasShell", Exec) {
 
 dependencies {
 	minecraft libs.minecraft
-	mappings variantOf(libs.yarn) { classifier("v2") }
+	mappings loom.layered() {
+		officialMojangMappings()
+		parchment("org.parchmentmc.data:parchment-${libs.versions.minecraft.get()}:${libs.versions.parchment.get()}@zip")
+	}
 	modImplementation libs.fabric.loader
 
 	// Fabric API. This is technically optional, but you probably want it anyway.

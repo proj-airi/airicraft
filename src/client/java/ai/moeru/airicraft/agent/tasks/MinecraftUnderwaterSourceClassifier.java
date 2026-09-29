@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.util.Optional;
 
@@ -13,38 +13,38 @@ final class MinecraftUnderwaterSourceClassifier {
 	}
 
 	static Optional<UnderwaterHarvestPolicy.SourceEnvironment> classify(
-		MinecraftClient client,
+		Minecraft minecraft,
 		BlockPos sourcePos,
 		BlockState sourceState
 	) {
-		if (client == null || client.world == null || sourcePos == null || sourceState == null) {
+		if (minecraft == null || minecraft.level == null || sourcePos == null || sourceState == null) {
 			return Optional.empty();
 		}
-		boolean sourceContainsFluid = sourceState.getFluidState().isIn(FluidTags.WATER);
+		boolean sourceContainsFluid = sourceState.getFluidState().is(FluidTags.WATER);
 		boolean adjacentFluid = false;
 		for (Direction direction : Direction.values()) {
-			BlockPos adjacent = sourcePos.offset(direction);
-			if (client.world.isChunkLoaded(adjacent)
-				&& client.world.getFluidState(adjacent).isIn(FluidTags.WATER)) {
+			BlockPos adjacent = sourcePos.relative(direction);
+			if (minecraft.level.hasChunkAt(adjacent)
+				&& minecraft.level.getFluidState(adjacent).is(FluidTags.WATER)) {
 				adjacentFluid = true;
 				break;
 			}
 		}
 		return UnderwaterHarvestPolicy.classify(
 			sourceContainsFluid,
-			hasDryStandingApproach(client, sourcePos),
+			hasDryStandingApproach(minecraft, sourcePos),
 			adjacentFluid
 		);
 	}
 
-	private static boolean hasDryStandingApproach(MinecraftClient client, BlockPos sourcePos) {
-		if (!hasDryExposedFace(client, sourcePos)) {
+	private static boolean hasDryStandingApproach(Minecraft minecraft, BlockPos sourcePos) {
+		if (!hasDryExposedFace(minecraft, sourcePos)) {
 			return false;
 		}
-		for (Direction direction : Direction.Type.HORIZONTAL) {
-			BlockPos adjacent = sourcePos.offset(direction);
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
+			BlockPos adjacent = sourcePos.relative(direction);
 			for (int yOffset = -1; yOffset <= 1; yOffset++) {
-				if (isDryStandingPosition(client, adjacent.add(0, yOffset, 0))) {
+				if (isDryStandingPosition(minecraft, adjacent.offset(0, yOffset, 0))) {
 					return true;
 				}
 			}
@@ -52,41 +52,41 @@ final class MinecraftUnderwaterSourceClassifier {
 		return false;
 	}
 
-	private static boolean hasDryExposedFace(MinecraftClient client, BlockPos sourcePos) {
+	private static boolean hasDryExposedFace(Minecraft minecraft, BlockPos sourcePos) {
 		for (Direction direction : Direction.values()) {
-			BlockPos exposedPos = sourcePos.offset(direction);
-			if (!client.world.isInBuildLimit(exposedPos) || !client.world.isChunkLoaded(exposedPos)) {
+			BlockPos exposedPos = sourcePos.relative(direction);
+			if (!minecraft.level.isInWorldBounds(exposedPos) || !minecraft.level.hasChunkAt(exposedPos)) {
 				continue;
 			}
-			BlockState exposed = client.world.getBlockState(exposedPos);
-			if (exposed.getCollisionShape(client.world, exposedPos).isEmpty()
-				&& client.world.getFluidState(exposedPos).isEmpty()) {
+			BlockState exposed = minecraft.level.getBlockState(exposedPos);
+			if (exposed.getCollisionShape(minecraft.level, exposedPos).isEmpty()
+				&& minecraft.level.getFluidState(exposedPos).isEmpty()) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	private static boolean isDryStandingPosition(MinecraftClient client, BlockPos feetPos) {
-		BlockPos headPos = feetPos.up();
-		BlockPos supportPos = feetPos.down();
-		if (!client.world.isInBuildLimit(feetPos)
-			|| !client.world.isInBuildLimit(headPos)
-			|| !client.world.isInBuildLimit(supportPos)
-			|| !client.world.isChunkLoaded(feetPos)
-			|| !client.world.isChunkLoaded(headPos)
-			|| !client.world.isChunkLoaded(supportPos)) {
+	private static boolean isDryStandingPosition(Minecraft minecraft, BlockPos feetPos) {
+		BlockPos headPos = feetPos.above();
+		BlockPos supportPos = feetPos.below();
+		if (!minecraft.level.isInWorldBounds(feetPos)
+			|| !minecraft.level.isInWorldBounds(headPos)
+			|| !minecraft.level.isInWorldBounds(supportPos)
+			|| !minecraft.level.hasChunkAt(feetPos)
+			|| !minecraft.level.hasChunkAt(headPos)
+			|| !minecraft.level.hasChunkAt(supportPos)) {
 			return false;
 		}
-		BlockState feet = client.world.getBlockState(feetPos);
-		BlockState head = client.world.getBlockState(headPos);
-		BlockState support = client.world.getBlockState(supportPos);
-		boolean collisionFree = feet.getCollisionShape(client.world, feetPos).isEmpty()
-			&& head.getCollisionShape(client.world, headPos).isEmpty();
-		boolean dry = client.world.getFluidState(feetPos).isEmpty()
-			&& client.world.getFluidState(headPos).isEmpty();
+		BlockState feet = minecraft.level.getBlockState(feetPos);
+		BlockState head = minecraft.level.getBlockState(headPos);
+		BlockState support = minecraft.level.getBlockState(supportPos);
+		boolean collisionFree = feet.getCollisionShape(minecraft.level, feetPos).isEmpty()
+			&& head.getCollisionShape(minecraft.level, headPos).isEmpty();
+		boolean dry = minecraft.level.getFluidState(feetPos).isEmpty()
+			&& minecraft.level.getFluidState(headPos).isEmpty();
 		if (collisionFree && dry
-			&& support.isSideSolidFullSquare(client.world, supportPos, Direction.UP)) {
+			&& support.isFaceSturdy(minecraft.level, supportPos, Direction.UP)) {
 			return true;
 		}
 		return false;

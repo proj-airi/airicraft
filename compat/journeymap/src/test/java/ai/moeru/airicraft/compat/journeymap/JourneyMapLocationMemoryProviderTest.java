@@ -151,7 +151,7 @@ class JourneyMapLocationMemoryProviderTest {
 	private record Fields(Map<String, Object> values) implements java.lang.reflect.InvocationHandler {
 		@Override public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) {
 			String name = method.getName();
-			if (name.equals("getBlockPos")) return new net.minecraft.util.math.BlockPos((int) values.get("X"), (int) values.get("Y"), (int) values.get("Z"));
+			if (name.equals("getBlockPos")) return new net.minecraft.core.BlockPos((int) values.get("X"), (int) values.get("Y"), (int) values.get("Z"));
 			if (name.equals("getX") || name.equals("getZ")) return (int) values.get(name.substring(3)) / (int) values.getOrDefault("DisplayScale", 1);
 			if (name.equals("setPos")) { values.put("X", args[0]); values.put("Y", args[1]); values.put("Z", args[2]); return null; }
 			if (name.startsWith("set")) { values.put(name.substring(3), args[0]); return null; }

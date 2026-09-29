@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.chat;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 
 import java.util.ArrayDeque;
 
@@ -13,8 +13,8 @@ public final class ChatService {
 	private String lastChatText;
 	private final ArrayDeque<SentChat> recentSentChats = new ArrayDeque<>();
 
-	public boolean send(MinecraftClient client, String text, long tick) {
-		if (client == null || text == null || text.isBlank()) {
+	public boolean send(Minecraft minecraft, String text, long tick) {
+		if (minecraft == null || text == null || text.isBlank()) {
 			return false;
 		}
 
@@ -23,12 +23,12 @@ public final class ChatService {
 			return false;
 		}
 
-		ClientPlayNetworkHandler networkHandler = client.getNetworkHandler();
-		if (networkHandler == null) {
+		ClientPacketListener packetListener = minecraft.getConnection();
+		if (packetListener == null) {
 			return false;
 		}
 
-		networkHandler.sendChatMessage(sanitizedText);
+		packetListener.sendChat(sanitizedText);
 		lastChatTick = tick;
 		lastChatText = sanitizedText;
 		rememberSentChat(sanitizedText, tick);

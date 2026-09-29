@@ -5,26 +5,26 @@ import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.ShapeContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.AbstractFurnaceScreenHandler;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -35,7 +35,7 @@ import java.util.function.Supplier;
 public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final SmeltingProcessManager processManager;
 	private final BaritoneFacade baritoneFacade;
 	private final PlacementSneakController placementSneakController = new PlacementSneakController();
@@ -47,18 +47,18 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public SmeltingTaskExecutor() {
-		this(MinecraftClient::getInstance, new SmeltingProcessManager(), null);
+		this(Minecraft::getInstance, new SmeltingProcessManager(), null);
 	}
 
 	public SmeltingTaskExecutor(SmeltingProcessManager processManager) {
-		this(MinecraftClient::getInstance, processManager, null);
+		this(Minecraft::getInstance, processManager, null);
 	}
 
 	public SmeltingTaskExecutor(SmeltingProcessManager processManager, BaritoneFacade baritoneFacade) {
-		this(MinecraftClient::getInstance, processManager, baritoneFacade);
+		this(Minecraft::getInstance, processManager, baritoneFacade);
 	}
 
-	SmeltingTaskExecutor(Supplier<MinecraftClient> clientSupplier, SmeltingProcessManager processManager, BaritoneFacade baritoneFacade) {
+	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, BaritoneFacade baritoneFacade) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.processManager = Objects.requireNonNull(processManager, "processManager");
 		this.baritoneFacade = baritoneFacade;
@@ -81,149 +81,149 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.world == null || client.interactionManager == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.level == null || minecraft.gameMode == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
 		return request.type() == WorldTaskType.SMELT_ITEMS
-			? tickSmeltItems(request, client, player, sessionSnapshot.tickCount())
-			: tickCollectSmeltedItems(request, client, player);
+			? tickSmeltItems(request, minecraft, player, sessionSnapshot.tickCount())
+			: tickCollectSmeltedItems(request, minecraft, player);
 	}
 
-	private Optional<TaskTerminalEvent> tickSmeltItems(WorldTaskRequest request, MinecraftClient client, ClientPlayerEntity player, long tick) {
+	private Optional<TaskTerminalEvent> tickSmeltItems(WorldTaskRequest request, Minecraft minecraft, LocalPlayer player, long tick) {
 		SmeltingOption option = processManager.registeredOption(smeltArgs(request).optionId());
 		if (option == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "option_not_found"));
 		}
 		if (option.stationCandidate().source() == SmeltingStationSource.OPEN_SCREEN
-			&& player.currentScreenHandler instanceof AbstractFurnaceScreenHandler handler) {
-			return insertSmeltingInputs(request, client, player, handler, option, tick);
+			&& player.containerMenu instanceof AbstractFurnaceMenu menu) {
+			return insertSmeltingInputs(request, minecraft, player, menu, option, tick);
 		}
 		BlockPos stationPos = stationPos(option.stationObservation().key());
 		if (stationPos == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "station_unavailable"));
 		}
-		StationReadiness stationReadiness = ensureStationReady(request, client, player, option, stationPos);
+		StationReadiness stationReadiness = ensureStationReady(request, minecraft, player, option, stationPos);
 		if (stationReadiness.failure() != null) {
 			return fail(request, stationReadiness.failure());
 		}
 		if (!stationReadiness.ready()) {
 			return Optional.empty();
 		}
-		if (!(player.currentScreenHandler instanceof AbstractFurnaceScreenHandler handler)) {
+		if (!(player.containerMenu instanceof AbstractFurnaceMenu menu)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "furnace_screen_not_open"));
 		}
-		if (!handler.getCursorStack().isEmpty()) {
+		if (!menu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "cursor_not_empty"));
 		}
 		option = processManager.registeredOption(smeltArgs(request).optionId());
 		if (option == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "option_not_found"));
 		}
-		return insertSmeltingInputs(request, client, player, handler, option, tick);
+		return insertSmeltingInputs(request, minecraft, player, menu, option, tick);
 	}
 
 	private Optional<TaskTerminalEvent> insertSmeltingInputs(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
-		AbstractFurnaceScreenHandler handler,
+		Minecraft minecraft,
+		LocalPlayer player,
+		AbstractFurnaceMenu menu,
 		SmeltingOption option,
 		long tick
 	) {
 		SmeltItemsStepArgs args = smeltArgs(request);
-		if (!handler.getCursorStack().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
+		if (!menu.getCarried().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
 		// A previous batch can block this recipe, or be mistaken for this batch's completed output.
 		// The station has already passed startProcess's occupied-station authorization.
-		if (!handler.getSlot(2).getStack().isEmpty()) {
-			client.interactionManager.clickSlot(handler.syncId, 2, 0, SlotActionType.QUICK_MOVE, player);
-			if (!handler.getSlot(2).getStack().isEmpty())
-				return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "inventory_full blocking_furnace_output=" + itemId(handler.getSlot(2).getStack())));
+		if (!menu.getSlot(2).getItem().isEmpty()) {
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, 2, 0, ClickType.QUICK_MOVE, player);
+			if (!menu.getSlot(2).getItem().isEmpty())
+				return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "inventory_full blocking_furnace_output=" + itemId(menu.getSlot(2).getItem())));
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "cleared_previous_output");
 			return Optional.empty();
 		}
-		int reservedInput = remainingItemsToMove(itemId(handler.getSlot(0).getStack()),
-			handler.getSlot(0).getStack().getCount(), option.inputItemId(), args.inputQuantity());
-		if (reservedInput < 0 || sourceItemCount(handler, option.inputItemId()) < reservedInput) {
+		int reservedInput = remainingItemsToMove(itemId(menu.getSlot(0).getItem()),
+			menu.getSlot(0).getItem().getCount(), option.inputItemId(), args.inputQuantity());
+		if (reservedInput < 0 || sourceItemCount(menu, option.inputItemId()) < reservedInput) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "insufficient_input"));
 		}
-		FuelSelection fuel = fuelSelection(client, handler, option, args, reservedInput).orElse(null);
+		FuelSelection fuel = fuelSelection(minecraft, menu, option, args, reservedInput).orElse(null);
 		if (fuel == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "insufficient_fuel"));
 		}
-		if (fuel.quantity() > 0 && !moveItemsToSlot(client, player, handler, fuel.itemId(), 1, fuel.quantity())) {
+		if (fuel.quantity() > 0 && !moveItemsToSlot(minecraft, player, menu, fuel.itemId(), 1, fuel.quantity())) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "insufficient_fuel"));
 		}
-		if (!moveItemsToSlot(client, player, handler, option.inputItemId(), 0, args.inputQuantity())) {
+		if (!moveItemsToSlot(minecraft, player, menu, option.inputItemId(), 0, args.inputQuantity())) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "insufficient_input"));
 		}
 		processManager.updateProcessFingerprint(
 			option.optionId(),
 			option.stationObservation().key(),
-			screenSlotSnapshot(handler),
+			screenSlotSnapshot(menu),
 			tick
 		);
 		return complete(request, "smelting_started");
 	}
 
-	private Optional<TaskTerminalEvent> tickCollectSmeltedItems(WorldTaskRequest request, MinecraftClient client, ClientPlayerEntity player) {
+	private Optional<TaskTerminalEvent> tickCollectSmeltedItems(WorldTaskRequest request, Minecraft minecraft, LocalPlayer player) {
 		CollectSmeltedItemsStepArgs args = collectArgs(request);
 		String processId = args.processId() == null ? processManager.preferredCollectionProcessId() : args.processId();
 		SmeltingStationKey key = processId == null
 			? processManager.confirmedCollectionStationKey(args.confirmationToken())
 			: processManager.processStationKey(processId);
-		if (canCollectFromCurrentScreen(key, client.world.getRegistryKey().getValue().toString(),
-			player.currentScreenHandler.syncId, player.currentScreenHandler instanceof AbstractFurnaceScreenHandler)) {
+		if (canCollectFromCurrentScreen(key, minecraft.level.dimension().location().toString(),
+			player.containerMenu.containerId, player.containerMenu instanceof AbstractFurnaceMenu)) {
 			openedStationForTask = true;
 		} else {
 			BlockPos stationPos = stationPos(key);
 			if (stationPos == null) return fail(request, TaskFailure.of(TaskFailureCode.ENVIRONMENT_CHANGED, "confirmed_furnace_screen_unavailable"));
-			StationReadiness stationReadiness = ensureExistingStationOpen(request, client, player, stationPos);
+			StationReadiness stationReadiness = ensureExistingStationOpen(request, minecraft, player, stationPos);
 			if (stationReadiness.failure() != null) return fail(request, stationReadiness.failure());
 			if (!stationReadiness.ready()) return Optional.empty();
 		}
-		if (!(player.currentScreenHandler instanceof AbstractFurnaceScreenHandler handler)) {
+		if (!(player.containerMenu instanceof AbstractFurnaceMenu menu)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "furnace_screen_not_open"));
 		}
-		SmeltingSlotSnapshot slots = screenSlotSnapshot(handler);
+		SmeltingSlotSnapshot slots = screenSlotSnapshot(menu);
 		String expectedOutput = null;
 		for (SmeltingProcessSnapshot process : processManager.processSnapshots()) {
 			if (process.processId().equals(processId)) expectedOutput = process.outputItemId();
 		}
 		if (expectedOutput != null && slots.outputCount() > 0 && !expectedOutput.equals(slots.outputItemId())) {
-			if (!handler.getCursorStack().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
+			if (!menu.getCarried().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
 			// Recover an already-loaded batch without claiming its requested output was collected.
-			client.interactionManager.clickSlot(handler.syncId, 2, 0, SlotActionType.QUICK_MOVE, player);
-			if (!handler.getSlot(2).getStack().isEmpty())
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, 2, 0, ClickType.QUICK_MOVE, player);
+			if (!menu.getSlot(2).getItem().isEmpty())
 				return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "inventory_full blocking_furnace_output=" + slots.outputItemId()));
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "cleared_blocking_output");
 			return Optional.empty();
 		}
-		if (handler.getSlot(2).getStack().isEmpty()
+		if (menu.getSlot(2).getItem().isEmpty()
 			|| processId != null && !processManager.processOutputReadyForCollection(processId, slots)) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_output");
 			return Optional.empty();
 		}
-		if (!handler.getCursorStack().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
-		client.interactionManager.clickSlot(handler.syncId, 2, 0, SlotActionType.QUICK_MOVE, player);
-		if (!handler.getSlot(2).getStack().isEmpty())
-			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "inventory_full remainingOutput=" + handler.getSlot(2).getStack().getCount()));
+		if (!menu.getCarried().isEmpty()) return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "cursor_not_empty"));
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, 2, 0, ClickType.QUICK_MOVE, player);
+		if (!menu.getSlot(2).getItem().isEmpty())
+			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "inventory_full remainingOutput=" + menu.getSlot(2).getItem().getCount()));
 		if (processId != null) {
 			processManager.markCollected(processId);
 		}
 		return complete(request, "smelting_collected");
 	}
 
-	private StationReadiness ensureStationReady(WorldTaskRequest request, MinecraftClient client, ClientPlayerEntity player, SmeltingOption option, BlockPos stationPos) {
-		if (option.stationCandidate().source() == SmeltingStationSource.PLACE_FROM_INVENTORY && !isFurnaceBlock(client, stationPos)) {
-			if (!canPlaceAt(client, stationPos)) {
-				Optional<BlockPos> fallback = chooseFurnacePlacement(client, player);
+	private StationReadiness ensureStationReady(WorldTaskRequest request, Minecraft minecraft, LocalPlayer player, SmeltingOption option, BlockPos stationPos) {
+		if (option.stationCandidate().source() == SmeltingStationSource.PLACE_FROM_INVENTORY && !isFurnaceBlock(minecraft, stationPos)) {
+			if (!canPlaceAt(minecraft, stationPos)) {
+				Optional<BlockPos> fallback = chooseFurnacePlacement(minecraft, player);
 				if (fallback.isPresent()) {
 					BlockPos fallbackPos = fallback.get();
 					SmeltingStationKey oldKey = option.stationObservation().key();
 					SmeltingStationKey newKey = new SmeltingStationKey(oldKey.dimensionId(), fallbackPos.getX(), fallbackPos.getY(), fallbackPos.getZ());
-					processManager.relocatePlacementProcess(option.optionId(), oldKey, newKey, player.squaredDistanceTo(Vec3d.ofCenter(fallbackPos)));
+					processManager.relocatePlacementProcess(option.optionId(), oldKey, newKey, player.distanceToSqr(Vec3.atCenterOf(fallbackPos)));
 					stationPos = fallbackPos;
 				}
 				else {
@@ -233,7 +233,7 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 			if (!withinInteractionRange(player, stationPos)) {
 				return navigateOrFail(request, stationPos);
 			}
-			PlacementAttempt placement = placeFurnace(client, player, stationPos);
+			PlacementAttempt placement = placeFurnace(minecraft, player, stationPos);
 			if (!placement.placed()) {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "placing_furnace:" + placement.reason());
 				return StationReadiness.notReady();
@@ -241,13 +241,13 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_furnace");
 			return StationReadiness.notReady();
 		}
-		return ensureExistingStationOpen(request, client, player, stationPos);
+		return ensureExistingStationOpen(request, minecraft, player, stationPos);
 	}
 
-	private StationReadiness ensureExistingStationOpen(WorldTaskRequest request, MinecraftClient client, ClientPlayerEntity player, BlockPos stationPos) {
-		if (player.currentScreenHandler instanceof AbstractFurnaceScreenHandler) {
+	private StationReadiness ensureExistingStationOpen(WorldTaskRequest request, Minecraft minecraft, LocalPlayer player, BlockPos stationPos) {
+		if (player.containerMenu instanceof AbstractFurnaceMenu) {
 			if (!openedStationForTask) {
-				if (player.currentScreenHandler.getCursorStack().isEmpty()) {
+				if (player.containerMenu.getCarried().isEmpty()) {
 					ScreenCloseSafety.closeHandledScreen(player, "smelting_existing_station_close");
 				}
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "closing_existing_furnace_screen");
@@ -255,16 +255,16 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 			}
 			return StationReadiness.readyState();
 		}
-		if (!isFurnaceBlock(client, stationPos)) {
+		if (!isFurnaceBlock(minecraft, stationPos)) {
 			return StationReadiness.failed(TaskFailure.of(TaskFailureCode.UNKNOWN, "station_unavailable"));
 		}
 		if (!withinInteractionRange(player, stationPos)) {
 			return navigateOrFail(request, stationPos);
 		}
-		BlockHitResult hitResult = new BlockHitResult(Vec3d.ofCenter(stationPos), Direction.UP, stationPos, false);
-		ActionResult result = client.interactionManager.interactBlock(player, Hand.MAIN_HAND, hitResult);
-		if (result.isAccepted()) {
-			player.swingHand(Hand.MAIN_HAND);
+		BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(stationPos), Direction.UP, stationPos, false);
+		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+		if (result.consumesAction()) {
+			player.swing(InteractionHand.MAIN_HAND);
 			openedStationForTask = true;
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "opening_furnace");
@@ -284,45 +284,45 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<FuelSelection> fuelSelection(
-		MinecraftClient client,
-		ScreenHandler handler,
+		Minecraft minecraft,
+		AbstractContainerMenu menu,
 		SmeltingOption option,
 		SmeltItemsStepArgs args,
 		int reservedInput
 	) {
 		int requiredFuelTicks = args.inputQuantity() * option.cookTimeTicks();
 		if (args.fuelMode() == SmeltingFuelMode.MANUAL) {
-			return manualFuelSelection(client, handler, args, requiredFuelTicks, option.inputItemId(), reservedInput);
+			return manualFuelSelection(minecraft, menu, args, requiredFuelTicks, option.inputItemId(), reservedInput);
 		}
-		ItemStack existingFuel = handler.getSlot(1).getStack();
-		if (existingFuel.isEmpty() && furnaceBurning(handler)) {
+		ItemStack existingFuel = menu.getSlot(1).getItem();
+		if (existingFuel.isEmpty() && furnaceBurning(menu)) {
 			return Optional.of(new FuelSelection(null, 0));
 		}
 		if (!existingFuel.isEmpty()) {
-			if (!client.world.getFuelRegistry().isFuel(existingFuel)) {
+			if (!minecraft.level.fuelValues().isFuel(existingFuel)) {
 				return Optional.empty();
 			}
-			int needed = fuelItemsNeeded(requiredFuelTicks, client.world.getFuelRegistry().getFuelTicks(existingFuel));
+			int needed = fuelItemsNeeded(requiredFuelTicks, minecraft.level.fuelValues().burnDuration(existingFuel));
 			String existingFuelItemId = itemId(existingFuel);
 			if (existingFuel.getCount() >= needed) {
 				return Optional.of(new FuelSelection(null, 0));
 			}
 			if (existingFuel.getCount() + fuelCountAfterReservingInput(existingFuelItemId,
-				sourceItemCount(handler, existingFuelItemId), option.inputItemId(), reservedInput) >= needed) {
+				sourceItemCount(menu, existingFuelItemId), option.inputItemId(), reservedInput) >= needed) {
 				return Optional.of(new FuelSelection(existingFuelItemId, needed));
 			}
 			return Optional.empty();
 		}
 		Map<String, Integer> availableFuelCounts = new LinkedHashMap<>();
 		Map<String, Integer> fuelTicksByItemId = new LinkedHashMap<>();
-		for (int slot = 3; slot < handler.slots.size(); slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
-			if (stack.isEmpty() || !client.world.getFuelRegistry().isFuel(stack)) {
+		for (int slot = 3; slot < menu.slots.size(); slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
+			if (stack.isEmpty() || !minecraft.level.fuelValues().isFuel(stack)) {
 				continue;
 			}
 			String itemId = itemId(stack);
 			availableFuelCounts.merge(itemId, stack.getCount(), Integer::sum);
-			fuelTicksByItemId.putIfAbsent(itemId, client.world.getFuelRegistry().getFuelTicks(stack));
+			fuelTicksByItemId.putIfAbsent(itemId, minecraft.level.fuelValues().burnDuration(stack));
 		}
 		return selectFuel(availableFuelCounts, fuelTicksByItemId, option.inputItemId(), reservedInput, requiredFuelTicks);
 	}
@@ -343,40 +343,40 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static Optional<FuelSelection> manualFuelSelection(
-		MinecraftClient client,
-		ScreenHandler handler,
+		Minecraft minecraft,
+		AbstractContainerMenu menu,
 		SmeltItemsStepArgs args,
 		int requiredFuelTicks,
 		String inputItemId,
 		int reservedInput
 	) {
-		if (client == null || client.world == null || args.fuelItemId() == null || args.fuelItemId().isBlank()) {
+		if (minecraft == null || minecraft.level == null || args.fuelItemId() == null || args.fuelItemId().isBlank()) {
 			return Optional.empty();
 		}
 		String requestedFuelItemId = args.fuelItemId();
 		int matchingFuelCount = 0;
 		int fuelTicksPerItem = 0;
 
-		ItemStack existingFuel = handler.getSlot(1).getStack();
+		ItemStack existingFuel = menu.getSlot(1).getItem();
 		if (!existingFuel.isEmpty()) {
-			if (!requestedFuelItemId.equals(itemId(existingFuel)) || !client.world.getFuelRegistry().isFuel(existingFuel)) {
+			if (!requestedFuelItemId.equals(itemId(existingFuel)) || !minecraft.level.fuelValues().isFuel(existingFuel)) {
 				return Optional.empty();
 			}
 			matchingFuelCount += existingFuel.getCount();
-			fuelTicksPerItem = client.world.getFuelRegistry().getFuelTicks(existingFuel);
+			fuelTicksPerItem = minecraft.level.fuelValues().burnDuration(existingFuel);
 		}
 
-		for (int slot = 3; slot < handler.slots.size(); slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
+		for (int slot = 3; slot < menu.slots.size(); slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
 			if (stack.isEmpty() || !requestedFuelItemId.equals(itemId(stack))) {
 				continue;
 			}
-			if (!client.world.getFuelRegistry().isFuel(stack)) {
+			if (!minecraft.level.fuelValues().isFuel(stack)) {
 				return Optional.empty();
 			}
 			matchingFuelCount += stack.getCount();
 			if (fuelTicksPerItem <= 0) {
-				fuelTicksPerItem = client.world.getFuelRegistry().getFuelTicks(stack);
+				fuelTicksPerItem = minecraft.level.fuelValues().burnDuration(stack);
 			}
 		}
 
@@ -409,23 +409,23 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		return fuelItemsNeeded(inputQuantity * cookTimeTicks, fuelTicksPerItem) <= fuelQuantity;
 	}
 
-	private static boolean furnaceBurning(ScreenHandler handler) {
-		return handler instanceof AbstractFurnaceScreenHandler furnaceHandler && furnaceHandler.isBurning();
+	private static boolean furnaceBurning(AbstractContainerMenu menu) {
+		return menu instanceof AbstractFurnaceMenu furnaceMenu && furnaceMenu.isLit();
 	}
 
-	private static boolean moveItemsToSlot(MinecraftClient client, ClientPlayerEntity player, ScreenHandler handler, String itemId, int targetSlot, int quantity) {
-		ItemStack targetStack = handler.getSlot(targetSlot).getStack();
+	private static boolean moveItemsToSlot(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, String itemId, int targetSlot, int quantity) {
+		ItemStack targetStack = menu.getSlot(targetSlot).getItem();
 		int remaining = remainingItemsToMove(itemId(targetStack), targetStack.getCount(), itemId, quantity);
 		if (remaining < 0) {
 			return false;
 		}
 		while (remaining > 0) {
-			int sourceSlot = findSourceSlot(handler, itemId);
+			int sourceSlot = findSourceSlot(menu, itemId);
 			if (sourceSlot < 0) {
 				return false;
 			}
-			ItemStack sourceStack = handler.getSlot(sourceSlot).getStack();
-			int moved = moveFromSourceToTarget(client, player, handler, sourceSlot, targetSlot, Math.min(remaining, sourceStack.getCount()));
+			ItemStack sourceStack = menu.getSlot(sourceSlot).getItem();
+			int moved = moveFromSourceToTarget(minecraft, player, menu, sourceSlot, targetSlot, Math.min(remaining, sourceStack.getCount()));
 			if (moved <= 0) {
 				return false;
 			}
@@ -447,10 +447,10 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		return Math.max(0, desiredQuantity - currentCount);
 	}
 
-	private static int sourceItemCount(ScreenHandler handler, String itemId) {
+	private static int sourceItemCount(AbstractContainerMenu menu, String itemId) {
 		int count = 0;
-		for (int slot = 3; slot < handler.slots.size(); slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
+		for (int slot = 3; slot < menu.slots.size(); slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
 			if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
 				count += stack.getCount();
 			}
@@ -459,47 +459,47 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static int moveFromSourceToTarget(
-		MinecraftClient client,
-		ClientPlayerEntity player,
-		ScreenHandler handler,
+		Minecraft minecraft,
+		LocalPlayer player,
+		AbstractContainerMenu menu,
 		int sourceSlot,
 		int targetSlot,
 		int maxQuantity
 	) {
-		if (!handler.getCursorStack().isEmpty()) {
+		if (!menu.getCarried().isEmpty()) {
 			return 0;
 		}
-		ItemStack targetStack = handler.getSlot(targetSlot).getStack();
-		ItemStack sourceStack = handler.getSlot(sourceSlot).getStack();
+		ItemStack targetStack = menu.getSlot(targetSlot).getItem();
+		ItemStack sourceStack = menu.getSlot(sourceSlot).getItem();
 		int targetCountBefore = targetStack.isEmpty() ? 0 : targetStack.getCount();
 		if (sourceStack.isEmpty()) {
 			return 0;
 		}
-		if (!targetStack.isEmpty() && !ItemStack.areItemsAndComponentsEqual(targetStack, sourceStack)) {
+		if (!targetStack.isEmpty() && !ItemStack.isSameItemSameComponents(targetStack, sourceStack)) {
 			return 0;
 		}
 		int targetSpace = targetStack.isEmpty()
-			? Math.min(sourceStack.getMaxCount(), 64)
-			: Math.max(0, targetStack.getMaxCount() - targetStack.getCount());
+			? Math.min(sourceStack.getMaxStackSize(), 64)
+			: Math.max(0, targetStack.getMaxStackSize() - targetStack.getCount());
 		int toMove = Math.min(maxQuantity, targetSpace);
 		if (toMove <= 0) {
 			return 0;
 		}
-		client.interactionManager.clickSlot(handler.syncId, sourceSlot, 0, SlotActionType.PICKUP, player);
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, 0, ClickType.PICKUP, player);
 		for (int index = 0; index < toMove; index++) {
-			client.interactionManager.clickSlot(handler.syncId, targetSlot, 1, SlotActionType.PICKUP, player);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, targetSlot, 1, ClickType.PICKUP, player);
 		}
-		if (!handler.getCursorStack().isEmpty()) {
-			client.interactionManager.clickSlot(handler.syncId, sourceSlot, 0, SlotActionType.PICKUP, player);
+		if (!menu.getCarried().isEmpty()) {
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, 0, ClickType.PICKUP, player);
 		}
-		ItemStack targetAfter = handler.getSlot(targetSlot).getStack();
+		ItemStack targetAfter = menu.getSlot(targetSlot).getItem();
 		int targetCountAfter = targetAfter.isEmpty() ? 0 : targetAfter.getCount();
 		return Math.max(0, targetCountAfter - targetCountBefore);
 	}
 
-	private static int findSourceSlot(ScreenHandler handler, String itemId) {
-		for (int slot = 3; slot < handler.slots.size(); slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
+	private static int findSourceSlot(AbstractContainerMenu menu, String itemId) {
+		for (int slot = 3; slot < menu.slots.size(); slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
 			if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
 				return slot;
 			}
@@ -507,23 +507,23 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		return -1;
 	}
 
-	private static boolean isFurnaceBlock(MinecraftClient client, BlockPos pos) {
-		if (client == null || client.world == null || pos == null || !client.world.isChunkLoaded(pos)) {
+	private static boolean isFurnaceBlock(Minecraft minecraft, BlockPos pos) {
+		if (minecraft == null || minecraft.level == null || pos == null || !minecraft.level.hasChunkAt(pos)) {
 			return false;
 		}
-		BlockState state = client.world.getBlockState(pos);
-		return state.isOf(Blocks.FURNACE) || state.isOf(Blocks.BLAST_FURNACE) || state.isOf(Blocks.SMOKER);
+		BlockState state = minecraft.level.getBlockState(pos);
+		return state.is(Blocks.FURNACE) || state.is(Blocks.BLAST_FURNACE) || state.is(Blocks.SMOKER);
 	}
 
-	private PlacementAttempt placeFurnace(MinecraftClient client, ClientPlayerEntity player, BlockPos pos) {
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+	private PlacementAttempt placeFurnace(Minecraft minecraft, LocalPlayer player, BlockPos pos) {
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return new PlacementAttempt(false, "inventory_not_ready");
 		}
-		Hand hand = selectFurnacePlacementHand(client, player);
+		InteractionHand hand = selectFurnacePlacementHand(minecraft, player);
 		if (hand == null) {
 			return new PlacementAttempt(false, "furnace_not_selectable");
 		}
-		PlacementSneakController.Preparation sneakPreparation = placementSneakController.prepare(client, player);
+		PlacementSneakController.Preparation sneakPreparation = placementSneakController.prepare(minecraft, player);
 		if (sneakPreparation != PlacementSneakController.Preparation.READY) {
 			return new PlacementAttempt(false, switch (sneakPreparation) {
 				case PRESS_AND_WAIT -> "preparing_sneak";
@@ -531,98 +531,98 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 				case READY -> throw new IllegalStateException("ready placement handled above");
 			});
 		}
-		BlockPos support = pos.down();
+		BlockPos support = pos.below();
 		BlockHitResult hitResult = new BlockHitResult(
-			new Vec3d(support.getX() + 0.5D, support.getY() + 1.0D, support.getZ() + 0.5D),
+			new Vec3(support.getX() + 0.5D, support.getY() + 1.0D, support.getZ() + 0.5D),
 			Direction.UP,
 			support,
 			false
 		);
-		ActionResult result;
+		InteractionResult result;
 		try {
-			result = client.interactionManager.interactBlock(player, hand, hitResult);
-			if (result.isAccepted()) {
-				player.swingHand(hand);
+			result = minecraft.gameMode.useItemOn(player, hand, hitResult);
+			if (result.consumesAction()) {
+				player.swing(hand);
 			}
 		}
 		finally {
-			placementSneakController.release(client);
+			placementSneakController.release(minecraft);
 		}
-		return new PlacementAttempt(result.isAccepted(), result.isAccepted() ? "accepted" : "interact_" + result);
+		return new PlacementAttempt(result.consumesAction(), result.consumesAction() ? "accepted" : "interact_" + result);
 	}
 
-	private static Hand selectFurnacePlacementHand(MinecraftClient client, ClientPlayerEntity player) {
-		if (player.getOffHandStack().isOf(Items.FURNACE)) {
-			return Hand.OFF_HAND;
+	private static InteractionHand selectFurnacePlacementHand(Minecraft minecraft, LocalPlayer player) {
+		if (player.getOffhandItem().is(Items.FURNACE)) {
+			return InteractionHand.OFF_HAND;
 		}
-		return selectHotbarItem(client, player, Items.FURNACE) ? Hand.MAIN_HAND : null;
+		return selectHotbarItem(minecraft, player, Items.FURNACE) ? InteractionHand.MAIN_HAND : null;
 	}
 
-	private static boolean selectHotbarItem(MinecraftClient client, ClientPlayerEntity player, Item item) {
-		ScreenHandler handler = player.currentScreenHandler;
-		int sourceSlot = findInventorySlot(handler, item);
+	private static boolean selectHotbarItem(Minecraft minecraft, LocalPlayer player, Item item) {
+		AbstractContainerMenu menu = player.containerMenu;
+		int sourceSlot = findInventorySlot(menu, item);
 		if (sourceSlot < 0) {
 			return false;
 		}
 		int selectedHotbarSlot = player.getInventory().getSelectedSlot();
-		if (sourceSlot >= PlayerScreenHandler.HOTBAR_START && sourceSlot < PlayerScreenHandler.HOTBAR_END) {
-			selectAndSyncHotbarSlot(client, player, sourceSlot - PlayerScreenHandler.HOTBAR_START);
+		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
+			selectAndSyncHotbarSlot(minecraft, player, sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
 			return true;
 		}
-		client.interactionManager.clickSlot(handler.syncId, sourceSlot, selectedHotbarSlot, SlotActionType.SWAP, player);
-		selectAndSyncHotbarSlot(client, player, selectedHotbarSlot);
-		ItemStack selected = player.getInventory().getSelectedStack();
-		return !selected.isEmpty() && selected.isOf(item);
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, selectedHotbarSlot, ClickType.SWAP, player);
+		selectAndSyncHotbarSlot(minecraft, player, selectedHotbarSlot);
+		ItemStack selected = player.getInventory().getSelectedItem();
+		return !selected.isEmpty() && selected.is(item);
 	}
 
-	private static void selectAndSyncHotbarSlot(MinecraftClient client, ClientPlayerEntity player, int hotbarSlot) {
+	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
 		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (client.getNetworkHandler() != null) {
-			client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(hotbarSlot));
+		if (minecraft.getConnection() != null) {
+			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
 		}
 	}
 
-	private static int findInventorySlot(ScreenHandler handler, Item item) {
-		if (!(handler instanceof PlayerScreenHandler)) {
+	private static int findInventorySlot(AbstractContainerMenu menu, Item item) {
+		if (!(menu instanceof InventoryMenu)) {
 			return -1;
 		}
-		ItemStack offhand = handler.getSlot(PlayerScreenHandler.OFFHAND_ID).getStack();
-		if (!offhand.isEmpty() && offhand.isOf(item)) {
-			return PlayerScreenHandler.OFFHAND_ID;
+		ItemStack offhand = menu.getSlot(InventoryMenu.SHIELD_SLOT).getItem();
+		if (!offhand.isEmpty() && offhand.is(item)) {
+			return InventoryMenu.SHIELD_SLOT;
 		}
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
-			if (!stack.isEmpty() && stack.isOf(item)) {
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
+			if (!stack.isEmpty() && stack.is(item)) {
 				return slot;
 			}
 		}
 		return -1;
 	}
 
-	private static Optional<BlockPos> chooseFurnacePlacement(MinecraftClient client, ClientPlayerEntity player) {
-		BlockPos origin = player.getBlockPos();
+	private static Optional<BlockPos> chooseFurnacePlacement(Minecraft minecraft, LocalPlayer player) {
+		BlockPos origin = player.blockPosition();
 		for (BlockPos candidate : SmeltingPlannerService.furnacePlacementCandidatePositions(origin)) {
-			if (canPlaceAt(client, candidate)) {
-				return Optional.of(candidate.toImmutable());
+			if (canPlaceAt(minecraft, candidate)) {
+				return Optional.of(candidate.immutable());
 			}
 		}
 		return Optional.empty();
 	}
 
-	private static boolean canPlaceAt(MinecraftClient client, BlockPos pos) {
-		if (client == null || client.world == null || !client.world.isChunkLoaded(pos) || !client.world.isChunkLoaded(pos.down())) {
+	private static boolean canPlaceAt(Minecraft minecraft, BlockPos pos) {
+		if (minecraft == null || minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.hasChunkAt(pos.below())) {
 			return false;
 		}
-		if (WorldPlacePreservation.contains(client.world, pos)) return false;
-		BlockState target = client.world.getBlockState(pos);
-		BlockState support = client.world.getBlockState(pos.down());
-		return (target.isAir() || target.isReplaceable())
-			&& support.isSideSolidFullSquare(client.world, pos.down(), Direction.UP)
-			&& client.world.canPlace(Blocks.FURNACE.getDefaultState(), pos, ShapeContext.ofPlacement(client.player));
+		if (WorldPlacePreservation.contains(minecraft.level, pos)) return false;
+		BlockState target = minecraft.level.getBlockState(pos);
+		BlockState support = minecraft.level.getBlockState(pos.below());
+		return (target.isAir() || target.canBeReplaced())
+			&& support.isFaceSturdy(minecraft.level, pos.below(), Direction.UP)
+			&& minecraft.level.isUnobstructed(Blocks.FURNACE.defaultBlockState(), pos, CollisionContext.placementContext(minecraft.player));
 	}
 
-	private static boolean withinInteractionRange(ClientPlayerEntity player, BlockPos pos) {
-		return player.squaredDistanceTo(Vec3d.ofCenter(pos)) <= INTERACTION_RANGE_SQUARED;
+	private static boolean withinInteractionRange(LocalPlayer player, BlockPos pos) {
+		return player.distanceToSqr(Vec3.atCenterOf(pos)) <= INTERACTION_RANGE_SQUARED;
 	}
 
 	static boolean canCollectFromCurrentScreen(SmeltingStationKey key, String dimension, int syncId, boolean furnaceScreen) {
@@ -667,11 +667,11 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		if (!openedStationForTask) {
 			return;
 		}
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player != null
-			&& player.currentScreenHandler instanceof AbstractFurnaceScreenHandler
-			&& player.currentScreenHandler.getCursorStack().isEmpty()) {
+			&& player.containerMenu instanceof AbstractFurnaceMenu
+			&& player.containerMenu.getCarried().isEmpty()) {
 			ScreenCloseSafety.closeHandledScreen(player, "smelting_station_close");
 		}
 		openedStationForTask = false;
@@ -712,20 +712,20 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static String itemId(ItemStack stack) {
-		return stack == null || stack.isEmpty() ? null : Registries.ITEM.getId(stack.getItem()).toString();
+		return stack == null || stack.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 	}
 
-	private static SmeltingSlotSnapshot screenSlotSnapshot(AbstractFurnaceScreenHandler handler) {
+	private static SmeltingSlotSnapshot screenSlotSnapshot(AbstractFurnaceMenu menu) {
 		return new SmeltingSlotSnapshot(
-			itemId(handler.getSlot(0).getStack()),
-			handler.getSlot(0).getStack().getCount(),
-			itemId(handler.getSlot(1).getStack()),
-			handler.getSlot(1).getStack().getCount(),
-			itemId(handler.getSlot(2).getStack()),
-			handler.getSlot(2).getStack().getCount(),
+			itemId(menu.getSlot(0).getItem()),
+			menu.getSlot(0).getItem().getCount(),
+			itemId(menu.getSlot(1).getItem()),
+			menu.getSlot(1).getItem().getCount(),
+			itemId(menu.getSlot(2).getItem()),
+			menu.getSlot(2).getItem().getCount(),
 			0,
 			200,
-			handler.isBurning()
+			menu.isLit()
 		);
 	}
 

@@ -5,22 +5,22 @@ import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.Box;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.level.ClipContext;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -37,7 +37,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private static final double DIRECT_CHASE_DISTANCE_BLOCKS = 10.0D;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade navigationFacade;
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController();
@@ -47,7 +47,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private boolean landedAttack;
 	private Entity attackedTarget;
 	private Map<String, Integer> inventoryBeforeAttack = Map.of();
-	private Vec3d dropCollectionCenter;
+	private Vec3 dropCollectionCenter;
 	private int dropCollectionTicks;
 	private int dropQuietTicks;
 	private int outOfRangeTicks;
@@ -58,26 +58,26 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public EntityInteractionTaskExecutor() {
-		this(MinecraftClient::getInstance, null, new CameraController());
+		this(Minecraft::getInstance, null, new CameraController());
 	}
 
 	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade) {
-		this(MinecraftClient::getInstance, navigationFacade, new CameraController());
+		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
 	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
-		this(MinecraftClient::getInstance, navigationFacade, cameraController);
+		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
-	EntityInteractionTaskExecutor(Supplier<MinecraftClient> clientSupplier) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier) {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade navigationFacade) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade) {
 		this(clientSupplier, navigationFacade, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
@@ -103,17 +103,17 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.interactionManager == null || client.world == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.gameMode == null || minecraft.level == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
-		if (dismissCurrentScreenIfSafe(client, player)) {
+		if (dismissCurrentScreenIfSafe(minecraft, player)) {
 			busyStateTicks = 0;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "screen_dismissed");
 			return Optional.empty();
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			if (shouldWaitForBusyState(busyStateTicks)) {
 				busyStateTicks++;
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "interaction_busy");
@@ -127,9 +127,9 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (terminalEventEmitted) return Optional.empty();
-		if (dropCollectionCenter != null) return collectKillDrops(client, player, request, sessionSnapshot.tickCount());
+		if (dropCollectionCenter != null) return collectKillDrops(minecraft, player, request, sessionSnapshot.tickCount());
 
-		Selection selection = resolveSelection(client, player, interaction(request).selector());
+		Selection selection = resolveSelection(minecraft, player, interaction(request).selector());
 		if (selection.status() != EntitySelectorResolver.SelectionStatus.SELECTED) {
 			if (completedAfterLandedAttack(request, selection.status())) {
 				return beginDropCollection(request);
@@ -149,11 +149,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		if (request.type() == WorldTaskType.ATTACK_ENTITY
 			&& !attackTargetAllowed(target.getClass(), target == player, target.isAttackable())) {
 			return fail(request, TaskFailure.of(TaskFailureCode.INVALID_ACTION,
-				"target_not_attackable type=" + net.minecraft.registry.Registries.ENTITY_TYPE.getId(target.getType())
+				"target_not_attackable type=" + net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(target.getType())
 					+ "; dropped items and experience are collected by moving within pickup range, not attacking"));
 		}
 		double distance = player.distanceTo(target);
-		boolean hasLineOfSight = hasBlockLineOfSight(client, player, target);
+		boolean hasLineOfSight = hasBlockLineOfSight(minecraft, player, target);
 		boolean withinInteractionRange = EntitySelectorResolver.isWithinInteractionRange(
 			player.getX(),
 			player.getY(),
@@ -165,9 +165,9 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		if (withinInteractionRange && hasLineOfSight) {
 			outOfRangeTicks = 0;
 			// Baritone owns steering on indirect approaches; aim only when we own the interaction.
-			lookAtTarget(client, target);
-			if (!cameraController.isAimingAt(client, target.getBoundingBox())) {
-				movementController.stop(client);
+			lookAtTarget(minecraft, target);
+			if (!cameraController.isAimingAt(minecraft, target.getBoundingBox())) {
+				movementController.stop(minecraft);
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "aiming_at_target");
 				return Optional.empty();
 			}
@@ -176,15 +176,15 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return switch (request.type()) {
 			case ATTACK_ENTITY -> {
 				if (withinInteractionRange && hasLineOfSight) {
-					yield attackEntity(client, player, request, target);
+					yield attackEntity(minecraft, player, request, target);
 				}
-				yield approachTarget(client, request, target, distance, hasLineOfSight, sessionSnapshot.tickCount());
+				yield approachTarget(minecraft, request, target, distance, hasLineOfSight, sessionSnapshot.tickCount());
 			}
 			case USE_ENTITY -> {
 				if (withinInteractionRange && hasLineOfSight) {
-					yield useEntity(client, player, request, target);
+					yield useEntity(minecraft, player, request, target);
 				}
-				yield approachTarget(client, request, target, distance, hasLineOfSight, sessionSnapshot.tickCount());
+				yield approachTarget(minecraft, request, target, distance, hasLineOfSight, sessionSnapshot.tickCount());
 			}
 			default -> Optional.empty();
 		};
@@ -210,31 +210,31 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 	/** Mirrors the server's invalid-entity attack rejection before any packet is sent. */
 	static boolean attackTargetAllowed(Class<?> targetClass, boolean self, boolean attackable) {
-		return !self && !net.minecraft.entity.ItemEntity.class.isAssignableFrom(targetClass)
-			&& !net.minecraft.entity.ExperienceOrbEntity.class.isAssignableFrom(targetClass)
-			&& !(net.minecraft.entity.projectile.PersistentProjectileEntity.class.isAssignableFrom(targetClass) && !attackable);
+		return !self && !net.minecraft.world.entity.item.ItemEntity.class.isAssignableFrom(targetClass)
+			&& !net.minecraft.world.entity.ExperienceOrb.class.isAssignableFrom(targetClass)
+			&& !(net.minecraft.world.entity.projectile.AbstractArrow.class.isAssignableFrom(targetClass) && !attackable);
 	}
 
 	private Optional<TaskTerminalEvent> attackEntity(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		WorldTaskRequest request,
 		Entity target
 	) {
-		movementController.stop(client);
+		movementController.stop(minecraft);
 		cancelBaritoneChase();
 		// Chase navigation may select tools or building blocks. Restore the hand
 		// chosen for this attack before evaluating its cooldown or sending a hit.
 		player.getInventory().setSelectedSlot(attackHotbarSlot);
-		if (player.getAttackCooldownProgress(0.0F) < ATTACK_READY_THRESHOLD) {
+		if (player.getAttackStrengthScale(0.0F) < ATTACK_READY_THRESHOLD) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "attack_cooldown");
 			return Optional.empty();
 		}
 
 		if (!landedAttack) inventoryBeforeAttack = new InventoryItemCounter().count(player.getInventory());
 		attackedTarget = target;
-		client.interactionManager.attackEntity(player, target);
-		player.swingHand(Hand.MAIN_HAND);
+		minecraft.gameMode.attack(player, target);
+		player.swing(InteractionHand.MAIN_HAND);
 		landedAttack = true;
 		if (interaction(request).attackMode() == EntityAttackMode.HIT_ONCE) {
 			return complete(request, "attack_landed");
@@ -257,15 +257,15 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			attackedTarget.getRemovalReason()))
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_lost_kill_unconfirmed"));
 		cancelApproach();
-		dropCollectionCenter = attackedTarget.getPos();
+		dropCollectionCenter = attackedTarget.position();
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_died_collecting_drops");
 		return Optional.empty();
 	}
 
-	private Optional<TaskTerminalEvent> collectKillDrops(MinecraftClient client, ClientPlayerEntity player, WorldTaskRequest request, long tick) {
+	private Optional<TaskTerminalEvent> collectKillDrops(Minecraft minecraft, LocalPlayer player, WorldTaskRequest request, long tick) {
 		dropCollectionTicks++;
-		var drops = client.world.getEntitiesByClass(ItemEntity.class,
-			new Box(dropCollectionCenter, dropCollectionCenter).expand(4), item -> item.isAlive() && !item.getStack().isEmpty());
+		var drops = minecraft.level.getEntitiesOfClass(ItemEntity.class,
+			new AABB(dropCollectionCenter, dropCollectionCenter).inflate(4), item -> item.isAlive() && !item.getItem().isEmpty());
 		if (drops.isEmpty()) {
 			cancelApproach();
 			// Allow death/drop packets and delayed spawns to settle before reporting completion.
@@ -276,20 +276,20 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		dropQuietTicks = 0;
 		if (dropCollectionTicks >= 200)
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_died_drops_uncollected_timeout"));
-		var pickup = drops.stream().filter(item -> canAcceptDrop(player, item.getStack()))
-			.min(java.util.Comparator.comparingDouble(player::squaredDistanceTo));
+		var pickup = drops.stream().filter(item -> canAcceptDrop(player, item.getItem()))
+			.min(java.util.Comparator.comparingDouble(player::distanceToSqr));
 		if (pickup.isEmpty())
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_died_drops_uncollected_inventory_full"));
 		ItemEntity target = pickup.get();
 		double distance = player.distanceTo(target);
 		if (distance < 0.8D) {
 			cancelApproach();
-		} else if (shouldUseDirectChase(distance, hasBlockLineOfSight(client, player, target), movementController.snapshot().stuck())) {
+		} else if (shouldUseDirectChase(distance, hasBlockLineOfSight(minecraft, player, target), movementController.snapshot().stuck())) {
 			cancelBaritoneChase();
-			lookAtTarget(client, target);
-			movementController.moveForward(client, false, false, tick);
+			lookAtTarget(minecraft, target);
+			movementController.moveForward(minecraft, false, false, tick);
 		} else if (navigationFacade != null && navigationFacade.isLoaded()) {
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			if (isUnreachablePathEvent(navigationFacade.pollPathEvent()))
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_died_drops_unreachable"));
 			GoalPosition next = new GoalPosition(target.getBlockX(), (int) Math.floor(target.getY() + 0.125D), target.getBlockZ(), true);
@@ -305,36 +305,36 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
-	private static boolean canAcceptDrop(ClientPlayerEntity player, ItemStack drop) {
+	private static boolean canAcceptDrop(LocalPlayer player, ItemStack drop) {
 		for (int slot = 0; slot < 36; slot++) {
-			ItemStack stack = player.getInventory().getStack(slot);
-			if (stack.isEmpty() || (ItemStack.areItemsAndComponentsEqual(stack, drop) && stack.getCount() < stack.getMaxCount())) return true;
+			ItemStack stack = player.getInventory().getItem(slot);
+			if (stack.isEmpty() || (ItemStack.isSameItemSameComponents(stack, drop) && stack.getCount() < stack.getMaxStackSize())) return true;
 		}
 		return false;
 	}
 
 	private Optional<TaskTerminalEvent> useEntity(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		WorldTaskRequest request,
 		Entity target
 	) {
-		movementController.stop(client);
+		movementController.stop(minecraft);
 		cancelBaritoneChase();
-		Hand hand = resolveInteractionHand(client, player, interaction(request).itemId());
+		InteractionHand hand = resolveInteractionHand(minecraft, player, interaction(request).itemId());
 		if (hand == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "required_item_missing"));
 		}
-		ActionResult result = client.interactionManager.interactEntity(player, target, hand);
-		if (!result.isAccepted()) {
+		InteractionResult result = minecraft.gameMode.interact(player, target, hand);
+		if (!result.consumesAction()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "interaction_failed"));
 		}
-		player.swingHand(hand);
+		player.swing(hand);
 		return complete(request, "interaction_succeeded");
 	}
 
 	private Optional<TaskTerminalEvent> approachTarget(
-		MinecraftClient client,
+		Minecraft minecraft,
 		WorldTaskRequest request,
 		Entity target,
 		double distance,
@@ -344,13 +344,13 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		outOfRangeTicks++;
 		if (shouldUseDirectChase(distance, hasLineOfSight, movementController.snapshot().stuck())) {
 			cancelBaritoneChase();
-			lookAtTarget(client, target);
-			movementController.moveForward(client, true, false, tick);
+			lookAtTarget(minecraft, target);
+			movementController.moveForward(minecraft, true, false, tick);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "direct_chase");
 			return Optional.empty();
 		}
 		if (navigationFacade != null && navigationFacade.isLoaded()) {
-			movementController.stop(client);
+			movementController.stop(minecraft);
 			Optional<String> pathEvent = navigationFacade.pollPathEvent();
 			if (!landedAttack && isUnreachablePathEvent(pathEvent)) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_unreachable"));
@@ -374,7 +374,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "baritone_chase");
 			return Optional.empty();
 		}
-		movementController.stop(client);
+		movementController.stop(minecraft);
 		if (outOfRangeTicks <= TARGET_OUT_OF_RANGE_GRACE_TICKS) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_out_of_range");
 			return Optional.empty();
@@ -382,53 +382,53 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range"));
 	}
 
-	private static Hand resolveInteractionHand(MinecraftClient client, ClientPlayerEntity player, String itemId) {
+	private static InteractionHand resolveInteractionHand(Minecraft minecraft, LocalPlayer player, String itemId) {
 		if (itemId == null || itemId.isBlank()) {
-			return Hand.MAIN_HAND;
+			return InteractionHand.MAIN_HAND;
 		}
-		String offHandItemId = Registries.ITEM.getId(player.getOffHandStack().getItem()).toString();
-		if (itemId.equals(offHandItemId) && !player.getOffHandStack().isEmpty()) {
-			return Hand.OFF_HAND;
+		String offHandItemId = BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString();
+		if (itemId.equals(offHandItemId) && !player.getOffhandItem().isEmpty()) {
+			return InteractionHand.OFF_HAND;
 		}
 
-		ScreenHandler handler = player.currentScreenHandler;
-		int sourceSlot = findInventorySlot(handler, itemId);
+		AbstractContainerMenu menu = player.containerMenu;
+		int sourceSlot = findInventorySlot(menu, itemId);
 		if (sourceSlot < 0) {
 			return null;
 		}
 		int hotbarIndex = player.getInventory().getSelectedSlot();
-		if (sourceSlot >= PlayerScreenHandler.HOTBAR_START && sourceSlot < PlayerScreenHandler.HOTBAR_END) {
-			player.getInventory().setSelectedSlot(sourceSlot - PlayerScreenHandler.HOTBAR_START);
-			return Hand.MAIN_HAND;
+		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
+			player.getInventory().setSelectedSlot(sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
+			return InteractionHand.MAIN_HAND;
 		}
-		client.interactionManager.clickSlot(handler.syncId, sourceSlot, hotbarIndex, SlotActionType.SWAP, player);
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, hotbarIndex, ClickType.SWAP, player);
 		player.getInventory().setSelectedSlot(hotbarIndex);
-		ItemStack selected = player.getInventory().getSelectedStack();
+		ItemStack selected = player.getInventory().getSelectedItem();
 		if (selected.isEmpty()) {
 			return null;
 		}
-		String selectedItemId = Registries.ITEM.getId(selected.getItem()).toString();
-		return itemId.equals(selectedItemId) ? Hand.MAIN_HAND : null;
+		String selectedItemId = BuiltInRegistries.ITEM.getKey(selected.getItem()).toString();
+		return itemId.equals(selectedItemId) ? InteractionHand.MAIN_HAND : null;
 	}
 
-	private static int findInventorySlot(ScreenHandler handler, String itemId) {
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
+	private static int findInventorySlot(AbstractContainerMenu menu, String itemId) {
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			ItemStack stack = menu.getSlot(slot).getItem();
 			if (stack.isEmpty()) {
 				continue;
 			}
-			if (itemId.equals(Registries.ITEM.getId(stack.getItem()).toString())) {
+			if (itemId.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString())) {
 				return slot;
 			}
 		}
 		return -1;
 	}
 
-	private static Selection resolveSelection(MinecraftClient client, ClientPlayerEntity player, EntitySelector selector) {
+	private static Selection resolveSelection(Minecraft minecraft, LocalPlayer player, EntitySelector selector) {
 		Map<Integer, Entity> entitiesById = new LinkedHashMap<>();
 		java.util.ArrayList<EntitySelectorResolver.EntityCandidate> candidates = new java.util.ArrayList<>();
 		double radius = EntitySelectorResolver.DEFAULT_NEARBY_RADIUS_BLOCKS;
-		for (Entity entity : client.world.getOtherEntities(player, player.getBoundingBox().expand(radius))) {
+		for (Entity entity : minecraft.level.getEntities(player, player.getBoundingBox().inflate(radius))) {
 			entitiesById.put(entity.getId(), entity);
 			candidates.add(NearbyEntityService.toCandidate(entity));
 		}
@@ -461,34 +461,34 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static GoalPosition chaseGoalFor(Entity target) {
-		var blockPos = target.getBlockPos();
+		var blockPos = target.blockPosition();
 		return new GoalPosition(blockPos.getX(), blockPos.getY(), blockPos.getZ(), false);
 	}
 
-	private void lookAtTarget(MinecraftClient client, Entity target) {
-		cameraController.lookAt(client, targetAimPoint(target));
+	private void lookAtTarget(Minecraft minecraft, Entity target) {
+		cameraController.lookAt(minecraft, targetAimPoint(target));
 	}
 
-	private static boolean hasBlockLineOfSight(MinecraftClient client, ClientPlayerEntity player, Entity target) {
-		if (client == null || client.world == null || player == null || target == null) {
+	private static boolean hasBlockLineOfSight(Minecraft minecraft, LocalPlayer player, Entity target) {
+		if (minecraft == null || minecraft.level == null || player == null || target == null) {
 			return false;
 		}
-		Vec3d start = player.getEyePos();
-		Vec3d end = targetAimPoint(target);
-		HitResult hit = client.world.raycast(new RaycastContext(
+		Vec3 start = player.getEyePosition();
+		Vec3 end = targetAimPoint(target);
+		HitResult hit = minecraft.level.clip(new ClipContext(
 			start,
 			end,
-			RaycastContext.ShapeType.COLLIDER,
-			RaycastContext.FluidHandling.NONE,
+			ClipContext.Block.COLLIDER,
+			ClipContext.Fluid.NONE,
 			player
 		));
 		if (hit == null || hit.getType() == HitResult.Type.MISS) {
 			return true;
 		}
-		return hit.getPos().squaredDistanceTo(start) + 0.25D >= end.squaredDistanceTo(start);
+		return hit.getLocation().distanceToSqr(start) + 0.25D >= end.distanceToSqr(start);
 	}
 
-	private static Vec3d targetAimPoint(Entity target) {
+	private static Vec3 targetAimPoint(Entity target) {
 		return target.getBoundingBox().getCenter();
 	}
 
@@ -508,22 +508,22 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			.orElse(false);
 	}
 
-	private static boolean dismissCurrentScreenIfSafe(MinecraftClient client, ClientPlayerEntity player) {
-		if (!DropItemsTaskExecutor.shouldDismissBusyScreen(currentScreenName(client))) {
+	private static boolean dismissCurrentScreenIfSafe(Minecraft minecraft, LocalPlayer player) {
+		if (!DropItemsTaskExecutor.shouldDismissBusyScreen(currentScreenName(minecraft))) {
 			return false;
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler) {
+		if (player.containerMenu != player.inventoryMenu) {
 			return false;
 		}
-		if (!player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (!player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
-		ScreenCloseSafety.clearScreen(client, "entity_interaction_screen_dismiss");
+		ScreenCloseSafety.clearScreen(minecraft, "entity_interaction_screen_dismiss");
 		return true;
 	}
 
-	private static String currentScreenName(MinecraftClient client) {
-		return client.currentScreen == null ? null : client.currentScreen.getClass().getSimpleName();
+	private static String currentScreenName(Minecraft minecraft) {
+		return minecraft.screen == null ? null : minecraft.screen.getClass().getSimpleName();
 	}
 
 	private Optional<TaskTerminalEvent> complete(WorldTaskRequest request, String message) {
@@ -550,9 +550,9 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 	private String withCollectionReport(String message) {
 		if (dropCollectionCenter == null) return message;
-		var client = clientSupplier.get();
-		if (client == null || client.player == null) return message + " collectedItems=unknown";
-		return collectionReport(message, inventoryBeforeAttack, new InventoryItemCounter().count(client.player.getInventory()));
+		var minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.player == null) return message + " collectedItems=unknown";
+		return collectionReport(message, inventoryBeforeAttack, new InventoryItemCounter().count(minecraft.player.getInventory()));
 	}
 
 	static String collectionReport(String message, Map<String, Integer> before, Map<String, Integer> after) {

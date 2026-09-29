@@ -12,7 +12,7 @@ import baritone.api.pathing.goals.GoalBlock;
 import baritone.api.pathing.goals.GoalNear;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.process.IBaritoneProcess;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -214,13 +214,13 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 		var player = context.player();
 		if (player == null) return Optional.empty();
 		var goal = baritone.getPathingBehavior().getGoal();
-		boolean supported = player.isOnGround() || player.isTouchingWater() || player.isClimbing();
+		boolean supported = player.onGround() || player.isInWater() || player.onClimbable();
 		if (goal != null && supported && goal.isInGoal(context.playerFeet())) return Optional.empty();
-		var manager = context.minecraft().interactionManager;
+		var gameMode = context.minecraft().gameMode;
 		String breakingTarget = null;
 		float progress = 0;
-		if (manager != null) {
-			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) manager;
+		if (gameMode != null) {
+			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) gameMode;
 			if (breaking.airicraft$breakingBlock()) {
 				breakingTarget = breaking.airicraft$currentBreakingPos().toShortString();
 				progress = breaking.airicraft$currentBreakingProgress();
@@ -240,7 +240,7 @@ public final class LiveBaritoneFacade implements BaritoneFacade {
 
 		var player = baritone.getPlayerContext().player();
 		boolean supported = arrivalSupported != null ? arrivalSupported.getAsBoolean()
-			: player != null && (player.isOnGround() || player.isTouchingWater() || player.isClimbing());
+			: player != null && (player.onGround() || player.isInWater() || player.onClimbable());
 		if (!supported) return false;
 		BlockPos playerBlockPos = baritone.getPlayerContext().playerFeet();
 		if (playerBlockPos == null) return false;

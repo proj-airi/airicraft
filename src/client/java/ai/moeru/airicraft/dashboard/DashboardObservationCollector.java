@@ -3,9 +3,9 @@ package ai.moeru.airicraft.dashboard;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
 import ai.moeru.airicraft.agent.debug.LlmFlightRecord;
 import ai.moeru.airicraft.agent.tasks.MissionExecutionSnapshot;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.Registries;
-import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.client.multiplayer.ClientLevel;
 import ai.moeru.airicraft.debug.ServerTickDebugRuntime;
 import com.google.gson.Gson;
 
@@ -20,7 +20,7 @@ public final class DashboardObservationCollector {
 	private final DashboardObservationStore store;
 	private final DashboardFrameCapture frameCapture;
 	private static final Gson GSON = new Gson();
-	private ClientWorld observedWorld;
+	private ClientLevel observedLevel;
 	private String lastDecisionJson;
 	private long lastPausedTick = Long.MIN_VALUE;
 	private final Supplier<DebugDashboardConfig> configSupplier;
@@ -57,17 +57,17 @@ public final class DashboardObservationCollector {
 		lastPausedTick = Long.MIN_VALUE;
 	}
 
-	public void capture(MinecraftClient client, EmbodiedAgentRuntime runtime) {
+	public void capture(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
 		var clock = ServerTickDebugRuntime.controller().status();
-		boolean worldLoaded = client != null && client.world != null && client.player != null;
-		boolean available = worldLoaded && client.getServer() != null;
+		boolean worldLoaded = minecraft != null && minecraft.level != null && minecraft.player != null;
+		boolean available = worldLoaded && minecraft.getSingleplayerServer() != null;
 		if (!worldLoaded) {
 			store.advanceClock(store.serverTickId(), true, false);
 			return;
 		}
 		store.advanceClock(available ? clock.serverTickId() : -1L, clock.paused(), available);
-		if (observedWorld != client.world) {
-			observedWorld = client.world;
+		if (observedLevel != minecraft.level) {
+			observedLevel = minecraft.level;
 			startSession("world_joined", runtime);
 		}
 		if (clock.paused() && lastPausedTick == clock.serverTickId()) {
@@ -93,7 +93,7 @@ public final class DashboardObservationCollector {
 			lastDecisionJson = decisionJson;
 		}
 		if (clock.paused() || lastSnapshotTick == Long.MIN_VALUE || tick - lastSnapshotTick >= SNAPSHOT_INTERVAL_TICKS) {
-			Map<String, Object> snapshot = runtimeSnapshot(client, runtime);
+			Map<String, Object> snapshot = runtimeSnapshot(minecraft, runtime);
 			snapshot.put("serverClock", clock);
 			snapshot.put("serverClockAvailable", available);
 			snapshot.put("frameCapture", frameCapture.status());
@@ -105,17 +105,17 @@ public final class DashboardObservationCollector {
 		}
 	}
 
-	public void onRenderedFrame(MinecraftClient client, EmbodiedAgentRuntime runtime) {
+	public void onRenderedFrame(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
 		var clock = ServerTickDebugRuntime.controller().status();
 		// A server pause can finish between client ticks. Retain the final boundary even when client ticks stop.
 		if (clock.paused()) {
-			capture(client, runtime);
+			capture(minecraft, runtime);
 		}
-		frameCapture.onRenderedFrame(client, runtime.tickCount(), clock.serverTickId(), clock.paused(), configSupplier.get());
+		frameCapture.onRenderedFrame(minecraft, runtime.tickCount(), clock.serverTickId(), clock.paused(), configSupplier.get());
 	}
 
 	public void worldLeft() {
-		observedWorld = null;
+		observedLevel = null;
 		store.advanceClock(store.serverTickId(), true, false);
 	}
 
@@ -179,7 +179,7 @@ public final class DashboardObservationCollector {
 		));
 	}
 
-	private Map<String, Object> runtimeSnapshot(MinecraftClient client, EmbodiedAgentRuntime runtime) {
+	private Map<String, Object> runtimeSnapshot(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("schemaVersion", 4);
 		payload.put("system2", runtime.debugSystem2());
@@ -225,7 +225,7 @@ public final class DashboardObservationCollector {
 		payload.put("degraded", runtime.isDegraded());
 		payload.put("llmAvailable", runtime.llmAvailable());
 		payload.put("visionAvailable", runtime.visionAvailable());
-		payload.put("world", worldSnapshot(client));
+		payload.put("world", worldSnapshot(minecraft));
 		payload.put("placePreservation", ai.moeru.airicraft.agent.memory.WorldPlacePreservation.debugSnapshot());
 		return payload;
 	}
@@ -292,45 +292,45 @@ public final class DashboardObservationCollector {
 		return result;
 	}
 
-	private static Map<String, Object> worldSnapshot(MinecraftClient client) {
+	private static Map<String, Object> worldSnapshot(Minecraft minecraft) {
 		Map<String, Object> world = new LinkedHashMap<>();
-		world.put("loaded", client != null && client.world != null && client.player != null);
-		world.put("screen", client == null || client.currentScreen == null
+		world.put("loaded", minecraft != null && minecraft.level != null && minecraft.player != null);
+		world.put("screen", minecraft == null || minecraft.screen == null
 			? "none"
-			: client.currentScreen.getClass().getSimpleName());
-		if (client == null || client.world == null || client.player == null) {
+			: minecraft.screen.getClass().getSimpleName());
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return world;
 		}
-		var player = client.player;
-		world.put("dimension", client.world.getRegistryKey().getValue().toString());
-		world.put("time", client.world.getTime());
-		world.put("timeOfDay", client.world.getTimeOfDay());
-		world.put("raining", client.world.isRaining());
-		world.put("thundering", client.world.isThundering());
+		var player = minecraft.player;
+		world.put("dimension", minecraft.level.dimension().location().toString());
+		world.put("time", minecraft.level.getGameTime());
+		world.put("timeOfDay", minecraft.level.getDayTime());
+		world.put("raining", minecraft.level.isRaining());
+		world.put("thundering", minecraft.level.isThundering());
 		Map<String, Object> playerSnapshot = new LinkedHashMap<>();
 		playerSnapshot.put("name", player.getName().getString());
 		playerSnapshot.put("x", player.getX());
 		playerSnapshot.put("y", player.getY());
 		playerSnapshot.put("z", player.getZ());
-		playerSnapshot.put("yaw", player.getYaw());
-		playerSnapshot.put("pitch", player.getPitch());
+		playerSnapshot.put("yaw", player.getYRot());
+		playerSnapshot.put("pitch", player.getXRot());
 		playerSnapshot.put("health", player.getHealth());
 		playerSnapshot.put("maxHealth", player.getMaxHealth());
-		playerSnapshot.put("food", player.getHungerManager().getFoodLevel());
-		playerSnapshot.put("air", player.getAir());
-		playerSnapshot.put("onGround", player.isOnGround());
-		playerSnapshot.put("submerged", player.isSubmergedInWater());
+		playerSnapshot.put("food", player.getFoodData().getFoodLevel());
+		playerSnapshot.put("air", player.getAirSupply());
+		playerSnapshot.put("onGround", player.onGround());
+		playerSnapshot.put("submerged", player.isUnderWater());
 		world.put("player", playerSnapshot);
 		Map<String, Integer> inventory = new LinkedHashMap<>();
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			var stack = player.getInventory().getStack(slot);
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			var stack = player.getInventory().getItem(slot);
 			if (!stack.isEmpty()) {
-				inventory.merge(Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+				inventory.merge(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 		}
 		world.put("inventory", inventory);
 		world.put("selectedHotbarSlot", player.getInventory().getSelectedSlot());
-		world.put("equippedItem", Registries.ITEM.getId(player.getMainHandStack().getItem()).toString());
+		world.put("equippedItem", BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString());
 		return world;
 	}
 }

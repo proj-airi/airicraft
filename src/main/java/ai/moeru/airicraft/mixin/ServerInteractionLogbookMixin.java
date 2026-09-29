@@ -1,31 +1,31 @@
 package ai.moeru.airicraft.mixin;
 
 import ai.moeru.airicraft.memory.InteractionLogbookRecorder;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.network.ServerPlayerInteractionManager;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.world.World;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerPlayerGameMode;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(ServerPlayerInteractionManager.class)
+@Mixin(ServerPlayerGameMode.class)
 public class ServerInteractionLogbookMixin {
-	@Unique private ScreenHandler airicraft$previous;
-	@Inject(method = "interactBlock", at = @At("HEAD"))
-	private void airicraft$before(ServerPlayerEntity player, World world, ItemStack stack, Hand hand, BlockHitResult hit, CallbackInfoReturnable<ActionResult> cir) {
-		airicraft$previous = player.currentScreenHandler;
+	@Unique private AbstractContainerMenu airicraft$previous;
+	@Inject(method = "useItemOn", at = @At("HEAD"))
+	private void airicraft$before(ServerPlayer player, Level level, ItemStack stack, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<InteractionResult> cir) {
+		airicraft$previous = player.containerMenu;
 	}
-	@Inject(method = "interactBlock", at = @At("RETURN"))
-	private void airicraft$after(ServerPlayerEntity player, World world, ItemStack stack, Hand hand, BlockHitResult hit, CallbackInfoReturnable<ActionResult> cir) {
-		if (player.currentScreenHandler != airicraft$previous)
-			InteractionLogbookRecorder.opened(player, hit.getBlockPos(), player.currentScreenHandler);
+	@Inject(method = "useItemOn", at = @At("RETURN"))
+	private void airicraft$after(ServerPlayer player, Level level, ItemStack stack, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<InteractionResult> cir) {
+		if (player.containerMenu != airicraft$previous)
+			InteractionLogbookRecorder.opened(player, hit.getBlockPos(), player.containerMenu);
 		airicraft$previous = null;
 	}
 }

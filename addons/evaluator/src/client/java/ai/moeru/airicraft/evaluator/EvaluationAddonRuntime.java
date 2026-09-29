@@ -11,8 +11,8 @@ import ai.moeru.airicraft.agent.evaluation.EvaluationWorldFixtureService;
 import ai.moeru.airicraft.agent.evaluation.ScenarioEvaluationRunner;
 import ai.moeru.airicraft.bridge.BridgeRouteContext;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -53,8 +53,8 @@ public final class EvaluationAddonRuntime {
 		return fixtures;
 	}
 
-	public void onClientTick(MinecraftClient client) {
-		survivalFixtures.onClientTick(client);
+	public void onClientTick(Minecraft minecraft) {
+		survivalFixtures.onClientTick(minecraft);
 		if (runState == RunState.CLEANUP) {
 			continueCleanup();
 			return;
@@ -213,17 +213,17 @@ public final class EvaluationAddonRuntime {
 			return;
 		}
 		context.writeJson(202, context.onClientThread(() -> {
-			MinecraftClient client = MinecraftClient.getInstance();
+			Minecraft minecraft = Minecraft.getInstance();
 			var runtime = AiricraftClient.runtimeController();
 			if (runtime.automaticPlaytest().captureReady()) {
-				runtime.automaticPlaytest().prepareShutdown(client).whenComplete((ignored, failure) -> client.execute(() -> {
+				runtime.automaticPlaytest().prepareShutdown(minecraft).whenComplete((ignored, failure) -> minecraft.execute(() -> {
 					if (failure != null) ai.moeru.airicraft.Airicraft.LOGGER.error("Could not save paused playtest world", failure);
 					// The checkpoint is immutable now. Disconnect must run normally for the recording profile.
 					runtime.clientTickDebugRuntime().reset("client_stopping", "Finalizing the automatic playtest Recorder Play");
-					client.scheduleStop();
+					minecraft.stop();
 				}));
 			}
-			else client.scheduleStop();
+			else minecraft.stop();
 			return Map.of("stopping", true);
 		}));
 	}
@@ -574,11 +574,11 @@ public final class EvaluationAddonRuntime {
 		}
 
 		private static BlockPos playerBlockPos() {
-			MinecraftClient client = MinecraftClient.getInstance();
-			if (client == null || client.player == null) {
-				return BlockPos.ORIGIN;
+			Minecraft minecraft = Minecraft.getInstance();
+			if (minecraft == null || minecraft.player == null) {
+				return BlockPos.ZERO;
 			}
-			return client.player.getBlockPos();
+			return minecraft.player.blockPosition();
 		}
 	}
 
