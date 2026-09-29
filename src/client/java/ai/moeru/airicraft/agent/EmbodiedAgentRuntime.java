@@ -4770,7 +4770,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			job == null || job.isIdle(),
 			job != null && job.status().terminal(),
 			suppressPlannerTriggersForPendingCraftToolResult(),
-			activeJobRuntime.activeTargetIds()
+			activeJobRuntime.activeTargetIds(),
+			dialogueRuntime.routineWakesHeld(),
+			dialogueRuntime.goalBlocked()
 		);
 	}
 

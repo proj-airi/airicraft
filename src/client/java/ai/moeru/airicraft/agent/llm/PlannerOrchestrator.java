@@ -558,6 +558,14 @@ public final class PlannerOrchestrator {
 		return contextAggregator.queuedTriggerCount();
 	}
 
+	/**
+	 * Starts a player's guidance that queued behind a turn which has now ended (over the supersede budget). Autonomous
+	 * triggers keep waiting for a turn to join. The dialogue calls this after a failed turn, once the failure is applied.
+	 */
+	public void startQueuedDirectGuidance() {
+		if (pendingSubmitRequest != null && contextAggregator.hasQueuedDirectGuidance()) startQueuedWorkIfPossible();
+	}
+
 	/** Ends the coalesce window after a supersede: the queued triggers start one combined turn. */
 	public void releaseCoalesceHold() {
 		if (!coalescePending) return;
@@ -1077,7 +1085,7 @@ public final class PlannerOrchestrator {
 		endTurnSpan();
 		lifecycleListener.onPlannerExecutionApplied(result);
 		// A player's guidance that queued behind this turn (over the supersede budget) starts the next one.
-		if (pendingSubmitRequest != null && contextAggregator.hasQueuedDirectGuidance()) startQueuedWorkIfPossible();
+		startQueuedDirectGuidance();
 		return null;
 	}
 
@@ -1653,7 +1661,7 @@ public final class PlannerOrchestrator {
 			toolExecution.toolCalls().forEach(call -> toolRegistry.afterResultCommitted(call.name()));
 			// A player's guidance that queued behind this turn (over the supersede budget) starts the next one, as
 			// after an accepted reply. Autonomous triggers keep waiting for the next turn they can join.
-			if (pendingSubmitRequest != null && contextAggregator.hasQueuedDirectGuidance()) startQueuedWorkIfPossible();
+			startQueuedDirectGuidance();
 			return null;
 		}
 		sessionCoordinator.submitToolFollowUp(

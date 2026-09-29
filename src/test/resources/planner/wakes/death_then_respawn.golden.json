@@ -287,7 +287,7 @@
         ],
         "serverTick": -1,
         "throughEventSequence": 11,
-        "tick": 18,
+        "tick": 17,
         "toolQueue": {
           "aborting": false,
           "pending": []
@@ -299,7 +299,7 @@
         "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
         "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
       },
-      "tick": 18
+      "tick": 17
     }
   ],
   "scenario": "death_then_respawn",

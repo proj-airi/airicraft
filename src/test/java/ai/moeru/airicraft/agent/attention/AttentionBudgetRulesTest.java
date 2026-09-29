@@ -23,7 +23,8 @@ class AttentionBudgetRulesTest {
 		RuleEngine.shared(RuleModule.bundledAttention()).awaitReady(Duration.ofSeconds(60));
 	}
 
-	private final RuleAttentionPolicy rules = new RuleAttentionPolicy(AttentionState::idle, ignored -> EVIDENCE,
+	private AttentionState state = AttentionState.idle();
+	private final RuleAttentionPolicy rules = new RuleAttentionPolicy(() -> state, ignored -> EVIDENCE,
 		new SemanticEventBuffer(8), RuleModule.bundledAttention());
 	private long seqNo;
 
@@ -43,6 +44,15 @@ class AttentionBudgetRulesTest {
 		assertTrue(muted.reason().startsWith("autonomous wake budget spent (level "), muted.reason());
 
 		assertTrue(decide("pickup.item_picked_up", 41 + 1_000).wakes(), "1,000 quiet ticks leak the bucket");
+	}
+
+	@Test void wakesTheSchedulerDropsAnywayCostNothing() {
+		state = new AttentionState(false, false, false, null, true, false, false, List.of(), true, false);
+		for (long tick = 1; tick <= 30; tick++) decide("crafting.item_crafted", tick);
+		state = new AttentionState(false, false, false, null, true, false, false, List.of(), false, true);
+		for (long tick = 31; tick <= 60; tick++) decide("pickup.item_picked_up", tick);
+		state = AttentionState.idle();
+		assertTrue(decide("pickup.item_picked_up", 61).wakes(), "the dropped storm left the bucket empty");
 	}
 
 	@Test void protectedAndUrgentWakesAreNeverBudgeted() {

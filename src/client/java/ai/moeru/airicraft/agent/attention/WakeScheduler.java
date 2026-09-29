@@ -157,6 +157,8 @@ public final class WakeScheduler {
 		debounced.clear();
 		supersedes.clear();
 		boundDrops.clear();
+		coalesceReadyAt = -1L;
+		outcomeRecorded();
 	}
 
 	/** The coalesce window's settings from {@code agent.yml}, in milliseconds; timed here in ticks, rounded up. */

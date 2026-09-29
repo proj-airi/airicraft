@@ -151,6 +151,9 @@ class WakeCharacterizationTest {
 	@Test void autonomous_wake_budget() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1);
+			// Plain replies, so no queued tool work holds the pickups back (G4) and every one reaches the budget.
+			for (int reply = 0; reply < 20; reply++)
+				h.backend.injectMockResponse(new ai.moeru.airicraft.agent.llm.PlannerResponse("Noted.", List.of(), null));
 			for (int pickup = 0; pickup < 20; pickup++) {
 				h.runtime.onPlayerPickedUpItem("minecraft:oak_log", 1);
 				h.tick(1);

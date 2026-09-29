@@ -2007,6 +2007,23 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
+	void queuedGuidanceStartsAfterTheTurnAheadOfItFails() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "A"));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		orchestrator.submit(requestAt(11L, 1_100L, "Alice", "B"), false);
+		backend.fail(0, LlmFailureType.PROVIDER_ERROR, "Provider returned HTTP 400 bad request");
+		PlannerExecutionResult failed = awaitResult(orchestrator);
+		assertFalse(failed.succeeded());
+		for (int i = 0; i < 10; i++) orchestrator.poll();
+		assertEquals(1, backend.callCount(), "the failure alone starts nothing");
+		orchestrator.startQueuedDirectGuidance();
+		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
+		assertPromptContains(backend.conversation(1), "[chat][Alice] B");
+	}
+
+	@Test
 	void directGuidanceQueuesWithoutSupersedingWhenTheSchedulerSaysSo() {
 		RecordingBackend backend = new RecordingBackend();
 		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);

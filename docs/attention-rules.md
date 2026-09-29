@@ -53,7 +53,7 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 ```text
 {tick, seed,
  attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal, pendingCraftToolResult,
-             activeJobTargets},
+             activeJobTargets, routineWakesHeld, goalBlocked},
  plannerRules: [{index, ruleId, effect, reason, match: {eventType, player, speaker, actor, itemId, damageTypeId, attackerName}}],
  events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled,
            evidence: {addressedToAgent, resetCommand, senderWithinChatDistance}}]}
@@ -62,6 +62,9 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 - `plannerRules` holds the planner's `update_event_policy` rules in order. The latest matching rule wins.
 - `fields` holds the payload values the policy reads (`player`, `speaker`, `actor`, `itemId`, `damageTypeId`,
   `attackerName`, `state`, `blockId`, `change`), as strings.
+- `routineWakesHeld` and `goalBlocked` say that the scheduler will drop the wake anyway (G4): routine pickups and
+  crafts while accepted or queued work consumes them, and everything but direct guidance while the goal is blocked.
+  The bundled budget does not charge those wakes.
 - `activeJobTargets` lists the block and item ids the running job works on (a mining job's block ids, a collect job's
   target blocks and accepted items).
 

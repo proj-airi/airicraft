@@ -560,11 +560,11 @@ public final class DialogueRuntime {
 	) {
 		return new WakeScheduler.TriggerHost() {
 			@Override public boolean blockedGoal() {
-				return plannerGoal != null && plannerGoal.blocked();
+				return goalBlocked();
 			}
 
 			@Override public boolean workHoldsRoutineWakes() {
-				return (acceptedWork != null || activePlanner().hasQueuedToolWork()) && safetyHoldId == null && !reflexActive;
+				return routineWakesHeld();
 			}
 
 			@Override public boolean incorporated(long seqNo) {
@@ -741,6 +741,8 @@ public final class DialogueRuntime {
 				eventBuffer
 			);
 			pendingTimeoutVisibleReply = false;
+			// A player's line that waited behind the failed turn (supersede budget) gets its own turn, unless degraded.
+			if (!isDegraded()) activePlanner().startQueuedDirectGuidance();
 			submitNextPendingInternalTaskUpdate(eventBuffer, sessionSnapshot, activeGoal, activeTask, missionExecution);
 			return null;
 		}
@@ -872,6 +874,16 @@ public final class DialogueRuntime {
 		boolean submitted = activePlanner().submit(request, supersede);
 		if (submitted && safetyHoldId != null) lastSupervisedHold = safetyHoldId + ":" + reflexActive;
 		pendingTimeoutVisibleReply = directUserGuidance && submitted;
+	}
+
+	/** An active planner goal is blocked: the scheduler holds every wake but direct guidance (G4). */
+	public boolean goalBlocked() {
+		return plannerGoal != null && plannerGoal.blocked();
+	}
+
+	/** Accepted or queued work consumes routine progress while no safety hold or reflex is active (G4). */
+	public boolean routineWakesHeld() {
+		return (acceptedWork != null || activePlanner().hasQueuedToolWork()) && safetyHoldId == null && !reflexActive;
 	}
 
 	/** The coalesce window's settings ({@code plannerSessionCoalesce*Millis}); the scheduler times it in ticks. */

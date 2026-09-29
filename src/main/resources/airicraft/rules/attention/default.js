@@ -5,7 +5,8 @@
 // part, the autonomous-wake budget below, has no Java mirror (the reference is only the cold/failure fallback).
 //
 // input:  {tick, seed, attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle,
-//          activeJobTerminal, pendingCraftToolResult, activeJobTargets}, plannerRules: [{index, ruleId, effect, reason, match}],
+//          activeJobTerminal, pendingCraftToolResult, activeJobTargets, routineWakesHeld, goalBlocked},
+//          plannerRules: [{index, ruleId, effect, reason, match}],
 //          events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled, evidence}]}
 // output: {decisions: [{seqNo, emitSemantic, ruleMatch, policy, wake: {delivery, urgency, ruleId, reason}}], state}
 (lib => {
@@ -107,9 +108,15 @@
     }
   }
 
+  // Wakes the scheduler drops anyway (G4) cost nothing: routine progress while work consumes it, anything while blocked.
+  const ROUTINE_PROGRESS = ['pickup.item_picked_up', 'crafting.item_crafted'];
+  const schedulerDrops = (event, attention) => attention.goalBlocked
+    || (attention.routineWakesHeld && ROUTINE_PROGRESS.includes(event.type));
+
   function budget(decision, event, input, state) {
     if (decision.delivery === 'NONE' || event.profile.bypass) return decision;
     if (decision.urgency !== 'NORMAL' && decision.urgency !== 'LOW') return decision;
+    if (schedulerDrops(event, input.attention)) return decision;
     const bucket = lib.leakyBucket(state.autonomous || {}, AUTONOMOUS_BUDGET, input.tick);
     state.autonomous = bucket.state;
     if (bucket.accepted) return decision;

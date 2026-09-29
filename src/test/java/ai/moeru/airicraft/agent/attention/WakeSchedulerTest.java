@@ -231,6 +231,14 @@ class WakeSchedulerTest {
 		zero.offerTrigger(chat(40), host0);
 		assertFalse(zero.coalescing());
 		assertEquals(1, host0.released, "a zero window closes at once");
+
+		var reset = new WakeScheduler();
+		var host1 = new Superseding();
+		host1.queued = 2;
+		reset.offerTrigger(chat(50), host1);
+		assertTrue(reset.coalescing());
+		reset.clearTaskWakes();
+		assertFalse(reset.coalescing(), "a reset closes the window, so new guidance can supersede again");
 	}
 
 	@Test void theSupersedeBudgetQueuesDirectGuidanceOverThreeIn600Ticks() {
