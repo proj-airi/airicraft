@@ -38,9 +38,7 @@ class PlannerDebugOverlayTest {
 			plannerSnapshot(
 				new PlannerRequest(120L, 2_000L, SessionMode.OUT_OF_WORLD, "Alice", null, "Alice", "hello", null),
 				new PlannerContextDebugSnapshot(65_536, true, 8, 0, 3, 1_000L, null, null, null),
-				true,
-				1_020L,
-				20L
+				true
 			),
 			1_005L
 		);
@@ -233,8 +231,6 @@ class PlannerDebugOverlayTest {
 				new PlannerRequest(120L, 2_000L, SessionMode.OUT_OF_WORLD, "Alice", null, "Alice", "hello", null),
 				new PlannerContextDebugSnapshot(65_536, false, 8, 0, 0, 1_000L, null, null, null),
 				false,
-				-1L,
-				0L,
 				true,
 				true,
 				false,
@@ -382,19 +378,15 @@ class PlannerDebugOverlayTest {
 	private static PlannerOrchestratorDebugSnapshot plannerSnapshot(
 		PlannerRequest request,
 		PlannerContextDebugSnapshot context,
-		boolean coalescePending,
-		long coalesceReadyAtMs,
-		long coalesceWindowMs
+		boolean coalescePending
 	) {
-		return plannerSnapshot(request, context, coalescePending, coalesceReadyAtMs, coalesceWindowMs, false, false, false, false);
+		return plannerSnapshot(request, context, coalescePending, false, false, false, false);
 	}
 
 	private static PlannerOrchestratorDebugSnapshot plannerSnapshot(
 		PlannerRequest request,
 		PlannerContextDebugSnapshot context,
 		boolean coalescePending,
-		long coalesceReadyAtMs,
-		long coalesceWindowMs,
 		boolean inFlight,
 		boolean plannerInFlight,
 		boolean toolInFlight,

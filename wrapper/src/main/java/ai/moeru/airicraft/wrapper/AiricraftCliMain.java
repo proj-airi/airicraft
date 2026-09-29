@@ -2807,7 +2807,7 @@ public final class AiricraftCliMain {
 				view.put("activeJob", payload.get("activeJob"));
 			}
 			copy(view, planner, "configured", "plannerVisionMode", "inFlight", "plannerInFlight", "compactionInFlight", "captureInFlight", "toolInFlight", "toolUsed");
-			copy(view, planner, "coalescePending", "coalesceReadyAtMs", "coalesceWindowMs");
+			copy(view, planner, "coalescePending");
 			copy(view, context, "compactionTriggerTokens", "compactionPending", "acceptedTurnCount",
 				"frozenPlannerMessageCount", "queuedTriggerCount", "lastAcceptedTimeContextAtMs");
 			copy(view, conversationSources, "canonicalMessageCount", "projectedMessageCount", "canonicalUserTurnCount", "projectedUserTurnCount", "hiddenKinds");
