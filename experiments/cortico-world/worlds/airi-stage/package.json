@@ -1,0 +1,21 @@
+{
+  "name": "cortico-world-airi-stage",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cortico World: the AIRI stage (avatar, voice, audience chat) over a local WebSocket (exploratory)",
+  "keywords": ["cortico-world", "cortico"],
+  "engines": { "node": ">=22" },
+  "main": "./src/index.ts",
+  "cortico": { "kind": "world", "api": 5 },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
+  }
+}
