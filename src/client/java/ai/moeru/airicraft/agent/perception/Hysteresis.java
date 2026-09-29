@@ -49,6 +49,17 @@ public final class Hysteresis<K> {
 		return new Update<>(List.copyOf(entered), List.copyOf(exited));
 	}
 
+	/** The same tracked things under new ranges; the next update exits those beyond the new exit range. */
+	public Hysteresis<K> withRanges(double enterRange, double exitRange) {
+		var moved = new Hysteresis<K>(enterRange, exitRange);
+		moved.tracked.putAll(tracked);
+		return moved;
+	}
+
+	public boolean ranges(double enterRange, double exitRange) {
+		return this.enterRange == enterRange && this.exitRange == exitRange;
+	}
+
 	public boolean tracking(K key) {
 		return tracked.containsKey(key);
 	}

@@ -56,6 +56,18 @@ class NoticersTest {
 		assertEquals(1, noticer.sample(7, "w|o", 0, 65.6, 0, 16, 20, 8, List.of(hidden), entity -> true, Set.of()).size());
 	}
 
+	@Test void changedEntityRangesApplyToTheNextSample() {
+		var noticer = new EntityNoticer();
+		var alex = new EntityNoticer.Entity(A, "minecraft:player", "Alex", false, false, false, false, 7, 64, 0, null);
+		assertEquals(1, noticer.sample(1, "w|o", 0, 65.6, 0, 8, 10, 8, List.of(alex), entity -> true, Set.of()).size());
+		var farther = new EntityNoticer.Entity(A, "minecraft:player", "Alex", false, false, false, false, 15, 64, 0, null);
+		var villager = new EntityNoticer.Entity(C, "minecraft:villager", "Villager", false, false, false, false, 12, 64, 0, null);
+		var wider = noticer.sample(2, "w|o", 0, 65.6, 0, 16, 20, 8, List.of(farther, villager), entity -> true, Set.of());
+		assertEquals(List.of("entity"), wider.stream().map(PerceptCandidate::kind).toList(),
+			"under the wider ranges the villager at 12 enters and Alex at 15 stays tracked");
+		assertEquals("minecraft:villager", wider.getFirst().fields().get("entityType"));
+	}
+
 	@Test void environmentReportsTransitionsAfterABaseline() {
 		var watcher = new EnvironmentWatcher();
 		assertTrue(watcher.sample(1, new EnvironmentWatcher.Sample("o", 11_990, false, false, "minecraft:plains", 15)).isEmpty(), "baseline");

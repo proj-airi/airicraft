@@ -33,6 +33,7 @@ public final class EntityNoticer {
 		int raycasts, List<Entity> entities, Sight sight, Set<String> reflexTracked) {
 		memory.scope(scope);
 		if (hysteresis == null) hysteresis = new Hysteresis<>(enterRange, exitRange);
+		else if (!hysteresis.ranges(enterRange, exitRange)) hysteresis = hysteresis.withRanges(enterRange, exitRange);
 		var sorted = new ArrayList<>(entities);
 		sorted.sort(Comparator.comparingDouble(entity -> distance(entity, eyeX, eyeY, eyeZ)));
 		var samples = new LinkedHashMap<UUID, Hysteresis.Sample>();
