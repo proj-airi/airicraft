@@ -7,7 +7,7 @@
  *
  * Prints a summary and writes it to $E2E_SUMMARY when set.
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import WebSocket from 'ws';
 
@@ -44,13 +44,19 @@ console.log(`[e2e] model: ${liveModel ? `live (${process.env.CORTICO_LLM_MODEL})
 writeFileSync(resolve(deployDir, 'config.json'), JSON.stringify({
   displayName: 'E2E',
   activeProvider: 'scripted',
-  tick: { intervalMinutes: 0.2 }, // heartbeat every 12 s of quiet
+  tick: { intervalMinutes: Number(process.env.E2E_TICK_MIN ?? 0.2) }, // baseline heartbeat (default 12 s)
   worlds: {
     terminal: { enabled: false },
     airicraft: { enabled: true, pollIntervalMs: 200 },
     airi: { enabled: true, port: stagePort },
   },
 }));
+
+// E2E_STREAMER=1 replaces the persona's default orientation ("silence is a normal action") with a streamer one.
+if (process.env.E2E_STREAMER) {
+  mkdirSync(resolve(deployDir, 'prompts'), { recursive: true });
+  copyFileSync(resolve(here, 'prompts/streamer-orientation.md'), resolve(deployDir, 'prompts/ORIENTATION.md'));
+}
 
 const turns: unknown[] = [];
 const stageFrames: Array<Record<string, unknown>> = [];
@@ -95,6 +101,7 @@ if (!process.env.E2E_NO_STAND_IN) {
   socket.on('message', (raw) => {
     const frame = JSON.parse(String(raw)) as Record<string, unknown>;
     stageFrames.push(frame);
+    if (frame.type === 'speak' || frame.type === 'act') console.log('[stage]', JSON.stringify(frame).slice(0, 200));
     if (frame.type === 'speak') setTimeout(() => socket.send(JSON.stringify({ type: 'speech_end', id: frame.id })), 400);
   });
   socket.send(JSON.stringify({ type: 'hello', name: 'viewer' }));

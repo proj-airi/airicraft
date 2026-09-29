@@ -208,12 +208,34 @@ untouched.
 
 - `CORTICO_LLM_BASE_URL`: an endpoint that speaks the OpenAI **Responses** API (Cortico's `openai-responses-compat`
   provider; for example OpenAI or OpenRouter). A plain Chat Completions endpoint will not work.
-- `CORTICO_LLM_MODEL`: the model name.
+- `CORTICO_LLM_MODEL`: the model name (on OpenRouter, `deepseek/deepseek-v4.1-flash`).
 - `CORTICO_LLM_API_KEY`: the key. Cortico reads provider secrets from the process environment by name; nothing is
   written to disk.
 
-Not yet run: this session had no credentials. Resuming needs the client built and a world joined again, since a new
-session starts from a fresh container (see "Verified so far" for the recipe).
+Other knobs: `E2E_TICK_MIN` (heartbeat baseline in minutes), `E2E_WALK="x y z"` (an audience message asking to walk
+there), `E2E_STREAMER=1` (use `e2e/prompts/streamer-orientation.md` as the persona's orientation).
+
+### First live results (single 150 s runs, `deepseek/deepseek-v4.1-flash` via OpenRouter, 30 s heartbeat)
+
+Anecdotal: one sample each, small model, short runs. Groundedness of what it said was not audited.
+
+| | default orientation | streamer orientation |
+|---|---|---|
+| model requests | 13 | 17 |
+| prompt / completion tokens | 255k / 0.9k (91% cached) | 348k / 0.8k (93% cached) |
+| cost | $0.0055 | $0.0068 |
+| spoken lines | 3 | 6 |
+| heartbeat wakes answered with speech | 0 of 3 (all `end_turn`) | 3 of 4 |
+
+- The first request is about 16k prompt tokens (persona prefix plus 72 tool schemas); later ones grow by roughly 100 to
+  600 tokens per round. A model call takes about 1.7 s.
+- With Cortico's default orientation ("silence is a normal action") the model ended every heartbeat wake silently:
+  the dead-air problem again, as inaction by default. Swapping only the orientation text made the same wakes produce
+  varied, non-repeating remarks about the scene, at about a tenth of a cent per minute.
+- The model did multi-tool turns on its own (`survey_surroundings` with `take_a_look`, `airi_act` with `end_turn`), so
+  "one tool per turn" is not a limit of this setup.
+- One invented tool call (`ac_speak_placeholder`, no arguments) got an `[unknown tool]` receipt and was harmless.
+- The heartbeat backs off (30 s, then 60 s) while nothing happens, so idle chatter also gets cheaper as it goes.
 
 ## Measurements
 
