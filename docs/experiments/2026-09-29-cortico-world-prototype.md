@@ -163,8 +163,10 @@ untouched.
 1. **Text loop.** Cortico + `airicraft` World. Exit: the persona plays and keeps itself present between tool
    completions; no Java change. *Plumbing done and verified live with a scripted model; behavior with a real model
    not yet measured (no model endpoint in the session).*
-2. **Speech out.** Stage World and stage patch. *World done (10 tests). Stage side: patch applies; running it in a
-   browser is in progress. The stage does not yet send `speech_end`.*
+2. **Speech out.** Stage World and stage patch. *Verified in the real stage: the patched stage-web in headless
+   Chromium sends the typed message, receives `speak` frames and shows the persona's reply in chat
+   (`e2e/stage-browser.ts`). Not verified: TTS playback and Live2D (no provider or model in the session). The stage
+   does not yet send `speech_end`.*
 3. **Input.** Viewer text and voice into the persona. *Text path exists in the patch; voice routing omitted.*
 4. **Soak.** 30+ minutes with simulated or bilibili chat. Compare with slice 0. *Not done.*
 
@@ -191,6 +193,10 @@ untouched.
   final state (`work.changed`, top-level, SUCCEEDED) wakes it again; perception events (a biome change) arrive;
   playback results (`airi.speech_ended`, `speak`-tagged, `piggyback`) ride along with the next wake instead of
   causing one.
+- **The real AIRI stage works with the patch.** stage-web from the pinned commit plus `patches/airi/0001` runs under
+  the Vite dev server (after building its workspace dependencies); with `onboarding/skipped` and the Cortico toggle set
+  in localStorage, a message typed in the chat box reaches the persona over the World socket and the reply appears in
+  the chat, next to the heartbeat-driven line.
 - **Cortico already has a presence mechanism: the persona heartbeat** (`bots/cormini/persona/heartbeat.ts`). A
   baseline interval (`tick.intervalMinutes`) injects `[system] quiet for N seconds`; consecutive quiet ticks back off
   exponentially (x2, capped at x8) and any external event resets it. In the run (baseline 12 s) wakes came at about 8,

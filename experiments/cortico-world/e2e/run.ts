@@ -62,7 +62,7 @@ const script = (frame: string) => {
       { name: 'airi_speak', args: { text: `Okay, heading to ${x}, ${z}.` } },
       { name: 'ac_navigate_to', args: { x: Number(x), y: Number(y), z: Number(z), exactY: false } },
     );
-  } else if (/viewer: /.test(frame)) {
+  } else if (/\b(viewer|user): /.test(frame)) {
     calls.push({ name: 'airi_speak', args: { text: 'Hi viewer, I can see you.' } }, { name: 'ac_inspect_inventory', args: {} });
   }
   if (/state=(SUCCEEDED|FAILED|CANCELLED)/.test(frame)) {
@@ -80,20 +80,25 @@ const llm = createScriptedLlm(script, (turn) => { turns.push(turn); console.log(
 const bot = createBot(loaded, { ...definition, build: (l, worlds) => ({ ...definition.build(l, worlds), llm }) });
 await bot.start();
 
-// Stage stand-in: records frames, "plays" each utterance for 400 ms, and speaks as an audience member.
-const stage = new WebSocket(`ws://127.0.0.1:${stagePort}`);
-await new Promise<void>((resolveOpen, reject) => { stage.once('open', () => resolveOpen()); stage.once('error', reject); });
-stage.on('message', (raw) => {
-  const frame = JSON.parse(String(raw)) as Record<string, unknown>;
-  stageFrames.push(frame);
-  if (frame.type === 'speak') setTimeout(() => stage.send(JSON.stringify({ type: 'speech_end', id: frame.id })), 400);
-});
-stage.send(JSON.stringify({ type: 'hello', name: 'viewer' }));
-setTimeout(() => stage.send(JSON.stringify({ type: 'msg', text: 'hello from the audience', session: { id: 's1', label: 'chat' } })), 4000);
-if (process.env.E2E_WALK) setTimeout(() => stage.send(JSON.stringify({ type: 'msg', text: `please walk to ${process.env.E2E_WALK}`, session: { id: 's1', label: 'chat' } })), 9000);
+// Stage stand-in (skipped with E2E_NO_STAND_IN=1 when a real stage connects): records frames, "plays" each utterance
+// for 400 ms, and speaks as an audience member.
+let stage: WebSocket | null = null;
+if (!process.env.E2E_NO_STAND_IN) {
+  const socket = new WebSocket(`ws://127.0.0.1:${stagePort}`);
+  stage = socket;
+  await new Promise<void>((resolveOpen, reject) => { socket.once('open', () => resolveOpen()); socket.once('error', reject); });
+  socket.on('message', (raw) => {
+    const frame = JSON.parse(String(raw)) as Record<string, unknown>;
+    stageFrames.push(frame);
+    if (frame.type === 'speak') setTimeout(() => socket.send(JSON.stringify({ type: 'speech_end', id: frame.id })), 400);
+  });
+  socket.send(JSON.stringify({ type: 'hello', name: 'viewer' }));
+  setTimeout(() => socket.send(JSON.stringify({ type: 'msg', text: 'hello from the audience', session: { id: 's1', label: 'chat' } })), 4000);
+  if (process.env.E2E_WALK) setTimeout(() => socket.send(JSON.stringify({ type: 'msg', text: `please walk to ${process.env.E2E_WALK}`, session: { id: 's1', label: 'chat' } })), 9000);
+}
 
 await new Promise((r) => setTimeout(r, seconds * 1000));
-stage.close();
+stage?.close();
 await bot.shutdown('e2e done');
 
 const summary = {
