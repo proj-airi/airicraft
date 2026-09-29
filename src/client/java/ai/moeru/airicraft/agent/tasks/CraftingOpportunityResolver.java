@@ -1,21 +1,21 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.client.gui.screen.recipebook.RecipeResultCollection;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.recipe.Ingredient;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.recipe.RecipeDisplayEntry;
-import net.minecraft.recipe.RecipeFinder;
-import net.minecraft.recipe.display.RecipeDisplay;
-import net.minecraft.recipe.display.ShapedCraftingRecipeDisplay;
-import net.minecraft.recipe.display.ShapelessCraftingRecipeDisplay;
-import net.minecraft.recipe.display.SlotDisplay;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
+import net.minecraft.world.entity.player.StackedItemContents;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.ShapelessCraftingRecipeDisplay;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,7 +29,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 public final class CraftingOpportunityResolver {
-	private static final int PLAYER_GRID_INPUT_COUNT = PlayerScreenHandler.CRAFTING_INPUT_COUNT;
+	private static final int PLAYER_GRID_INPUT_COUNT = InventoryMenu.CRAFT_SLOT_COUNT;
 	private static final int WORKBENCH_GRID_INPUT_COUNT = 9;
 	static final int MAX_PLACEMENT_VARIANTS_PER_RECIPE = 24;
 	private static final Object RECIPE_CATALOG_LOCK = new Object();
@@ -39,50 +39,50 @@ public final class CraftingOpportunityResolver {
 	private CraftingOpportunityResolver() {
 	}
 
-	public static List<CraftingOpportunity> availableCrafts(ClientPlayerEntity player) {
+	public static List<CraftingOpportunity> availableCrafts(LocalPlayer player) {
 		if (player == null) {
 			return List.of();
 		}
 		return opportunities(resolvedOptions(player));
 	}
 
-	public static List<CraftingOpportunity> knownCrafts(ClientPlayerEntity player) {
+	public static List<CraftingOpportunity> knownCrafts(LocalPlayer player) {
 		if (player == null) {
 			return List.of();
 		}
 		RecipeCatalog catalog = integratedServerRecipeCatalog();
 		return mergeOpportunities(
-			knownOptions(player.getRecipeBook().getOrderedResults()),
+			knownOptions(player.getRecipeBook().getCollections()),
 			catalog.knownCrafts()
 		);
 	}
 
-	public static CraftingOpportunitySnapshot inspect(ClientPlayerEntity player) {
+	public static CraftingOpportunitySnapshot inspect(LocalPlayer player) {
 		if (player == null) {
 			return CraftingOpportunitySnapshot.empty();
 		}
-		RecipeFinder finder = recipeFinder(player);
+		StackedItemContents stackedContents = recipeFinder(player);
 		Map<Item, Integer> availableItems = inventoryCounts(player);
 		RecipeCatalog catalog = integratedServerRecipeCatalog();
 		return inspect(
-			player.getRecipeBook().getOrderedResults(),
+			player.getRecipeBook().getCollections(),
 			catalog.collections(),
 			catalog.knownCrafts(),
-			finder,
+			stackedContents,
 			availableItems
 		);
 	}
 
 	static CraftingOpportunitySnapshot inspect(
-		List<RecipeResultCollection> recipeBookCollections,
-		List<RecipeResultCollection> catalogCollections,
+		List<RecipeCollection> recipeBookCollections,
+		List<RecipeCollection> catalogCollections,
 		List<CraftingOpportunity> catalogKnownCrafts,
-		RecipeFinder finder,
+		StackedItemContents stackedContents,
 		Map<Item, Integer> availableItems
 	) {
 		return snapshot(
-			opportunities(resolvedOptions(recipeBookCollections, finder, availableItems)),
-			opportunities(resolvedOptions(catalogCollections, finder, availableItems, true)),
+			opportunities(resolvedOptions(recipeBookCollections, stackedContents, availableItems)),
+			opportunities(resolvedOptions(catalogCollections, stackedContents, availableItems, true)),
 			knownOptions(recipeBookCollections),
 			catalogKnownCrafts
 		);
@@ -123,22 +123,22 @@ public final class CraftingOpportunityResolver {
 		return List.copyOf(merged.values());
 	}
 
-	static List<CraftingOpportunity> availableCrafts(List<RecipeResultCollection> collections, RecipeFinder finder) {
-		return availableCrafts(collections, finder, Map.of());
+	static List<CraftingOpportunity> availableCrafts(List<RecipeCollection> collections, StackedItemContents stackedContents) {
+		return availableCrafts(collections, stackedContents, Map.of());
 	}
 
-	static List<CraftingOpportunity> availableCrafts(List<RecipeResultCollection> collections, RecipeFinder finder, Map<Item, Integer> availableItems) {
-		if (collections == null || finder == null) {
+	static List<CraftingOpportunity> availableCrafts(List<RecipeCollection> collections, StackedItemContents stackedContents, Map<Item, Integer> availableItems) {
+		if (collections == null || stackedContents == null) {
 			return List.of();
 		}
 		Map<String, CraftingOpportunity> opportunities = new LinkedHashMap<>();
-		for (ResolvedCraftingOption option : resolvedOptions(collections, finder, availableItems)) {
+		for (ResolvedCraftingOption option : resolvedOptions(collections, stackedContents, availableItems)) {
 			opportunities.putIfAbsent(option.opportunity().recipeId(), option.opportunity());
 		}
 		return List.copyOf(opportunities.values());
 	}
 
-	static List<CraftingOpportunity> knownCrafts(List<RecipeResultCollection> collections) {
+	static List<CraftingOpportunity> knownCrafts(List<RecipeCollection> collections) {
 		if (collections == null) {
 			return List.of();
 		}
@@ -149,19 +149,19 @@ public final class CraftingOpportunityResolver {
 		return List.copyOf(opportunities.values());
 	}
 
-	static CraftingRecipeResolution resolve(ClientPlayerEntity player, CraftRecipeStepArgs request) {
+	static CraftingRecipeResolution resolve(LocalPlayer player, CraftRecipeStepArgs request) {
 		if (player == null || request == null) {
 			return CraftingRecipeResolution.failure("recipe_not_found");
 		}
 		return resolve(resolvedOptions(player), request.recipeId(), request.times());
 	}
 
-	static CraftingRecipeResolution resolve(List<RecipeResultCollection> collections, RecipeFinder finder, String recipeId, int times) {
-		return resolve(collections, finder, Map.of(), recipeId, times);
+	static CraftingRecipeResolution resolve(List<RecipeCollection> collections, StackedItemContents stackedContents, String recipeId, int times) {
+		return resolve(collections, stackedContents, Map.of(), recipeId, times);
 	}
 
-	static CraftingRecipeResolution resolve(List<RecipeResultCollection> collections, RecipeFinder finder, Map<Item, Integer> availableItems, String recipeId, int times) {
-		return resolve(resolvedOptions(collections, finder, availableItems), recipeId, times);
+	static CraftingRecipeResolution resolve(List<RecipeCollection> collections, StackedItemContents stackedContents, Map<Item, Integer> availableItems, String recipeId, int times) {
+		return resolve(resolvedOptions(collections, stackedContents, availableItems), recipeId, times);
 	}
 
 	private static CraftingRecipeResolution resolve(List<ResolvedCraftingOption> options, String recipeId, int times) {
@@ -185,15 +185,15 @@ public final class CraftingOpportunityResolver {
 		return CraftingRecipeResolution.failure("recipe_not_found");
 	}
 
-	static CraftingRecipeResolution resolveCraftingTable(ClientPlayerEntity player) {
+	static CraftingRecipeResolution resolveCraftingTable(LocalPlayer player) {
 		if (player == null) {
 			return CraftingRecipeResolution.failure("crafting_table_missing_materials");
 		}
-		return resolveCraftingTable(player.getRecipeBook().getOrderedResults(), recipeFinder(player), inventoryCounts(player));
+		return resolveCraftingTable(player.getRecipeBook().getCollections(), recipeFinder(player), inventoryCounts(player));
 	}
 
-	static CraftingRecipeResolution resolveCraftingTable(List<RecipeResultCollection> collections, RecipeFinder finder, Map<Item, Integer> availableItems) {
-		for (ResolvedCraftingOption option : resolvedOptions(collections, finder, availableItems)) {
+	static CraftingRecipeResolution resolveCraftingTable(List<RecipeCollection> collections, StackedItemContents stackedContents, Map<Item, Integer> availableItems) {
+		for (ResolvedCraftingOption option : resolvedOptions(collections, stackedContents, availableItems)) {
 			if (option.gridKind() == CraftingGridKind.PLAYER_2X2 && option.outputItem() == Items.CRAFTING_TABLE) {
 				return CraftingRecipeResolution.success(
 					option.networkRecipeId(),
@@ -244,11 +244,11 @@ public final class CraftingOpportunityResolver {
 
 	static ItemStack resultStack(RecipeDisplay display) {
 		SlotDisplay result = display.result();
-		if (result instanceof SlotDisplay.StackSlotDisplay stackDisplay) {
+		if (result instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
 			return stackDisplay.stack();
 		}
 		if (result instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
-			return itemDisplay.item().value().getDefaultStack();
+			return itemDisplay.item().value().getDefaultInstance();
 		}
 		return ItemStack.EMPTY;
 	}
@@ -260,16 +260,16 @@ public final class CraftingOpportunityResolver {
 		return recipeId.trim().toLowerCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
 	}
 
-	private static RecipeFinder recipeFinder(ClientPlayerEntity player) {
-		RecipeFinder finder = new RecipeFinder();
-		player.getInventory().populateRecipeFinder(finder);
-		return finder;
+	private static StackedItemContents recipeFinder(LocalPlayer player) {
+		StackedItemContents stackedContents = new StackedItemContents();
+		player.getInventory().fillStackedContents(stackedContents);
+		return stackedContents;
 	}
 
-	private static Map<Item, Integer> inventoryCounts(ClientPlayerEntity player) {
+	private static Map<Item, Integer> inventoryCounts(LocalPlayer player) {
 		Map<Item, Integer> counts = new HashMap<>();
-		for (int index = 0; index < player.getInventory().size(); index++) {
-			ItemStack stack = player.getInventory().getStack(index);
+		for (int index = 0; index < player.getInventory().getContainerSize(); index++) {
+			ItemStack stack = player.getInventory().getItem(index);
 			if (!stack.isEmpty()) {
 				counts.merge(stack.getItem(), stack.getCount(), Integer::sum);
 			}
@@ -277,12 +277,12 @@ public final class CraftingOpportunityResolver {
 		return counts;
 	}
 
-	private static List<ResolvedCraftingOption> resolvedOptions(ClientPlayerEntity player) {
-		RecipeFinder finder = recipeFinder(player);
+	private static List<ResolvedCraftingOption> resolvedOptions(LocalPlayer player) {
+		StackedItemContents stackedContents = recipeFinder(player);
 		Map<Item, Integer> availableItems = inventoryCounts(player);
 		RecipeCatalog catalog = integratedServerRecipeCatalog();
-		List<ResolvedCraftingOption> options = new ArrayList<>(resolvedOptions(player.getRecipeBook().getOrderedResults(), finder, availableItems));
-		options.addAll(resolvedOptions(catalog.collections(), finder, availableItems, true));
+		List<ResolvedCraftingOption> options = new ArrayList<>(resolvedOptions(player.getRecipeBook().getCollections(), stackedContents, availableItems));
+		options.addAll(resolvedOptions(catalog.collections(), stackedContents, availableItems, true));
 		return List.copyOf(options);
 	}
 
@@ -293,9 +293,9 @@ public final class CraftingOpportunityResolver {
 				return cachedRecipeCatalog;
 			}
 		}
-		List<RecipeResultCollection> collections = displayCatalog.entries().isEmpty()
+		List<RecipeCollection> collections = displayCatalog.entries().isEmpty()
 			? List.of()
-			: List.of(new RecipeResultCollection(displayCatalog.entries()));
+			: List.of(new RecipeCollection(displayCatalog.entries()));
 		RecipeCatalog catalog = new RecipeCatalog(collections, knownOptions(collections));
 		synchronized (RECIPE_CATALOG_LOCK) {
 			cachedDisplayCatalog = displayCatalog;
@@ -304,19 +304,19 @@ public final class CraftingOpportunityResolver {
 		return catalog;
 	}
 
-	private static List<ResolvedCraftingOption> resolvedOptions(List<RecipeResultCollection> collections, RecipeFinder finder, Map<Item, Integer> availableItems) {
-		return resolvedOptions(collections, finder, availableItems, false);
+	private static List<ResolvedCraftingOption> resolvedOptions(List<RecipeCollection> collections, StackedItemContents stackedContents, Map<Item, Integer> availableItems) {
+		return resolvedOptions(collections, stackedContents, availableItems, false);
 	}
 
-	private static List<ResolvedCraftingOption> resolvedOptions(List<RecipeResultCollection> collections, RecipeFinder finder, Map<Item, Integer> availableItems, boolean manualPlacementOnly) {
-		if (collections == null || finder == null) {
+	private static List<ResolvedCraftingOption> resolvedOptions(List<RecipeCollection> collections, StackedItemContents stackedContents, Map<Item, Integer> availableItems, boolean manualPlacementOnly) {
+		if (collections == null || stackedContents == null) {
 			return List.of();
 		}
 		Map<Item, Integer> safeAvailableItems = availableItems == null ? Map.of() : availableItems;
 		List<ResolvedCraftingOption> options = new ArrayList<>();
-		for (RecipeResultCollection collection : collections) {
-			collection.populateRecipes(finder, display -> gridKind(display) != null);
-			for (RecipeDisplayEntry entry : collection.getAllRecipes()) {
+		for (RecipeCollection collection : collections) {
+			collection.selectRecipes(stackedContents, display -> gridKind(display) != null);
+			for (RecipeDisplayEntry entry : collection.getRecipes()) {
 				if (!collection.isCraftable(entry.id())) {
 					continue;
 				}
@@ -329,7 +329,7 @@ public final class CraftingOpportunityResolver {
 					if (placements.isEmpty()) {
 						continue;
 					}
-					String outputItemId = Registries.ITEM.getId(result.getItem()).toString();
+					String outputItemId = BuiltInRegistries.ITEM.getKey(result.getItem()).toString();
 					List<String> inputItemIds = placements.stream()
 						.map(CraftingIngredientPlacement::itemId)
 						.toList();
@@ -347,13 +347,13 @@ public final class CraftingOpportunityResolver {
 		return List.copyOf(options);
 	}
 
-	private static List<CraftingOpportunity> knownOptions(List<RecipeResultCollection> collections) {
+	private static List<CraftingOpportunity> knownOptions(List<RecipeCollection> collections) {
 		if (collections == null) {
 			return List.of();
 		}
 		List<CraftingOpportunity> opportunities = new ArrayList<>();
-		for (RecipeResultCollection collection : collections) {
-			for (RecipeDisplayEntry entry : collection.getAllRecipes()) {
+		for (RecipeCollection collection : collections) {
+			for (RecipeDisplayEntry entry : collection.getRecipes()) {
 				ItemStack result = resultStack(entry.display());
 				CraftingGridKind gridKind = gridKind(entry.display());
 				if (result.isEmpty() || gridKind == null) {
@@ -363,7 +363,7 @@ public final class CraftingOpportunityResolver {
 					if (placements.isEmpty()) {
 						continue;
 					}
-					String outputItemId = Registries.ITEM.getId(result.getItem()).toString();
+					String outputItemId = BuiltInRegistries.ITEM.getKey(result.getItem()).toString();
 					List<String> inputItemIds = placements.stream()
 						.map(CraftingIngredientPlacement::itemId)
 						.toList();
@@ -428,7 +428,7 @@ public final class CraftingOpportunityResolver {
 	}
 
 	private static boolean isEmptySlot(SlotDisplay display) {
-		return display instanceof SlotDisplay.EmptySlotDisplay;
+		return display instanceof SlotDisplay.Empty;
 	}
 
 	private static List<List<CraftingIngredientPlacement>> concretePlacements(List<IngredientPlacement> placements, Map<Item, Integer> availableItems) {
@@ -438,8 +438,8 @@ public final class CraftingOpportunityResolver {
 		Map<Item, Integer> safeAvailableItems = availableItems == null ? Map.of() : availableItems;
 		List<List<Item>> choicesByPlacement = new ArrayList<>();
 		for (IngredientPlacement placement : placements) {
-			List<Item> matchingItems = placement.ingredient().getMatchingItems()
-				.map(entry -> entry.value())
+			List<Item> matchingItems = placement.ingredient().items()
+				.map(holder -> holder.value())
 				.distinct()
 				.filter(item -> safeAvailableItems.getOrDefault(item, 0) > 0)
 				.sorted(Comparator.comparing(CraftingOpportunityResolver::itemId))
@@ -469,8 +469,8 @@ public final class CraftingOpportunityResolver {
 		List<List<Item>> choicesByPlacement = new ArrayList<>();
 		Map<Item, Integer> availableItems = new HashMap<>();
 		for (IngredientPlacement placement : placements) {
-			List<Item> matchingItems = placement.ingredient().getMatchingItems()
-				.map(entry -> entry.value())
+			List<Item> matchingItems = placement.ingredient().items()
+				.map(holder -> holder.value())
 				.distinct()
 				.sorted(Comparator.comparing(CraftingOpportunityResolver::itemId))
 				.toList();
@@ -612,7 +612,7 @@ public final class CraftingOpportunityResolver {
 	}
 
 	private static String itemId(Item item) {
-		Identifier id = Registries.ITEM.getId(item);
+		ResourceLocation id = BuiltInRegistries.ITEM.getKey(item);
 		return id == null ? "" : id.toString();
 	}
 
@@ -625,7 +625,7 @@ public final class CraftingOpportunityResolver {
 	}
 
 	static record CraftingRecipeResolution(
-		NetworkRecipeId networkRecipeId,
+		RecipeDisplayId networkRecipeId,
 		Item outputItem,
 		int outputCount,
 		int requestedTimes,
@@ -633,8 +633,8 @@ public final class CraftingOpportunityResolver {
 		List<CraftingIngredientPlacement> placements,
 		String failureReason
 	) {
-		private static CraftingRecipeResolution success(NetworkRecipeId networkRecipeId, Item outputItem, int outputCount, int requestedTimes, CraftingGridKind gridKind, List<CraftingIngredientPlacement> placements) {
-			return new CraftingRecipeResolution(networkRecipeId, outputItem, outputCount, requestedTimes, gridKind, List.copyOf(placements), null);
+		private static CraftingRecipeResolution success(RecipeDisplayId recipeDisplayId, Item outputItem, int outputCount, int requestedTimes, CraftingGridKind gridKind, List<CraftingIngredientPlacement> placements) {
+			return new CraftingRecipeResolution(recipeDisplayId, outputItem, outputCount, requestedTimes, gridKind, List.copyOf(placements), null);
 		}
 
 		private static CraftingRecipeResolution failure(String reason) {
@@ -662,7 +662,7 @@ public final class CraftingOpportunityResolver {
 	}
 
 	private record ResolvedCraftingOption(
-		NetworkRecipeId networkRecipeId,
+		RecipeDisplayId networkRecipeId,
 		Item outputItem,
 		CraftingGridKind gridKind,
 		CraftingOpportunity opportunity,
@@ -671,7 +671,7 @@ public final class CraftingOpportunityResolver {
 	}
 
 	private record RecipeCatalog(
-		List<RecipeResultCollection> collections,
+		List<RecipeCollection> collections,
 		List<CraftingOpportunity> knownCrafts
 	) {
 		private RecipeCatalog {

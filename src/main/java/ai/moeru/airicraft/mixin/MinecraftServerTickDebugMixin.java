@@ -11,15 +11,15 @@ import java.util.function.BooleanSupplier;
 
 @Mixin(MinecraftServer.class)
 public class MinecraftServerTickDebugMixin {
-	@Inject(method = "tick", at = @At("HEAD"), cancellable = true)
+	@Inject(method = "tickServer", at = @At("HEAD"), cancellable = true)
 	private void airicraft$gateServerTick(BooleanSupplier shouldKeepTicking, CallbackInfo callback) {
 		if (!ServerTickDebugRuntime.beginServerTick()) {
 			callback.cancel();
 		}
 	}
 
-	@Inject(method = "tick", at = @At("TAIL"))
+	@Inject(method = "tickServer", at = @At("TAIL"))
 	private void airicraft$completeServerTick(BooleanSupplier shouldKeepTicking, CallbackInfo callback) {
-		ServerTickDebugRuntime.completeServerTick(((MinecraftServer) (Object) this).getTicks());
+		ServerTickDebugRuntime.completeServerTick(((MinecraftServer) (Object) this).getTickCount());
 	}
 }

@@ -6,8 +6,8 @@ import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import ai.moeru.airicraft.agent.social.NearbyPlayerSnapshot;
 import ai.moeru.airicraft.agent.social.NearbyPlayerTracker;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Map;
 import java.util.Objects;
@@ -19,7 +19,7 @@ public final class FollowCapability {
 	private String acquiredTargetPlayer;
 
 	public FollowState tick(
-		MinecraftClient client,
+		Minecraft minecraft,
 		SessionSnapshot sessionSnapshot,
 		Optional<GoalSnapshot> activeGoal,
 		NearbyPlayerTracker nearbyPlayerTracker,
@@ -53,7 +53,7 @@ public final class FollowCapability {
 			));
 		}
 
-		double distance = distanceToTarget(client, target);
+		double distance = distanceToTarget(minecraft, target);
 		state = new FollowState(
 			true,
 			targetPlayer,
@@ -88,12 +88,12 @@ public final class FollowCapability {
 		acquiredTargetPlayer = null;
 	}
 
-	private static double distanceToTarget(MinecraftClient client, NearbyPlayerSnapshot target) {
-		if (client == null || client.player == null) {
+	private static double distanceToTarget(Minecraft minecraft, NearbyPlayerSnapshot target) {
+		if (minecraft == null || minecraft.player == null) {
 			return 0.0D;
 		}
-		Vec3d playerPos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
-		Vec3d targetPos = new Vec3d(target.x(), target.y(), target.z());
+		Vec3 playerPos = new Vec3(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ());
+		Vec3 targetPos = new Vec3(target.x(), target.y(), target.z());
 		return playerPos.distanceTo(targetPos);
 	}
 }

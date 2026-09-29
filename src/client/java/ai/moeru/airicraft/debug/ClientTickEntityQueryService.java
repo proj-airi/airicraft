@@ -1,15 +1,15 @@
 package ai.moeru.airicraft.debug;
 
 import ai.moeru.airicraft.BridgeUnavailableException;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.ExperienceOrbEntity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.registry.Registries;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,11 +28,11 @@ public final class ClientTickEntityQueryService {
 	public static final double MAX_RADIUS = 4_096.0D;
 
 	public Map<String, Object> query(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		EntityQuery query
 	) {
-		EntityQueryResult result = capture(client, snapshot, query);
+		EntityQueryResult result = capture(minecraft, snapshot, query);
 		Map<String, Object> response = ClientTickWorldQueryService.baseResponse(snapshot);
 		response.put("query", result.query());
 		response.put("loadedEntityCount", result.loadedEntityCount());
@@ -46,19 +46,19 @@ public final class ClientTickEntityQueryService {
 	}
 
 	EntityQueryResult capture(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ClientTickDebugController.ClientTickSnapshot snapshot,
 		EntityQuery query
 	) {
-		ClientWorld world = ClientTickWorldQueryService.requireMatchingWorld(client, snapshot);
+		ClientLevel level = ClientTickWorldQueryService.requireMatchingWorld(minecraft, snapshot);
 		List<EntityCandidate> candidates = new ArrayList<>();
-		for (Entity entity : world.getEntities()) {
+		for (Entity entity : level.entitiesForRendering()) {
 			candidates.add(EntityCandidate.from(entity, query));
 		}
-		EntityPage<EntityCandidate> page = selectPage(candidates, query, client.player.getId(), snapshot.player().position());
+		EntityPage<EntityCandidate> page = selectPage(candidates, query, minecraft.player.getId(), snapshot.player().position());
 		List<EntityObservation> observations = observeSelected(
 			page.entities(),
-			candidate -> observe(candidate.entity(), client.player)
+			candidate -> observe(candidate.entity(), minecraft.player)
 		);
 		return new EntityQueryResult(
 			query,
@@ -114,16 +114,16 @@ public final class ClientTickEntityQueryService {
 
 	private static EntityObservation observe(Entity entity, Entity self) {
 		String name = entity.getName() == null ? null : entity.getName().getString();
-		String entityTypeId = Registries.ENTITY_TYPE.getId(entity.getType()).toString();
+		String entityTypeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("entityId", entity.getId());
-		payload.put("uuid", entity.getUuidAsString());
+		payload.put("uuid", entity.getStringUUID());
 		payload.put("name", name);
 		payload.put("customName", entity.getCustomName() == null ? null : entity.getCustomName().getString());
 		payload.put("entityTypeId", entityTypeId);
-		payload.put("isPlayer", entity instanceof PlayerEntity);
+		payload.put("isPlayer", entity instanceof Player);
 		payload.put("isLiving", entity instanceof LivingEntity);
-		payload.put("distanceFromPlayer", Math.sqrt(entity.squaredDistanceTo(self)));
+		payload.put("distanceFromPlayer", Math.sqrt(entity.distanceToSqr(self)));
 		payload.put("position", new ClientTickPlayerSnapshot.PositionSnapshot(
 			entity.getX(),
 			entity.getY(),
@@ -132,15 +132,15 @@ public final class ClientTickEntityQueryService {
 			entity.getBlockY(),
 			entity.getBlockZ()
 		));
-		float headYaw = entity instanceof LivingEntity living ? living.getHeadYaw() : entity.getYaw();
-		float bodyYaw = entity instanceof LivingEntity living ? living.getBodyYaw() : entity.getYaw();
+		float headYaw = entity instanceof LivingEntity living ? living.getYHeadRot() : entity.getYRot();
+		float bodyYaw = entity instanceof LivingEntity living ? living.getVisualRotationYInDegrees() : entity.getYRot();
 		payload.put("rotation", new ClientTickPlayerSnapshot.RotationSnapshot(
-			entity.getYaw(),
-			entity.getPitch(),
+			entity.getYRot(),
+			entity.getXRot(),
 			headYaw,
 			bodyYaw
 		));
-		var velocity = entity.getVelocity();
+		var velocity = entity.getDeltaMovement();
 		payload.put("velocity", new ClientTickPlayerSnapshot.VectorSnapshot(velocity.x, velocity.y, velocity.z));
 		var bounds = entity.getBoundingBox();
 		payload.put("bounds", new ClientTickPlayerSnapshot.BoundsSnapshot(
@@ -154,57 +154,57 @@ public final class ClientTickEntityQueryService {
 		payload.put("pose", entity.getPose().name().toLowerCase(Locale.ROOT));
 		payload.put("alive", entity.isAlive());
 		payload.put("removed", entity.isRemoved());
-		payload.put("onGround", entity.isOnGround());
+		payload.put("onGround", entity.onGround());
 		payload.put("horizontalCollision", entity.horizontalCollision);
 		payload.put("verticalCollision", entity.verticalCollision);
 		payload.put("sprinting", entity.isSprinting());
-		payload.put("sneaking", entity.isSneaking());
+		payload.put("sneaking", entity.isShiftKeyDown());
 		payload.put("swimming", entity.isSwimming());
-		payload.put("crawling", entity.isCrawling());
-		payload.put("touchingWater", entity.isTouchingWater());
-		payload.put("submergedInWater", entity.isSubmergedInWater());
+		payload.put("crawling", entity.isVisuallyCrawling());
+		payload.put("touchingWater", entity.isInWater());
+		payload.put("submergedInWater", entity.isUnderWater());
 		payload.put("inLava", entity.isInLava());
 		payload.put("invisible", entity.isInvisible());
-		payload.put("glowing", entity.isGlowing());
+		payload.put("glowing", entity.isCurrentlyGlowing());
 		payload.put("silent", entity.isSilent());
-		payload.put("fireTicks", entity.getFireTicks());
-		payload.put("frozenTicks", entity.getFrozenTicks());
+		payload.put("fireTicks", entity.getRemainingFireTicks());
+		payload.put("frozenTicks", entity.getTicksFrozen());
 		payload.put("fallDistance", entity.fallDistance);
-		payload.put("age", entity.age);
+		payload.put("age", entity.tickCount);
 		payload.put("vehicleEntityId", entity.getVehicle() == null ? null : entity.getVehicle().getId());
-		payload.put("passengerEntityIds", entity.getPassengerList().stream().map(Entity::getId).sorted().toList());
-		payload.put("commandTags", entity.getCommandTags().stream().sorted().toList());
+		payload.put("passengerEntityIds", entity.getPassengers().stream().map(Entity::getId).sorted().toList());
+		payload.put("commandTags", entity.getTags().stream().sorted().toList());
 		if (entity instanceof LivingEntity living) {
 			payload.put("health", living.getHealth());
 			payload.put("maxHealth", living.getMaxHealth());
 			payload.put("absorption", living.getAbsorptionAmount());
-			payload.put("armor", living.getArmor());
-			payload.put("air", living.getAir());
-			payload.put("maxAir", living.getMaxAir());
+			payload.put("armor", living.getArmorValue());
+			payload.put("air", living.getAirSupply());
+			payload.put("maxAir", living.getMaxAirSupply());
 			payload.put("hurtTime", living.hurtTime);
 			payload.put("deathTime", living.deathTime);
-			payload.put("headYaw", living.getHeadYaw());
-			payload.put("bodyYaw", living.getBodyYaw());
+			payload.put("headYaw", living.getYHeadRot());
+			payload.put("bodyYaw", living.getVisualRotationYInDegrees());
 			payload.put("usingItem", living.isUsingItem());
-			payload.put("itemUseTime", living.getItemUseTime());
+			payload.put("itemUseTime", living.getTicksUsingItem());
 			payload.put("equipment", ClientTickPlayerSnapshotFactory.equipment(living));
-			payload.put("statusEffects", ClientTickPlayerSnapshotFactory.statusEffects(living.getStatusEffects()));
-			payload.put("attributes", ClientTickPlayerSnapshotFactory.attributes(living.getAttributes().getAttributesToSend()));
+			payload.put("statusEffects", ClientTickPlayerSnapshotFactory.statusEffects(living.getActiveEffects()));
+			payload.put("attributes", ClientTickPlayerSnapshotFactory.attributes(living.getAttributes().getSyncableAttributes()));
 		}
 		if (entity instanceof ItemEntity itemEntity) {
-			payload.put("item", ClientTickPlayerSnapshotFactory.itemStack(-1, itemEntity.getStack()));
+			payload.put("item", ClientTickPlayerSnapshotFactory.itemStack(-1, itemEntity.getItem()));
 		}
-		if (entity instanceof ExperienceOrbEntity experienceOrb) {
+		if (entity instanceof ExperienceOrb experienceOrb) {
 			payload.put("experienceValue", experienceOrb.getValue());
 		}
-		if (entity instanceof MobEntity mob) {
-			payload.put("aiDisabled", mob.isAiDisabled());
-			payload.put("persistent", mob.isPersistent());
+		if (entity instanceof Mob mob) {
+			payload.put("aiDisabled", mob.isNoAi());
+			payload.put("persistent", mob.isPersistenceRequired());
 			payload.put("targetEntityId", mob.getTarget() == null ? null : mob.getTarget().getId());
 		}
 		return new EntityObservation(
 			entity.getId(),
-			entity.getUuidAsString(),
+			entity.getStringUUID(),
 			name,
 			entityTypeId,
 			entity.getX(),
@@ -212,7 +212,7 @@ public final class ClientTickEntityQueryService {
 			entity.getZ(),
 			entity.isAlive(),
 			entity instanceof LivingEntity,
-			entity instanceof PlayerEntity,
+			entity instanceof Player,
 			payload
 		);
 	}
@@ -378,15 +378,15 @@ public final class ClientTickEntityQueryService {
 			return new EntityCandidate(
 				entity,
 				entity.getId(),
-				validQuery.uuid() == null ? null : entity.getUuidAsString(),
+				validQuery.uuid() == null ? null : entity.getStringUUID(),
 				validQuery.name() == null ? null : entity.getName().getString(),
-				validQuery.entityTypeIds().isEmpty() ? null : Registries.ENTITY_TYPE.getId(entity.getType()).toString(),
+				validQuery.entityTypeIds().isEmpty() ? null : BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
 				entity.getX(),
 				entity.getY(),
 				entity.getZ(),
 				validQuery.alive() == null || entity.isAlive(),
 				validQuery.livingOnly() && entity instanceof LivingEntity,
-				validQuery.playerOnly() && entity instanceof PlayerEntity
+				validQuery.playerOnly() && entity instanceof Player
 			);
 		}
 	}

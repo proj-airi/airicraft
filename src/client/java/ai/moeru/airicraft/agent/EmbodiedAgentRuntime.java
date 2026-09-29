@@ -188,16 +188,16 @@ import ai.moeru.airicraft.agent.tasks.SmeltingProcessManager;
 import ai.moeru.airicraft.agent.tasks.SmeltingProcessSnapshot;
 import ai.moeru.airicraft.agent.tasks.SurfaceMemory;
 import ai.moeru.airicraft.agent.tasks.WorldTaskType;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -279,7 +279,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final SmeltingProcessManager smeltingProcessManager;
 	private final SmeltingPlannerService smeltingPlannerService = new SmeltingPlannerService();
 	private final WorldReadLedger worldReadLedger = new WorldReadLedger();
-	private final CurrentWorldQueryService guardedWorldQueryService = new CurrentWorldQueryService(MinecraftClient::getInstance);
+	private final CurrentWorldQueryService guardedWorldQueryService = new CurrentWorldQueryService(Minecraft::getInstance);
 	private final ActionGraphCoordinator actionGraphCoordinator;
 	private final SurvivalReflexRuntime survivalReflexRuntime;
 	private final LightingRuntime lightingRuntime = new LightingRuntime();
@@ -288,27 +288,27 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final PlayerItemUseController playerItemUseController = new PlayerItemUseController();
 	private final FoodRuntime foodRuntime = new FoodRuntime();
 	private final SurvivalReflexRuntime.CombatEating combatEating = new SurvivalReflexRuntime.CombatEating() {
-		@Override public boolean needed(net.minecraft.client.network.ClientPlayerEntity player) {
-			return foodRuntime.policy().shouldSeekCombatHeal(player.getHungerManager().getFoodLevel(),
+		@Override public boolean needed(net.minecraft.client.player.LocalPlayer player) {
+			return foodRuntime.policy().shouldSeekCombatHeal(player.getFoodData().getFoodLevel(),
 				player.getHealth(), player.getMaxHealth());
 		}
-		@Override public boolean hasEligibleFood(net.minecraft.client.network.ClientPlayerEntity player) {
+		@Override public boolean hasEligibleFood(net.minecraft.client.player.LocalPlayer player) {
 			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(),
-				player.getHungerManager().getFoodLevel()).isPresent();
+				player.getFoodData().getFoodLevel()).isPresent();
 		}
-		@Override public Optional<String> candidate(net.minecraft.client.network.ClientPlayerEntity player) {
-			if (player.currentScreenHandler != player.playerScreenHandler
-				|| !player.currentScreenHandler.getCursorStack().isEmpty()) return Optional.empty();
-			return foodRuntime.combatCandidate(player.getHungerManager().getFoodLevel(), player.getHealth(),
+		@Override public Optional<String> candidate(net.minecraft.client.player.LocalPlayer player) {
+			if (player.containerMenu != player.inventoryMenu
+				|| !player.containerMenu.getCarried().isEmpty()) return Optional.empty();
+			return foodRuntime.combatCandidate(player.getFoodData().getFoodLevel(), player.getHealth(),
 				player.getMaxHealth(), foodCandidates(player));
 		}
 		@Override public boolean ready(long tick) { return foodRuntime.readyToEat(tick); }
 		@Override public boolean eating() { return playerItemUseController.eating(); }
-		@Override public void start(MinecraftClient client, String itemId, long tick) {
+		@Override public void start(Minecraft minecraft, String itemId, long tick) {
 			foodRuntime.recordAttempt(tick);
-			playerItemUseController.eat(client, itemId, tick);
+			playerItemUseController.eat(minecraft, itemId, tick);
 		}
-		@Override public void cancel(MinecraftClient client) { playerItemUseController.reset(client); }
+		@Override public void cancel(Minecraft minecraft) { playerItemUseController.reset(minecraft); }
 	};
 	private final EmbodiedPlannerActionToolExecutor plannerActionToolExecutor;
 	private final MinecraftBlockAcquisitionKnowledgeService blockAcquisitionKnowledgeService = new MinecraftBlockAcquisitionKnowledgeService();
@@ -546,9 +546,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return snapshot;
 	}
 
-	public void onClientStarted(MinecraftClient client) {
+	public void onClientStarted(Minecraft minecraft) {
 		initialized = true;
-		sessionRuntime.onClientStarted(client, tickCount, eventBus);
+		sessionRuntime.onClientStarted(minecraft, tickCount, eventBus);
 		sessionSnapshot = sessionRuntime.snapshot();
 	}
 
@@ -583,7 +583,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = TaskSnapshot.idle();
 		taskExecutionSnapshot = TaskExecutionSnapshot.idle();
 		missionExecutionSnapshot = MissionExecutionSnapshot.idle();
-		behaviorTreeRuntime.stop(MinecraftClient.getInstance());
+		behaviorTreeRuntime.stop(Minecraft.getInstance());
 		chatService.clear();
 		proactiveSocialModeOverride = null;
 		evaluationPlannerSuppressed = false;
@@ -593,38 +593,38 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathBoundaryApplied = false;
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
-		survivalReflexRuntime.reset(MinecraftClient.getInstance());
-		playerItemUseController.reset(MinecraftClient.getInstance());
+		survivalReflexRuntime.reset(Minecraft.getInstance());
+		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();
 	}
 
-	public void onClientTick(MinecraftClient client) {
-		try { tickClient(client); }
+	public void onClientTick(Minecraft minecraft) {
+		try { tickClient(minecraft); }
 		finally { refreshWorkHistory(); }
-		observeWorkProgress(client);
+		observeWorkProgress(minecraft);
 		tickPolicy();
 	}
 
-	private void tickClient(MinecraftClient client) {
+	private void tickClient(Minecraft minecraft) {
 		eventBus.bindOwnerThread(Thread.currentThread());
-		drainInteractionEvidence(client);
-		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.tick(client, activeTaskInProgress());
-		stopWorkOutsideTravelBounds(client);
+		drainInteractionEvidence(minecraft);
+		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.tick(minecraft, activeTaskInProgress());
+		stopWorkOutsideTravelBounds(minecraft);
 		dialogueRuntime.refreshPlannerGoalWorld();
 		tickCount++;
-		sampleSensor(DamageSensor.ID, client);
+		sampleSensor(DamageSensor.ID, minecraft);
 		BehaviorTreeSnapshot previousTreeSnapshot = behaviorTreeRuntime.snapshot();
 		boolean wasWorldLoaded = sessionSnapshot.worldLoaded();
 		sessionSnapshot = sessionSnapshotOverrideForTests != null
 			? sessionSnapshotOverrideForTests.withTickCount(tickCount)
-			: sessionRuntime.poll(client, tickCount, eventBus);
-		blockAcquisitionKnowledgeService.tick(client);
+			: sessionRuntime.poll(minecraft, tickCount, eventBus);
+		blockAcquisitionKnowledgeService.tick(minecraft);
 		miningOpportunityPolicy.updateAcquisitions(blockAcquisitions());
 		activeJobRuntime.updateBlockAcquisitions(blockAcquisitions());
-		enforcePlayerLifecycle(client);
+		enforcePlayerLifecycle(minecraft);
 		if (!wasWorldLoaded && sessionSnapshot.worldLoaded()) {
 			worldLoadTick = tickCount;
 			lifecycleDispatcher.dispatch(LifecycleBoundary.WORLD_LOADED, tickCount);
@@ -632,7 +632,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (sessionSnapshot.requiresRespawn()) {
 			lifecycleDispatcher.dispatch(LifecycleBoundary.AWAITING_RESPAWN, tickCount);
 			behaviorTreeRuntime.tick(
-				client,
+				minecraft,
 				sessionSnapshot,
 				dialogueRuntime,
 				chatService,
@@ -643,33 +643,33 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				tickCount
 			);
 			drainEventPipeline();
-			lastKnownPlayerHealth = currentPlayerHealth(client);
+			lastKnownPlayerHealth = currentPlayerHealth(minecraft);
 			return;
 		}
-		sampleSensor(ai.moeru.airicraft.agent.perception.ItemOfferSensor.ID, client);
-		sampleSensor(ai.moeru.airicraft.agent.perception.PhysicalSensor.ID, client);
-		observeSlowMining(client);
-		tickSalience(client);
-		openLanIfSingleplayerLocal(client);
-		surfaceMemory.tick(client, tickCount);
-		playerItemUseController.tick(client, tickCount).ifPresent(result -> eventBus.from("EmbodiedAgentRuntime").publish(
+		sampleSensor(ai.moeru.airicraft.agent.perception.ItemOfferSensor.ID, minecraft);
+		sampleSensor(ai.moeru.airicraft.agent.perception.PhysicalSensor.ID, minecraft);
+		observeSlowMining(minecraft);
+		tickSalience(minecraft);
+		openLanIfSingleplayerLocal(minecraft);
+		surfaceMemory.tick(minecraft, tickCount);
+		playerItemUseController.tick(minecraft, tickCount).ifPresent(result -> eventBus.from("EmbodiedAgentRuntime").publish(
 			tickCount,
 			result.completed() ? "food.eaten" : "food.eat_failed",
 			Map.of("itemId", result.itemId(), "reason", result.reason())
 		));
-		tickSurvivalReflex(client);
-		tickIdleEating(client);
+		tickSurvivalReflex(minecraft);
+		tickIdleEating(minecraft);
 		drainEventPipeline();
 
-		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, client);
+		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, minecraft);
 		primaryInteractionResolver.current().ifPresent(current ->
 			primaryInteractionResolver.clearIfNotNearby(current.uuid(), nearbyPlayerTracker.isNearby(current.uuid()))
 		);
 		primaryInteractionResolver.expireInactive(tickCount);
-		recordSmeltingOutputReadyEvents(client);
+		recordSmeltingOutputReadyEvents(minecraft);
 		drainEventPipeline();
 
-		WorldEvidence worldEvidence = currentWorldEvidence(client);
+		WorldEvidence worldEvidence = currentWorldEvidence(minecraft);
 		// Idle/primitive jobs may not project a semantic task, but every planner trigger needs fresh evidence.
 		missionExecutionSnapshot = missionExecutionSnapshot.withEvidence(worldEvidence);
 		dialogueRuntime.updateGameplayWorkIdle(!policyActive() && !actionGraphCoordinator.hasNonterminal()
@@ -695,21 +695,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			drainEventPipeline();
 		}
 		debugRecorder.recordDialogueState(dialogueRuntime.snapshot());
-		behaviorTreeRuntime.tickChat(client, sessionSnapshot, dialogueRuntime, chatService, debugRecorder, tickCount);
+		behaviorTreeRuntime.tickChat(minecraft, sessionSnapshot, dialogueRuntime, chatService, debugRecorder, tickCount);
 		if (survivalReflexRuntime.snapshot().holdsNormalTasks()) {
 			tickActionGraph(worldEvidence, false);
-			pauseNormalWorkForReflex(client);
+			pauseNormalWorkForReflex(minecraft);
 			drainEventPipeline();
 			if (survivalReflexRuntime.snapshot().state() == SurvivalReflexState.AWAITING_PLANNER) {
 				maybeFireIdleIdeaTrigger(activeGoal());
 			}
-			lastKnownPlayerHealth = currentPlayerHealth(client);
+			lastKnownPlayerHealth = currentPlayerHealth(minecraft);
 			return;
 		}
 
 		if (policyActive() && !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()) {
-			behaviorTreeRuntime.stop(client);
-			lastKnownPlayerHealth = currentPlayerHealth(client);
+			behaviorTreeRuntime.stop(minecraft);
+			lastKnownPlayerHealth = currentPlayerHealth(minecraft);
 			return; // Between child actions, the policy owns the foreground lane.
 		}
 
@@ -734,7 +734,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		maybeFireIdleIdeaTrigger(activeGoal);
 
 		followState = followCapability.tick(
-			client,
+			minecraft,
 			sessionSnapshot,
 			activeGoal,
 			nearbyPlayerTracker,
@@ -765,7 +765,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			.map(WorldTaskRequest::type).orElse(null);
 		boolean lightingActuationAllowed = sessionSnapshot.companionActuationAllowed()
 			&& (activeTaskRequest.isEmpty() || taskExecutionSnapshot.state() == TaskExecutionState.RUNNING);
-		lightingRuntime.tick(client, lightingActivity, lightingActuationAllowed, tickCount).ifPresent(event ->
+		lightingRuntime.tick(minecraft, lightingActivity, lightingActuationAllowed, tickCount).ifPresent(event ->
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "lighting.torch_placed", event.payload())
 		);
 		completePendingCraftToolResultFromTaskSnapshot(taskSnapshot);
@@ -773,7 +773,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		expirePendingCraftToolResultIfTimedOut();
 		expirePendingBlockModificationToolResultIfTimedOut();
 		behaviorTreeRuntime.tick(
-			client,
+			minecraft,
 			sessionSnapshot,
 			dialogueRuntime,
 			chatService,
@@ -797,7 +797,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		drainEventPipeline();
 
-		lastKnownPlayerHealth = currentPlayerHealth(client);
+		lastKnownPlayerHealth = currentPlayerHealth(minecraft);
 	}
 
 	/** Each sensor is also a lifecycle participant under its own id, in registration order. */
@@ -806,8 +806,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		lifecycleDispatcher.register(sensor.id(), sensor.boundaries(), sensor::onBoundary);
 	}
 
-	private void sampleSensor(String id, MinecraftClient client) {
-		sensorRegistry.sample(id, new ai.moeru.airicraft.agent.perception.SensorContext(tickCount, client, config.perception()), perceptSink);
+	private void sampleSensor(String id, Minecraft minecraft) {
+		sensorRegistry.sample(id, new ai.moeru.airicraft.agent.perception.SensorContext(tickCount, minecraft, config.perception()), perceptSink);
 	}
 
 	private final ai.moeru.airicraft.agent.perception.PerceptSink perceptSink = new ai.moeru.airicraft.agent.perception.PerceptSink() {
@@ -821,17 +821,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	};
 
 	/** Runs the salience rules over waiting candidates and publishes the percepts they choose. */
-	private void tickSalience(MinecraftClient client) {
+	private void tickSalience(Minecraft minecraft) {
 		if (!config.perception().enabled()) return;
-		for (String id : NOTICING_SENSORS) sampleSensor(id, client);
+		for (String id : NOTICING_SENSORS) sampleSensor(id, minecraft);
 		if (saliencePolicy.pendingCount() == 0) return;
-		for (var percept : saliencePolicy.step(tickCount, salienceContext(client), config.perception().candidatesPerStep())) {
+		for (var percept : saliencePolicy.step(tickCount, salienceContext(minecraft), config.perception().candidatesPerStep())) {
 			eventBus.from(ai.moeru.airicraft.agent.perception.SaliencePolicy.SOURCE).publish(tickCount, percept.type(), percept.payload());
 		}
 	}
 
 	/** The plain data the salience rules may read: goal, wanted items, inventory and the running job. */
-	private Map<String, Object> salienceContext(MinecraftClient client) {
+	private Map<String, Object> salienceContext(Minecraft minecraft) {
 		var context = new LinkedHashMap<String, Object>();
 		Object objective = dialogueRuntime.currentPlannerObjective();
 		if (objective instanceof Map<?, ?> goal) {
@@ -845,10 +845,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		context.put("activeJobTargets", targets);
 		context.put("idle", job == null || job.isIdle());
 		var inventory = new java.util.TreeMap<String, Integer>();
-		if (client != null && client.player != null) {
-			for (int i = 0; i < client.player.getInventory().size(); i++) {
-				var stack = client.player.getInventory().getStack(i);
-				if (!stack.isEmpty()) inventory.merge(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+		if (minecraft != null && minecraft.player != null) {
+			for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+				var stack = minecraft.player.getInventory().getItem(i);
+				if (!stack.isEmpty()) inventory.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 		}
 		context.put("inventory", inventory);
@@ -864,10 +864,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean mining = job != null && !job.status().terminal() && (job.type() == ActiveJobType.MINE_BLOCKS
 			|| job.type() == ActiveJobType.ENSURE_BLOCKS_IN_INVENTORY || job.type() == ActiveJobType.COLLECT_RESOURCE);
 		if (!mining) return item -> false;
-		var client = MinecraftClient.getInstance();
-		if (client == null || client.player == null) return item -> false;
-		var feet = client.player.getPos();
-		return item -> item.age() < 200 && feet.squaredDistanceTo(item.x(), item.y(), item.z()) <= 36.0;
+		var minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) return item -> false;
+		var feet = minecraft.player.position();
+		return item -> item.age() < 200 && feet.distanceToSqr(item.x(), item.y(), item.z()) <= 36.0;
 	}
 
 	/** Selects the salience rule module; the controller passes the config override or the bundled module. */
@@ -910,20 +910,20 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private Map<String, Object> currentPhysicalState() {
-		var client = MinecraftClient.getInstance();
-		if (client == null || client.player == null) return Map.of();
-		var player = client.player;
-		var velocity = player.getVelocity();
+		var minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) return Map.of();
+		var player = minecraft.player;
+		var velocity = player.getDeltaMovement();
 		return Map.of("position", Map.of("x",player.getX(),"y",player.getY(),"z",player.getZ()),
 			"velocity", Map.of("x",velocity.x,"y",velocity.y,"z",velocity.z),
-			"grounded",player.isOnGround(),"touchingWater",player.isTouchingWater(),"climbing",player.isClimbing());
+			"grounded",player.onGround(),"touchingWater",player.isInWater(),"climbing",player.onClimbable());
 	}
 
 	ai.moeru.airicraft.agent.llm.PlannerDecisionContext currentPlannerDecisionContext() {
 		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.observeChanges(change ->
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "policy.travel_changed", change));
 		refreshWorkHistory();
-		var client = MinecraftClient.getInstance();
+		var minecraft = Minecraft.getInstance();
 		var facts = new java.util.LinkedHashMap<String, Object>();
 		Object objective = dialogueRuntime.currentPlannerObjective();
 		if (!Objects.equals(lastObservedObjective, objective)) {
@@ -947,24 +947,24 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		currentWork.addAll(recent.subList(Math.max(0, recent.size() - 8), recent.size()));
 		facts.put("work", currentWork.stream().map(ai.moeru.airicraft.agent.work.WorkSnapshot::payload).toList());
 		String worldSession = "out_of_world";
-		if (client != null && client.world != null && client.player != null) {
-			worldSession = client.world.getRegistryKey().getValue() + ":" + System.identityHashCode(client.world);
-			facts.put("dimension", client.world.getRegistryKey().getValue().toString());
+		if (minecraft != null && minecraft.level != null && minecraft.player != null) {
+			worldSession = minecraft.level.dimension().location() + ":" + System.identityHashCode(minecraft.level);
+			facts.put("dimension", minecraft.level.dimension().location().toString());
 			var inventory = new java.util.TreeMap<String, Integer>();
-			for (int i = 0; i < client.player.getInventory().size(); i++) {
-				var stack = client.player.getInventory().getStack(i);
-				if (!stack.isEmpty()) inventory.merge(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), Integer::sum);
+			for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+				var stack = minecraft.player.getInventory().getItem(i);
+				if (!stack.isEmpty()) inventory.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 			facts.put("inventory", inventory);
 			int freeStorageSlots = 0;
-			for (int slot = 0; slot < net.minecraft.entity.player.PlayerInventory.MAIN_SIZE; slot++)
-				if (client.player.getInventory().getStack(slot).isEmpty()) freeStorageSlots++;
+			for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
+				if (minecraft.player.getInventory().getItem(slot).isEmpty()) freeStorageSlots++;
 			facts.put("inventoryCapacity", Map.of("freeStorageSlots", freeStorageSlots,
 				"pickupConstraint", freeStorageSlots == 0
 					? "No empty storage slots. Only drops compatible with an existing non-full stack can be picked up. Free space before collecting other items."
 					: "Empty storage slots available"));
-			facts.put("vitals", Map.of("health", client.player.getHealth(), "maxHealth", client.player.getMaxHealth(),
-				"food", client.player.getHungerManager().getFoodLevel(), "air", client.player.getAir(), "maxAir", client.player.getMaxAir()));
+			facts.put("vitals", Map.of("health", minecraft.player.getHealth(), "maxHealth", minecraft.player.getMaxHealth(),
+				"food", minecraft.player.getFoodData().getFoodLevel(), "air", minecraft.player.getAirSupply(), "maxAir", minecraft.player.getMaxAirSupply()));
 		}
 		String actuator = survivalReflexRuntime.snapshot().state() == SurvivalReflexState.ACTIVE ? "reflex"
 			: survivalReflexRuntime.snapshot().holdsNormalTasks() ? "safety_hold"
@@ -973,32 +973,32 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			dialogueRuntime.decisionOwner(), actuator, facts, eventBus.query(null));
 	}
 
-	private void observeWorkProgress(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null) {
+	private void observeWorkProgress(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) {
 			workProgressWatchdog.reset();
 			return;
 		}
-		boolean enabled = !client.isPaused() && sessionSnapshot.companionActuationAllowed()
+		boolean enabled = !minecraft.isPaused() && sessionSnapshot.companionActuationAllowed()
 			&& !survivalReflexRuntime.snapshot().holdsNormalTasks()
 			&& taskExecutionSnapshot.state() != ai.moeru.airicraft.agent.tasks.TaskExecutionState.PAUSED_BY_SESSION_GATE
 			&& taskExecutionSnapshot.state() != ai.moeru.airicraft.agent.tasks.TaskExecutionState.PAUSED_BY_REFLEX;
-		var player = client.player;
+		var player = minecraft.player;
 		var metrics = new java.util.HashMap<String, Double>();
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			var stack = player.getInventory().getStack(slot);
-			if (!stack.isEmpty()) metrics.merge("inventory:" + Registries.ITEM.getId(stack.getItem()), (double) stack.getCount(), Double::sum);
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			var stack = player.getInventory().getItem(slot);
+			if (!stack.isEmpty()) metrics.merge("inventory:" + BuiltInRegistries.ITEM.getKey(stack.getItem()), (double) stack.getCount(), Double::sum);
 		}
-		if (client.interactionManager != null) {
-			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) client.interactionManager;
+		if (minecraft.gameMode != null) {
+			var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
 			var target = breaking.airicraft$currentBreakingPos();
 			if (breaking.airicraft$breakingBlock() && target != null)
 				metrics.put("block:" + target.asLong(), (double) breaking.airicraft$currentBreakingProgress());
 		}
-		if (client.targetedEntity instanceof net.minecraft.entity.LivingEntity target)
-			metrics.put("damage:" + target.getUuidAsString(), -(double) target.getHealth());
-		var input = player.input == null ? net.minecraft.util.PlayerInput.DEFAULT : player.input.playerInput;
+		if (minecraft.crosshairPickEntity instanceof net.minecraft.world.entity.LivingEntity target)
+			metrics.put("damage:" + target.getStringUUID(), -(double) target.getHealth());
+		var input = player.input == null ? net.minecraft.world.entity.player.Input.EMPTY : player.input.keyPresses;
 		boolean hasInput = input.forward() || input.backward() || input.left() || input.right() || input.jump()
-			|| client.options.attackKey.isPressed() || client.options.useKey.isPressed() || player.isUsingItem();
+			|| minecraft.options.keyAttack.isDown() || minecraft.options.keyUse.isDown() || player.isUsingItem();
 		var sample = new ai.moeru.airicraft.agent.work.WorkProgressWatchdog.Sample(player.getX(), player.getY(), player.getZ(), metrics, hasInput);
 		// A follower already at its destination legitimately has nothing to actuate.
 		var work = workHistory.list().stream().map(w -> w.label().equals("FOLLOW_PLAYER") && behaviorTreeRuntime.snapshot().activeNodePath().contains("ObserveAndWait")
@@ -1015,25 +1015,25 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 	}
 
-	private void observeSlowMining(MinecraftClient client) {
+	private void observeSlowMining(Minecraft minecraft) {
 		if (slowMiningObserver == null) slowMiningObserver = new ai.moeru.airicraft.agent.events.SlowMiningObserver();
 		var job = activeJobRuntime.current();
-		if (client == null || client.player == null || client.world == null || client.interactionManager == null
+		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null
 			|| job.jobId() == null || job.status().terminal()) {
 			slowMiningObserver.observe(tickCount, null, 0);
 			return;
 		}
-		var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) client.interactionManager;
+		var breaking = (ai.moeru.airicraft.mixin.client.ClientPlayerInteractionManagerAccessor) minecraft.gameMode;
 		var pos = breaking.airicraft$currentBreakingPos();
 		if (!breaking.airicraft$breakingBlock() || pos == null) {
 			slowMiningObserver.observe(tickCount, null, 0);
 			return;
 		}
-		var block = client.world.getBlockState(pos);
-		var held = client.player.getMainHandStack();
-		String heldId = Registries.ITEM.getId(held.getItem()).toString();
-		String blockId = Registries.BLOCK.getId(block.getBlock()).toString();
-		float delta = block.calcBlockBreakingDelta(client.player, client.world, pos);
+		var block = minecraft.level.getBlockState(pos);
+		var held = minecraft.player.getMainHandItem();
+		String heldId = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+		String blockId = BuiltInRegistries.BLOCK.getKey(block.getBlock()).toString();
+		float delta = block.getDestroyProgress(minecraft.player, minecraft.level, pos);
 		double estimatedTicks = delta > 0 ? Math.ceil(1.0 / delta) : -1;
 		String target = job.jobId() + ":" + pos.asLong() + ":" + blockId + ":" + heldId;
 		if (!slowMiningObserver.observe(tickCount, target, estimatedTicks)) return;
@@ -1041,14 +1041,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		double bestScore = -1;
 		String bestItem = "minecraft:air";
 		for (int slot = 0; slot < 36; slot++) {
-			var stack = client.player.getInventory().getStack(slot);
+			var stack = minecraft.player.getInventory().getItem(slot);
 			if (stack.isEmpty()) continue;
 			// Rank base tool speed and harvest suitability; the live estimate above includes player conditions.
-			double score = stack.getMiningSpeedMultiplier(block) / (block.isToolRequired() && !stack.isSuitableFor(block) ? 100.0 : 30.0);
+			double score = stack.getDestroySpeed(block) / (block.requiresCorrectToolForDrops() && !stack.isCorrectToolForDrops(block) ? 100.0 : 30.0);
 			if (score > bestScore) {
 				bestScore = score;
 				bestSlot = slot;
-				bestItem = Registries.ITEM.getId(stack.getItem()).toString();
+				bestItem = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 			}
 		}
 		Map<String, Object> payload = new LinkedHashMap<>();
@@ -1070,7 +1070,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
-	private void tickSurvivalReflex(MinecraftClient client) {
+	private void tickSurvivalReflex(Minecraft minecraft) {
 		ActiveJob activeJob = activeJobRuntime.current();
 		ActionGraphExecutionSnapshot graph = actionGraphExecutionSnapshot();
 		SurvivalReflexRuntime.InterruptedWork interruptedWork = new SurvivalReflexRuntime.InterruptedWork(
@@ -1078,38 +1078,38 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			actionGraphCoordinator.hasForeground() ? graph.executionId() : null
 		);
 		survivalReflexRuntime.tick(
-			client,
+			minecraft,
 			interruptedWork,
 			tickCount,
-			() -> releaseNormalActuatorsForReflex(client),
+			() -> releaseNormalActuatorsForReflex(minecraft),
 			combatEating
 		);
 		processSurvivalReflexEvents();
 	}
 
-	private void tickIdleEating(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null || client.interactionManager == null) return;
-		var player = client.player;
+	private void tickIdleEating(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) return;
+		var player = minecraft.player;
 		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
 			&& !survivalReflexRuntime.snapshot().holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
 			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current())
 			&& !playerItemUseController.eating() && !player.isUsingItem()
-			&& !client.interactionManager.isBreakingBlock()
-			&& player.currentScreenHandler == player.playerScreenHandler
-			&& player.currentScreenHandler.getCursorStack().isEmpty();
-		var decision = foodRuntime.evaluateIdle(idle, player.getHungerManager().getFoodLevel(),
+			&& !minecraft.gameMode.isDestroying()
+			&& player.containerMenu == player.inventoryMenu
+			&& player.containerMenu.getCarried().isEmpty();
+		var decision = foodRuntime.evaluateIdle(idle, player.getFoodData().getFoodLevel(),
 			player.getHealth(), player.getMaxHealth(), foodCandidates(player), tickCount);
 		if (decision.missingFood()) {
 			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.unavailable", Map.of(
 				"goal", foodRuntime.policy().goal().name(), "foodChoice", foodRuntime.policy().foodChoice().name(),
-				"hunger", player.getHungerManager().getFoodLevel()));
+				"hunger", player.getFoodData().getFoodLevel()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
 		decision.itemId().ifPresent(itemId -> {
 			foodRuntime.recordAttempt(tickCount);
 			try {
-				playerItemUseController.eat(client, itemId, tickCount);
+				playerItemUseController.eat(minecraft, itemId, tickCount);
 				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.eat_started", Map.of("itemId", itemId, "source", "idle_policy"));
 			}
 			catch (RuntimeException exception) {
@@ -1119,30 +1119,30 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		});
 	}
 
-	private static List<FoodSelector.Candidate> foodCandidates(net.minecraft.client.network.ClientPlayerEntity player) {
+	private static List<FoodSelector.Candidate> foodCandidates(net.minecraft.client.player.LocalPlayer player) {
 		var candidates = new ArrayList<FoodSelector.Candidate>();
-		for (int slot = 0; slot < net.minecraft.entity.player.PlayerInventory.MAIN_SIZE; slot++) {
-			var stack = player.getInventory().getStack(slot);
-			if (stack.isEmpty() || stack.get(net.minecraft.component.DataComponentTypes.CONSUMABLE) == null) continue;
-			var food = stack.get(net.minecraft.component.DataComponentTypes.FOOD);
+		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++) {
+			var stack = player.getInventory().getItem(slot);
+			if (stack.isEmpty() || stack.get(net.minecraft.core.component.DataComponents.CONSUMABLE) == null) continue;
+			var food = stack.get(net.minecraft.core.component.DataComponents.FOOD);
 			if (food != null) candidates.add(new FoodSelector.Candidate(
-				net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString(), food.nutrition()));
+				net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), food.nutrition()));
 		}
 		return candidates;
 	}
 
-	private void releaseNormalActuatorsForReflex(MinecraftClient client) {
+	private void releaseNormalActuatorsForReflex(Minecraft minecraft) {
 		worldTaskExecutor.onWorldLeave();
-		behaviorTreeRuntime.stop(client);
+		behaviorTreeRuntime.stop(minecraft);
 		followCapability.clear();
 		followState = FollowState.idle();
 		completePendingCraftToolResult("Tool result for craft_recipe: cancelled reason=survival_reflex");
 		cancelPolicy("survival_reflex");
 		cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.SURVIVAL_REFLEX);
-		playerItemUseController.reset(client);
+		playerItemUseController.reset(minecraft);
 	}
 
-	private void pauseNormalWorkForReflex(MinecraftClient client) {
+	private void pauseNormalWorkForReflex(Minecraft minecraft) {
 		TaskSnapshot previousTask = taskSnapshot;
 		TaskExecutionSnapshot previousExecution = taskExecutionSnapshot;
 		activeJobRuntime.pauseForReflex(tickCount);
@@ -1164,7 +1164,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		);
 		recordSemanticTaskTransition(previousTask, taskSnapshot);
 		recordTaskStateTransition(previousExecution, taskExecutionSnapshot, hasSemanticTaskContext(previousTask, taskSnapshot));
-		behaviorTreeRuntime.reflectSurvivalReflex(client, survivalReflexRuntime.snapshot());
+		behaviorTreeRuntime.reflectSurvivalReflex(minecraft, survivalReflexRuntime.snapshot());
 	}
 
 	private void processSurvivalReflexEvents() {
@@ -1199,7 +1199,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		));
 	}
 
-	private void enforcePlayerLifecycle(MinecraftClient client) {
+	private void enforcePlayerLifecycle(Minecraft minecraft) {
 		if (!sessionSnapshot.requiresRespawn()) {
 			deathBoundaryApplied = false;
 			deathEventSequence = 0L;
@@ -1208,14 +1208,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 
 		if (!deathBoundaryApplied) {
-			if (client != null && client.player != null && client.world != null) {
-				var pos = client.player.getBlockPos();
+			if (minecraft != null && minecraft.player != null && minecraft.level != null) {
+				var pos = minecraft.player.blockPosition();
 				try {
 					var place = new ai.moeru.airicraft.agent.memory.PlaceMemory.Place("last_death",
-						client.world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ(),
+						minecraft.level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ(),
 						"Automatically recorded at the most recent death. Dropped items may have moved or despawned; this location is not necessarily safe.");
-					ai.moeru.airicraft.agent.memory.LocationMemoryBridge.forClient(client).remember(null, place);
-					ai.moeru.airicraft.agent.memory.WorldPlacePreservation.reload(client);
+					ai.moeru.airicraft.agent.memory.LocationMemoryBridge.forClient(minecraft).remember(null, place);
+					ai.moeru.airicraft.agent.memory.WorldPlacePreservation.reload(minecraft);
 					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_saved", Map.of(
 						"name", place.name(), "dimension", place.dimension(), "x", place.x(), "y", place.y(), "z", place.z()), deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 				}
@@ -1223,13 +1223,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.death_place_save_failed", Map.of("message", exception.toString()));
 				}
 			}
-			cancelActionsForPlayerDeath(client);
+			cancelActionsForPlayerDeath(minecraft);
 			deathBoundaryApplied = true;
 		}
 
 		if (
-			client == null
-				|| client.player == null
+			minecraft == null
+				|| minecraft.player == null
 				|| (lastRespawnRequestTick >= 0L && tickCount - lastRespawnRequestTick < RESPAWN_RETRY_TICKS)
 		) {
 			return;
@@ -1237,7 +1237,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 		lastRespawnRequestTick = tickCount;
 		try {
-			client.player.requestRespawn();
+			minecraft.player.respawn();
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "player.respawn_requested", Map.of(
 				"attemptTick", tickCount
 			));
@@ -1250,15 +1250,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 	}
 
-	private void cancelActionsForPlayerDeath(MinecraftClient client) {
+	private void cancelActionsForPlayerDeath(Minecraft minecraft) {
 		ActionGraphExecutionSnapshot graphSnapshot = actionGraphExecutionSnapshot();
 		ActiveJob activeJob = activeJobRuntime.current();
 		boolean graphCancelled = actionGraphCoordinator.hasNonterminal();
 		boolean jobCancelled = !activeJob.isIdle() && !activeJob.status().terminal();
 
-		survivalReflexRuntime.reset(client);
+		survivalReflexRuntime.reset(minecraft);
 		worldTaskExecutor.onWorldLeave();
-		behaviorTreeRuntime.stop(client);
+		behaviorTreeRuntime.stop(minecraft);
 		followCapability.clear();
 		followState = FollowState.idle();
 		if (graphCancelled) {
@@ -1295,7 +1295,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			deathEventSequence == 0L ? null : EventCause.event(deathEventSequence));
 	}
 
-	private void openLanIfSingleplayerLocal(MinecraftClient client) {
+	private void openLanIfSingleplayerLocal(Minecraft minecraft) {
 		if (!autoLanOpenState.shouldAttempt(sessionSnapshot)) {
 			return;
 		}
@@ -1303,7 +1303,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		try {
 			lanHostingService.openLan(sessionSnapshot);
 			if (sessionSnapshotOverrideForTests == null) {
-				sessionSnapshot = sessionRuntime.poll(client, tickCount, eventBus);
+				sessionSnapshot = sessionRuntime.poll(minecraft, tickCount, eventBus);
 			}
 		}
 		catch (LanHostingService.LanHostingException exception) {
@@ -1349,7 +1349,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = TaskSnapshot.idle();
 		taskExecutionSnapshot = TaskExecutionSnapshot.idle();
 		missionExecutionSnapshot = MissionExecutionSnapshot.idle();
-		behaviorTreeRuntime.stop(MinecraftClient.getInstance());
+		behaviorTreeRuntime.stop(Minecraft.getInstance());
 		chatService.clear();
 		proactiveSocialModeOverride = null;
 		evaluationPlannerSuppressed = false;
@@ -1359,8 +1359,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathBoundaryApplied = false;
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
-		survivalReflexRuntime.reset(MinecraftClient.getInstance());
-		playerItemUseController.reset(MinecraftClient.getInstance());
+		survivalReflexRuntime.reset(Minecraft.getInstance());
+		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
@@ -1482,7 +1482,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	public ActionGraphStartResult startActionGoalDetailed(ActionGoal goal, String source) {
 		Objects.requireNonNull(goal, "goal");
 		requireLivingPlayerForAction();
-		WorldEvidence evidence = currentWorldEvidence(MinecraftClient.getInstance());
+		WorldEvidence evidence = currentWorldEvidence(Minecraft.getInstance());
 		ActionGraphStartResult result = actionGraphCoordinator.submit(
 			goal,
 			evidence.itemCounts(),
@@ -1759,31 +1759,31 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	public WorldEvidence currentWorldEvidence() {
-		return currentWorldEvidence(MinecraftClient.getInstance());
+		return currentWorldEvidence(Minecraft.getInstance());
 	}
 
 	public int inventoryItemCount(String itemId) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.player == null || itemId == null || itemId.isBlank()) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null || itemId == null || itemId.isBlank()) {
 			return 0;
 		}
-		return inventoryItemCounter.count(client.player.getInventory()).getOrDefault(itemId, 0);
+		return inventoryItemCounter.count(minecraft.player.getInventory()).getOrDefault(itemId, 0);
 	}
 
 	public String blockIdAt(int x, int y, int z) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.world == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.level == null) {
 			return null;
 		}
-		return Registries.BLOCK.getId(client.world.getBlockState(new BlockPos(x, y, z)).getBlock()).toString();
+		return BuiltInRegistries.BLOCK.getKey(minecraft.level.getBlockState(new BlockPos(x, y, z)).getBlock()).toString();
 	}
 
 	public Map<String, String> blockPropertiesAt(int x, int y, int z) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.world == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.level == null) {
 			return Map.of();
 		}
-		BlockState state = client.world.getBlockState(new BlockPos(x, y, z));
+		BlockState state = minecraft.level.getBlockState(new BlockPos(x, y, z));
 		Map<String, String> properties = new LinkedHashMap<>();
 		for (Property<?> property : state.getProperties()) {
 			properties.put(property.getName(), propertyValue(state, property));
@@ -1792,7 +1792,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private static <T extends Comparable<T>> String propertyValue(BlockState state, Property<T> property) {
-		return property.name(state.get(property));
+		return property.getName(state.getValue(property));
 	}
 
 	public boolean semanticEventContains(String eventType) {
@@ -1835,7 +1835,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		taskSnapshot = TaskSnapshot.idle();
 		taskExecutionSnapshot = TaskExecutionSnapshot.idle();
 		missionExecutionSnapshot = MissionExecutionSnapshot.idle();
-		behaviorTreeRuntime.stop(MinecraftClient.getInstance());
+		behaviorTreeRuntime.stop(Minecraft.getInstance());
 	}
 
 	public void startEvaluationGoal(String objective) throws java.io.IOException {
@@ -1874,8 +1874,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private static long integratedServerTick() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		return client == null || client.getServer() == null ? -1L : client.getServer().getTicks();
+		Minecraft minecraft = Minecraft.getInstance();
+		return minecraft == null || minecraft.getSingleplayerServer() == null ? -1L : minecraft.getSingleplayerServer().getTickCount();
 	}
 
 	public int activeEventPolicyRuleCount() {
@@ -2075,8 +2075,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (payload != null) {
 			var damagePayload = new LinkedHashMap<String, Object>(payload);
 			damagePayload.put("context", physicalTaskContext());
-			var client = MinecraftClient.getInstance();
-			var player = client == null ? null : client.player;
+			var minecraft = Minecraft.getInstance();
+			var player = minecraft == null ? null : minecraft.player;
 			if (player != null) {
 				damagePayload.put("position", Map.of("x", player.getX(), "y", player.getY(), "z", player.getZ()));
 			}
@@ -2090,7 +2090,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				booleanPayloadValue(payload, "attackerLiving"),
 				booleanPayloadValue(payload, "attackerPlayer")
 			));
-			tickSurvivalReflex(MinecraftClient.getInstance());
+			tickSurvivalReflex(Minecraft.getInstance());
 		}
 		boolean fatal = Float.isFinite(healthAfter) && healthAfter <= 0.0F;
 		if (fatal) {
@@ -2105,7 +2105,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			else {
 				sessionSnapshot = sessionRuntime.onPlayerDied(tickCount, eventBus);
 			}
-			enforcePlayerLifecycle(MinecraftClient.getInstance());
+			enforcePlayerLifecycle(Minecraft.getInstance());
 		}
 		if (payload == null && !fatal) {
 			return;
@@ -2199,7 +2199,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		releaseSafetyHoldForReplacement("task_replaced");
 		activeJobRuntime.submitTask(
 			spec,
-			currentTaskResourceCount(MinecraftClient.getInstance(), spec),
+			currentTaskResourceCount(Minecraft.getInstance(), spec),
 			source == null || source.isBlank() ? "bridge_debug" : source,
 			tickCount
 		);
@@ -2221,7 +2221,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		releaseSafetyHoldForReplacement("mission_replaced");
 		activeJobRuntime.submitMissionLedger(
 			ledger,
-			currentWorldEvidence(MinecraftClient.getInstance()).inventoryCounts().getOrDefault(TaskResourceKind.WOOD_LOGS, 0),
+			currentWorldEvidence(Minecraft.getInstance()).inventoryCounts().getOrDefault(TaskResourceKind.WOOD_LOGS, 0),
 			source == null || source.isBlank() ? "bridge_debug_mission" : source,
 			tickCount
 		);
@@ -2270,7 +2270,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		Objects.requireNonNull(proposal, "proposal");
 		requireLivingPlayerForAction();
 		releaseSafetyHoldForReplacement("task_replaced");
-		WorldEvidence worldEvidence = currentWorldEvidence(MinecraftClient.getInstance());
+		WorldEvidence worldEvidence = currentWorldEvidence(Minecraft.getInstance());
 		int currentResourceCount = currentResourceCountForProposal(worldEvidence, proposal);
 		activeJobRuntime.applyPlannerResponse(
 			new DialogueResponse("", new DialogueIntent(DialogueIntentType.JOB_UPDATE, proposal), tickCount),
@@ -2300,12 +2300,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			terminalEvent = null;
 		}
 		ActionResolverContext context = actionResolverContext(worldEvidence);
-		MinecraftClient client = MinecraftClient.getInstance();
-		ActionGraphAgentPosition agentPosition = client != null && client.player != null
-			? new ActionGraphAgentPosition(context.worldId(), context.dimension(), client.player.getBlockX(), client.player.getBlockY(), client.player.getBlockZ())
+		Minecraft minecraft = Minecraft.getInstance();
+		ActionGraphAgentPosition agentPosition = minecraft != null && minecraft.player != null
+			? new ActionGraphAgentPosition(context.worldId(), context.dimension(), minecraft.player.getBlockX(), minecraft.player.getBlockY(), minecraft.player.getBlockZ())
 			: null;
 		List<ActionGraphWatchSnapshot> pendingWatches = actionGraphCoordinator.pendingWatches();
-		Map<String, ActionWatchProgressObservation> watchProgress = actionGraphWatchProgress(client, context, agentPosition, pendingWatches);
+		Map<String, ActionWatchProgressObservation> watchProgress = actionGraphWatchProgress(minecraft, context, agentPosition, pendingWatches);
 		ArrayList<ActionFact> observedFacts = new ArrayList<>(FarmBootstrapFactProvider.fromWorldEvidence(context, worldEvidence));
 		observedFacts.addAll(observeSmeltingProcessFacts(context));
 		boolean refreshPlanningObservations = actionGraphCoordinator.nonterminalExecutions().stream()
@@ -2316,14 +2316,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			.filter(watch -> watch.spec() != null && watch.spec().condition().factType() == ActionFactType.WORLD_CROP_GROUP)
 			.toList();
 		if (refreshPlanningObservations) {
-			ai.moeru.airicraft.agent.tasks.CraftingTaskExecutor.nearbyCraftingTablePosition(client).ifPresent(pos ->
+			ai.moeru.airicraft.agent.tasks.CraftingTaskExecutor.nearbyCraftingTablePosition(minecraft).ifPresent(pos ->
 				observedFacts.add(new ActionFact(
 					ActionFactIdentity.worldSite(context.worldId(), context.dimension(), "crafting-table:" + pos.getX() + "," + pos.getY() + "," + pos.getZ()),
 					Map.of("kind", "crafting_table", "availableToActor", context.actorId(), "x", pos.getX(), "y", pos.getY(), "z", pos.getZ()),
 					ActionFactProvenance.OBSERVED, context.currentTick(), context.currentTick() + 1)));
 		}
 		if (refreshPlanningObservations || (!cropWatches.isEmpty() && tickCount % 10L == 0L)) {
-			observedFacts.addAll(observeCropGroupFacts(client, context, cropWatches, refreshPlanningObservations));
+			observedFacts.addAll(observeCropGroupFacts(minecraft, context, cropWatches, refreshPlanningObservations));
 		}
 		actionGraphCoordinator.tick(new ActionGraphExecutionInput(
 			context,
@@ -2346,15 +2346,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private static List<ActionFact> observeCropGroupFacts(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ActionResolverContext context,
 		List<ActionGraphWatchSnapshot> watches,
 		boolean discoverNearby
 	) {
-		if (client == null || client.world == null || client.player == null || context == null) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null || context == null) {
 			return List.of();
 		}
-		BlockPos playerPos = client.player.getBlockPos();
+		BlockPos playerPos = minecraft.player.blockPosition();
 		LinkedHashMap<Long, CropGroupObservation> groups = new LinkedHashMap<>();
 		LinkedHashMap<Long, Integer> chunksToScan = new LinkedHashMap<>();
 		if (discoverNearby) {
@@ -2378,18 +2378,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			int chunkX = (int) (chunk.getKey() >> 32);
 			int chunkZ = (int) (long) chunk.getKey();
 			int baseY = chunk.getValue();
-			if (!client.world.isChunkLoaded(chunkX, chunkZ)) {
+			if (!minecraft.level.hasChunk(chunkX, chunkZ)) {
 				continue;
 			}
 			for (int localX = 0; localX < 16; localX++) {
 				for (int dy = -6; dy <= 6; dy++) {
 					for (int localZ = 0; localZ < 16; localZ++) {
 						BlockPos pos = new BlockPos((chunkX << 4) + localX, baseY + dy, (chunkZ << 4) + localZ);
-						BlockState state = client.world.getBlockState(pos);
-						if (!"minecraft:wheat".equals(Registries.BLOCK.getId(state.getBlock()).toString())) {
+						BlockState state = minecraft.level.getBlockState(pos);
+						if (!"minecraft:wheat".equals(BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString())) {
 							continue;
 						}
-						groups.computeIfAbsent(chunk.getKey(), ignored -> new CropGroupObservation(pos.toImmutable()))
+						groups.computeIfAbsent(chunk.getKey(), ignored -> new CropGroupObservation(pos.immutable()))
 							.observe(pos, cropAge(state) >= 7);
 					}
 				}
@@ -2481,13 +2481,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (pos.getX() < origin.getX()
 				|| (pos.getX() == origin.getX() && pos.getZ() < origin.getZ())
 				|| (pos.getX() == origin.getX() && pos.getZ() == origin.getZ() && pos.getY() < origin.getY())) {
-				origin = pos.toImmutable();
+				origin = pos.immutable();
 			}
 		}
 	}
 
 	private Map<String, ActionWatchProgressObservation> actionGraphWatchProgress(
-		MinecraftClient client,
+		Minecraft minecraft,
 		ActionResolverContext context,
 		ActionGraphAgentPosition agentPosition,
 		List<ActionGraphWatchSnapshot> pendingWatches
@@ -2506,18 +2506,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				progress.put(watch.watchId(), ActionWatchProgressObservation.paused("world_or_dimension_mismatch"));
 				continue;
 			}
-			if (client == null || client.world == null || agentPosition == null) {
+			if (minecraft == null || minecraft.level == null || agentPosition == null) {
 				progress.put(watch.watchId(), ActionWatchProgressObservation.paused("world_unavailable"));
 				continue;
 			}
-			if (!client.world.isChunkLoaded(anchor.chunkX(), anchor.chunkZ())) {
+			if (!minecraft.level.hasChunk(anchor.chunkX(), anchor.chunkZ())) {
 				progress.put(watch.watchId(), ActionWatchProgressObservation.paused("anchor_chunk_unloaded"));
 				continue;
 			}
 			int agentChunkX = agentPosition.x() >> 4;
 			int agentChunkZ = agentPosition.z() >> 4;
 			int chunkDistance = Math.max(Math.abs(anchor.chunkX() - agentChunkX), Math.abs(anchor.chunkZ() - agentChunkZ));
-			if (chunkDistance > client.world.getSimulationDistance()) {
+			if (chunkDistance > minecraft.level.getServerSimulationDistance()) {
 				progress.put(watch.watchId(), ActionWatchProgressObservation.paused("outside_simulation_distance"));
 				continue;
 			}
@@ -2535,7 +2535,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private ActionGraphPrimitiveDispatchResult dispatchActionGraphPrimitive(ActionPlanStep step) {
-		WorldEvidence evidence = currentWorldEvidence(MinecraftClient.getInstance());
+		WorldEvidence evidence = currentWorldEvidence(Minecraft.getInstance());
 		ActionGraphPrimitiveDispatch dispatch = ActionGraphPrimitiveMapper.map(step, evidence.availableCrafts(), evidence.availableSmelts());
 		if (!dispatch.dispatchable()) {
 			return ActionGraphPrimitiveDispatchResult.failed(
@@ -2591,7 +2591,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		if (proposal.type() == ActiveJobType.SMELT_ITEMS && proposal.smeltItems() != null) {
 			SmeltingActionResult result = smeltingPlannerService.startSmelting(
-				MinecraftClient.getInstance(),
+				Minecraft.getInstance(),
 				smeltingProcessManager,
 				proposal.smeltItems(),
 				tickCount
@@ -2602,7 +2602,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		if (proposal.type() == ActiveJobType.COLLECT_SMELTED_ITEMS && proposal.collectSmeltedItems() != null) {
 			SmeltingActionResult result = smeltingPlannerService.collectSmelted(
-				MinecraftClient.getInstance(),
+				Minecraft.getInstance(),
 				smeltingProcessManager,
 				proposal.collectSmeltedItems(),
 				tickCount
@@ -2705,7 +2705,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	void injectDialogueResponseForTests(DialogueResponse response) {
 		Optional<GoalSnapshot> previousGoal = activeGoal();
-		applyTaskIntent(response, currentWorldEvidence(MinecraftClient.getInstance()));
+		applyTaskIntent(response, currentWorldEvidence(Minecraft.getInstance()));
 		recordPlannerOutcome(response, previousGoal, activeGoal());
 	}
 
@@ -2731,7 +2731,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		activeJobRuntime.updateBlockAcquisitions(blockAcquisitions());
 	}
 
-	void injectNearbyPlayerForTests(String playerName, Vec3d pos) {
+	void injectNearbyPlayerForTests(String playerName, Vec3 pos) {
 		nearbyPlayerTracker.injectPlayerNearby(playerName, pos, tickCount, eventBus);
 	}
 
@@ -2776,11 +2776,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		requireLivingPlayerForAction();
 		if (survivalReflexRuntime.snapshot().holdId() != null) throw new IllegalStateException("work_in_safety_hold");
 		if (activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
-		if (MinecraftClient.getInstance() == null || MinecraftClient.getInstance().world == null)
+		if (Minecraft.getInstance() == null || Minecraft.getInstance().level == null)
 			throw new IllegalStateException("world_not_loaded");
 		policyChildren.clear();
 		var host = new ToolPolicyHost(this::dispatchPolicyTool, this::describePolicyTool, workHistory::find,
-			this::cancelPolicyChildren, () -> new ContainerPolicyHost(MinecraftClient.getInstance()));
+			this::cancelPolicyChildren, () -> new ContainerPolicyHost(Minecraft.getInstance()));
 		var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, java.util.UUID.randomUUID().toString());
 		String source = call.arguments().get("source").getAsString();
 		var input = call.arguments().get("input").deepCopy();
@@ -2856,7 +2856,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void cancelPolicyChildren() {
-		var client = MinecraftClient.getInstance();
+		var minecraft = Minecraft.getInstance();
 		for (var handle : policyChildren) {
 			if (handle.kind() == ai.moeru.airicraft.agent.work.WorkHandle.Kind.GRAPH)
 				actionGraphCoordinator.cancel(handle.nativeId(), "policy_finished", tickCount);
@@ -2868,32 +2868,32 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			taskSnapshot = activeJobRuntime.taskSnapshot();
 			missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 			worldTaskExecutor.onWorldLeave();
-			behaviorTreeRuntime.stop(client);
+			behaviorTreeRuntime.stop(minecraft);
 			completePendingCraftToolResult("TOOL_ERROR: policy_cancelled");
 			cancelPendingBlockModificationToolResult(PendingBlockModificationStopReason.POLICY_CANCELLED);
 		}
 		for (var handle : policyChildren) {
 			workHistory.find(handle).filter(work -> !work.state().terminal() && work.phase().equals("EATING"))
 				.ifPresent(work -> {
-					playerItemUseController.reset(client);
+					playerItemUseController.reset(minecraft);
 					recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, work.parentWorkId(),
 						ai.moeru.airicraft.agent.work.WorkSnapshot.State.CANCELLED, work.label(), "CANCELLED", false, tickCount, Map.of("reason", "policy_finished")));
 				});
 		}
 	}
 
-	private void drainInteractionEvidence(MinecraftClient client) {
+	private void drainInteractionEvidence(Minecraft minecraft) {
 		int missing = pendingInteractions.takeDroppedCount();
 		if (missing > 0) eventBus.from("InteractionLogbookRecorder").publish(tickCount,"interaction.history_gap",Map.of("missingBatches",missing,"recovery","Inspect current inventory/container and read the persistent logbook."));
 		pendingInteractions.drain(batch -> {
-			if (client == null || client.getServer() != batch.server()) return;
+			if (minecraft == null || minecraft.getSingleplayerServer() != batch.server()) return;
 			for (var entry : batch.entries()) eventBus.from("InteractionLogbookRecorder").publish(tickCount,"interaction." + entry.action(),Map.of("observed",entry));
 		});
 	}
 
-	private void stopWorkOutsideTravelBounds(MinecraftClient client) {
-		if (client == null || client.player == null || client.world == null) return;
-		stopWorkOutsideTravelBounds(client.world, client.player.getBlockPos());
+	private void stopWorkOutsideTravelBounds(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) return;
+		stopWorkOutsideTravelBounds(minecraft.level, minecraft.player.blockPosition());
 	}
 
 	private void stopWorkOutsideTravelBounds(Object world, BlockPos pos) {
@@ -2914,8 +2914,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void refreshWorkHistory() {
-		var client = MinecraftClient.getInstance();
-		Object world = client == null ? null : client.world;
+		var minecraft = Minecraft.getInstance();
+		Object world = minecraft == null ? null : minecraft.level;
 		if (world != workWorld) { workHistory.clear(); workProgressWatchdog.reset(); workWorld = world; }
 		var reflex = survivalReflexRuntime.snapshot();
 		var projected = ai.moeru.airicraft.agent.work.WorkProjection.project(activeJobRuntime.current(), taskExecutionSnapshot,
@@ -3066,7 +3066,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 								break;
 							}
 							if (!work.phase().equals("EATING")) return "TOOL_ERROR: operation_not_cancellable";
-							playerItemUseController.reset(MinecraftClient.getInstance());
+							playerItemUseController.reset(Minecraft.getInstance());
 							recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", ai.moeru.airicraft.agent.work.WorkSnapshot.State.CANCELLED,
 								work.label(), "CANCELLED", false, tickCount, Map.of("reason", reason)));
 						}
@@ -3245,7 +3245,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				if (validationError.isPresent()) {
 					yield "TOOL_ERROR: ensure_blocks_in_inventory " + validationError.get();
 				}
-				WorldEvidence evidence = currentWorldEvidence(MinecraftClient.getInstance());
+				WorldEvidence evidence = currentWorldEvidence(Minecraft.getInstance());
 				int currentItemCount = mineSpec.matchingItemIds().stream()
 					.mapToInt(itemId -> evidence.itemCounts().getOrDefault(itemId, 0))
 					.sum();
@@ -3276,10 +3276,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				yield "TOOL_ERROR: craft_recipe async_path_required";
 			}
 			case PlannerToolCatalog.CHECK_SMELTABLES -> {
-				yield smeltingPlannerService.checkSmeltables(MinecraftClient.getInstance(), smeltingProcessManager, tickCount);
+				yield smeltingPlannerService.checkSmeltables(Minecraft.getInstance(), smeltingProcessManager, tickCount);
 			}
 			case PlannerToolCatalog.INSPECT_SMELTING -> {
-				yield smeltingPlannerService.inspectSmelting(MinecraftClient.getInstance(), smeltingProcessManager, tickCount);
+				yield smeltingPlannerService.inspectSmelting(Minecraft.getInstance(), smeltingProcessManager, tickCount);
 			}
 			case PlannerToolCatalog.SMELT_ITEMS -> {
 				SmeltItemsStepArgs smeltItems = new SmeltItemsStepArgs(
@@ -3291,7 +3291,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					stringArg(args, "confirmationToken").orElse(null)
 				);
 				SmeltingActionResult smeltingResult = smeltingPlannerService.startSmelting(
-					MinecraftClient.getInstance(),
+					Minecraft.getInstance(),
 					smeltingProcessManager,
 					smeltItems,
 					tickCount
@@ -3321,7 +3321,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					stringArg(args, "confirmationToken").orElse(null)
 				);
 				SmeltingActionResult collectResult = smeltingPlannerService.collectSmelted(
-					MinecraftClient.getInstance(),
+					Minecraft.getInstance(),
 					smeltingProcessManager,
 					collect,
 					tickCount
@@ -3352,8 +3352,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				boolean cancelled = smeltingProcessManager.cancel(processId);
 				yield "Tool result for cancel_smelting: accepted processId=" + processId + " tracked=" + cancelled;
 			}
-			case PlannerToolCatalog.CLOSE_CONTAINER -> ContainerInventoryController.close(MinecraftClient.getInstance());
-			case PlannerToolCatalog.INSPECT_CONTAINER -> ContainerInventoryController.inspect(MinecraftClient.getInstance());
+			case PlannerToolCatalog.CLOSE_CONTAINER -> ContainerInventoryController.close(Minecraft.getInstance());
+			case PlannerToolCatalog.INSPECT_CONTAINER -> ContainerInventoryController.inspect(Minecraft.getInstance());
 			case PlannerToolCatalog.TRANSFER_CONTAINER -> {
 				var entries = args.has("items") ? args.getAsJsonArray("items") : new com.google.gson.JsonArray();
 				if (!args.has("items")) entries.add(args);
@@ -3362,16 +3362,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					var item = entry.getAsJsonObject();
 					items.add(new ContainerInventoryController.TransferItem(stringArg(item, "itemId").orElseThrow(), intArg(item, "quantity").orElseThrow()));
 				}
-				yield ContainerInventoryController.transfer(MinecraftClient.getInstance(),
+				yield ContainerInventoryController.transfer(Minecraft.getInstance(),
 					intArg(args, "syncId").orElseThrow(), stringArg(args, "direction").orElseThrow(), items);
 			}
 			case PlannerToolCatalog.EQUIP_ITEM -> {
 				String itemId = stringArg(args, "itemId").orElseThrow(() -> new IllegalArgumentException("itemId is required"));
-				yield playerItemUseController.equip(MinecraftClient.getInstance(), itemId);
+				yield playerItemUseController.equip(Minecraft.getInstance(), itemId);
 			}
 			case PlannerToolCatalog.EAT_FOOD -> {
 				String itemId = stringArg(args, "itemId").orElseThrow(() -> new IllegalArgumentException("itemId is required"));
-				yield playerItemUseController.eat(MinecraftClient.getInstance(), itemId, tickCount);
+				yield playerItemUseController.eat(Minecraft.getInstance(), itemId, tickCount);
 			}
 			case PlannerToolCatalog.DROP_ITEMS -> {
 				DropItemsStepArgs dropItems = new DropItemsStepArgs(
@@ -3776,7 +3776,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (text == null || text.isBlank()) {
 			return;
 		}
-		chatService.send(MinecraftClient.getInstance(), text, tickCount);
+		chatService.send(Minecraft.getInstance(), text, tickCount);
 	}
 
 	private void beforePlannerToolExecution(PlannerToolCall toolCall) {
@@ -3831,7 +3831,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			new DialogueIntent(DialogueIntentType.JOB_UPDATE, proposal),
 			tickCount
 		);
-		applyTaskIntent(response, currentWorldEvidence(MinecraftClient.getInstance()), "planner_tool");
+		applyTaskIntent(response, currentWorldEvidence(Minecraft.getInstance()), "planner_tool");
 		recordPlannerOutcome(response, previousGoal, activeGoal());
 		drainEventPipeline();
 	}
@@ -3839,9 +3839,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void ensureGiveTargetNearby(String targetPlayer) {
 		NearbyPlayerSnapshot target = nearbyPlayerTracker.findByName(targetPlayer)
 			.orElseThrow(() -> new IllegalStateException("target_not_nearby"));
-		Vec3d selfPos = currentPlayerPosition();
-		Vec3d targetPos = new Vec3d(target.x(), target.y(), target.z());
-		if (selfPos.squaredDistanceTo(targetPos) > 16.0D) {
+		Vec3 selfPos = currentPlayerPosition();
+		Vec3 targetPos = new Vec3(target.x(), target.y(), target.z());
+		if (selfPos.distanceToSqr(targetPos) > 16.0D) {
 			throw new IllegalStateException("target_not_nearby");
 		}
 	}
@@ -3867,13 +3867,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return "entityTypeId=" + selector.entityTypeId();
 	}
 
-	private Vec3d currentPlayerPosition() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client != null && client.player != null) {
-			return new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
+	private Vec3 currentPlayerPosition() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft != null && minecraft.player != null) {
+			return new Vec3(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ());
 		}
-		WorldEvidence evidence = currentWorldEvidence(client);
-		return new Vec3d(evidence.x(), evidence.y(), evidence.z());
+		WorldEvidence evidence = currentWorldEvidence(minecraft);
+		return new Vec3(evidence.x(), evidence.y(), evidence.z());
 	}
 
 	private void applyPlannerClearGoalTool() {
@@ -3889,7 +3889,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			new DialogueIntent(DialogueIntentType.CLEAR_GOAL, null, null),
 			tickCount
 		);
-		applyTaskIntent(response, currentWorldEvidence(MinecraftClient.getInstance()), "planner_tool");
+		applyTaskIntent(response, currentWorldEvidence(Minecraft.getInstance()), "planner_tool");
 		recordPlannerOutcome(response, previousGoal, activeGoal());
 		drainEventPipeline();
 	}
@@ -3954,17 +3954,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		debugRecorder.recordCollectResourceProbe(activeJobRuntime.collectResourceDebugSnapshot());
 	}
 
-	private int currentTaskResourceCount(MinecraftClient client) {
-		return currentTaskResourceCount(client, taskSnapshot.spec());
+	private int currentTaskResourceCount(Minecraft minecraft) {
+		return currentTaskResourceCount(minecraft, taskSnapshot.spec());
 	}
 
-	private int currentTaskResourceCount(MinecraftClient client, TaskSpec spec) {
-		if (client == null || client.player == null || spec == null) {
+	private int currentTaskResourceCount(Minecraft minecraft, TaskSpec spec) {
+		if (minecraft == null || minecraft.player == null || spec == null) {
 			return 0;
 		}
-		java.util.ArrayList<net.minecraft.item.ItemStack> stacks = new java.util.ArrayList<>();
-		for (int slot = 0; slot < client.player.getInventory().size(); slot++) {
-			stacks.add(client.player.getInventory().getStack(slot));
+		java.util.ArrayList<net.minecraft.world.item.ItemStack> stacks = new java.util.ArrayList<>();
+		for (int slot = 0; slot < minecraft.player.getInventory().getContainerSize(); slot++) {
+			stacks.add(minecraft.player.getInventory().getItem(slot));
 		}
 		return inventoryResourceCounter.count(stacks, spec.resourceKind());
 	}
@@ -3978,7 +3978,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private int currentResourceCountForIntent(WorldEvidence worldEvidence, DialogueIntent intent) {
 		if (worldEvidence == null) {
-			return currentTaskResourceCount(MinecraftClient.getInstance());
+			return currentTaskResourceCount(Minecraft.getInstance());
 		}
 		if (intent == null) {
 			return 0;
@@ -4176,8 +4176,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			center = new GoalPosition(pos.get("x").getAsInt(), pos.get("y").getAsInt(), pos.get("z").getAsInt(), true);
 		}
 		else {
-			var client = MinecraftClient.getInstance();
-			var player = client == null ? null : client.player;
+			var minecraft = Minecraft.getInstance();
+			var player = minecraft == null ? null : minecraft.player;
 			if (player != null) center = new GoalPosition(player.getBlockX(), player.getBlockY(), player.getBlockZ(), true);
 		}
 		return new AcquisitionConstraints(center,
@@ -4219,7 +4219,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean allowUnilluminated = booleanArg(args, "allowUnilluminated").orElse(false);
 		int torchCount = inventoryItemCount("minecraft:torch");
 		MiningIlluminationPreflight.Result prediction = MiningIlluminationPreflight.inspect(
-			MinecraftClient.getInstance(),
+			Minecraft.getInstance(),
 			mineSpec,
 			7
 		);
@@ -4254,9 +4254,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (blockId == null || blockId.isBlank()) {
 			return Optional.of("missing_block_id");
 		}
-		Identifier identifier;
+		ResourceLocation resourceLocation;
 		try {
-			identifier = Identifier.of(blockId);
+			resourceLocation = ResourceLocation.parse(blockId);
 		}
 		catch (RuntimeException exception) {
 			return Optional.of("invalid_block_id " + blockId);
@@ -4268,10 +4268,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return Optional.empty();
 		}
 		try {
-			if (Registries.BLOCK.getOptionalValue(identifier).isPresent()) {
+			if (BuiltInRegistries.BLOCK.getOptional(resourceLocation).isPresent()) {
 				return Optional.empty();
 			}
-			if (Registries.ITEM.getOptionalValue(identifier).isPresent()) {
+			if (BuiltInRegistries.ITEM.getOptional(resourceLocation).isPresent()) {
 				return Optional.of("invalid_block_id " + blockId + " is an item id, not a block id. Use mineable block ids such as minecraft:iron_ore; inspect_inventory itemCounts are item ids.");
 			}
 			return Optional.of("invalid_block_id " + blockId + " is not a registered block id.");
@@ -4283,7 +4283,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private static boolean minecraftRegistriesAvailableForToolValidation() {
 		try {
-			return MinecraftClient.getInstance() != null;
+			return Minecraft.getInstance() != null;
 		}
 		catch (RuntimeException | LinkageError ignored) {
 			return false;
@@ -4356,14 +4356,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		);
 	}
 
-	private WorldEvidence currentWorldEvidence(MinecraftClient client) {
-		if (client == null || client.player == null) {
+	private WorldEvidence currentWorldEvidence(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null) {
 			return new WorldEvidence(Map.of(), Map.of(), Map.of(), null, 0, 0, 0, null, tickCount);
 		}
 
-		java.util.ArrayList<net.minecraft.item.ItemStack> stacks = new java.util.ArrayList<>();
-		for (int slot = 0; slot < client.player.getInventory().size(); slot++) {
-			stacks.add(client.player.getInventory().getStack(slot));
+		java.util.ArrayList<net.minecraft.world.item.ItemStack> stacks = new java.util.ArrayList<>();
+		for (int slot = 0; slot < minecraft.player.getInventory().getContainerSize(); slot++) {
+			stacks.add(minecraft.player.getInventory().getItem(slot));
 		}
 
 		java.util.EnumMap<ai.moeru.airicraft.agent.tasks.TaskResourceKind, Integer> resourceCounts =
@@ -4372,43 +4372,43 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			resourceCounts.put(kind, inventoryResourceCounter.count(stacks, kind));
 		}
 
-		String equippedItemId = Registries.ITEM.getId(client.player.getMainHandStack().getItem()).toString();
-		int selectedHotbarSlot = client.player.getInventory().getSelectedSlot();
-		BlockPos origin = client.player.getBlockPos();
-		Map<String, Integer> itemCounts = inventoryItemCounter.count(client.player.getInventory());
-		CraftingOpportunitySnapshot crafting = CraftingOpportunityResolver.inspect(client.player);
-		SmeltingOpportunitySnapshot smelting = smeltingPlannerService.inspectOpportunities(client, smeltingProcessManager, tickCount);
+		String equippedItemId = BuiltInRegistries.ITEM.getKey(minecraft.player.getMainHandItem().getItem()).toString();
+		int selectedHotbarSlot = minecraft.player.getInventory().getSelectedSlot();
+		BlockPos origin = minecraft.player.blockPosition();
+		Map<String, Integer> itemCounts = inventoryItemCounter.count(minecraft.player.getInventory());
+		CraftingOpportunitySnapshot crafting = CraftingOpportunityResolver.inspect(minecraft.player);
+		SmeltingOpportunitySnapshot smelting = smeltingPlannerService.inspectOpportunities(minecraft, smeltingProcessManager, tickCount);
 		return new WorldEvidence(
 			resourceCounts,
 			itemCounts,
-			collectNearbyBlocks(client, origin),
+			collectNearbyBlocks(minecraft, origin),
 			crafting.availableCrafts(),
 			crafting.knownCrafts(),
 			smelting.availableSmelts(),
 			smelting.knownSmelts(),
-			client.world == null ? null : client.world.getRegistryKey().getValue().toString(),
+			minecraft.level == null ? null : minecraft.level.dimension().location().toString(),
 			origin.getX(),
 			origin.getY(),
 			origin.getZ(),
 			equippedItemId,
 			selectedHotbarSlot,
-			hotbarItems(client.player.getInventory()),
+			hotbarItems(minecraft.player.getInventory()),
 			tickCount
 		);
 	}
 
-	private static java.util.List<String> hotbarItems(net.minecraft.entity.player.PlayerInventory inventory) {
+	private static java.util.List<String> hotbarItems(net.minecraft.world.entity.player.Inventory inventory) {
 		java.util.ArrayList<String> items = new java.util.ArrayList<>();
 		if (inventory == null) {
 			return java.util.List.of();
 		}
 		for (int slot = 0; slot < 9; slot++) {
-			net.minecraft.item.ItemStack stack = inventory.getStack(slot);
+			net.minecraft.world.item.ItemStack stack = inventory.getItem(slot);
 			if (stack == null || stack.isEmpty()) {
 				items.add(slot + "=empty");
 			}
 			else {
-				items.add(slot + "=" + Registries.ITEM.getId(stack.getItem()) + "x" + stack.getCount());
+				items.add(slot + "=" + BuiltInRegistries.ITEM.getKey(stack.getItem()) + "x" + stack.getCount());
 			}
 		}
 		return java.util.List.copyOf(items);
@@ -4428,12 +4428,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 
-	private Map<String, Integer> collectNearbyBlocks(MinecraftClient client, BlockPos origin) {
-		if (client == null || client.world == null) {
+	private Map<String, Integer> collectNearbyBlocks(Minecraft minecraft, BlockPos origin) {
+		if (minecraft == null || minecraft.level == null) {
 			clearNearbyBlockSnapshot();
 			return Map.of();
 		}
-		if (nearbyHarvestableBlockSnapshot != null && canReuseNearbyBlockSnapshot(client.world, origin)) {
+		if (nearbyHarvestableBlockSnapshot != null && canReuseNearbyBlockSnapshot(minecraft.level, origin)) {
 			return nearbyBlockSnapshot;
 		}
 		java.util.HashMap<String, Integer> counts = new java.util.HashMap<>();
@@ -4441,20 +4441,20 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		for (int dx = -NEARBY_BLOCK_HORIZONTAL_RADIUS; dx <= NEARBY_BLOCK_HORIZONTAL_RADIUS; dx++) {
 			for (int dy = -NEARBY_BLOCK_VERTICAL_RADIUS; dy <= NEARBY_BLOCK_VERTICAL_RADIUS; dy++) {
 				for (int dz = -NEARBY_BLOCK_HORIZONTAL_RADIUS; dz <= NEARBY_BLOCK_HORIZONTAL_RADIUS; dz++) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					if (!client.world.isChunkLoaded(pos)) {
+					BlockPos pos = origin.offset(dx, dy, dz);
+					if (!minecraft.level.hasChunkAt(pos)) {
 						continue;
 					}
-					BlockState blockState = client.world.getBlockState(pos);
-					String blockId = Registries.BLOCK.getId(blockState.getBlock()).toString();
+					BlockState blockState = minecraft.level.getBlockState(pos);
+					String blockId = BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString();
 					counts.merge(blockId, 1, Integer::sum);
 					if (ai.moeru.airicraft.agent.tasks.HarvestableBlocks.ready(blockState)
-						&& !ai.moeru.airicraft.agent.memory.WorldPlacePreservation.contains(client.world, pos)) harvestable.merge(blockId, 1, Integer::sum);
+						&& !ai.moeru.airicraft.agent.memory.WorldPlacePreservation.contains(minecraft.level, pos)) harvestable.merge(blockId, 1, Integer::sum);
 				}
 			}
 		}
-		nearbyBlockSnapshotWorld = client.world;
-		nearbyBlockSnapshotOrigin = origin.toImmutable();
+		nearbyBlockSnapshotWorld = minecraft.level;
+		nearbyBlockSnapshotOrigin = origin.immutable();
 		nearbyBlockSnapshotTick = tickCount;
 		nearbyBlockSnapshot = Map.copyOf(counts);
 		nearbyHarvestableBlockSnapshot = Map.copyOf(harvestable);
@@ -4508,15 +4508,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.player == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) {
 			return false;
 		}
 
-		Vec3d selfPos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
-		Vec3d senderPos = new Vec3d(nearbyPlayer.get().x(), nearbyPlayer.get().y(), nearbyPlayer.get().z());
+		Vec3 selfPos = new Vec3(minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ());
+		Vec3 senderPos = new Vec3(nearbyPlayer.get().x(), nearbyPlayer.get().y(), nearbyPlayer.get().z());
 		double maxDistance = airicraftConfig.socialChatMaxDistanceBlocks();
-		return selfPos.squaredDistanceTo(senderPos) <= maxDistance * maxDistance;
+		return selfPos.distanceToSqr(senderPos) <= maxDistance * maxDistance;
 	}
 
 	private static double resolveNearbyPlayerTrackingRadius(AiricraftConfig airicraftConfig) {
@@ -4527,11 +4527,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private String localPlayerName() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.player == null) {
-			return client != null && client.getSession() != null ? client.getSession().getUsername() : null;
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) {
+			return minecraft != null && minecraft.getUser() != null ? minecraft.getUser().getName() : null;
 		}
-		Text playerName = client.player.getName();
+		Component playerName = minecraft.player.getName();
 		return playerName == null ? null : playerName.getString();
 	}
 
@@ -4606,14 +4606,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private boolean isLocalPlayer(UUID playerUuid, String playerName) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			return false;
 		}
-		if (client.player != null && playerUuid.equals(client.player.getUuid())) {
+		if (minecraft.player != null && playerUuid.equals(minecraft.player.getUUID())) {
 			return true;
 		}
-		return client.getSession() != null && playerName.equals(client.getSession().getUsername());
+		return minecraft.getUser() != null && playerName.equals(minecraft.getUser().getName());
 	}
 
 	private void recordPlannerOutcome(
@@ -4789,7 +4789,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 
-	private void recordSmeltingOutputReadyEvents(MinecraftClient client) {
+	private void recordSmeltingOutputReadyEvents(Minecraft minecraft) {
 		if (!sessionSnapshot.worldLoaded() || !smeltingProcessManager.hasTrackedProcesses()) {
 			return;
 		}
@@ -4800,7 +4800,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return;
 		}
 		lastSmeltingOutputReadyPollTick = tickCount;
-		for (SmeltingOutputReadyEvent event : smeltingPlannerService.pollTrackedOutputReady(client, smeltingProcessManager, tickCount)) {
+		for (SmeltingOutputReadyEvent event : smeltingPlannerService.pollTrackedOutputReady(minecraft, smeltingProcessManager, tickCount)) {
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "smelting.output_ready", Map.of(
 				"processId", event.processId(),
 				"optionId", event.optionId(),
@@ -5181,7 +5181,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			taskExecutionSnapshot.processName(), event.message(), null, event.terminationCause());
 		TaskSnapshot previous = taskSnapshot;
 		// This reduces an effect already observed; it does not grant new actuation.
-		activeJobRuntime.tick(observed, currentWorldEvidence(MinecraftClient.getInstance()), true, true, tickCount);
+		activeJobRuntime.tick(observed, currentWorldEvidence(Minecraft.getInstance()), true, true, tickCount);
 		taskSnapshot = activeJobRuntime.taskSnapshot();
 		missionExecutionSnapshot = activeJobRuntime.missionExecutionSnapshot();
 		recordSemanticTaskTransition(previous, taskSnapshot);
@@ -5237,7 +5237,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (!inventoryMutatingStepKind(activeStepKind)) {
 			return "";
 		}
-		return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(MinecraftClient.getInstance()));
+		return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(Minecraft.getInstance()));
 	}
 
 	private String inventorySnapshotForTaskUpdate(TaskTerminalEvent event, Optional<WorldTaskRequest> activeTaskRequest) {
@@ -5257,12 +5257,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (!inventoryMutatingTaskType(taskType)) {
 			return "";
 		}
-		return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(MinecraftClient.getInstance()));
+		return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(Minecraft.getInstance()));
 	}
 
 	private String inventorySnapshotForTaskUpdate(LedgerStepKind stepKind, String activeStepId) {
 		if (Objects.equals(activeStepId, ActiveJobType.RETURN_TO_SURFACE.name().toLowerCase())) {
-			return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(MinecraftClient.getInstance()));
+			return formatInventorySnapshotForTaskUpdate(currentWorldEvidence(Minecraft.getInstance()));
 		}
 		return inventorySnapshotForTaskUpdate(stepKind);
 	}
@@ -5450,16 +5450,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void prepareClientForEvaluation() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			return;
 		}
-		if (client.options != null && client.options.pauseOnLostFocus) {
-			client.options.pauseOnLostFocus = false;
-			client.options.write();
+		if (minecraft.options != null && minecraft.options.pauseOnLostFocus) {
+			minecraft.options.pauseOnLostFocus = false;
+			minecraft.options.save();
 		}
-		if (client.currentScreen != null && "GameMenuScreen".equals(client.currentScreen.getClass().getSimpleName())) {
-			client.setScreen(null);
+		if (minecraft.screen != null && "PauseScreen".equals(minecraft.screen.getClass().getSimpleName())) {
+			minecraft.setScreen(null);
 		}
 	}
 
@@ -5495,24 +5495,24 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void leaveCurrentWorld() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			throw new IllegalStateException("Minecraft client is not initialized");
 		}
-		if (client.world == null && client.player == null) {
+		if (minecraft.level == null && minecraft.player == null) {
 			return;
 		}
 
-		client.disconnect(null, false);
+		minecraft.disconnect(null, false);
 	}
 
 	private GoalPosition findNearbyNavigationTarget() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			throw new IllegalStateException("Minecraft world is not loaded");
 		}
 
-		BlockPos origin = client.player.getBlockPos();
+		BlockPos origin = minecraft.player.blockPosition();
 		for (int radius = 1; radius <= 8; radius++) {
 			for (int dx = -radius; dx <= radius; dx++) {
 				for (int dz = -radius; dz <= radius; dz++) {
@@ -5520,7 +5520,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 						continue;
 					}
 					GoalPosition candidate = findWalkableNavigationTargetInColumn(
-						client,
+						minecraft,
 						origin.getX() + dx,
 						origin.getZ() + dz,
 						origin.getY()
@@ -5536,79 +5536,79 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private GoalPosition findWalkableNavigationTargetInColumn(
-		MinecraftClient client,
+		Minecraft minecraft,
 		int x,
 		int z,
 		int originY
 	) {
 		for (int y = originY + 1; y >= originY - 6; y--) {
 			BlockPos candidate = new BlockPos(x, y, z);
-			if (isWalkableNavigationTarget(client, candidate)) {
+			if (isWalkableNavigationTarget(minecraft, candidate)) {
 				return new GoalPosition(candidate.getX(), candidate.getY(), candidate.getZ(), true);
 			}
 		}
 		return null;
 	}
 
-	private boolean isWalkableNavigationTarget(MinecraftClient client, BlockPos target) {
-		if (client.world == null || client.player == null) {
+	private boolean isWalkableNavigationTarget(Minecraft minecraft, BlockPos target) {
+		if (minecraft.level == null || minecraft.player == null) {
 			return false;
 		}
-		if (target.equals(client.player.getBlockPos())) {
+		if (target.equals(minecraft.player.blockPosition())) {
 			return false;
 		}
-		BlockPos below = target.down();
-		BlockPos above = target.up();
-		return client.world.isAir(target)
-			&& client.world.isAir(above)
-			&& client.world.getBlockState(below).isSideSolidFullSquare(client.world, below, Direction.UP);
+		BlockPos below = target.below();
+		BlockPos above = target.above();
+		return minecraft.level.isEmptyBlock(target)
+			&& minecraft.level.isEmptyBlock(above)
+			&& minecraft.level.getBlockState(below).isFaceSturdy(minecraft.level, below, Direction.UP);
 	}
 
 	private boolean playerNear(GoalPosition target, double maxDistance) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (target == null || client == null || client.player == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (target == null || minecraft == null || minecraft.player == null) {
 			return false;
 		}
-		Vec3d center = new Vec3d(target.x() + 0.5D, target.y(), target.z() + 0.5D);
-		return client.player.getPos().squaredDistanceTo(center) <= maxDistance * maxDistance;
+		Vec3 center = new Vec3(target.x() + 0.5D, target.y(), target.z() + 0.5D);
+		return minecraft.player.position().distanceToSqr(center) <= maxDistance * maxDistance;
 	}
 
-	private Vec3d playerOffset(double xOffset) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.player == null) {
-			return new Vec3d(xOffset, 64.0D, 0.0D);
+	private Vec3 playerOffset(double xOffset) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) {
+			return new Vec3(xOffset, 64.0D, 0.0D);
 		}
-		return new Vec3d(
-			client.player.getX() + xOffset,
-			client.player.getY(),
-			client.player.getZ()
+		return new Vec3(
+			minecraft.player.getX() + xOffset,
+			minecraft.player.getY(),
+			minecraft.player.getZ()
 		);
 	}
 
 	private void setForwardKeyPressed(boolean pressed) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.options == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.options == null) {
 			throw new IllegalStateException("Minecraft client input is not initialized");
 		}
-		client.options.forwardKey.setPressed(pressed);
+		minecraft.options.keyUp.setDown(pressed);
 	}
 
 	private boolean isForwardKeyPressed() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		return client != null
-			&& client.options != null
-			&& client.options.forwardKey.isPressed();
+		Minecraft minecraft = Minecraft.getInstance();
+		return minecraft != null
+			&& minecraft.options != null
+			&& minecraft.options.keyUp.isDown();
 	}
 
 	private float resolveEffectiveHealthBefore(float observedHealthBefore, float healthAfter) {
 		return effectiveHealthBefore(lastKnownPlayerHealth, observedHealthBefore, healthAfter);
 	}
 
-	private static Float currentPlayerHealth(MinecraftClient client) {
-		if (client == null || client.player == null || !client.isOnThread()) {
+	private static Float currentPlayerHealth(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || !minecraft.isSameThread()) {
 			return null;
 		}
-		return client.player.getHealth();
+		return minecraft.player.getHealth();
 	}
 
 	static float effectiveHealthBefore(Float lastKnownPlayerHealth, float observedHealthBefore, float healthAfter) {

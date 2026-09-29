@@ -2,7 +2,7 @@ package ai.moeru.airicraft.agent.spatial;
 
 import ai.moeru.airicraft.agent.llm.*;
 import com.google.gson.*;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import static ai.moeru.airicraft.agent.llm.PlannerToolCatalog.*;
@@ -22,12 +22,12 @@ public final class TravelPolicyToolProvider implements PlannerToolProvider {
 	@Override public String promptInstructions() { return "Search constraints select resources, not routes. Use configure_travel only for actual travel restrictions. Record explicit user travel bounds with scope=user; your own search strategy must not become a durable user restriction. User bounds cannot be relaxed by planner tools; request user intervention if they need to change. Bounds describe all occupied cells including headroom, not just feet. These are conservative path eligibility checks, not recovery behavior."; }
 	@Override public CompletableFuture<String> execute(PlannerToolCall call) {
 		var result = new CompletableFuture<String>();
-		MinecraftClient.getInstance().execute(() -> {
+		Minecraft.getInstance().execute(() -> {
 			try {
 				if (call.name().equals("configure_travel")) {
 					JsonObject args = call.arguments(); TravelBounds bounds = null;
 					if (args.has("bounds")) bounds = new Gson().fromJson(args.get("bounds"), TravelBounds.class);
-					WorldTravelPolicy.configure(MinecraftClient.getInstance(), args.get("scope").getAsString(), bounds);
+					WorldTravelPolicy.configure(Minecraft.getInstance(), args.get("scope").getAsString(), bounds);
 				}
 				result.complete("Tool result for " + call.name() + ": " + new Gson().toJson(WorldTravelPolicy.snapshot()));
 			} catch (Exception e) { result.complete("TOOL_ERROR: " + call.name() + " " + e.getMessage()); }

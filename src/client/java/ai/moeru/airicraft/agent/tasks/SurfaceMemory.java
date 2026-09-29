@@ -1,11 +1,11 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.util.Optional;
 
@@ -32,23 +32,23 @@ public final class SurfaceMemory {
 		lastNearestSurfaceScanTick = Long.MIN_VALUE;
 	}
 
-	public void tick(MinecraftClient client, long tick) {
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.world == null || player == null) {
+	public void tick(Minecraft minecraft, long tick) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.level == null || player == null) {
 			clear();
 			return;
 		}
-		BlockPos playerPos = player.getBlockPos();
-		if (player.isOnGround() && isSafeStandingPosition(client, playerPos)) {
+		BlockPos playerPos = player.blockPosition();
+		if (player.onGround() && isSafeStandingPosition(minecraft, playerPos)) {
 			lastGround = new SurfaceTarget(toGoalPosition(playerPos), "last_ground", tick);
-			if (isSurfaceStandingPosition(client, playerPos)) {
+			if (isSurfaceStandingPosition(minecraft, playerPos)) {
 				lastSurface = new SurfaceTarget(toGoalPosition(playerPos), "last_surface", tick);
 			}
 		}
 		if (shouldRefreshNearestSurface(nearestSurface != null, lastNearestSurfaceScanOrigin, lastNearestSurfaceScanTick, playerPos, tick)) {
 			lastNearestSurfaceScanOrigin = playerPos;
 			lastNearestSurfaceScanTick = tick;
-			SurfaceTarget nearby = findNearestSurface(client, playerPos, tick).orElse(null);
+			SurfaceTarget nearby = findNearestSurface(minecraft, playerPos, tick).orElse(null);
 			if (nearby != null) {
 				nearestSurface = nearby;
 			}
@@ -77,34 +77,34 @@ public final class SurfaceMemory {
 		return Optional.ofNullable(nearestSurface);
 	}
 
-	public static boolean isSkyVisible(MinecraftClient client, BlockPos pos) {
-		return client != null
-			&& client.world != null
+	public static boolean isSkyVisible(Minecraft minecraft, BlockPos pos) {
+		return minecraft != null
+			&& minecraft.level != null
 			&& pos != null
-			&& client.world.isChunkLoaded(pos)
-			&& client.world.isSkyVisible(pos.up());
+			&& minecraft.level.hasChunkAt(pos)
+			&& minecraft.level.canSeeSky(pos.above());
 	}
 
-	private static Optional<SurfaceTarget> findNearestSurface(MinecraftClient client, BlockPos origin, long tick) {
-		if (client == null || client.world == null || origin == null) {
+	private static Optional<SurfaceTarget> findNearestSurface(Minecraft minecraft, BlockPos origin, long tick) {
+		if (minecraft == null || minecraft.level == null || origin == null) {
 			return Optional.empty();
 		}
 		SurfaceTarget best = null;
 		double bestDistance = Double.MAX_VALUE;
-		int minY = Math.max(client.world.getBottomY() + 1, origin.getY() - NEAREST_SURFACE_DOWN);
-		int maxY = Math.min(client.world.getTopYInclusive() - 2, origin.getY() + NEAREST_SURFACE_UP);
+		int minY = Math.max(minecraft.level.getMinY() + 1, origin.getY() - NEAREST_SURFACE_DOWN);
+		int maxY = Math.min(minecraft.level.getMaxY() - 2, origin.getY() + NEAREST_SURFACE_UP);
 		for (int dx = -NEAREST_SURFACE_RADIUS; dx <= NEAREST_SURFACE_RADIUS; dx++) {
 			for (int dz = -NEAREST_SURFACE_RADIUS; dz <= NEAREST_SURFACE_RADIUS; dz++) {
-				BlockPos column = origin.add(dx, 0, dz);
-				if (!client.world.isChunkLoaded(column)) {
+				BlockPos column = origin.offset(dx, 0, dz);
+				if (!minecraft.level.hasChunkAt(column)) {
 					continue;
 				}
 				for (int y = maxY; y >= minY; y--) {
 					BlockPos candidate = new BlockPos(column.getX(), y, column.getZ());
-					if (!isSurfaceStandingPosition(client, candidate)) {
+					if (!isSurfaceStandingPosition(minecraft, candidate)) {
 						continue;
 					}
-					double distance = candidate.getSquaredDistance(origin);
+					double distance = candidate.distSqr(origin);
 					if (distance < bestDistance) {
 						bestDistance = distance;
 						best = new SurfaceTarget(toGoalPosition(candidate), "nearest_surface", tick);
@@ -116,10 +116,10 @@ public final class SurfaceMemory {
 		return Optional.ofNullable(best);
 	}
 
-	public static boolean isSurfaceStandingPosition(MinecraftClient client, BlockPos feetPos) {
-		return isSkyVisible(client, feetPos)
-			&& isSafeStandingPosition(client, feetPos)
-			&& hasEnoughSurfaceEscapeDirections(surfaceEscapeDirections(client, feetPos));
+	public static boolean isSurfaceStandingPosition(Minecraft minecraft, BlockPos feetPos) {
+		return isSkyVisible(minecraft, feetPos)
+			&& isSafeStandingPosition(minecraft, feetPos)
+			&& hasEnoughSurfaceEscapeDirections(surfaceEscapeDirections(minecraft, feetPos));
 	}
 
 	static boolean shouldRefreshNearestSurface(
@@ -136,32 +136,32 @@ public final class SurfaceMemory {
 		if (elapsed < NEAREST_SURFACE_FAST_REFRESH_TICKS) {
 			return false;
 		}
-		if (lastScanOrigin.getSquaredDistance(currentOrigin) >= NEAREST_SURFACE_MOVE_REFRESH_DISTANCE_SQUARED) {
+		if (lastScanOrigin.distSqr(currentOrigin) >= NEAREST_SURFACE_MOVE_REFRESH_DISTANCE_SQUARED) {
 			return true;
 		}
 		return elapsed >= NEAREST_SURFACE_REFRESH_TICKS;
 	}
 
-	private static boolean isSafeStandingPosition(MinecraftClient client, BlockPos feetPos) {
-		if (client == null || client.world == null || feetPos == null) {
+	private static boolean isSafeStandingPosition(Minecraft minecraft, BlockPos feetPos) {
+		if (minecraft == null || minecraft.level == null || feetPos == null) {
 			return false;
 		}
-		if (!client.world.isChunkLoaded(feetPos) || !client.world.isChunkLoaded(feetPos.down())) {
+		if (!minecraft.level.hasChunkAt(feetPos) || !minecraft.level.hasChunkAt(feetPos.below())) {
 			return false;
 		}
-		BlockState feet = client.world.getBlockState(feetPos);
-		BlockState head = client.world.getBlockState(feetPos.up());
-		BlockState support = client.world.getBlockState(feetPos.down());
-		return (feet.isAir() || feet.isReplaceable())
-			&& (head.isAir() || head.isReplaceable())
-			&& support.isSideSolidFullSquare(client.world, feetPos.down(), Direction.UP);
+		BlockState feet = minecraft.level.getBlockState(feetPos);
+		BlockState head = minecraft.level.getBlockState(feetPos.above());
+		BlockState support = minecraft.level.getBlockState(feetPos.below());
+		return (feet.isAir() || feet.canBeReplaced())
+			&& (head.isAir() || head.canBeReplaced())
+			&& support.isFaceSturdy(minecraft.level, feetPos.below(), Direction.UP);
 	}
 
-	private static int surfaceEscapeDirections(MinecraftClient client, BlockPos feetPos) {
+	private static int surfaceEscapeDirections(Minecraft minecraft, BlockPos feetPos) {
 		int openDirections = 0;
-		for (Direction direction : Direction.Type.HORIZONTAL) {
-			BlockPos adjacent = feetPos.offset(direction);
-			if (isSkyVisible(client, adjacent) && isSafeStandingPosition(client, adjacent)) {
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
+			BlockPos adjacent = feetPos.relative(direction);
+			if (isSkyVisible(minecraft, adjacent) && isSafeStandingPosition(minecraft, adjacent)) {
 				openDirections++;
 			}
 		}

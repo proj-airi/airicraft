@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.session;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.world.GameMode;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.GameType;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -12,17 +12,17 @@ public final class LanHostingService {
 			throw new LanHostingException("invalid_session_mode", "LAN hosting requires SINGLEPLAYER_LOCAL");
 		}
 
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || client.player == null || client.getServer() == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null || minecraft.getSingleplayerServer() == null) {
 			throw new LanHostingException("minecraft_unavailable", "Minecraft integrated server is not available");
 		}
 
-		GameMode gameMode = client.interactionManager != null
-			? client.interactionManager.getCurrentGameMode()
-			: GameMode.SURVIVAL;
+		GameType gameType = minecraft.gameMode != null
+			? minecraft.gameMode.getPlayerMode()
+			: GameType.SURVIVAL;
 		int port;
 		try {
-			port = LanPortScan.openFirstAvailable(candidate -> client.getServer().openToLan(gameMode, false, candidate));
+			port = LanPortScan.openFirstAvailable(candidate -> minecraft.getSingleplayerServer().publishServer(gameType, false, candidate));
 		}
 		catch (LanPortScan.LanPortUnavailableException exception) {
 			throw new LanHostingException("lan_open_failed", exception.getMessage());

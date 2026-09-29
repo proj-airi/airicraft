@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -42,7 +42,7 @@ final class CurrentWorldQueryServiceTest {
 		var centers = List.of(new BlockPos(0, 134, 4), new BlockPos(-2, 133, 6));
 		var results = new java.util.ArrayList<CurrentWorldQueryService.WorldQueryResult>();
 		for (BlockPos center : centers) {
-			var bounds = new CurrentWorldQueryService.QueryBounds("center", center.add(-5, -5, -5), center.add(5, 5, 5));
+			var bounds = new CurrentWorldQueryService.QueryBounds("center", center.offset(-5, -5, -5), center.offset(5, 5, 5));
 			var records = bounds.positions().stream().map(pos -> record(pos, Math.max(
 				Math.max(Math.abs(pos.getX() - player.getX()), Math.abs(pos.getY() - player.getY())),
 				Math.abs(pos.getZ() - player.getZ())))).toList();

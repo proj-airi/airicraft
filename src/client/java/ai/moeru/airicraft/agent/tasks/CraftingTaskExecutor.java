@@ -6,25 +6,25 @@ import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.screen.CraftingScreenHandler;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Arrays;
 import java.util.List;
@@ -40,7 +40,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private static final int TABLE_SEARCH_VERTICAL_RADIUS = 8;
 	private static final double TABLE_INTERACTION_RANGE_SQUARED = 20.25D;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade baritoneFacade;
 	private final CameraController cameraController;
 	private final WorldTaskExecutor portableTablePlacementExecutor;
@@ -62,26 +62,26 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public CraftingTaskExecutor() {
-		this(MinecraftClient::getInstance, null, new CameraController());
+		this(Minecraft::getInstance, null, new CameraController());
 	}
 
 	public CraftingTaskExecutor(BaritoneFacade baritoneFacade) {
-		this(MinecraftClient::getInstance, baritoneFacade, new CameraController());
+		this(Minecraft::getInstance, baritoneFacade, new CameraController());
 	}
 
 	public CraftingTaskExecutor(BaritoneFacade baritoneFacade, CameraController cameraController) {
-		this(MinecraftClient::getInstance, baritoneFacade, cameraController);
+		this(Minecraft::getInstance, baritoneFacade, cameraController);
 	}
 
-	CraftingTaskExecutor(Supplier<MinecraftClient> clientSupplier) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier) {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade baritoneFacade) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade) {
 		this(clientSupplier, baritoneFacade, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<MinecraftClient> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
 		this(
 			clientSupplier,
 			baritoneFacade,
@@ -91,7 +91,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	CraftingTaskExecutor(
-		Supplier<MinecraftClient> clientSupplier,
+		Supplier<Minecraft> clientSupplier,
 		BaritoneFacade baritoneFacade,
 		CameraController cameraController,
 		WorldTaskExecutor portableTablePlacementExecutor
@@ -120,9 +120,9 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.interactionManager == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.gameMode == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "crafting_busy"));
 		}
 		if (plan == null) {
@@ -133,10 +133,10 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			progressTracker.reset();
 		}
 		CraftingScreenDisposition screenDisposition = craftingScreenDisposition(
-			player.currentScreenHandler == player.playerScreenHandler,
-			player.currentScreenHandler instanceof CraftingScreenHandler,
+			player.containerMenu == player.inventoryMenu,
+			player.containerMenu instanceof CraftingMenu,
 			plan.gridKind() == CraftingGridKind.WORKBENCH_3X3,
-			player.currentScreenHandler.getCursorStack().isEmpty()
+			player.containerMenu.getCarried().isEmpty()
 		);
 		if (screenDisposition == CraftingScreenDisposition.CLOSE_OPEN_SCREEN) {
 			ScreenCloseSafety.closeHandledScreen(player, "crafting_blocking_screen_close");
@@ -152,7 +152,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (plan.gridKind() == CraftingGridKind.WORKBENCH_3X3) {
-			WorkbenchReadiness readiness = ensureWorkbenchReady(request, sessionSnapshot, client, player);
+			WorkbenchReadiness readiness = ensureWorkbenchReady(request, sessionSnapshot, minecraft, player);
 			if (readiness.failure().isPresent()) {
 				return fail(request, readiness.failure().get());
 			}
@@ -163,7 +163,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 		CraftAdvanceResult advanced = advanceCrafting(
 			request,
-			client,
+			minecraft,
 			player,
 			plan,
 			CraftingGridSpec.forKind(plan.gridKind()),
@@ -183,7 +183,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
-	private CraftingPlan resolvePlan(ClientPlayerEntity player, CraftRecipeStepArgs request) {
+	private CraftingPlan resolvePlan(LocalPlayer player, CraftRecipeStepArgs request) {
 		CraftingOpportunityResolver.CraftingRecipeResolution resolved = CraftingOpportunityResolver.resolve(player, request);
 		return toCraftingPlan(resolved);
 	}
@@ -211,10 +211,10 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private WorkbenchReadiness ensureWorkbenchReady(
 		WorldTaskRequest request,
 		SessionSnapshot sessionSnapshot,
-		MinecraftClient client,
-		ClientPlayerEntity player
+		Minecraft minecraft,
+		LocalPlayer player
 	) {
-		if (player.currentScreenHandler instanceof CraftingScreenHandler) {
+		if (player.containerMenu instanceof CraftingMenu) {
 			if (phase != CraftPhase.IDLE
 				&& phase != CraftPhase.PLACING_INPUTS
 				&& phase != CraftPhase.WAITING_FOR_RESULT
@@ -224,17 +224,17 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			}
 			return WorkbenchReadiness.readyState();
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler) {
+		if (player.containerMenu != player.inventoryMenu) {
 			return WorkbenchReadiness.failed(TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
 		}
 		if (phase == CraftPhase.IDLE) {
-			tableTarget = findNearbyCraftingTable(client, player).orElse(null);
+			tableTarget = findNearbyCraftingTable(minecraft, player).orElse(null);
 			boolean tableSubstantiallyBelowPlayer = tableTarget != null
 				&& tableTarget.tablePos().getY() < player.getBlockY() - 1;
 			phase = switch (initialWorkbenchSetupAction(
 				tableTarget != null,
 				tableSubstantiallyBelowPlayer,
-				hasCraftingTableItem(player.currentScreenHandler)
+				hasCraftingTableItem(player.containerMenu)
 			)) {
 				case REUSE_NEARBY_TABLE -> CraftPhase.NAVIGATING_TO_TABLE;
 				case PLACE_PORTABLE_TABLE -> CraftPhase.PLACING_TABLE;
@@ -265,7 +265,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			}
 			CraftAdvanceResult advanced = advanceCrafting(
 				request,
-				client,
+				minecraft,
 				player,
 				craftingTablePlan,
 				CraftingGridSpec.PLAYER,
@@ -285,15 +285,15 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (phase == CraftPhase.PLACING_TABLE) {
-			if (closeInventoryScreenIfOpen(client, player)) {
+			if (closeInventoryScreenIfOpen(minecraft, player)) {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "inventory_screen_dismissed");
 				return WorkbenchReadiness.notReadyState();
 			}
-			return tickPortableTablePlacement(request, sessionSnapshot, client, player);
+			return tickPortableTablePlacement(request, sessionSnapshot, minecraft, player);
 		}
 
 		if (phase == CraftPhase.NAVIGATING_TO_TABLE) {
-			if (closeInventoryScreenIfOpen(client, player)) {
+			if (closeInventoryScreenIfOpen(minecraft, player)) {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "inventory_screen_dismissed");
 				return WorkbenchReadiness.notReadyState();
 			}
@@ -337,20 +337,20 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (phase == CraftPhase.OPENING_TABLE) {
-			if (closeInventoryScreenIfOpen(client, player)) {
+			if (closeInventoryScreenIfOpen(minecraft, player)) {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "inventory_screen_dismissed");
 				return WorkbenchReadiness.notReadyState();
 			}
 			if (tableTarget == null || tableTarget.tablePos() == null) {
 				return WorkbenchReadiness.failed(TaskFailure.of(TaskFailureCode.MISSING_FACT, "crafting_table_not_found"));
 			}
-			Vec3d aim = Vec3d.ofCenter(tableTarget.tablePos());
-			cameraController.lookAt(client, aim);
-			if (!cameraController.isLookingAt(client, aim)) {
+			Vec3 aim = Vec3.atCenterOf(tableTarget.tablePos());
+			cameraController.lookAt(minecraft, aim);
+			if (!cameraController.isLookingAt(minecraft, aim)) {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "aiming_at_crafting_table");
 				return WorkbenchReadiness.notReadyState();
 			}
-			if (!openCraftingTable(client, player, tableTarget.tablePos())) {
+			if (!openCraftingTable(minecraft, player, tableTarget.tablePos())) {
 				return fallBackToPortableCraftingTable(request, player);
 			}
 			phase = CraftPhase.WAITING_FOR_TABLE_SCREEN;
@@ -360,7 +360,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (phase == CraftPhase.WAITING_FOR_TABLE_SCREEN) {
-			if (player.currentScreenHandler instanceof CraftingScreenHandler) {
+			if (player.containerMenu instanceof CraftingMenu) {
 				phase = CraftPhase.PLACING_INPUTS;
 				waitTicks = 0;
 				return WorkbenchReadiness.readyState();
@@ -371,7 +371,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return WorkbenchReadiness.notReadyState();
 	}
 
-	private WorkbenchReadiness waitForWorkbench(WorldTaskRequest request, ClientPlayerEntity player, String reason) {
+	private WorkbenchReadiness waitForWorkbench(WorldTaskRequest request, LocalPlayer player, String reason) {
 		waitTicks++;
 		if (waitTicks > WAIT_TIMEOUT_TICKS) {
 			if ("crafting_table_open_failed".equals(reason)) {
@@ -383,13 +383,13 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return WorkbenchReadiness.notReadyState();
 	}
 
-	private WorkbenchReadiness fallBackToPortableCraftingTable(WorldTaskRequest request, ClientPlayerEntity player) {
+	private WorkbenchReadiness fallBackToPortableCraftingTable(WorldTaskRequest request, LocalPlayer player) {
 		cancelNavigationIfStarted();
 		cancelPortableTablePlacement();
 		tableTarget = null;
 		placedTablePos = null;
 		waitTicks = 0;
-		if (hasCraftingTableItem(player.currentScreenHandler)) {
+		if (hasCraftingTableItem(player.containerMenu)) {
 			phase = CraftPhase.PLACING_TABLE;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_table_fallback_to_inventory");
 			return WorkbenchReadiness.notReadyState();
@@ -422,8 +422,8 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 	private CraftAdvanceResult advanceCrafting(
 		WorldTaskRequest request,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		CraftingPlan plan,
 		CraftingGridSpec gridSpec,
 		CraftingProgressTracker tracker,
@@ -437,9 +437,9 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			return CraftAdvanceResult.failed(readinessFailure.get());
 		}
 
-		ScreenHandler handler = player.currentScreenHandler;
+		AbstractContainerMenu menu = player.containerMenu;
 		if (phase == CraftPhase.IDLE || phase == placingPhase) {
-			if (!placeRecipeInputs(client, handler, gridSpec, plan)) {
+			if (!placeRecipeInputs(minecraft, menu, gridSpec, plan)) {
 				return CraftAdvanceResult.failed(TaskFailure.of(TaskFailureCode.MISSING_FACT, "recipe_not_found"));
 			}
 			phase = waitingForResultPhase;
@@ -449,10 +449,10 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (phase == waitingForResultPhase) {
-			ItemStack resultStack = handler.getSlot(gridSpec.resultSlot()).getStack();
-			if (!resultStack.isEmpty() && resultStack.isOf(plan.outputItem())) {
+			ItemStack resultStack = menu.getSlot(gridSpec.resultSlot()).getItem();
+			if (!resultStack.isEmpty() && resultStack.is(plan.outputItem())) {
 				tracker.beginTake(inventoryCount(player, plan.outputItem()), resultStack.getCount());
-				client.interactionManager.clickSlot(handler.syncId, gridSpec.resultSlot(), 0, SlotActionType.QUICK_MOVE, player);
+				minecraft.gameMode.handleInventoryMouseClick(menu.containerId, gridSpec.resultSlot(), 0, ClickType.QUICK_MOVE, player);
 				phase = waitingForTakePhase;
 				waitTicks = 0;
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_result_taken");
@@ -486,20 +486,20 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return CraftAdvanceResult.running();
 	}
 
-	private static boolean requestRecipeFill(MinecraftClient client, ScreenHandler handler, CraftingPlan plan) {
-		if (client.interactionManager == null || plan.networkRecipeId() == null) {
+	private static boolean requestRecipeFill(Minecraft minecraft, AbstractContainerMenu menu, CraftingPlan plan) {
+		if (minecraft.gameMode == null || plan.networkRecipeId() == null) {
 			return false;
 		}
-		RecipeFillRequest request = recipeFillRequest(handler.syncId, plan.networkRecipeId());
-		client.interactionManager.clickRecipe(request.syncId(), request.networkRecipeId(), request.craftAll());
+		RecipeFillRequest request = recipeFillRequest(menu.containerId, plan.networkRecipeId());
+		minecraft.gameMode.handlePlaceRecipe(request.syncId(), request.networkRecipeId(), request.craftAll());
 		return true;
 	}
 
-	private static boolean placeRecipeInputs(MinecraftClient client, ScreenHandler handler, CraftingGridSpec gridSpec, CraftingPlan plan) {
+	private static boolean placeRecipeInputs(Minecraft minecraft, AbstractContainerMenu menu, CraftingGridSpec gridSpec, CraftingPlan plan) {
 		if (plan.networkRecipeId() != null) {
-			return requestRecipeFill(client, handler, plan);
+			return requestRecipeFill(minecraft, menu, plan);
 		}
-		if (client.interactionManager == null || plan.placements().isEmpty()) {
+		if (minecraft.gameMode == null || plan.placements().isEmpty()) {
 			return false;
 		}
 		for (CraftingOpportunityResolver.CraftingIngredientPlacement placement : plan.placements()) {
@@ -507,55 +507,55 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			if (targetSlot < gridSpec.firstInputSlot() || targetSlot >= gridSpec.firstInputSlot() + gridSpec.inputSlotCount()) {
 				return false;
 			}
-			ItemStack targetStack = handler.getSlot(targetSlot).getStack();
+			ItemStack targetStack = menu.getSlot(targetSlot).getItem();
 			if (!targetStack.isEmpty()) {
-				if (targetStack.isOf(placement.item())) {
+				if (targetStack.is(placement.item())) {
 					continue;
 				}
 				return false;
 			}
-			int sourceSlot = findInventorySlot(handler, gridSpec, placement.item());
+			int sourceSlot = findInventorySlot(menu, gridSpec, placement.item());
 			if (sourceSlot < 0) {
 				return false;
 			}
-			client.interactionManager.clickSlot(handler.syncId, sourceSlot, 0, SlotActionType.PICKUP, client.player);
-			client.interactionManager.clickSlot(handler.syncId, targetSlot, 1, SlotActionType.PICKUP, client.player);
-			client.interactionManager.clickSlot(handler.syncId, sourceSlot, 0, SlotActionType.PICKUP, client.player);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, targetSlot, 1, ClickType.PICKUP, minecraft.player);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
 		}
 		return true;
 	}
 
-	private static RecipeFillRequest recipeFillRequest(int handlerSyncId, NetworkRecipeId networkRecipeId) {
-		return new RecipeFillRequest(handlerSyncId, Objects.requireNonNull(networkRecipeId, "networkRecipeId"), false);
+	private static RecipeFillRequest recipeFillRequest(int handlerSyncId, RecipeDisplayId recipeDisplayId) {
+		return new RecipeFillRequest(handlerSyncId, Objects.requireNonNull(recipeDisplayId, "networkRecipeId"), false);
 	}
 
-	static RecipeFillRequest recipeFillRequestForTests(int handlerSyncId, NetworkRecipeId networkRecipeId) {
-		return recipeFillRequest(handlerSyncId, networkRecipeId);
+	static RecipeFillRequest recipeFillRequestForTests(int handlerSyncId, RecipeDisplayId recipeDisplayId) {
+		return recipeFillRequest(handlerSyncId, recipeDisplayId);
 	}
 
-	private static int findInventorySlot(ScreenHandler handler, CraftingGridSpec gridSpec, Item item) {
+	private static int findInventorySlot(AbstractContainerMenu menu, CraftingGridSpec gridSpec, Item item) {
 		for (int slot = gridSpec.inventoryStart(); slot < gridSpec.hotbarEnd(); slot++) {
-			ItemStack stack = handler.getSlot(slot).getStack();
-			if (!stack.isEmpty() && stack.isOf(item)) {
+			ItemStack stack = menu.getSlot(slot).getItem();
+			if (!stack.isEmpty() && stack.is(item)) {
 				return slot;
 			}
 		}
 		return -1;
 	}
 
-	private static Optional<TaskFailure> readinessFailure(ClientPlayerEntity player, CraftingGridSpec gridSpec, boolean requireEmptyGrid) {
-		if (!gridSpec.matches(player.currentScreenHandler)) {
+	private static Optional<TaskFailure> readinessFailure(LocalPlayer player, CraftingGridSpec gridSpec, boolean requireEmptyGrid) {
+		if (!gridSpec.matches(player.containerMenu)) {
 			return Optional.of(TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
 		}
-		ScreenHandler handler = player.currentScreenHandler;
-		if (!handler.getCursorStack().isEmpty()) {
+		AbstractContainerMenu menu = player.containerMenu;
+		if (!menu.getCarried().isEmpty()) {
 			return Optional.of(TaskFailure.of(TaskFailureCode.UNKNOWN, "crafting_grid_occupied"));
 		}
 		if (!requireEmptyGrid) {
 			return Optional.empty();
 		}
 		for (int index = gridSpec.firstInputSlot(); index < gridSpec.firstInputSlot() + gridSpec.inputSlotCount(); index++) {
-			if (!handler.getSlot(index).getStack().isEmpty()) {
+			if (!menu.getSlot(index).getItem().isEmpty()) {
 				return Optional.of(TaskFailure.of(TaskFailureCode.UNKNOWN, "crafting_grid_occupied"));
 			}
 		}
@@ -579,34 +579,34 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	/** Observe the same usable workbench candidates that execution can open or approach. */
-	public static Optional<BlockPos> nearbyCraftingTablePosition(MinecraftClient client) {
-		if (client == null || client.player == null) return Optional.empty();
-		return findNearbyCraftingTable(client, client.player).map(TableTarget::tablePos);
+	public static Optional<BlockPos> nearbyCraftingTablePosition(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null) return Optional.empty();
+		return findNearbyCraftingTable(minecraft, minecraft.player).map(TableTarget::tablePos);
 	}
 
-	private static Optional<TableTarget> findNearbyCraftingTable(MinecraftClient client, ClientPlayerEntity player) {
-		if (client.world == null) {
+	private static Optional<TableTarget> findNearbyCraftingTable(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft.level == null) {
 			return Optional.empty();
 		}
-		BlockPos origin = player.getBlockPos();
+		BlockPos origin = player.blockPosition();
 		TableTarget best = null;
 		double bestDistance = Double.MAX_VALUE;
 		for (int dx = -TABLE_SEARCH_RADIUS; dx <= TABLE_SEARCH_RADIUS; dx++) {
 			for (int dy = -TABLE_SEARCH_VERTICAL_RADIUS; dy <= TABLE_SEARCH_VERTICAL_RADIUS; dy++) {
 				for (int dz = -TABLE_SEARCH_RADIUS; dz <= TABLE_SEARCH_RADIUS; dz++) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					double distance = origin.getSquaredDistance(pos);
-					if (!craftingTableWithinSearchBounds(dx, dy, dz) || distance >= bestDistance || !client.world.isChunkLoaded(pos)) {
+					BlockPos pos = origin.offset(dx, dy, dz);
+					double distance = origin.distSqr(pos);
+					if (!craftingTableWithinSearchBounds(dx, dy, dz) || distance >= bestDistance || !minecraft.level.hasChunkAt(pos)) {
 						continue;
 					}
-					if (!client.world.getBlockState(pos).isOf(Blocks.CRAFTING_TABLE)) {
+					if (!minecraft.level.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) {
 						continue;
 					}
-					GoalPosition standPosition = standPositionForTable(client, player, pos).orElse(null);
+					GoalPosition standPosition = standPositionForTable(minecraft, player, pos).orElse(null);
 					if (standPosition == null && !withinInteractionRange(player, pos)) {
 						continue;
 					}
-					best = new TableTarget(pos.toImmutable(), standPosition);
+					best = new TableTarget(pos.immutable(), standPosition);
 					bestDistance = distance;
 				}
 			}
@@ -620,19 +620,19 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			&& distanceSquared <= (long) TABLE_SEARCH_RADIUS * TABLE_SEARCH_RADIUS;
 	}
 
-	private static Optional<GoalPosition> standPositionForTable(MinecraftClient client, ClientPlayerEntity player, BlockPos tablePos) {
-		if (client.world == null) {
+	private static Optional<GoalPosition> standPositionForTable(Minecraft minecraft, LocalPlayer player, BlockPos tablePos) {
+		if (minecraft.level == null) {
 			return Optional.empty();
 		}
-		BlockPos current = player.getBlockPos();
+		BlockPos current = player.blockPosition();
 		GoalPosition best = null;
 		double bestDistance = Double.MAX_VALUE;
-		for (Direction direction : Direction.Type.HORIZONTAL) {
-			BlockPos candidate = tablePos.offset(direction);
-			if (!isStandable(client, candidate)) {
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
+			BlockPos candidate = tablePos.relative(direction);
+			if (!isStandable(minecraft, candidate)) {
 				continue;
 			}
-			double distance = current.getSquaredDistance(candidate);
+			double distance = current.distSqr(candidate);
 			if (distance < bestDistance) {
 				best = new GoalPosition(candidate.getX(), candidate.getY(), candidate.getZ(), true);
 				bestDistance = distance;
@@ -641,20 +641,20 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return Optional.ofNullable(best);
 	}
 
-	private static boolean isStandable(MinecraftClient client, BlockPos pos) {
-		if (client.world == null || !client.world.isChunkLoaded(pos) || !client.world.isChunkLoaded(pos.up())) {
+	private static boolean isStandable(Minecraft minecraft, BlockPos pos) {
+		if (minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.hasChunkAt(pos.above())) {
 			return false;
 		}
-		BlockState feet = client.world.getBlockState(pos);
-		BlockState head = client.world.getBlockState(pos.up());
-		BlockState floor = client.world.getBlockState(pos.down());
-		return (feet.isAir() || feet.isReplaceable())
-			&& (head.isAir() || head.isReplaceable())
-			&& floor.isSideSolidFullSquare(client.world, pos.down(), Direction.UP);
+		BlockState feet = minecraft.level.getBlockState(pos);
+		BlockState head = minecraft.level.getBlockState(pos.above());
+		BlockState floor = minecraft.level.getBlockState(pos.below());
+		return (feet.isAir() || feet.canBeReplaced())
+			&& (head.isAir() || head.canBeReplaced())
+			&& floor.isFaceSturdy(minecraft.level, pos.below(), Direction.UP);
 	}
 
-	private static boolean withinInteractionRange(ClientPlayerEntity player, BlockPos pos) {
-		return player.squaredDistanceTo(Vec3d.ofCenter(pos)) <= TABLE_INTERACTION_RANGE_SQUARED;
+	private static boolean withinInteractionRange(LocalPlayer player, BlockPos pos) {
+		return player.distanceToSqr(Vec3.atCenterOf(pos)) <= TABLE_INTERACTION_RANGE_SQUARED;
 	}
 
 	private static GoalPosition goalPosition(BlockPos pos) {
@@ -673,11 +673,11 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		return position == null ? "none" : position.x() + "," + position.y() + "," + position.z();
 	}
 
-	private static boolean closeInventoryScreenIfOpen(MinecraftClient client, ClientPlayerEntity player) {
-		if (client.currentScreen instanceof InventoryScreen
-			&& player.currentScreenHandler == player.playerScreenHandler
-			&& player.currentScreenHandler.getCursorStack().isEmpty()) {
-			ScreenCloseSafety.clearScreen(client, "crafting_inventory_close");
+	private static boolean closeInventoryScreenIfOpen(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft.screen instanceof InventoryScreen
+			&& player.containerMenu == player.inventoryMenu
+			&& player.containerMenu.getCarried().isEmpty()) {
+			ScreenCloseSafety.clearScreen(minecraft, "crafting_inventory_close");
 			return true;
 		}
 		return false;
@@ -686,23 +686,23 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private WorkbenchReadiness tickPortableTablePlacement(
 		WorldTaskRequest request,
 		SessionSnapshot sessionSnapshot,
-		MinecraftClient client,
-		ClientPlayerEntity player
+		Minecraft minecraft,
+		LocalPlayer player
 	) {
-		if (client.world == null
-			|| player.currentScreenHandler != player.playerScreenHandler
-			|| !player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (minecraft.level == null
+			|| player.containerMenu != player.inventoryMenu
+			|| !player.containerMenu.getCarried().isEmpty()) {
 			return WorkbenchReadiness.failed(TaskFailure.of(
 				TaskFailureCode.BUSY,
 				portableTableFailure("placement_unavailable", 0, null, "crafting_busy")
 			));
 		}
 		if (portableTablePlacementState == null) {
-			GoalPosition origin = goalPosition(player.getBlockPos());
+			GoalPosition origin = goalPosition(player.blockPosition());
 			List<PortableTablePlacementPolicy.SiteObservation> observations = PortableTablePlacementPolicy
 				.candidatePositions(origin)
 				.stream()
-				.map(candidate -> observePortableTableSite(client, candidate, origin))
+				.map(candidate -> observePortableTableSite(minecraft, candidate, origin))
 				.toList();
 			List<GoalPosition> candidates = PortableTablePlacementPolicy.rankFeasibleSites(
 				origin,
@@ -746,7 +746,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		GoalPosition target = placementState.activeTarget();
-		if (WorldPlacePreservation.contains(client.world, blockPos(target))) {
+		if (WorldPlacePreservation.contains(minecraft.level, blockPos(target))) {
 			resetPortableTablePlacementAttempt(sessionSnapshot);
 			portableTablePlacementState = placementState.advance("preserved_place");
 			return WorkbenchReadiness.notReadyState();
@@ -767,12 +767,12 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		TaskTerminalEvent childTerminal = terminal.get();
 		BlockPos targetPos = blockPos(target);
 		boolean exactTablePlaced = childTerminal.terminalState() == TaskExecutionState.COMPLETED
-			&& client.world.isChunkLoaded(targetPos)
-			&& client.world.getBlockState(targetPos).isOf(Blocks.CRAFTING_TABLE);
+			&& minecraft.level.hasChunkAt(targetPos)
+			&& minecraft.level.getBlockState(targetPos).is(Blocks.CRAFTING_TABLE);
 		resetPortableTablePlacementAttempt(sessionSnapshot);
 		if (exactTablePlaced) {
 			placedTablePos = targetPos;
-			tableTarget = new TableTarget(targetPos, standPositionForTable(client, player, targetPos).orElse(null));
+			tableTarget = new TableTarget(targetPos, standPositionForTable(minecraft, player, targetPos).orElse(null));
 			clearPortableTablePlacementState();
 			phase = CraftPhase.OPENING_TABLE;
 			waitTicks = 0;
@@ -825,25 +825,25 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static PortableTablePlacementPolicy.SiteObservation observePortableTableSite(
-		MinecraftClient client,
+		Minecraft minecraft,
 		GoalPosition candidate,
 		GoalPosition origin
 	) {
 		BlockPos target = blockPos(candidate);
-		boolean targetLoaded = client.world != null && client.world.isChunkLoaded(target);
-		BlockState targetState = targetLoaded ? client.world.getBlockState(target) : null;
-		boolean adjacentSupportAvailable = client.world != null && Arrays.stream(Direction.values())
-			.map(target::offset)
-			.filter(client.world::isChunkLoaded)
-			.map(client.world::getBlockState)
-			.anyMatch(state -> !state.isAir() && !state.isReplaceable());
+		boolean targetLoaded = minecraft.level != null && minecraft.level.hasChunkAt(target);
+		BlockState targetState = targetLoaded ? minecraft.level.getBlockState(target) : null;
+		boolean adjacentSupportAvailable = minecraft.level != null && Arrays.stream(Direction.values())
+			.map(target::relative)
+			.filter(minecraft.level::hasChunkAt)
+			.map(minecraft.level::getBlockState)
+			.anyMatch(state -> !state.isAir() && !state.canBeReplaced());
 		return new PortableTablePlacementPolicy.SiteObservation(
 			candidate,
 			targetLoaded,
-			targetState != null && (targetState.isAir() || targetState.isReplaceable()),
+			targetState != null && (targetState.isAir() || targetState.canBeReplaced()),
 			adjacentSupportAvailable,
 			occupiesPlayerSpace(candidate, origin),
-			WorldPlacePreservation.contains(client.world, target)
+			WorldPlacePreservation.contains(minecraft.level, target)
 		);
 	}
 
@@ -895,20 +895,20 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		portableTablePlacementTask = null;
 	}
 
-	private static boolean hasCraftingTableItem(ScreenHandler handler) {
-		return findPortableCraftingTableSlot(handler) >= 0;
+	private static boolean hasCraftingTableItem(AbstractContainerMenu menu) {
+		return findPortableCraftingTableSlot(menu) >= 0;
 	}
 
-	private static int findPortableCraftingTableSlot(ScreenHandler handler) {
-		if (!(handler instanceof PlayerScreenHandler)) {
+	private static int findPortableCraftingTableSlot(AbstractContainerMenu menu) {
+		if (!(menu instanceof InventoryMenu)) {
 			return -1;
 		}
-		for (int slot = 0; slot < handler.slots.size(); slot++) {
+		for (int slot = 0; slot < menu.slots.size(); slot++) {
 			if (!isPortableCraftingTableSourceSlot(slot)) {
 				continue;
 			}
-			ItemStack stack = handler.getSlot(slot).getStack();
-			if (!stack.isEmpty() && stack.isOf(Items.CRAFTING_TABLE)) {
+			ItemStack stack = menu.getSlot(slot).getItem();
+			if (!stack.isEmpty() && stack.is(Items.CRAFTING_TABLE)) {
 				return slot;
 			}
 		}
@@ -916,33 +916,33 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	static boolean isPortableCraftingTableSourceSlot(int slot) {
-		return (slot >= PlayerScreenHandler.INVENTORY_START && slot < PlayerScreenHandler.HOTBAR_END)
-			|| slot == PlayerScreenHandler.OFFHAND_ID;
+		return (slot >= InventoryMenu.INV_SLOT_START && slot < InventoryMenu.USE_ROW_SLOT_END)
+			|| slot == InventoryMenu.SHIELD_SLOT;
 	}
 
-	private boolean openCraftingTable(MinecraftClient client, ClientPlayerEntity player, BlockPos pos) {
-		if (client.world == null || !client.world.isChunkLoaded(pos) || !client.world.getBlockState(pos).isOf(Blocks.CRAFTING_TABLE)) {
+	private boolean openCraftingTable(Minecraft minecraft, LocalPlayer player, BlockPos pos) {
+		if (minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.getBlockState(pos).is(Blocks.CRAFTING_TABLE)) {
 			return false;
 		}
 		if (!withinInteractionRange(player, pos)) {
 			return false;
 		}
-		Vec3d hitVec = Vec3d.ofCenter(pos);
-		cameraController.lookAt(client, hitVec);
+		Vec3 hitVec = Vec3.atCenterOf(pos);
+		cameraController.lookAt(minecraft, hitVec);
 		BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, false);
-		ActionResult result = client.interactionManager.interactBlock(player, Hand.MAIN_HAND, hitResult);
-		if (result.isAccepted()) {
-			player.swingHand(Hand.MAIN_HAND);
+		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+		if (result.consumesAction()) {
+			player.swing(InteractionHand.MAIN_HAND);
 			openedWorkbenchForTask = true;
 		}
-		return result.isAccepted();
+		return result.consumesAction();
 	}
 
-	private static int inventoryCount(ClientPlayerEntity player, Item item) {
+	private static int inventoryCount(LocalPlayer player, Item item) {
 		int count = 0;
-		for (int index = 0; index < player.getInventory().size(); index++) {
-			ItemStack stack = player.getInventory().getStack(index);
-			if (stack.isOf(item)) {
+		for (int index = 0; index < player.getInventory().getContainerSize(); index++) {
+			ItemStack stack = player.getInventory().getItem(index);
+			if (stack.is(item)) {
 				count += stack.getCount();
 			}
 		}
@@ -965,11 +965,11 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		if (!openedWorkbenchForTask) {
 			return;
 		}
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player != null
-			&& player.currentScreenHandler instanceof CraftingScreenHandler
-			&& player.currentScreenHandler.getCursorStack().isEmpty()) {
+			&& player.containerMenu instanceof CraftingMenu
+			&& player.containerMenu.getCarried().isEmpty()) {
 			ScreenCloseSafety.closeHandledScreen(player, "crafting_workbench_close");
 		}
 		openedWorkbenchForTask = false;
@@ -1102,7 +1102,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	static record CraftingPlan(
-		NetworkRecipeId networkRecipeId,
+		RecipeDisplayId networkRecipeId,
 		Item outputItem,
 		int outputCount,
 		int requestedTimes,
@@ -1116,7 +1116,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 	}
 
-	static record RecipeFillRequest(int syncId, NetworkRecipeId networkRecipeId, boolean craftAll) {
+	static record RecipeFillRequest(int syncId, RecipeDisplayId networkRecipeId, boolean craftAll) {
 	}
 
 	private record WorkbenchReadiness(boolean ready, Optional<TaskFailure> failure) {
@@ -1167,16 +1167,16 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	) {
 		private static final CraftingGridSpec PLAYER = new CraftingGridSpec(
 			CraftingGridKind.PLAYER_2X2,
-			PlayerScreenHandler.CRAFTING_RESULT_ID,
-			PlayerScreenHandler.CRAFTING_INPUT_START,
-			PlayerScreenHandler.CRAFTING_INPUT_COUNT,
-			PlayerScreenHandler.INVENTORY_START,
-			PlayerScreenHandler.HOTBAR_START,
-			PlayerScreenHandler.HOTBAR_END
+			InventoryMenu.RESULT_SLOT,
+			InventoryMenu.CRAFT_SLOT_START,
+			InventoryMenu.CRAFT_SLOT_COUNT,
+			InventoryMenu.INV_SLOT_START,
+			InventoryMenu.USE_ROW_SLOT_START,
+			InventoryMenu.USE_ROW_SLOT_END
 		);
 		private static final CraftingGridSpec WORKBENCH = new CraftingGridSpec(
 			CraftingGridKind.WORKBENCH_3X3,
-			CraftingScreenHandler.RESULT_ID,
+			CraftingMenu.RESULT_SLOT,
 			1,
 			9,
 			10,
@@ -1188,11 +1188,11 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			return kind == CraftingGridKind.WORKBENCH_3X3 ? WORKBENCH : PLAYER;
 		}
 
-		private boolean matches(ScreenHandler handler) {
+		private boolean matches(AbstractContainerMenu menu) {
 			if (kind == CraftingGridKind.WORKBENCH_3X3) {
-				return handler instanceof CraftingScreenHandler;
+				return menu instanceof CraftingMenu;
 			}
-			return handler instanceof PlayerScreenHandler;
+			return menu instanceof InventoryMenu;
 		}
 	}
 }

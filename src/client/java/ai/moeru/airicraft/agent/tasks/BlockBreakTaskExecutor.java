@@ -3,14 +3,14 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.FluidBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.Objects;
@@ -21,7 +21,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final int TARGET_TIMEOUT_TICKS = 200;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final CameraController cameraController;
 
 	private WorldTaskRequest appliedTask;
@@ -34,14 +34,14 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private long targetStartTick = -1L;
 
 	public BlockBreakTaskExecutor(CameraController cameraController) {
-		this(MinecraftClient::getInstance, cameraController);
+		this(Minecraft::getInstance, cameraController);
 	}
 
-	BlockBreakTaskExecutor(Supplier<MinecraftClient> clientSupplier) {
+	BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier) {
 		this(clientSupplier, new CameraController());
 	}
 
-	private BlockBreakTaskExecutor(Supplier<MinecraftClient> clientSupplier, CameraController cameraController) {
+	private BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
 		this.cameraController = Objects.requireNonNull(cameraController);
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
@@ -61,19 +61,19 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.PAUSED_BY_SESSION_GATE, request, "session_gate");
 			return Optional.empty();
 		}
-		MinecraftClient client = clientSupplier.get();
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.interactionManager == null || client.world == null || player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.gameMode == null || minecraft.level == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "interaction_busy"));
 		}
 
 		BlockBreakStepArgs args = ((WorldTaskRequest.BreakBlocks) request.task()).args();
 		while (targetIndex < args.targets().size()) {
 			int previousTarget = targetIndex;
-			Optional<TaskTerminalEvent> event = tickTarget(sessionSnapshot, client, player, request, args.targets().get(targetIndex));
+			Optional<TaskTerminalEvent> event = tickTarget(sessionSnapshot, minecraft, player, request, args.targets().get(targetIndex));
 			if (event.isPresent() || targetIndex == previousTarget) {
 				return event;
 			}
@@ -83,16 +83,16 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> tickTarget(
 		SessionSnapshot sessionSnapshot,
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		WorldTaskRequest request,
 		BlockBreakStepArgs.Target target
 	) {
 		BlockPos pos = blockPos(target.position());
-		if (!client.world.isChunkLoaded(pos)) {
+		if (!minecraft.level.hasChunkAt(pos)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.ENVIRONMENT_CHANGED, "target_unloaded targetPos=" + compactPos(pos)));
 		}
-		BlockState state = client.world.getBlockState(pos);
+		BlockState state = minecraft.level.getBlockState(pos);
 		if (satisfied(state)) {
 			skippedTargets++;
 			targetIndex++;
@@ -105,11 +105,11 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		if (!target.expectedBlockIds().contains(currentBlockId)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_block_mismatch targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 		}
-		if (!withinInteractionRange(player, Vec3d.ofCenter(pos))) {
+		if (!withinInteractionRange(player, Vec3.atCenterOf(pos))) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range targetPos=" + compactPos(pos)));
 		}
-		cameraController.lookAtBlock(client, pos);
-		var hit = cameraController.blockHit(client, pos);
+		cameraController.lookAtBlock(minecraft, pos);
+		var hit = cameraController.blockHit(minecraft, pos);
 		if (hit.isEmpty()) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_aim targetPos=" + compactPos(pos));
 			return Optional.empty();
@@ -117,25 +117,25 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		long tick = sessionSnapshot == null ? 0L : sessionSnapshot.tickCount();
 		if (!breakingActive) {
 			MiningToolPreparation.Result toolSelection =
-				MiningToolPreparation.ensureSelected(client, player, List.of(state));
+				MiningToolPreparation.ensureSelected(minecraft, player, List.of(state));
 			if (!toolSelection.ok()) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_ITEM, toolSelection.message()));
 			}
-			boolean accepted = client.interactionManager.attackBlock(pos, hit.get().getSide());
+			boolean accepted = minecraft.gameMode.startDestroyBlock(pos, hit.get().getDirection());
 			if (!accepted) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "break_start_failed targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 			}
-			player.swingHand(Hand.MAIN_HAND);
+			player.swing(InteractionHand.MAIN_HAND);
 			breakingActive = true;
 			targetStartTick = tick;
 		}
 		if (tick - targetStartTick > TARGET_TIMEOUT_TICKS) {
-			client.interactionManager.cancelBlockBreaking();
+			minecraft.gameMode.stopDestroyBlock();
 			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_timeout targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 		}
-		client.interactionManager.updateBlockBreakingProgress(pos, hit.get().getSide());
-		player.swingHand(Hand.MAIN_HAND);
-		BlockState after = client.world.isChunkLoaded(pos) ? client.world.getBlockState(pos) : state;
+		minecraft.gameMode.continueDestroyBlock(pos, hit.get().getDirection());
+		player.swing(InteractionHand.MAIN_HAND);
+		BlockState after = minecraft.level.hasChunkAt(pos) ? minecraft.level.getBlockState(pos) : state;
 		if (satisfied(after)) {
 			brokenTargets++;
 			targetIndex++;
@@ -171,11 +171,11 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static boolean satisfied(BlockState state) {
-		return state.isAir() || state.getBlock() instanceof FluidBlock;
+		return state.isAir() || state.getBlock() instanceof LiquidBlock;
 	}
 
-	private static boolean withinInteractionRange(ClientPlayerEntity player, Vec3d pos) {
-		return player.squaredDistanceTo(pos) <= INTERACTION_RANGE_SQUARED;
+	private static boolean withinInteractionRange(LocalPlayer player, Vec3 pos) {
+		return player.distanceToSqr(pos) <= INTERACTION_RANGE_SQUARED;
 	}
 
 	private static BlockPos blockPos(GoalPosition position) {
@@ -183,7 +183,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static String blockId(BlockState state) {
-		return Registries.BLOCK.getId(state.getBlock()).toString();
+		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 	}
 
 	private static String compactPos(BlockPos pos) {
@@ -223,9 +223,9 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 
 	private void reset() {
 		if (breakingActive) {
-			MinecraftClient client = clientSupplier.get();
-			if (client != null && client.interactionManager != null) {
-				client.interactionManager.cancelBlockBreaking();
+			Minecraft minecraft = clientSupplier.get();
+			if (minecraft != null && minecraft.gameMode != null) {
+				minecraft.gameMode.stopDestroyBlock();
 			}
 		}
 		appliedTask = null;

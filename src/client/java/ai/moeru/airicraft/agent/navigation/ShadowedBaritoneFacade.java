@@ -9,7 +9,7 @@ import ai.moeru.airicraft.navigation.MovementPolicy;
 import ai.moeru.airicraft.navigation.Path;
 import ai.moeru.airicraft.navigation.SearchBudget;
 import ai.moeru.airicraft.navigation.SearchResult;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -56,21 +56,21 @@ public final class ShadowedBaritoneFacade implements BaritoneFacade {
 
 	private void shadow(Goal goal, GoalPosition position, boolean hasY) {
 		clearShadow();
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.player == null || client.world == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.player == null || minecraft.level == null) {
 			shadowSkipped = "no_client";
 			return;
 		}
 		try {
-			MovementPolicy policy = NavigationPolicies.forPlayer(client, delegate.walkOnWaterPenalty());
+			MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, delegate.walkOnWaterPenalty());
 			if (policy == null) {
 				shadowSkipped = "travel_policy_unavailable";
 				return;
 			}
-			var player = client.player;
+			var player = minecraft.player;
 			GridPos start = new BodyState(player.getX(), player.getY(), player.getZ(), 0, true, false, false, false, 0).feet();
 			GridPos target = new GridPos(position.x(), hasY ? position.y() : start.y(), position.z());
-			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, hasY,
+			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(minecraft.level, start, target, hasY,
 				MinecraftCellClassifier.forPlayer(player));
 			captureMillis = snapshot.captureMillis();
 			shadow = planner.submit(snapshot, policy, start, goal, target, BUDGET);

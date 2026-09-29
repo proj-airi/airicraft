@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.lighting;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,7 +15,7 @@ class LightingRuntimeTest {
 		var sampled = new java.util.HashSet<BlockPos>();
 		double average = LightingRuntime.averageFootLevelLight(origin, air::contains, pos -> {
 			assertTrue(air.contains(pos), "Occupied cells must never be queried for light: " + pos);
-			sampled.add(pos.toImmutable());
+			sampled.add(pos.immutable());
 			return pos.equals(origin) ? 5 : 6;
 		});
 		assertEquals(air, sampled);
@@ -28,7 +28,7 @@ class LightingRuntimeTest {
 
 	@Test
 	void noAirSamplesDoNotTriggerTorchPlacement() {
-		double average = LightingRuntime.averageFootLevelLight(BlockPos.ORIGIN, pos -> false, pos -> {
+		double average = LightingRuntime.averageFootLevelLight(BlockPos.ZERO, pos -> false, pos -> {
 			throw new AssertionError("An occupied area has no light samples");
 		});
 		for (LightingPolicy.Mode mode : LightingPolicy.Mode.values()) {

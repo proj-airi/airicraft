@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.lighting;
 
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.BlockPos;
 
 import java.util.HashSet;
 import java.util.List;
@@ -33,16 +33,16 @@ public final class MiningIlluminationPreflight {
 	private MiningIlluminationPreflight() {
 	}
 
-	public static Result inspect(MinecraftClient client, GoalMineSpec spec, int maxLightLevel) {
-		if (client == null || client.world == null || client.player == null || spec == null) {
+	public static Result inspect(Minecraft minecraft, GoalMineSpec spec, int maxLightLevel) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null || spec == null) {
 			return Result.notRequired();
 		}
-		BlockPos origin = client.player.getBlockPos();
-		if (isLikelyUndergroundPosition(client, origin)) {
+		BlockPos origin = minecraft.player.blockPosition();
+		if (isLikelyUndergroundPosition(minecraft, origin)) {
 			return new Result(true, "current_position_underground");
 		}
 		LoadedTargetEvidence loadedTargetEvidence = inspectLoadedTargetEvidence(
-			client,
+			minecraft,
 			origin,
 			spec.blockIds(),
 			maxLightLevel
@@ -103,7 +103,7 @@ public final class MiningIlluminationPreflight {
 	}
 
 	private static LoadedTargetEvidence inspectLoadedTargetEvidence(
-		MinecraftClient client,
+		Minecraft minecraft,
 		BlockPos origin,
 		List<String> requestedBlockIds,
 		int maxLightLevel
@@ -112,23 +112,23 @@ public final class MiningIlluminationPreflight {
 		boolean surfaceBootstrapRequest = blockIds.stream().anyMatch(SURFACE_BOOTSTRAP_BLOCK_IDS::contains);
 		boolean anyUnilluminatedTarget = false;
 		boolean anySurfaceAccessibleTarget = false;
-		BlockPos.Mutable cursor = new BlockPos.Mutable();
+		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 		for (int x = -HORIZONTAL_SCAN_RADIUS; x <= HORIZONTAL_SCAN_RADIUS; x++) {
 			for (int y = -VERTICAL_SCAN_RADIUS; y <= VERTICAL_SCAN_RADIUS; y++) {
 				for (int z = -HORIZONTAL_SCAN_RADIUS; z <= HORIZONTAL_SCAN_RADIUS; z++) {
 					cursor.set(origin.getX() + x, origin.getY() + y, origin.getZ() + z);
-					if (!client.world.isChunkLoaded(cursor)) {
+					if (!minecraft.level.hasChunkAt(cursor)) {
 						continue;
 					}
-					BlockState state = client.world.getBlockState(cursor);
-					String blockId = Registries.BLOCK.getId(state.getBlock()).toString();
+					BlockState state = minecraft.level.getBlockState(cursor);
+					String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
 					if (!blockIds.contains(blockId)) {
 						continue;
 					}
 					boolean illuminationRequired = loadedTargetRequiresIllumination(
 						blockId,
-						hasSurfaceOpeningWithinProbe(offset -> client.world.isSkyVisible(cursor.up(offset))),
-						client.world.getLightLevel(cursor),
+						hasSurfaceOpeningWithinProbe(offset -> minecraft.level.canSeeSky(cursor.above(offset))),
+						minecraft.level.getMaxLocalRawBrightness(cursor),
 						maxLightLevel
 					);
 					if (illuminationRequired) {
@@ -195,8 +195,8 @@ public final class MiningIlluminationPreflight {
 		return anyUnilluminatedTarget && (!surfaceBootstrapRequest || !anySurfaceAccessibleTarget);
 	}
 
-	private static boolean isLikelyUndergroundPosition(MinecraftClient client, BlockPos position) {
-		return !hasNearbySurfaceOpening((x, y, z) -> client.world.isSkyVisible(position.add(x, y, z)));
+	private static boolean isLikelyUndergroundPosition(Minecraft minecraft, BlockPos position) {
+		return !hasNearbySurfaceOpening((x, y, z) -> minecraft.level.canSeeSky(position.offset(x, y, z)));
 	}
 
 	@FunctionalInterface

@@ -1,21 +1,21 @@
 package ai.moeru.airicraft.mixin.client;
 
-import net.minecraft.client.render.Camera;
+import net.minecraft.client.Camera;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(Camera.class)
 public interface CameraAccessor {
-	@Accessor("ready")
+	@Accessor("initialized")
 	void airicraft$setReady(boolean ready);
 
-	@Accessor("thirdPerson")
+	@Accessor("detached")
 	void airicraft$setThirdPerson(boolean thirdPerson);
-	@Accessor("lastTickProgress")
+	@Accessor("partialTickTime")
 	void airicraft$setLastTickProgress(float lastTickProgress);
 
-	@Invoker("setPos")
+	@Invoker("setPosition")
 	void airicraft$invokeSetPos(double x, double y, double z);
 
 	@Invoker("setRotation")

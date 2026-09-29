@@ -3,13 +3,13 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
 import java.util.List;
@@ -26,7 +26,7 @@ public final class MinecraftUnderwaterEscapeController {
 	private final CameraController camera;
 	private final BaritoneFacade baritone;
 	private final UnderwaterEscapeNavigator navigator;
-	private MinecraftClient activeClient;
+	private Minecraft activeClient;
 
 	private UnderwaterEscapeSearch.SearchMode mode;
 	private UnderwaterEscapeSearch.SearchSession searchSession;
@@ -45,17 +45,17 @@ public final class MinecraftUnderwaterEscapeController {
 		this.navigator = new UnderwaterEscapeNavigator(baritone, new UnderwaterEscapeNavigator.WaypointDriver() {
 			@Override
 			public void moveToward(UnderwaterEscapeSearch.Position waypoint, long tick) {
-				MinecraftClient client = activeClient;
-				ClientPlayerEntity player = client == null ? null : client.player;
+				Minecraft minecraft = activeClient;
+				LocalPlayer player = minecraft == null ? null : minecraft.player;
 				if (player == null) {
-					MinecraftUnderwaterEscapeController.this.movement.stop(client);
+					MinecraftUnderwaterEscapeController.this.movement.stop(minecraft);
 					return;
 				}
-				Vec3d target = new Vec3d(waypoint.x() + 0.5D, waypoint.y() + 1.0D, waypoint.z() + 0.5D);
-				MinecraftUnderwaterEscapeController.this.camera.lookAt(client, target);
+				Vec3 target = new Vec3(waypoint.x() + 0.5D, waypoint.y() + 1.0D, waypoint.z() + 0.5D);
+				MinecraftUnderwaterEscapeController.this.camera.lookAt(minecraft, target);
 				boolean ascend = waypoint.y() > player.getBlockY();
 				MinecraftUnderwaterEscapeController.this.movement.moveDirectional(
-					client,
+					minecraft,
 					true,
 					false,
 					false,
@@ -74,26 +74,26 @@ public final class MinecraftUnderwaterEscapeController {
 	}
 
 	public Snapshot tick(
-		MinecraftClient client,
+		Minecraft minecraft,
 		UnderwaterEscapeSearch.SearchMode requestedMode,
 		int remainingAirTicks,
 		long tick,
 		boolean targetSatisfied
 	) {
-		ClientPlayerEntity player = client == null ? null : client.player;
-		if (client == null || client.world == null || player == null) {
-			reset(client);
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
+		if (minecraft == null || minecraft.level == null || player == null) {
+			reset(minecraft);
 			return snapshot();
 		}
-		activeClient = client;
+		activeClient = minecraft;
 		if (searchSession != null
 			&& navigator.snapshot().phase() == UnderwaterEscapeNavigator.Phase.REACHED
 			&& !targetSatisfied) {
-			restartSearch(client);
-			activeClient = client;
+			restartSearch(minecraft);
+			activeClient = minecraft;
 		}
 		if (searchSession == null || mode != requestedMode) {
-			begin(client, requestedMode, remainingAirTicks);
+			begin(minecraft, requestedMode, remainingAirTicks);
 		}
 		if (searchSession != null && searchStatus == UnderwaterEscapeSearch.SearchStatus.SEARCHING) {
 			UnderwaterEscapeSearch.SearchUpdate update = searchSession.advance(
@@ -105,7 +105,7 @@ public final class MinecraftUnderwaterEscapeController {
 		if (waitingForBaritoneRelease) {
 			waitingForBaritoneRelease = !BaritoneReleaseBarrier.releaseAndDrain(baritone);
 			if (waitingForBaritoneRelease) {
-				movement.stop(client);
+				movement.stop(minecraft);
 				return snapshot();
 			}
 		}
@@ -123,16 +123,16 @@ public final class MinecraftUnderwaterEscapeController {
 			// Baritone left the player in a connected cell outside every route
 			// computed from the old origin. Re-anchor the bounded search here;
 			// navigator.restartSearch() deliberately retains attempted/failed targets.
-			begin(client, requestedMode, remainingAirTicks);
-			movement.stop(client);
+			begin(minecraft, requestedMode, remainingAirTicks);
+			movement.stop(minecraft);
 			return snapshot();
 		}
 		return new Snapshot(searchStatus, candidates.size(), navigation, false);
 	}
 
-	public void reset(MinecraftClient client) {
+	public void reset(Minecraft minecraft) {
 		navigator.reset();
-		movement.stop(client);
+		movement.stop(minecraft);
 		activeClient = null;
 		mode = null;
 		searchSession = null;
@@ -146,14 +146,14 @@ public final class MinecraftUnderwaterEscapeController {
 	}
 
 	private void begin(
-		MinecraftClient client,
+		Minecraft minecraft,
 		UnderwaterEscapeSearch.SearchMode requestedMode,
 		int remainingAirTicks
 	) {
 		navigator.restartSearch();
 		waitingForBaritoneRelease = true;
 		mode = Objects.requireNonNull(requestedMode, "requestedMode");
-		ClientPlayerEntity player = client.player;
+		LocalPlayer player = minecraft.player;
 		UnderwaterEscapeSearch.Position start = new UnderwaterEscapeSearch.Position(
 			player.getBlockX(),
 			player.getBlockY(),
@@ -164,40 +164,40 @@ public final class MinecraftUnderwaterEscapeController {
 			requestedMode,
 			remainingAirTicks
 		);
-		searchSession = UnderwaterEscapeSearch.begin(request, new LiveCellView(client, start, request.maxPathSteps()));
+		searchSession = UnderwaterEscapeSearch.begin(request, new LiveCellView(minecraft, start, request.maxPathSteps()));
 		candidates = List.of();
 		searchStatus = searchSession.status();
 	}
 
 	private static UnderwaterEscapeSearch.Cell observeCell(
-		MinecraftClient client,
+		Minecraft minecraft,
 		UnderwaterEscapeSearch.Position position
 	) {
 		BlockPos feetPos = new BlockPos(position.x(), position.y(), position.z());
-		BlockPos headPos = feetPos.up();
-		BlockPos supportPos = feetPos.down();
-		if (!client.world.isInBuildLimit(feetPos)
-			|| !client.world.isInBuildLimit(headPos)
-			|| !client.world.isInBuildLimit(supportPos)
-			|| !client.world.isChunkLoaded(feetPos)
-			|| !client.world.isChunkLoaded(headPos)
-			|| !client.world.isChunkLoaded(supportPos)) {
+		BlockPos headPos = feetPos.above();
+		BlockPos supportPos = feetPos.below();
+		if (!minecraft.level.isInWorldBounds(feetPos)
+			|| !minecraft.level.isInWorldBounds(headPos)
+			|| !minecraft.level.isInWorldBounds(supportPos)
+			|| !minecraft.level.hasChunkAt(feetPos)
+			|| !minecraft.level.hasChunkAt(headPos)
+			|| !minecraft.level.hasChunkAt(supportPos)) {
 			return UnderwaterEscapeSearch.Cell.blocked();
 		}
-		BlockState feet = client.world.getBlockState(feetPos);
-		BlockState head = client.world.getBlockState(headPos);
-		BlockState support = client.world.getBlockState(supportPos);
-		boolean collisionFree = feet.getCollisionShape(client.world, feetPos).isEmpty()
-			&& head.getCollisionShape(client.world, headPos).isEmpty();
+		BlockState feet = minecraft.level.getBlockState(feetPos);
+		BlockState head = minecraft.level.getBlockState(headPos);
+		BlockState support = minecraft.level.getBlockState(supportPos);
+		boolean collisionFree = feet.getCollisionShape(minecraft.level, feetPos).isEmpty()
+			&& head.getCollisionShape(minecraft.level, headPos).isEmpty();
 		if (!collisionFree) {
 			return UnderwaterEscapeSearch.Cell.blocked();
 		}
-		boolean waterAtFeet = client.world.getFluidState(feetPos).isIn(FluidTags.WATER);
-		boolean waterAtHead = client.world.getFluidState(headPos).isIn(FluidTags.WATER);
-		boolean breathable = client.world.getFluidState(headPos).isEmpty();
+		boolean waterAtFeet = minecraft.level.getFluidState(feetPos).is(FluidTags.WATER);
+		boolean waterAtHead = minecraft.level.getFluidState(headPos).is(FluidTags.WATER);
+		boolean breathable = minecraft.level.getFluidState(headPos).isEmpty();
 		boolean safeStanding = breathable
-			&& client.world.getFluidState(feetPos).isEmpty()
-			&& support.isSideSolidFullSquare(client.world, supportPos, Direction.UP);
+			&& minecraft.level.getFluidState(feetPos).isEmpty()
+			&& support.isFaceSturdy(minecraft.level, supportPos, Direction.UP);
 		return new UnderwaterEscapeSearch.Cell(
 			true,
 			waterAtFeet,
@@ -208,20 +208,20 @@ public final class MinecraftUnderwaterEscapeController {
 	}
 
 	/** Predicate shared with idle-drowning resolution; unlike surface memory it rejects water. */
-	public static boolean isSafeStandingPosition(MinecraftClient client, BlockPos feetPos) {
-		if (client == null || client.world == null || feetPos == null) {
+	public static boolean isSafeStandingPosition(Minecraft minecraft, BlockPos feetPos) {
+		if (minecraft == null || minecraft.level == null || feetPos == null) {
 			return false;
 		}
-		return observeCell(client, new UnderwaterEscapeSearch.Position(
+		return observeCell(minecraft, new UnderwaterEscapeSearch.Position(
 			feetPos.getX(),
 			feetPos.getY(),
 			feetPos.getZ()
 		)).safeStanding();
 	}
 
-	private void restartSearch(MinecraftClient client) {
+	private void restartSearch(Minecraft minecraft) {
 		navigator.restartSearch();
-		movement.stop(client);
+		movement.stop(minecraft);
 		mode = null;
 		searchSession = null;
 		candidates = List.of();
@@ -230,17 +230,17 @@ public final class MinecraftUnderwaterEscapeController {
 	}
 
 	private static final class LiveCellView implements UnderwaterEscapeSearch.CellView {
-		private final MinecraftClient client;
+		private final Minecraft minecraft;
 		private final UnderwaterEscapeSearch.Position origin;
 		private final int maxPathSteps;
 		private final Map<UnderwaterEscapeSearch.Position, UnderwaterEscapeSearch.Cell> observed = new HashMap<>();
 
 		private LiveCellView(
-			MinecraftClient client,
+			Minecraft minecraft,
 			UnderwaterEscapeSearch.Position origin,
 			int maxPathSteps
 		) {
-			this.client = client;
+			this.minecraft = minecraft;
 			this.origin = origin;
 			this.maxPathSteps = maxPathSteps;
 		}
@@ -253,7 +253,7 @@ public final class MinecraftUnderwaterEscapeController {
 			if (distance > maxPathSteps) {
 				return UnderwaterEscapeSearch.Cell.blocked();
 			}
-			return observed.computeIfAbsent(position, candidate -> observeCell(client, candidate));
+			return observed.computeIfAbsent(position, candidate -> observeCell(minecraft, candidate));
 		}
 	}
 

@@ -4,7 +4,7 @@ import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -176,7 +176,7 @@ class LureEntitiesTaskExecutorTest {
 			assertThrows(IllegalArgumentException.class, () -> LureEntitiesStepArgs.parse(com.google.gson.JsonParser.parseString(invalid).getAsJsonObject()));
 	}
 
-	private static Vec3d point(int x) { return new Vec3d(x,63,0); }
+	private static Vec3 point(int x) { return new Vec3(x,63,0); }
 	private static GoalPosition goal(int x) { return new GoalPosition(x,63,0,true); }
 	private static LureEntitiesTaskExecutor.Follower animal(String id, int x, boolean inside, boolean visible) {
 		return new LureEntitiesTaskExecutor.Follower(id,point(x),inside,visible);
@@ -196,13 +196,13 @@ class LureEntitiesTaskExecutorTest {
 		void tick(int n) { for (int i=0;i<n;i++) executor.tick(session(),Optional.of(request)).ifPresent(events::add); }
 	}
 	private static final class Environment implements LureEntitiesTaskExecutor.Environment {
-		Vec3d player = point(0);
+		Vec3 player = point(0);
 		List<LureEntitiesTaskExecutor.Follower> animals = List.of(animal("aaaaaaaa",2,false,true));
 		List<GoalPosition> leads = List.of(goal(10),goal(12));
 		boolean settingsOwned, held;
 		int initializations;
 		public String initialize(LureEntitiesStepArgs args) { initializations++; return null; }
-		public Vec3d position() { return player; }
+		public Vec3 position() { return player; }
 		public List<LureEntitiesTaskExecutor.Follower> followers() { return animals; }
 		public String holdItem() { held = true; return null; }
 		public List<GoalPosition> leadPositions(List<LureEntitiesTaskExecutor.Follower> followers) { return leads; }

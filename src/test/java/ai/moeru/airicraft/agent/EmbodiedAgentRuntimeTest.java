@@ -86,8 +86,8 @@ import ai.moeru.airicraft.agent.llm.PlannerInputText;
 import ai.moeru.airicraft.agent.llm.PlannerTrigger;
 import ai.moeru.airicraft.agent.llm.PlannerTriggerType;
 import com.google.gson.JsonParser;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -115,7 +115,7 @@ class EmbodiedAgentRuntimeTest {
 			var event = harness.runtime.recentEvents(null).events().getFirst();
 			assertEquals("EmbodiedAgentRuntime", event.source());
 			assertEquals(harness.clock.millis(), event.timestampMs());
-			harness.runtime.injectNearbyPlayerForTests("Alice", Vec3d.ZERO);
+			harness.runtime.injectNearbyPlayerForTests("Alice", Vec3.ZERO);
 			assertEquals("NearbyPlayerTracker", harness.runtime.recentEvents(event.seqNo()).events().stream()
 				.filter(observed -> observed.type().equals("social.player_joined_nearby")).findFirst().orElseThrow().source());
 			harness.event("task.notice", Map.of("message", "test evidence"));
@@ -227,7 +227,7 @@ class EmbodiedAgentRuntimeTest {
 			field.setAccessible(true);
 			field.set(runtime, new ai.moeru.airicraft.agent.tasks.MissionExecutionSnapshot(
 				null, null, null, fresh, StepExecutionResult.idle(), TaskExecutionSnapshot.idle()));
-			Method pause = EmbodiedAgentRuntime.class.getDeclaredMethod("pauseNormalWorkForReflex", net.minecraft.client.MinecraftClient.class);
+			Method pause = EmbodiedAgentRuntime.class.getDeclaredMethod("pauseNormalWorkForReflex", net.minecraft.client.Minecraft.class);
 			pause.setAccessible(true);
 			pause.invoke(runtime, new Object[]{null});
 			assertEquals(fresh, runtime.missionExecutionSnapshot().evidence(),
@@ -2818,7 +2818,7 @@ class EmbodiedAgentRuntimeTest {
 		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
 		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
 		runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
-		runtime.injectNearbyPlayerForTests("Alice", new Vec3d(8.0D, 64.0D, 0.0D));
+		runtime.injectNearbyPlayerForTests("Alice", new Vec3(8.0D, 64.0D, 0.0D));
 		runtime.injectGoalForTests(new GoalSnapshot(GoalType.FOLLOW_PLAYER, "Alice", 10L, "test"));
 		runtime.onClientTick(null);
 
@@ -2835,7 +2835,7 @@ class EmbodiedAgentRuntimeTest {
 	void givePlayerToolRejectsFarTargetBeforeQueuingTask() {
 		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
 		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(executor);
-		runtime.injectNearbyPlayerForTests("Alice", new Vec3d(5.0D, 0.0D, 0.0D));
+		runtime.injectNearbyPlayerForTests("Alice", new Vec3(5.0D, 0.0D, 0.0D));
 
 		String result = runtime.execute(new PlannerToolCall(
 			"call_give",
@@ -2863,7 +2863,7 @@ class EmbodiedAgentRuntimeTest {
 			0,
 			0L
 		));
-		runtime.injectNearbyPlayerForTests("Alice", new Vec3d(2.0D, 0.0D, 0.0D));
+		runtime.injectNearbyPlayerForTests("Alice", new Vec3(2.0D, 0.0D, 0.0D));
 
 		String result = runtime.execute(new PlannerToolCall(
 			"call_give",

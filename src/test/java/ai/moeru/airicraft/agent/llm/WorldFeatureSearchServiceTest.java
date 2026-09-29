@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.llm;
 
 import com.google.gson.JsonObject;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import java.util.Comparator;
@@ -173,11 +173,11 @@ class WorldFeatureSearchServiceTest {
 		}
 
 		private void standable(BlockPos pos) {
-			standable.add(pos.toImmutable());
+			standable.add(pos.immutable());
 		}
 
 		private void put(BlockPos pos, WorldFeatureSearchService.SampledBlock block) {
-			samples.put(pos.toImmutable(), block);
+			samples.put(pos.immutable(), block);
 		}
 
 		@Override
@@ -190,7 +190,7 @@ class WorldFeatureSearchServiceTest {
 		) {
 			samples.keySet().stream()
 				.sorted(Comparator
-					.comparingInt(BlockPos::getX)
+					.<BlockPos>comparingInt(BlockPos::getX)
 					.thenComparingInt(BlockPos::getY)
 					.thenComparingInt(BlockPos::getZ))
 				.forEach(consumer);
@@ -198,18 +198,18 @@ class WorldFeatureSearchServiceTest {
 
 		@Override
 		public boolean isLoaded(BlockPos pos) {
-			BlockPos immutable = pos.toImmutable();
+			BlockPos immutable = pos.immutable();
 			return samples.containsKey(immutable) || standable.contains(immutable);
 		}
 
 		@Override
 		public WorldFeatureSearchService.SampledBlock sample(BlockPos pos) {
-			return samples.getOrDefault(pos.toImmutable(), WorldFeatureSearchService.SampledBlock.EMPTY);
+			return samples.getOrDefault(pos.immutable(), WorldFeatureSearchService.SampledBlock.EMPTY);
 		}
 
 		@Override
 		public boolean isStandable(BlockPos pos) {
-			return standable.contains(pos.toImmutable());
+			return standable.contains(pos.immutable());
 		}
 	}
 }

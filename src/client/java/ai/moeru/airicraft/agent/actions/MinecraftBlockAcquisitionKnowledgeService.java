@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.actions;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.resource.ResourceManager;
+import net.minecraft.client.Minecraft;
+import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.MinecraftServer;
 
 import java.util.Objects;
@@ -25,8 +25,8 @@ public final class MinecraftBlockAcquisitionKnowledgeService {
 	private Future<BlockAcquisitionIndex> pending;
 	private Snapshot snapshot = Snapshot.unavailable();
 
-	public synchronized Snapshot tick(MinecraftClient client) {
-		Object nextIdentity = sourceIdentity(client);
+	public synchronized Snapshot tick(Minecraft minecraft) {
+		Object nextIdentity = sourceIdentity(minecraft);
 		if (nextIdentity == null) {
 			reset();
 			return snapshot;
@@ -34,7 +34,7 @@ public final class MinecraftBlockAcquisitionKnowledgeService {
 		if (!Objects.equals(sourceIdentity, nextIdentity)) {
 			cancelPending();
 			sourceIdentity = nextIdentity;
-			ResourceManager resourceManager = resourceManager(client);
+			ResourceManager resourceManager = resourceManager(minecraft);
 			pending = executor.submit(() -> MinecraftBlockAcquisitionLoader.load(resourceManager));
 			snapshot = Snapshot.loading(snapshot.index());
 		}
@@ -84,20 +84,20 @@ public final class MinecraftBlockAcquisitionKnowledgeService {
 		}
 	}
 
-	private static ResourceManager resourceManager(MinecraftClient client) {
-		MinecraftServer server = client == null ? null : client.getServer();
+	private static ResourceManager resourceManager(Minecraft minecraft) {
+		MinecraftServer server = minecraft == null ? null : minecraft.getSingleplayerServer();
 		return server == null ? null : server.getResourceManager();
 	}
 
-	private static Object sourceIdentity(MinecraftClient client) {
-		if (client == null) {
+	private static Object sourceIdentity(Minecraft minecraft) {
+		if (minecraft == null) {
 			return null;
 		}
-		ResourceManager resourceManager = resourceManager(client);
+		ResourceManager resourceManager = resourceManager(minecraft);
 		if (resourceManager != null) {
 			return resourceManager;
 		}
-		Object networkHandler = client.getNetworkHandler();
+		Object networkHandler = minecraft.getConnection();
 		return networkHandler == null ? CLASSPATH_SOURCE : networkHandler;
 	}
 

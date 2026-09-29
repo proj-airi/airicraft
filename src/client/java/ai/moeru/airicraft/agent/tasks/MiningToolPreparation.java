@@ -1,12 +1,12 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ClickType;
 
 import java.util.List;
 import java.util.Set;
@@ -15,31 +15,31 @@ import java.util.Set;
 public final class MiningToolPreparation {
 	private MiningToolPreparation() {}
 
-	public static Result ensureSelected(MinecraftClient client, ClientPlayerEntity player, List<BlockState> targets) {
-		return ensureSelected(client, player, targets, List.of());
+	public static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets) {
+		return ensureSelected(minecraft, player, targets, List.of());
 	}
 
 	public static Result ensureSelected(
-		MinecraftClient client, ClientPlayerEntity player, List<BlockState> targets, List<String> requiredToolItemIds
+		Minecraft minecraft, LocalPlayer player, List<BlockState> targets, List<String> requiredToolItemIds
 	) {
-		return ensureSelected(client, player, targets, requiredToolItemIds, true);
+		return ensureSelected(minecraft, player, targets, requiredToolItemIds, true);
 	}
 
-	public static Result ensureSelectedForClearance(MinecraftClient client, ClientPlayerEntity player, List<BlockState> targets) {
-		return ensureSelected(client, player, targets, List.of(), false);
+	public static Result ensureSelectedForClearance(Minecraft minecraft, LocalPlayer player, List<BlockState> targets) {
+		return ensureSelected(minecraft, player, targets, List.of(), false);
 	}
 
-	private static Result ensureSelected(MinecraftClient client, ClientPlayerEntity player, List<BlockState> targets,
+	private static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets,
 		List<String> requiredToolItemIds, boolean requireDrops) {
-		if (player.currentScreenHandler != player.playerScreenHandler
-			|| !player.currentScreenHandler.getCursorStack().isEmpty() || player.isUsingItem()) {
+		if (player.containerMenu != player.inventoryMenu
+			|| !player.containerMenu.getCarried().isEmpty() || player.isUsingItem()) {
 			return Result.failed("inventory_unavailable_for_tool_selection");
 		}
 		Set<String> required = requiredToolItemIds == null ? Set.of() : Set.copyOf(requiredToolItemIds);
 		var inventory = player.getInventory();
 		int selectedSlot = inventory.getSelectedSlot();
 		java.util.function.IntFunction<MiningToolSelection.Score> scores =
-			slot -> score(inventory.getStack(slot), targets, required);
+			slot -> score(inventory.getItem(slot), targets, required);
 		int sourceSlot = requireDrops ? MiningToolSelection.preferredSlot(selectedSlot, scores)
 			: MiningToolSelection.preferredClearanceSlot(selectedSlot, scores);
 		if (sourceSlot < 0) {
@@ -47,38 +47,38 @@ public final class MiningToolPreparation {
 				? "missing_suitable_tool blockIds=" + blockIds(targets)
 				: "missing_required_harvest_tool itemIds=" + required);
 		}
-		MiningToolSelection.Score expected = score(inventory.getStack(sourceSlot), targets, required);
+		MiningToolSelection.Score expected = score(inventory.getItem(sourceSlot), targets, required);
 		if (sourceSlot != selectedSlot) {
 			if (sourceSlot < 9) {
 				selectedSlot = sourceSlot;
 				inventory.setSelectedSlot(selectedSlot);
 			} else {
 				// Main inventory indices 9..35 equal the player screen's slot IDs.
-				client.interactionManager.clickSlot(player.playerScreenHandler.syncId, sourceSlot,
-					selectedSlot, SlotActionType.SWAP, player);
+				minecraft.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceSlot,
+					selectedSlot, ClickType.SWAP, player);
 			}
-			if (client.getNetworkHandler() != null) {
-				client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(selectedSlot));
+			if (minecraft.getConnection() != null) {
+				minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(selectedSlot));
 			}
 		}
-		MiningToolSelection.Score actual = score(inventory.getSelectedStack(), targets, required);
+		MiningToolSelection.Score actual = score(inventory.getSelectedItem(), targets, required);
 		return (requireDrops ? actual.eligible() && actual.speed() >= expected.speed()
 			: MiningToolSelection.clearanceSpeed(actual) >= MiningToolSelection.clearanceSpeed(expected))
 			? Result.success() : Result.failed("tool_selection_failed blockIds=" + blockIds(targets));
 	}
 
 	private static MiningToolSelection.Score score(ItemStack stack, List<BlockState> targets, Set<String> required) {
-		boolean eligible = required.isEmpty() || required.contains(Registries.ITEM.getId(stack.getItem()).toString());
+		boolean eligible = required.isEmpty() || required.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
 		float speed = Float.MAX_VALUE;
 		for (BlockState state : targets) {
-			eligible &= !state.isToolRequired() || !stack.isEmpty() && stack.isSuitableFor(state);
-			speed = Math.min(speed, stack.isEmpty() ? 1.0F : stack.getMiningSpeedMultiplier(state));
+			eligible &= !state.requiresCorrectToolForDrops() || !stack.isEmpty() && stack.isCorrectToolForDrops(state);
+			speed = Math.min(speed, stack.isEmpty() ? 1.0F : stack.getDestroySpeed(state));
 		}
 		return new MiningToolSelection.Score(eligible, speed == Float.MAX_VALUE ? 1.0F : speed);
 	}
 
 	private static List<String> blockIds(List<BlockState> targets) {
-		return targets.stream().map(state -> Registries.BLOCK.getId(state.getBlock()).toString()).distinct().toList();
+		return targets.stream().map(state -> BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString()).distinct().toList();
 	}
 
 	public record Result(boolean ok, String message) {

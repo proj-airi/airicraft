@@ -7,16 +7,16 @@ import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.observability.NoopObservability;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.ClipContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +34,7 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 
 	private final FirstPersonScreenshotService screenshotService;
 	private final VisionBackend visionBackend;
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final ExecutorService executorService;
 	private final AgentObservability observability;
 	private final CameraController cameraController;
@@ -42,7 +42,7 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 	public CurrentViewVisionService(
 		FirstPersonScreenshotService screenshotService,
 		VisionBackend visionBackend,
-		Supplier<MinecraftClient> clientSupplier
+		Supplier<Minecraft> clientSupplier
 	) {
 		this(screenshotService, visionBackend, clientSupplier, NoopObservability.INSTANCE);
 	}
@@ -50,7 +50,7 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 	public CurrentViewVisionService(
 		FirstPersonScreenshotService screenshotService,
 		VisionBackend visionBackend,
-		Supplier<MinecraftClient> clientSupplier,
+		Supplier<Minecraft> clientSupplier,
 		AgentObservability observability
 	) {
 		this(screenshotService, visionBackend, clientSupplier, observability, new CameraController());
@@ -59,7 +59,7 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 	public CurrentViewVisionService(
 		FirstPersonScreenshotService screenshotService,
 		VisionBackend visionBackend,
-		Supplier<MinecraftClient> clientSupplier,
+		Supplier<Minecraft> clientSupplier,
 		AgentObservability observability,
 		CameraController cameraController
 	) {
@@ -87,8 +87,8 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 
 	@Override
 	public CompletableFuture<ViewCaptureResult> requestCapture(ViewCaptureRequest request) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.failedFuture(
 				new BridgeUnavailableException("world_not_loaded", "No world is currently loaded")
 			);
@@ -105,10 +105,10 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 					if (request != null && !request.isCurrent() && cameraController.capturePending()) {
 						throw new BridgeUnavailableException("capture_busy", "Camera is aligning for another capture");
 					}
-					List<String> metadataLines = prepareCaptureTarget(client, request);
+					List<String> metadataLines = prepareCaptureTarget(minecraft, request);
 					(request == null || request.isCurrent()
 						? CompletableFuture.<Void>completedFuture(null) : cameraController.whenAligned())
-						.thenCompose(ignored -> screenshotService.requestCapture(client)).whenComplete((capture, throwable) -> {
+						.thenCompose(ignored -> screenshotService.requestCapture(minecraft)).whenComplete((capture, throwable) -> {
 						if (throwable == null) {
 							captureFuture.complete(new ViewCaptureResult(capture, metadataLines));
 						}
@@ -121,11 +121,11 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 					captureFuture.completeExceptionally(exception);
 				}
 			};
-			if (client.isOnThread()) {
+			if (minecraft.isSameThread()) {
 				captureTask.run();
 			}
 			else {
-				client.execute(captureTask);
+				minecraft.execute(captureTask);
 			}
 			return captureFuture.whenComplete((captureResult, throwable) -> {
 				try {
@@ -152,68 +152,68 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 		}
 	}
 
-	private List<String> prepareCaptureTarget(MinecraftClient client, ViewCaptureRequest request) {
+	private List<String> prepareCaptureTarget(Minecraft minecraft, ViewCaptureRequest request) {
 		if (request == null || request.isCurrent()) {
 			return List.of();
 		}
-		if (client.world == null || client.player == null) {
+		if (minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
 
 		return switch (request.targetType()) {
 			case CURRENT -> List.of();
 			case DIRECTION -> {
-				faceDirection(client.player, request.direction());
+				faceDirection(minecraft.player, request.direction());
 				yield List.of("lookTarget=direction direction=" + request.direction());
 			}
 			case BLOCK -> {
 				BlockPos targetPos = new BlockPos(request.x(), request.y(), request.z());
-				Vec3d targetCenter = Vec3d.ofCenter(targetPos);
-				cameraController.lookAt(client, targetCenter);
+				Vec3 targetCenter = Vec3.atCenterOf(targetPos);
+				cameraController.lookAt(minecraft, targetCenter);
 				List<String> metadata = new ArrayList<>();
 				metadata.add("lookTarget=block x=" + targetPos.getX() + " y=" + targetPos.getY() + " z=" + targetPos.getZ());
-				blockLineOfSightWarning(client, client.player, targetPos, targetCenter).ifPresent(metadata::add);
+				blockLineOfSightWarning(minecraft, minecraft.player, targetPos, targetCenter).ifPresent(metadata::add);
 				yield metadata;
 			}
 			case PLAYER -> {
-				AbstractClientPlayerEntity target = findPlayer(client, request.targetPlayer());
-				cameraController.lookAt(client, target.getBoundingBox().getCenter());
+				AbstractClientPlayer target = findPlayer(minecraft, request.targetPlayer());
+				cameraController.lookAt(minecraft, target.getBoundingBox().getCenter());
 				yield List.of("lookTarget=player targetPlayer=" + target.getName().getString());
 			}
 		};
 	}
 
-	private void faceDirection(ClientPlayerEntity player, String direction) {
+	private void faceDirection(LocalPlayer player, String direction) {
 		if (cameraController.faceDirection(player, direction).isEmpty()) {
 			throw new BridgeUnavailableException("invalid_request", "Unsupported direction: " + direction);
 		}
 	}
 
 	private static java.util.Optional<String> blockLineOfSightWarning(
-		MinecraftClient client,
-		ClientPlayerEntity player,
+		Minecraft minecraft,
+		LocalPlayer player,
 		BlockPos targetPos,
-		Vec3d targetCenter
+		Vec3 targetCenter
 	) {
-		if (!client.world.isChunkLoaded(targetPos)) {
+		if (!minecraft.level.hasChunkAt(targetPos)) {
 			return java.util.Optional.of("LOOK_WARNING: target_block_los_unknown reason=target_chunk_not_loaded");
 		}
-		Vec3d start = player.getEyePos();
-		BlockHitResult hitResult = client.world.raycast(new RaycastContext(
+		Vec3 start = player.getEyePosition();
+		BlockHitResult hitResult = minecraft.level.clip(new ClipContext(
 			start,
 			targetCenter,
-			RaycastContext.ShapeType.VISUAL,
-			RaycastContext.FluidHandling.NONE,
+			ClipContext.Block.VISUAL,
+			ClipContext.Fluid.NONE,
 			player
 		));
 		if (hitResult.getType() == HitResult.Type.BLOCK && !hitResult.getBlockPos().equals(targetPos)) {
 			BlockPos blockerPos = hitResult.getBlockPos();
-			if (!client.world.isChunkLoaded(blockerPos)) {
+			if (!minecraft.level.hasChunkAt(blockerPos)) {
 				return java.util.Optional.of("LOOK_WARNING: target_block_los_unknown reason=blocking_chunk_not_loaded");
 			}
-			BlockState blockerState = client.world.getBlockState(blockerPos);
-			if (!blockerState.isAir() && !blockerState.isTransparent()) {
-				String blockId = Registries.BLOCK.getId(blockerState.getBlock()).toString();
+			BlockState blockerState = minecraft.level.getBlockState(blockerPos);
+			if (!blockerState.isAir() && !blockerState.propagatesSkylightDown()) {
+				String blockId = BuiltInRegistries.BLOCK.getKey(blockerState.getBlock()).toString();
 				return java.util.Optional.of(
 					"LOOK_WARNING: target_block_los_blocked blockingBlockId=" + blockId
 						+ " blockingPos=" + blockerPos.getX() + "," + blockerPos.getY() + "," + blockerPos.getZ()
@@ -223,12 +223,12 @@ public final class CurrentViewVisionService implements CurrentViewVisionTool {
 		return java.util.Optional.empty();
 	}
 
-	private static AbstractClientPlayerEntity findPlayer(MinecraftClient client, String targetPlayer) {
+	private static AbstractClientPlayer findPlayer(Minecraft minecraft, String targetPlayer) {
 		if (targetPlayer == null || targetPlayer.isBlank()) {
 			throw new BridgeUnavailableException("invalid_request", "targetPlayer must be non-empty");
 		}
-		for (AbstractClientPlayerEntity player : client.world.getPlayers()) {
-			if (player == client.player) {
+		for (AbstractClientPlayer player : minecraft.level.players()) {
+			if (player == minecraft.player) {
 				continue;
 			}
 			if (player.getName().getString().equals(targetPlayer)) {

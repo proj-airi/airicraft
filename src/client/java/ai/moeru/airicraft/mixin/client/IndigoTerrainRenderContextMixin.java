@@ -7,8 +7,8 @@ import ai.moeru.airicraft.WorldCameraService;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import net.fabricmc.fabric.impl.client.indigo.renderer.render.AbstractTerrainRenderContext;
 import net.fabricmc.fabric.impl.client.indigo.renderer.render.BlockRenderInfo;
-import net.minecraft.block.LeavesBlock;
-import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.world.level.block.LeavesBlock;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -23,7 +23,7 @@ public abstract class IndigoTerrainRenderContextMixin {
 		method = "bufferQuad(Lnet/fabricmc/fabric/impl/client/indigo/renderer/mesh/MutableQuadViewImpl;)V",
 		at = @At(
 			value = "INVOKE",
-			target = "Lnet/fabricmc/fabric/impl/client/indigo/renderer/render/AbstractTerrainRenderContext;getVertexConsumer(Lnet/minecraft/client/render/BlockRenderLayer;)Lnet/minecraft/client/render/VertexConsumer;"
+			target = "Lnet/fabricmc/fabric/impl/client/indigo/renderer/render/AbstractTerrainRenderContext;getVertexConsumer(Lnet/minecraft/client/renderer/chunk/ChunkSectionLayer;)Lcom/mojang/blaze3d/vertex/VertexConsumer;"
 		)
 	)
 	private VertexConsumer airicraft$worldCameraEffects(VertexConsumer consumer) {

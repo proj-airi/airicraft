@@ -1,14 +1,14 @@
 package ai.moeru.airicraft.debug;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttributeInstance;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.PlayerInput;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.player.Input;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -21,20 +21,20 @@ final class ClientTickPlayerSnapshotFactory {
 	private ClientTickPlayerSnapshotFactory() {
 	}
 
-	static ClientTickPlayerSnapshot capture(MinecraftClient client, ClientPlayerEntity player) {
-		var position = player.getPos();
-		var velocity = player.getVelocity();
+	static ClientTickPlayerSnapshot capture(Minecraft minecraft, LocalPlayer player) {
+		var position = player.position();
+		var velocity = player.getDeltaMovement();
 		var bounds = player.getBoundingBox();
 		var abilities = player.getAbilities();
-		PlayerInput input = player.input == null || player.input.playerInput == null
-			? PlayerInput.DEFAULT
-			: player.input.playerInput;
+		Input input = player.input == null || player.input.keyPresses == null
+			? Input.EMPTY
+			: player.input.keyPresses;
 		return new ClientTickPlayerSnapshot(
 			player.getId(),
-			player.getUuidAsString(),
+			player.getStringUUID(),
 			player.getName().getString(),
-			Registries.ENTITY_TYPE.getId(player.getType()).toString(),
-			client.interactionManager == null ? null : client.interactionManager.getCurrentGameMode().asString(),
+			BuiltInRegistries.ENTITY_TYPE.getKey(player.getType()).toString(),
+			minecraft.gameMode == null ? null : minecraft.gameMode.getPlayerMode().getSerializedName(),
 			new ClientTickPlayerSnapshot.PositionSnapshot(
 				position.x,
 				position.y,
@@ -44,10 +44,10 @@ final class ClientTickPlayerSnapshotFactory {
 				player.getBlockZ()
 			),
 			new ClientTickPlayerSnapshot.RotationSnapshot(
-				player.getYaw(),
-				player.getPitch(),
-				player.getHeadYaw(),
-				player.getBodyYaw()
+				player.getYRot(),
+				player.getXRot(),
+				player.getYHeadRot(),
+				player.getVisualRotationYInDegrees()
 			),
 			new ClientTickPlayerSnapshot.VectorSnapshot(velocity.x, velocity.y, velocity.z),
 			new ClientTickPlayerSnapshot.BoundsSnapshot(
@@ -60,22 +60,22 @@ final class ClientTickPlayerSnapshotFactory {
 			),
 			new ClientTickPlayerSnapshot.MovementSnapshot(
 				player.getPose().name().toLowerCase(Locale.ROOT),
-				player.isOnGround(),
+				player.onGround(),
 				player.horizontalCollision,
 				player.verticalCollision,
 				player.isSprinting(),
-				player.isSneaking(),
+				player.isShiftKeyDown(),
 				player.isSwimming(),
-				player.isCrawling(),
-				player.isGliding(),
-				player.isClimbing(),
-				player.isTouchingWater(),
-				player.isSubmergedInWater(),
+				player.isVisuallyCrawling(),
+				player.isFallFlying(),
+				player.onClimbable(),
+				player.isInWater(),
+				player.isUnderWater(),
 				player.isInLava(),
 				player.fallDistance,
 				player.isUsingItem(),
-				player.getItemUseTime(),
-				player.getItemUseTimeLeft()
+				player.getTicksUsingItem(),
+				player.getUseItemRemainingTicks()
 			),
 			new ClientTickPlayerSnapshot.VitalsSnapshot(
 				player.isAlive(),
@@ -83,17 +83,17 @@ final class ClientTickPlayerSnapshotFactory {
 				player.getHealth(),
 				player.getMaxHealth(),
 				player.getAbsorptionAmount(),
-				player.getArmor(),
-				player.getAir(),
-				player.getMaxAir(),
-				player.getFireTicks(),
-				player.getFrozenTicks(),
+				player.getArmorValue(),
+				player.getAirSupply(),
+				player.getMaxAirSupply(),
+				player.getRemainingFireTicks(),
+				player.getTicksFrozen(),
 				player.hurtTime,
 				player.deathTime
 			),
 			new ClientTickPlayerSnapshot.HungerSnapshot(
-				player.getHungerManager().getFoodLevel(),
-				player.getHungerManager().getSaturationLevel()
+				player.getFoodData().getFoodLevel(),
+				player.getFoodData().getSaturationLevel()
 			),
 			new ClientTickPlayerSnapshot.ExperienceSnapshot(
 				player.experienceLevel,
@@ -103,11 +103,11 @@ final class ClientTickPlayerSnapshotFactory {
 			new ClientTickPlayerSnapshot.AbilitiesSnapshot(
 				abilities.invulnerable,
 				abilities.flying,
-				abilities.allowFlying,
-				abilities.creativeMode,
-				abilities.allowModifyWorld,
-				abilities.getFlySpeed(),
-				abilities.getWalkSpeed()
+				abilities.mayfly,
+				abilities.instabuild,
+				abilities.mayBuild,
+				abilities.getFlyingSpeed(),
+				abilities.getWalkingSpeed()
 			),
 			new ClientTickPlayerSnapshot.InputSnapshot(
 				input.forward(),
@@ -115,15 +115,15 @@ final class ClientTickPlayerSnapshotFactory {
 				input.left(),
 				input.right(),
 				input.jump(),
-				input.sneak(),
+				input.shift(),
 				input.sprint()
 			),
-			player.getInventory().size(),
+			player.getInventory().getContainerSize(),
 			player.getInventory().getSelectedSlot(),
 			inventory(player),
 			equipment(player),
-			statusEffects(player.getStatusEffects()),
-			attributes(player.getAttributes().getAttributesToSend())
+			statusEffects(player.getActiveEffects()),
+			attributes(player.getAttributes().getSyncableAttributes())
 		);
 	}
 
@@ -133,29 +133,29 @@ final class ClientTickPlayerSnapshotFactory {
 		}
 		return new ClientTickPlayerSnapshot.ItemStackSnapshot(
 			slot,
-			Registries.ITEM.getId(stack.getItem()).toString(),
-			stack.getName().getString(),
+			BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+			stack.getHoverName().getString(),
 			stack.getCount(),
-			stack.getMaxCount(),
-			stack.isDamageable(),
-			stack.getDamage(),
+			stack.getMaxStackSize(),
+			stack.isDamageableItem(),
+			stack.getDamageValue(),
 			stack.getMaxDamage(),
-			stack.hasGlint()
+			stack.hasFoil()
 		);
 	}
 
 	static List<ClientTickPlayerSnapshot.StatusEffectSnapshot> statusEffects(
-		Iterable<StatusEffectInstance> effects
+		Iterable<MobEffectInstance> effects
 	) {
 		List<ClientTickPlayerSnapshot.StatusEffectSnapshot> snapshots = new ArrayList<>();
-		for (StatusEffectInstance effect : effects) {
+		for (MobEffectInstance effect : effects) {
 			snapshots.add(new ClientTickPlayerSnapshot.StatusEffectSnapshot(
-				Registries.STATUS_EFFECT.getId(effect.getEffectType().value()).toString(),
+				BuiltInRegistries.MOB_EFFECT.getKey(effect.getEffect().value()).toString(),
 				effect.getAmplifier(),
 				effect.getDuration(),
 				effect.isAmbient(),
-				effect.shouldShowParticles(),
-				effect.shouldShowIcon()
+				effect.isVisible(),
+				effect.showIcon()
 			));
 		}
 		snapshots.sort(Comparator.comparing(ClientTickPlayerSnapshot.StatusEffectSnapshot::effectId));
@@ -163,12 +163,12 @@ final class ClientTickPlayerSnapshotFactory {
 	}
 
 	static List<ClientTickPlayerSnapshot.AttributeSnapshot> attributes(
-		Iterable<EntityAttributeInstance> attributes
+		Iterable<AttributeInstance> attributes
 	) {
 		List<ClientTickPlayerSnapshot.AttributeSnapshot> snapshots = new ArrayList<>();
-		for (EntityAttributeInstance attribute : attributes) {
+		for (AttributeInstance attribute : attributes) {
 			snapshots.add(new ClientTickPlayerSnapshot.AttributeSnapshot(
-				Registries.ATTRIBUTE.getId(attribute.getAttribute().value()).toString(),
+				BuiltInRegistries.ATTRIBUTE.getKey(attribute.getAttribute().value()).toString(),
 				attribute.getBaseValue(),
 				attribute.getValue()
 			));
@@ -177,10 +177,10 @@ final class ClientTickPlayerSnapshotFactory {
 		return List.copyOf(snapshots);
 	}
 
-	private static List<ClientTickPlayerSnapshot.ItemStackSnapshot> inventory(ClientPlayerEntity player) {
+	private static List<ClientTickPlayerSnapshot.ItemStackSnapshot> inventory(LocalPlayer player) {
 		List<ClientTickPlayerSnapshot.ItemStackSnapshot> snapshots = new ArrayList<>();
-		for (int slot = 0; slot < player.getInventory().size(); slot++) {
-			ClientTickPlayerSnapshot.ItemStackSnapshot snapshot = itemStack(slot, player.getInventory().getStack(slot));
+		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+			ClientTickPlayerSnapshot.ItemStackSnapshot snapshot = itemStack(slot, player.getInventory().getItem(slot));
 			if (snapshot != null) {
 				snapshots.add(snapshot);
 			}
@@ -191,7 +191,7 @@ final class ClientTickPlayerSnapshotFactory {
 	static Map<String, ClientTickPlayerSnapshot.ItemStackSnapshot> equipment(LivingEntity player) {
 		Map<String, ClientTickPlayerSnapshot.ItemStackSnapshot> snapshots = new LinkedHashMap<>();
 		for (EquipmentSlot slot : EquipmentSlot.values()) {
-			ClientTickPlayerSnapshot.ItemStackSnapshot snapshot = itemStack(-1, player.getEquippedStack(slot));
+			ClientTickPlayerSnapshot.ItemStackSnapshot snapshot = itemStack(-1, player.getItemBySlot(slot));
 			if (snapshot != null) {
 				snapshots.put(slot.getName(), snapshot);
 			}

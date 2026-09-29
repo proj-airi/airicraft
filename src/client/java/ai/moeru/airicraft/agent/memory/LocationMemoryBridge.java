@@ -1,8 +1,8 @@
 package ai.moeru.airicraft.agent.memory;
 
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -22,13 +22,13 @@ public final class LocationMemoryBridge {
 	public static void changed() { REVISION.incrementAndGet(); }
 	public static long revision() { return REVISION.get(); }
 
-	public static LocationMemoryService forClient(MinecraftClient client) {
-		if (client.world == null) throw new IllegalStateException("world_not_loaded");
+	public static LocationMemoryService forClient(Minecraft minecraft) {
+		if (minecraft.level == null) throw new IllegalStateException("world_not_loaded");
 		return new LocationMemoryService(select(FabricLoader.getInstance().isModLoaded("journeymap"), journeyMap, () -> {
-			if (client.getServer() == null) {
+			if (minecraft.getSingleplayerServer() == null) {
 				throw new IllegalStateException("world_persistence_unavailable: requires a locally hosted world save without JourneyMap");
 			}
-			return new PlaceMemory(client.getServer().getSavePath(WorldSavePath.ROOT));
+			return new PlaceMemory(minecraft.getSingleplayerServer().getWorldPath(LevelResource.ROOT));
 		}));
 	}
 

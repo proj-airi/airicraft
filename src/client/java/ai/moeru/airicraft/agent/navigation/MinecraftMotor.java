@@ -4,19 +4,19 @@ import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.tasks.MiningToolPreparation;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.MotorIntent;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.GameOptions;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.Options;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -39,90 +39,90 @@ public final class MinecraftMotor {
 	}
 
 	/** Applies one tick of intent; returns why an action could not be done, or null. */
-	public String apply(MinecraftClient client, MotorIntent intent) {
-		ClientPlayerEntity player = client.player;
+	public String apply(Minecraft minecraft, MotorIntent intent) {
+		LocalPlayer player = minecraft.player;
 		if (player == null) {
-			release(client);
+			release(minecraft);
 			return null;
 		}
 		holding = true;
-		double yaw = Math.toRadians(player.getYaw());
+		double yaw = Math.toRadians(player.getYRot());
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
 		boolean forwardKey = forward > KEY_THRESHOLD, backKey = forward < -KEY_THRESHOLD;
 		boolean sprint = intent.sprint() && forwardKey && !intent.sneak();
-		GameOptions options = client.options;
-		options.forwardKey.setPressed(forwardKey);
-		options.backKey.setPressed(backKey);
-		options.leftKey.setPressed(left > KEY_THRESHOLD);
-		options.rightKey.setPressed(left < -KEY_THRESHOLD);
-		options.jumpKey.setPressed(intent.jump());
-		options.sneakKey.setPressed(intent.sneak());
-		options.sprintKey.setPressed(sprint);
+		Options options = minecraft.options;
+		options.keyUp.setDown(forwardKey);
+		options.keyDown.setDown(backKey);
+		options.keyLeft.setDown(left > KEY_THRESHOLD);
+		options.keyRight.setDown(left < -KEY_THRESHOLD);
+		options.keyJump.setDown(intent.jump());
+		options.keyShift.setDown(intent.sneak());
+		options.keySprint.setDown(sprint);
 		player.setSprinting(sprint);
 		if (intent.look() != null) {
-			camera.startLookAt(client, new Vec3d(intent.look().x(), intent.look().y(), intent.look().z()), "navigation");
+			camera.startLookAt(minecraft, new Vec3(intent.look().x(), intent.look().y(), intent.look().z()), "navigation");
 		}
 
 		MotorIntent.Action action = intent.action();
-		if (!(action instanceof MotorIntent.Break) && breaking != null) stopBreaking(client);
-		if (action == null || client.interactionManager == null || client.world == null) return null;
+		if (!(action instanceof MotorIntent.Break) && breaking != null) stopBreaking(minecraft);
+		if (action == null || minecraft.gameMode == null || minecraft.level == null) return null;
 		return switch (action) {
-			case MotorIntent.Break mining -> mine(client, player, pos(mining.pos()));
-			case MotorIntent.Place place -> place(client, player, pos(place.pos()), pos(place.against()));
-			case MotorIntent.Use use -> use(client, player, pos(use.pos()));
+			case MotorIntent.Break mining -> mine(minecraft, player, pos(mining.pos()));
+			case MotorIntent.Place place -> place(minecraft, player, pos(place.pos()), pos(place.against()));
+			case MotorIntent.Use use -> use(minecraft, player, pos(use.pos()));
 		};
 	}
 
 	/** Lets go of every key this motor pressed. Idempotent. */
-	public void release(MinecraftClient client) {
+	public void release(Minecraft minecraft) {
 		if (!holding) return;
 		holding = false;
-		stopBreaking(client);
-		GameOptions options = client.options;
-		options.forwardKey.setPressed(false);
-		options.backKey.setPressed(false);
-		options.leftKey.setPressed(false);
-		options.rightKey.setPressed(false);
-		options.jumpKey.setPressed(false);
-		options.sneakKey.setPressed(false);
-		options.sprintKey.setPressed(false);
-		if (client.player != null) client.player.setSprinting(false);
+		stopBreaking(minecraft);
+		Options options = minecraft.options;
+		options.keyUp.setDown(false);
+		options.keyDown.setDown(false);
+		options.keyLeft.setDown(false);
+		options.keyRight.setDown(false);
+		options.keyJump.setDown(false);
+		options.keyShift.setDown(false);
+		options.keySprint.setDown(false);
+		if (minecraft.player != null) minecraft.player.setSprinting(false);
 	}
 
 	public BlockPos breaking() {
 		return breaking;
 	}
 
-	private String mine(MinecraftClient client, ClientPlayerEntity player, BlockPos pos) {
-		BlockState state = client.world.getBlockState(pos);
+	private String mine(Minecraft minecraft, LocalPlayer player, BlockPos pos) {
+		BlockState state = minecraft.level.getBlockState(pos);
 		if (state.isAir()) {
-			stopBreaking(client);
+			stopBreaking(minecraft);
 			return null;
 		}
 		if (!pos.equals(breaking)) {
-			stopBreaking(client);
-			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(client, player, List.of(state));
+			stopBreaking(minecraft);
+			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, player, List.of(state));
 			if (!tool.ok()) return tool.message();
-			Direction side = facing(player.getEyePos(), pos);
+			Direction side = facing(player.getEyePosition(), pos);
 			breakingForNavigation = true;
 			try {
-				if (!client.interactionManager.attackBlock(pos, side)) return "break_refused " + pos.toShortString();
+				if (!minecraft.gameMode.startDestroyBlock(pos, side)) return "break_refused " + pos.toShortString();
 			}
 			finally {
 				breakingForNavigation = false;
 			}
-			breaking = pos.toImmutable();
+			breaking = pos.immutable();
 			breakingSide = side;
 		}
 		breakingForNavigation = true;
 		try {
-			client.interactionManager.updateBlockBreakingProgress(pos, breakingSide);
+			minecraft.gameMode.continueDestroyBlock(pos, breakingSide);
 		}
 		finally {
 			breakingForNavigation = false;
 		}
-		player.swingHand(Hand.MAIN_HAND);
+		player.swing(InteractionHand.MAIN_HAND);
 		return null;
 	}
 
@@ -131,34 +131,34 @@ public final class MinecraftMotor {
 		return breakingForNavigation;
 	}
 
-	private String place(MinecraftClient client, ClientPlayerEntity player, BlockPos target, BlockPos support) {
-		if (!client.world.getBlockState(target).isReplaceable()) return null;
-		if (!selectThrowaway(client, player)) return "missing_throwaway_block";
+	private String place(Minecraft minecraft, LocalPlayer player, BlockPos target, BlockPos support) {
+		if (!minecraft.level.getBlockState(target).canBeReplaced()) return null;
+		if (!selectThrowaway(minecraft, player)) return "missing_throwaway_block";
 		Direction side = direction(support, target);
 		if (side == null) return "placement_not_adjacent " + target.toShortString();
-		Vec3d hit = Vec3d.ofCenter(support).add(side.getOffsetX() * 0.5, side.getOffsetY() * 0.5, side.getOffsetZ() * 0.5);
-		ActionResult result = client.interactionManager.interactBlock(player, Hand.MAIN_HAND, new BlockHitResult(hit, side, support, false));
-		if (result.isAccepted()) player.swingHand(Hand.MAIN_HAND);
+		Vec3 hit = Vec3.atCenterOf(support).add(side.getStepX() * 0.5, side.getStepY() * 0.5, side.getStepZ() * 0.5);
+		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, support, false));
+		if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 		return null;
 	}
 
-	private String use(MinecraftClient client, ClientPlayerEntity player, BlockPos pos) {
-		Direction side = facing(player.getEyePos(), pos);
-		Vec3d hit = Vec3d.ofCenter(pos).add(side.getOffsetX() * 0.5, side.getOffsetY() * 0.5, side.getOffsetZ() * 0.5);
-		ActionResult result = client.interactionManager.interactBlock(player, Hand.MAIN_HAND, new BlockHitResult(hit, side, pos, false));
-		if (result.isAccepted()) player.swingHand(Hand.MAIN_HAND);
+	private String use(Minecraft minecraft, LocalPlayer player, BlockPos pos) {
+		Direction side = facing(player.getEyePosition(), pos);
+		Vec3 hit = Vec3.atCenterOf(pos).add(side.getStepX() * 0.5, side.getStepY() * 0.5, side.getStepZ() * 0.5);
+		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, pos, false));
+		if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 		return null;
 	}
 
 	/** Puts a throwaway block in the main hand, from the hotbar or the main inventory. */
-	private static boolean selectThrowaway(MinecraftClient client, ClientPlayerEntity player) {
+	private static boolean selectThrowaway(Minecraft minecraft, LocalPlayer player) {
 		var inventory = player.getInventory();
-		if (NavigationPolicies.isThrowaway(inventory.getSelectedStack())) return true;
-		if (player.currentScreenHandler != player.playerScreenHandler || !player.currentScreenHandler.getCursorStack().isEmpty()) {
+		if (NavigationPolicies.isThrowaway(inventory.getSelectedItem())) return true;
+		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
 		for (int slot = 0; slot < 36; slot++) {
-			ItemStack stack = inventory.getStack(slot);
+			ItemStack stack = inventory.getItem(slot);
 			if (!NavigationPolicies.isThrowaway(stack)) continue;
 			int selected = inventory.getSelectedSlot();
 			if (slot < 9) {
@@ -167,22 +167,22 @@ public final class MinecraftMotor {
 			}
 			else {
 				// Main inventory indices 9..35 equal the player screen's slot IDs.
-				client.interactionManager.clickSlot(player.playerScreenHandler.syncId, slot, selected, SlotActionType.SWAP, player);
+				minecraft.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, slot, selected, ClickType.SWAP, player);
 			}
-			if (client.getNetworkHandler() != null) client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(selected));
-			return NavigationPolicies.isThrowaway(inventory.getSelectedStack());
+			if (minecraft.getConnection() != null) minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(selected));
+			return NavigationPolicies.isThrowaway(inventory.getSelectedItem());
 		}
 		return false;
 	}
 
-	private void stopBreaking(MinecraftClient client) {
-		if (breaking != null && client.interactionManager != null) client.interactionManager.cancelBlockBreaking();
+	private void stopBreaking(Minecraft minecraft) {
+		if (breaking != null && minecraft.gameMode != null) minecraft.gameMode.stopDestroyBlock();
 		breaking = null;
 		breakingSide = null;
 	}
 
 	/** The block face pointing toward the eye. */
-	private static Direction facing(Vec3d eye, BlockPos pos) {
+	private static Direction facing(Vec3 eye, BlockPos pos) {
 		double dx = eye.x - (pos.getX() + 0.5), dy = eye.y - (pos.getY() + 0.5), dz = eye.z - (pos.getZ() + 0.5);
 		double ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
 		if (ay >= ax && ay >= az) return dy > 0 ? Direction.UP : Direction.DOWN;

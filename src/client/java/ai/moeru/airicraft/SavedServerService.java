@@ -1,12 +1,12 @@
 package ai.moeru.airicraft;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.screen.multiplayer.ConnectScreen;
-import net.minecraft.client.network.CookieStorage;
-import net.minecraft.client.network.ServerAddress;
-import net.minecraft.client.network.ServerInfo;
-import net.minecraft.client.option.ServerList;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.ConnectScreen;
+import net.minecraft.client.multiplayer.TransferState;
+import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.ServerList;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -26,19 +26,19 @@ public final class SavedServerService {
 	private static final Duration JOIN_TIMEOUT = Duration.ofSeconds(10);
 
 	public List<Map<String, Object>> listServers() {
-		MinecraftClient client = requireClient();
-		ServerList serverList = loadServerList(client);
+		Minecraft minecraft = requireClient();
+		ServerList serverList = loadServerList(minecraft);
 		List<Map<String, Object>> servers = new ArrayList<>(serverList.size());
 		for (int index = 0; index < serverList.size(); index++) {
-			ServerInfo serverInfo = serverList.get(index);
-			servers.add(serverPayload(serverInfo, index));
+			ServerData serverData = serverList.get(index);
+			servers.add(serverPayload(serverData, index));
 		}
 		return servers;
 	}
 
 	public Map<String, Object> joinServer(String serverId) {
-		MinecraftClient client = requireClient();
-		if (isInWorld(client)) {
+		Minecraft minecraft = requireClient();
+		if (isInWorld(minecraft)) {
 			throw new SavedServerServiceException("already_in_world", "A world is already loaded");
 		}
 
@@ -47,14 +47,14 @@ public final class SavedServerService {
 			throw new SavedServerServiceException("server_not_found", "Server not found: " + serverId);
 		}
 
-		runOnClientThread(client, () -> {
-			ConnectScreen.connect(
-				client.currentScreen != null ? client.currentScreen : new TitleScreen(),
-				client,
-				ServerAddress.parse(entry.serverInfo.address),
+		runOnClientThread(minecraft, () -> {
+			ConnectScreen.startConnecting(
+				minecraft.screen != null ? minecraft.screen : new TitleScreen(),
+				minecraft,
+				ServerAddress.parseString(entry.serverInfo.ip),
 				entry.serverInfo,
 				false,
-				new CookieStorage(Map.of())
+				new TransferState(Map.of())
 			);
 			return null;
 		});
@@ -63,7 +63,7 @@ public final class SavedServerService {
 		payload.put("started", true);
 		payload.put("serverId", serverId(entry.serverInfo));
 		payload.put("name", entry.serverInfo.name);
-		payload.put("address", entry.serverInfo.address);
+		payload.put("address", entry.serverInfo.ip);
 		payload.put("serverType", serverTypeName(entry.serverInfo));
 		return payload;
 	}
@@ -71,35 +71,35 @@ public final class SavedServerService {
 	private ServerEntry findServer(String serverId) {
 		ServerList serverList = loadServerList(requireClient());
 		for (int index = 0; index < serverList.size(); index++) {
-			ServerInfo serverInfo = serverList.get(index);
-			if (serverId(serverInfo).equals(serverId)) {
-				return new ServerEntry(index, serverInfo);
+			ServerData serverData = serverList.get(index);
+			if (serverId(serverData).equals(serverId)) {
+				return new ServerEntry(index, serverData);
 			}
 		}
 		return null;
 	}
 
-	private static ServerList loadServerList(MinecraftClient client) {
-		ServerList serverList = new ServerList(client);
-		serverList.loadFile();
+	private static ServerList loadServerList(Minecraft minecraft) {
+		ServerList serverList = new ServerList(minecraft);
+		serverList.load();
 		return serverList;
 	}
 
-	private static Map<String, Object> serverPayload(ServerInfo serverInfo, int index) {
+	private static Map<String, Object> serverPayload(ServerData serverData, int index) {
 		Map<String, Object> payload = new LinkedHashMap<>();
-		payload.put("serverId", serverId(serverInfo));
-		payload.put("name", nonEmpty(serverInfo.name, "Unnamed Server"));
-		payload.put("address", nonEmpty(serverInfo.address, ""));
+		payload.put("serverId", serverId(serverData));
+		payload.put("name", nonEmpty(serverData.name, "Unnamed Server"));
+		payload.put("address", nonEmpty(serverData.ip, ""));
 		payload.put("index", index);
-		payload.put("serverType", serverTypeName(serverInfo));
-		payload.put("local", serverInfo.isLocal());
-		payload.put("realm", serverInfo.isRealm());
-		payload.put("resourcePackPolicy", resourcePackPolicy(serverInfo));
+		payload.put("serverType", serverTypeName(serverData));
+		payload.put("local", serverData.isLan());
+		payload.put("realm", serverData.isRealm());
+		payload.put("resourcePackPolicy", resourcePackPolicy(serverData));
 		return payload;
 	}
 
-	private static String serverId(ServerInfo serverInfo) {
-		String key = normalizeAddress(serverInfo.address) + "|" + serverTypeName(serverInfo);
+	private static String serverId(ServerData serverData) {
+		String key = normalizeAddress(serverData.ip) + "|" + serverTypeName(serverData);
 		return shortHash(key);
 	}
 
@@ -111,12 +111,12 @@ public final class SavedServerService {
 		return value;
 	}
 
-	private static String serverTypeName(ServerInfo serverInfo) {
-		return String.valueOf(serverInfo.getServerType()).toLowerCase(Locale.ROOT);
+	private static String serverTypeName(ServerData serverData) {
+		return String.valueOf(serverData.type()).toLowerCase(Locale.ROOT);
 	}
 
-	private static String resourcePackPolicy(ServerInfo serverInfo) {
-		return String.valueOf(serverInfo.getResourcePackPolicy()).toLowerCase(Locale.ROOT);
+	private static String resourcePackPolicy(ServerData serverData) {
+		return String.valueOf(serverData.getResourcePackStatus()).toLowerCase(Locale.ROOT);
 	}
 
 	private static String normalizeAddress(String address) {
@@ -141,21 +141,21 @@ public final class SavedServerService {
 		}
 	}
 
-	private static MinecraftClient requireClient() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+	private static Minecraft requireClient() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			throw new SavedServerServiceException("minecraft_unavailable", "Minecraft client is not initialized");
 		}
-		return client;
+		return minecraft;
 	}
 
-	private static boolean isInWorld(MinecraftClient client) {
-		return client.world != null || client.player != null;
+	private static boolean isInWorld(Minecraft minecraft) {
+		return minecraft.level != null || minecraft.player != null;
 	}
 
-	private static <T> T runOnClientThread(MinecraftClient client, java.util.function.Supplier<T> supplier) {
+	private static <T> T runOnClientThread(Minecraft minecraft, java.util.function.Supplier<T> supplier) {
 		CompletableFuture<T> future = new CompletableFuture<>();
-		client.execute(() -> {
+		minecraft.execute(() -> {
 			try {
 				future.complete(supplier.get());
 			}
@@ -187,7 +187,7 @@ public final class SavedServerService {
 		return value == null || value.isBlank() ? fallback : value;
 	}
 
-	private record ServerEntry(int index, ServerInfo serverInfo) {
+	private record ServerEntry(int index, ServerData serverInfo) {
 	}
 
 	public static final class SavedServerServiceException extends RuntimeException {

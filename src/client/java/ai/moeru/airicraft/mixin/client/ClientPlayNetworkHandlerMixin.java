@@ -1,19 +1,19 @@
 package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.s2c.play.EntityDamageS2CPacket;
-import net.minecraft.network.packet.s2c.play.HealthUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.ItemPickupAnimationS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
-import net.minecraft.registry.Registries;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
+import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
+import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -26,7 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-@Mixin(ClientPlayNetworkHandler.class)
+@Mixin(ClientPacketListener.class)
 public class ClientPlayNetworkHandlerMixin {
 	@Unique
 	private float airicraft$healthBeforeUpdate;
@@ -34,11 +34,11 @@ public class ClientPlayNetworkHandlerMixin {
 	@Unique
 	private boolean airicraft$healthInitializedBeforeUpdate;
 	@Unique
-	private final Map<ItemPickupAnimationS2CPacket, UUID> airicraft$pickupObservationIds = new IdentityHashMap<>();
+	private final Map<ClientboundTakeItemEntityPacket, UUID> airicraft$pickupObservationIds = new IdentityHashMap<>();
 	@Unique
 	private final Set<UUID> airicraft$reportedPickupObservationIds = new HashSet<>();
 	@Unique
-	private ItemPickupAnimationS2CPacket airicraft$pickupPacket;
+	private ClientboundTakeItemEntityPacket airicraft$pickupPacket;
 	@Unique
 	private UUID airicraft$pickupEntityUuid;
 	@Unique
@@ -46,24 +46,24 @@ public class ClientPlayNetworkHandlerMixin {
 	@Unique
 	private String airicraft$pickupItemId;
 
-	@Inject(method = "onEntityDamage", at = @At("TAIL"))
-	private void airicraft$onEntityDamage(EntityDamageS2CPacket packet, CallbackInfo ci) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.player == null || client.world == null) {
+	@Inject(method = "handleDamageEvent", at = @At("TAIL"))
+	private void airicraft$onEntityDamage(ClientboundDamageEventPacket packet, CallbackInfo ci) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.player == null || minecraft.level == null) {
 			return;
 		}
-		if (packet.entityId() != client.player.getId()) {
+		if (packet.entityId() != minecraft.player.getId()) {
 			return;
 		}
-		AiricraftClient.runtimeController().onPlayerDamageObserved(packet.createDamageSource(client.world));
+		AiricraftClient.runtimeController().onPlayerDamageObserved(packet.getSource(minecraft.level));
 	}
 
 	@Inject(
-		method = "onHealthUpdate",
-		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/network/ClientPlayerEntity;updateHealth(F)V")
+		method = "handleSetHealth",
+		at = @At(value = "INVOKE", target = "Lnet/minecraft/client/player/LocalPlayer;hurtTo(F)V")
 	)
-	private void airicraft$captureHealthUpdate(HealthUpdateS2CPacket packet, CallbackInfo ci) {
-		ClientPlayerEntity player = currentPlayer();
+	private void airicraft$captureHealthUpdate(ClientboundSetHealthPacket packet, CallbackInfo ci) {
+		LocalPlayer player = currentPlayer();
 		if (player == null) {
 			return;
 		}
@@ -72,14 +72,14 @@ public class ClientPlayNetworkHandlerMixin {
 	}
 
 	@Inject(
-		method = "onHealthUpdate",
+		method = "handleSetHealth",
 		at = @At(
 			value = "INVOKE",
-			target = "Lnet/minecraft/client/network/ClientPlayerEntity;updateHealth(F)V",
+			target = "Lnet/minecraft/client/player/LocalPlayer;hurtTo(F)V",
 			shift = At.Shift.AFTER
 		)
 	)
-	private void airicraft$reportHealthUpdate(HealthUpdateS2CPacket packet, CallbackInfo ci) {
+	private void airicraft$reportHealthUpdate(ClientboundSetHealthPacket packet, CallbackInfo ci) {
 		if (currentPlayer() == null) {
 			return;
 		}
@@ -90,37 +90,37 @@ public class ClientPlayNetworkHandlerMixin {
 		);
 	}
 
-	@Inject(method = "onPlayerRespawn", at = @At("TAIL"))
-	private void airicraft$onPlayerRespawn(PlayerRespawnS2CPacket packet, CallbackInfo ci) {
+	@Inject(method = "handleRespawn", at = @At("TAIL"))
+	private void airicraft$onPlayerRespawn(ClientboundRespawnPacket packet, CallbackInfo ci) {
 		AiricraftClient.runtimeController().onPlayerRespawned();
 	}
 
-	@Inject(method = "onItemPickupAnimation", at = @At("HEAD"))
-	private void airicraft$onItemPickupAnimation(ItemPickupAnimationS2CPacket packet, CallbackInfo ci) {
+	@Inject(method = "handleTakeItemEntity", at = @At("HEAD"))
+	private void airicraft$onItemPickupAnimation(ClientboundTakeItemEntityPacket packet, CallbackInfo ci) {
 		airicraft$pickupPacket = packet;
 		airicraft$pickupObservationIds.putIfAbsent(packet, UUID.randomUUID());
 		airicraft$pickupEntityUuid = null;
 		airicraft$pickupPreStackCount = -1;
 		airicraft$pickupItemId = null;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.player == null || client.world == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.player == null || minecraft.level == null) {
 			return;
 		}
-		if (!(client.world.getEntityById(packet.getEntityId()) instanceof ItemEntity itemEntity)) {
+		if (!(minecraft.level.getEntity(packet.getItemId()) instanceof ItemEntity itemEntity)) {
 			return;
 		}
 
-		ItemStack stack = itemEntity.getStack();
+		ItemStack stack = itemEntity.getItem();
 		if (stack == null || stack.isEmpty()) {
 			return;
 		}
-		airicraft$pickupEntityUuid = itemEntity.getUuid();
+		airicraft$pickupEntityUuid = itemEntity.getUUID();
 		airicraft$pickupPreStackCount = stack.getCount();
-		airicraft$pickupItemId = Registries.ITEM.getId(stack.getItem()).toString();
+		airicraft$pickupItemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 	}
 
-	@Inject(method = "onItemPickupAnimation", at = @At("TAIL"))
-	private void airicraft$reportItemPickupAnimation(ItemPickupAnimationS2CPacket packet, CallbackInfo ci) {
+	@Inject(method = "handleTakeItemEntity", at = @At("TAIL"))
+	private void airicraft$reportItemPickupAnimation(ClientboundTakeItemEntityPacket packet, CallbackInfo ci) {
 		if (packet != airicraft$pickupPacket || airicraft$pickupPreStackCount < 0) {
 			return;
 		}
@@ -129,14 +129,14 @@ public class ClientPlayNetworkHandlerMixin {
 			return;
 		}
 		airicraft$pickupPacket = null;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.player == null || client.world == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.player == null || minecraft.level == null) {
 			return;
 		}
-		ItemEntity itemEntity = client.world.getEntityById(packet.getEntityId()) instanceof ItemEntity value ? value : null;
-		int postStackCount = itemEntity == null ? 0 : itemEntity.getStack().getCount();
+		ItemEntity itemEntity = minecraft.level.getEntity(packet.getItemId()) instanceof ItemEntity value ? value : null;
+		int postStackCount = itemEntity == null ? 0 : itemEntity.getItem().getCount();
 		int pickupDelta = itemEntity == null
-			? Math.min(Math.max(1, packet.getStackAmount()), airicraft$pickupPreStackCount)
+			? Math.min(Math.max(1, packet.getAmount()), airicraft$pickupPreStackCount)
 			: Math.max(0, airicraft$pickupPreStackCount - postStackCount);
 		if (pickupDelta <= 0) {
 			return;
@@ -145,43 +145,43 @@ public class ClientPlayNetworkHandlerMixin {
 		if (itemId == null) {
 			return;
 		}
-		PlayerEntity collector = client.world.getEntityById(packet.getCollectorEntityId()) instanceof PlayerEntity playerEntity
-			? playerEntity
+		Player collector = minecraft.level.getEntity(packet.getPlayerId()) instanceof Player player
+			? player
 			: null;
 		AiricraftClient.runtimeController().onPlayerItemPickupObserved(
-			packet.getEntityId(),
+			packet.getItemId(),
 			airicraft$pickupEntityUuid,
 			itemId,
 			pickupDelta,
 			airicraft$pickupPreStackCount,
-			collector == null ? null : collector.getUuid(),
+			collector == null ? null : collector.getUUID(),
 			observationId
 		);
-		if (packet.getCollectorEntityId() == client.player.getId()) {
+		if (packet.getPlayerId() == minecraft.player.getId()) {
 			AiricraftClient.runtimeController().onPlayerPickedUpItem(itemId, pickupDelta);
 		}
 	}
 
-	@Inject(method = "onPlayerList", at = @At("TAIL"))
-	private void airicraft$onPlayerList(PlayerListS2CPacket packet, CallbackInfo ci) {
-		for (PlayerListS2CPacket.Entry entry : packet.getPlayerAdditionEntries()) {
+	@Inject(method = "handlePlayerInfoUpdate", at = @At("TAIL"))
+	private void airicraft$onPlayerList(ClientboundPlayerInfoUpdatePacket packet, CallbackInfo ci) {
+		for (ClientboundPlayerInfoUpdatePacket.Entry entry : packet.newEntries()) {
 			AiricraftClient.runtimeController().onPlayerJoinedGame(entry.profileId(), entry.profile().getName());
 		}
 	}
 
-	@Inject(method = "onPlayerRemove", at = @At("TAIL"))
-	private void airicraft$onPlayerRemove(PlayerRemoveS2CPacket packet, CallbackInfo ci) {
+	@Inject(method = "handlePlayerInfoRemove", at = @At("TAIL"))
+	private void airicraft$onPlayerRemove(ClientboundPlayerInfoRemovePacket packet, CallbackInfo ci) {
 		for (java.util.UUID profileId : packet.profileIds()) {
 			AiricraftClient.runtimeController().onPlayerLeftGame(profileId);
 		}
 	}
 
 	@Unique
-	private static ClientPlayerEntity currentPlayer() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.player == null || client.world == null) {
+	private static LocalPlayer currentPlayer() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.player == null || minecraft.level == null) {
 			return null;
 		}
-		return client.player;
+		return minecraft.player;
 	}
 }

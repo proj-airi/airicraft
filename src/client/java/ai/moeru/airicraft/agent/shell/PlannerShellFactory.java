@@ -33,8 +33,8 @@ import ai.moeru.airicraft.agent.memory.PlaceMemoryToolProvider;
 import ai.moeru.airicraft.agent.llm.codex.CodexAppServerLlmBackend;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.recording.PlannerCallJournal;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 
 import java.time.Clock;
 import java.util.List;
@@ -189,17 +189,17 @@ public final class PlannerShellFactory {
 		CurrentViewVisionService visionService = new CurrentViewVisionService(
 			screenshotService,
 			new OpenAiCompatibleVisionBackend(config.llm(), observability),
-			MinecraftClient::getInstance,
+			Minecraft::getInstance,
 			observability,
 			effectiveCameraController
 		);
-		CurrentInventoryService inventoryService = new CurrentInventoryService(MinecraftClient::getInstance);
-		CurrentWorldQueryService worldQueryService = new CurrentWorldQueryService(MinecraftClient::getInstance);
-		WorldFeatureSearchService worldFeatureSearchService = new WorldFeatureSearchService(MinecraftClient::getInstance);
+		CurrentInventoryService inventoryService = new CurrentInventoryService(Minecraft::getInstance);
+		CurrentWorldQueryService worldQueryService = new CurrentWorldQueryService(Minecraft::getInstance);
+		WorldFeatureSearchService worldFeatureSearchService = new WorldFeatureSearchService(Minecraft::getInstance);
 		var plannerGoal = new ai.moeru.airicraft.agent.llm.goal.PlannerGoalStore(() -> {
-			MinecraftClient client = MinecraftClient.getInstance();
-			return client == null || client.world == null || client.getServer() == null ? null
-				: client.getServer().getSavePath(net.minecraft.util.WorldSavePath.ROOT);
+			Minecraft minecraft = Minecraft.getInstance();
+			return minecraft == null || minecraft.level == null || minecraft.getSingleplayerServer() == null ? null
+				: minecraft.getSingleplayerServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT);
 		});
 		plannerGoal.refreshWorld();
 		var scriptedQueries = ai.moeru.airicraft.agent.llm.WorldQueryScriptToolProvider.forClient(effectiveServerTickSupplier, effectiveWorldReadObserver);
@@ -226,7 +226,7 @@ public final class PlannerShellFactory {
 			sharedProviders.add(new ai.moeru.airicraft.playtest.SomethingWrongToolProvider(
 				description -> ai.moeru.airicraft.AiricraftClient.runtimeController().automaticPlaytest().report(description),
 				() -> ai.moeru.airicraft.AiricraftClient.runtimeController().automaticPlaytest().resultCommitted(),
-				command -> MinecraftClient.getInstance().execute(command)));
+				command -> Minecraft.getInstance().execute(command)));
 		}
 		boolean dual = config.llm().thinkingPlanner().enabled();
 		if (dual && config.llm().plannerBackend() != AgentConfig.PlannerBackend.OPENAI_COMPATIBLE)
@@ -234,7 +234,7 @@ public final class PlannerShellFactory {
 		var handoff = new ai.moeru.airicraft.agent.llm.delegation.PlannerDelegation();
 		var controllerRef = new java.util.concurrent.atomic.AtomicReference<PlannerOrchestrator>();
 		var dialogueRef = new java.util.concurrent.atomic.AtomicReference<DialogueRuntime>();
-		java.util.concurrent.Executor clientExecutor = command -> MinecraftClient.getInstance().execute(command);
+		java.util.concurrent.Executor clientExecutor = command -> Minecraft.getInstance().execute(command);
 		var controllerProviders = new java.util.ArrayList<>(sharedProviders);
 		controllerProviders.add(new ai.moeru.airicraft.agent.llm.goal.PlannerGoalToolProvider(plannerGoal, clientExecutor, true, () -> !handoff.active()));
 		if (dual) controllerProviders.add(new ai.moeru.airicraft.agent.llm.delegation.PlannerDelegationToolProvider(
@@ -313,8 +313,8 @@ public final class PlannerShellFactory {
 
 	/** Players address the companion by its account name; an empty card name adopts it. */
 	private static String inGameName() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		return client == null || client.getSession() == null ? null : client.getSession().getUsername();
+		Minecraft minecraft = Minecraft.getInstance();
+		return minecraft == null || minecraft.getUser() == null ? null : minecraft.getUser().getName();
 	}
 
 	private static String plannerModelName(AgentConfig.LlmConfig config) {

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,7 +36,7 @@ public final class WorldReadLedger {
 		}
 		for (BlockPos position : positions) {
 			if (position != null) {
-				observedAtToolCall.put(position.toImmutable(), toolCallIndex);
+				observedAtToolCall.put(position.immutable(), toolCallIndex);
 			}
 		}
 	}

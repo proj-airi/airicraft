@@ -3,18 +3,18 @@ package ai.moeru.airicraft.mixin.client;
 import ai.moeru.airicraft.AiricraftClient;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 import ai.moeru.airicraft.debug.ClientTickPlayerActionEvents;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerInteractionManager;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(ClientPlayerInteractionManager.class)
+@Mixin(MultiPlayerGameMode.class)
 public class ClientPlayerInteractionManagerMixin {
 	@Unique
 	private String airicraft$breakingBlockId;
@@ -30,7 +30,7 @@ public class ClientPlayerInteractionManagerMixin {
 	@Unique
 	private BlockPos airicraft$breakingBlockPos;
 
-	@Inject(method = "attackBlock", at = @At("HEAD"), cancellable = true)
+	@Inject(method = "startDestroyBlock", at = @At("HEAD"), cancellable = true)
 	private void airicraft$captureAttackStart(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
 		if (WorldPlacePreservation.blocksPathBreaking(pos) || ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.blocksEdit(pos)) {
 			cir.setReturnValue(false);
@@ -39,7 +39,7 @@ public class ClientPlayerInteractionManagerMixin {
 		ClientTickPlayerActionEvents.recordStart("attack");
 	}
 
-	@Inject(method = "updateBlockBreakingProgress", at = @At("HEAD"), cancellable = true)
+	@Inject(method = "continueDestroyBlock", at = @At("HEAD"), cancellable = true)
 	private void airicraft$captureBlockBreakStart(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
 		if (WorldPlacePreservation.blocksPathBreaking(pos) || ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.blocksEdit(pos)) {
 			cir.setReturnValue(false);
@@ -51,7 +51,7 @@ public class ClientPlayerInteractionManagerMixin {
 		}
 	}
 
-	@Inject(method = "updateBlockBreakingProgress", at = @At("RETURN"))
+	@Inject(method = "continueDestroyBlock", at = @At("RETURN"))
 	private void airicraft$captureBlockBreakProgress(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
 		if (!Boolean.TRUE.equals(cir.getReturnValue()) || pos == null) {
 			return;
@@ -65,56 +65,56 @@ public class ClientPlayerInteractionManagerMixin {
 		);
 	}
 
-	@Inject(method = "attackEntity", at = @At("HEAD"))
-	private void airicraft$captureEntityAttackStart(PlayerEntity player, Entity target, CallbackInfo ci) {
+	@Inject(method = "attack", at = @At("HEAD"))
+	private void airicraft$captureEntityAttackStart(Player player, Entity target, CallbackInfo ci) {
 		ClientTickPlayerActionEvents.recordStart("attack");
 	}
 
-	@Inject(method = "interactBlock", at = @At("HEAD"), cancellable = true)
+	@Inject(method = "useItemOn", at = @At("HEAD"), cancellable = true)
 	private void airicraft$captureBlockUseStart(
-		ClientPlayerEntity player,
-		Hand hand,
+		LocalPlayer player,
+		InteractionHand hand,
 		BlockHitResult hitResult,
-		CallbackInfoReturnable<ActionResult> cir
+		CallbackInfoReturnable<InteractionResult> cir
 	) {
 		BlockPos target = hitResult.getBlockPos();
 		if (ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.blocksEdit(target)
-			|| player.getStackInHand(hand).getItem() instanceof net.minecraft.item.BlockItem
-				&& ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.blocksEdit(target.offset(hitResult.getSide()))) {
-			cir.setReturnValue(ActionResult.FAIL);
+			|| player.getItemInHand(hand).getItem() instanceof net.minecraft.world.item.BlockItem
+				&& ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.blocksEdit(target.relative(hitResult.getDirection()))) {
+			cir.setReturnValue(InteractionResult.FAIL);
 			return;
 		}
 
 		ClientTickPlayerActionEvents.recordStart("use");
 	}
 
-	@Inject(method = "interactItem", at = @At("HEAD"))
+	@Inject(method = "useItem", at = @At("HEAD"))
 	private void airicraft$captureItemUseStart(
-		PlayerEntity player,
-		Hand hand,
-		CallbackInfoReturnable<ActionResult> cir
+		Player player,
+		InteractionHand hand,
+		CallbackInfoReturnable<InteractionResult> cir
 	) {
 		ClientTickPlayerActionEvents.recordStart("use");
 	}
 
-	@Inject(method = "breakBlock", at = @At("HEAD"))
+	@Inject(method = "destroyBlock", at = @At("HEAD"))
 	private void airicraft$captureBrokenBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
 		airicraft$breakingBlockId = null;
 		airicraft$breakingBlockPos = null;
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread() || client.world == null || pos == null) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread() || minecraft.level == null || pos == null) {
 			return;
 		}
 
-		BlockState state = client.world.getBlockState(pos);
+		BlockState state = minecraft.level.getBlockState(pos);
 		if (state == null || state.isAir()) {
 			return;
 		}
-		airicraft$breakingBlockId = Registries.BLOCK.getId(state.getBlock()).toString();
-		airicraft$breakingBlockPos = pos.toImmutable();
+		airicraft$breakingBlockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+		airicraft$breakingBlockPos = pos.immutable();
 	}
 
-	@Inject(method = "breakBlock", at = @At("RETURN"))
+	@Inject(method = "destroyBlock", at = @At("RETURN"))
 	private void airicraft$reportBrokenBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
 		if (!Boolean.TRUE.equals(cir.getReturnValue()) || airicraft$breakingBlockId == null || airicraft$breakingBlockPos == null) {
 			return;

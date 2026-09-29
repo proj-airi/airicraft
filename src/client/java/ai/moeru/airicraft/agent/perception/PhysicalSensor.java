@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
-import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.multiplayer.ClientLevel;
 
 /** Falls, landings, water, fire and low air, from the local player each tick ({@code player.physical}). */
 public final class PhysicalSensor implements Sensor {
@@ -18,7 +18,7 @@ public final class PhysicalSensor implements Sensor {
 	private final Supplier<Map<String, Object>> taskContext;
 	private final IntSupplier lowAirTicks;
 	private final BoundarySignal boundaries;
-	private ClientWorld world;
+	private ClientLevel level;
 
 	public PhysicalSensor(Supplier<Map<String, Object>> taskContext, IntSupplier lowAirTicks, BoundarySignal boundaries) {
 		this.taskContext = taskContext;
@@ -31,34 +31,34 @@ public final class PhysicalSensor implements Sensor {
 	}
 
 	@Override public void sample(SensorContext context, PerceptSink sink) {
-		var client = context.client();
-		if (client == null || client.player == null || client.world == null || !client.player.isAlive()) {
+		var minecraft = context.client();
+		if (minecraft == null || minecraft.player == null || minecraft.level == null || !minecraft.player.isAlive()) {
 			boundaries.signal(LifecycleBoundary.PLAYER_UNAVAILABLE, WORLD_PARTICIPANTS);
-			world = null;
+			level = null;
 			return;
 		}
-		if (world != client.world) {
+		if (level != minecraft.level) {
 			boundaries.signal(LifecycleBoundary.WORLD_CHANGED, WORLD_PARTICIPANTS);
-			world = client.world;
+			level = minecraft.level;
 		}
-		var player = client.player;
-		var position = player.getPos();
-		var velocity = player.getVelocity();
-		var input = player.input == null ? net.minecraft.util.PlayerInput.DEFAULT : player.input.playerInput;
-		boolean directional = input.forward() || input.backward() || input.left() || input.right() || input.jump() || input.sneak();
+		var player = minecraft.player;
+		var position = player.position();
+		var velocity = player.getDeltaMovement();
+		var input = player.input == null ? net.minecraft.world.entity.player.Input.EMPTY : player.input.keyPresses;
+		boolean directional = input.forward() || input.backward() || input.left() || input.right() || input.jump() || input.shift();
 		var sample = new PhysicalEventObserver.Sample(
-			context.tick(), client.world.getRegistryKey().getValue().toString(),
+			context.tick(), minecraft.level.dimension().location().toString(),
 			new PhysicalEventObserver.Position(position.x, position.y, position.z),
 			new PhysicalEventObserver.Position(velocity.x, velocity.y, velocity.z),
-			player.isOnGround(), player.isTouchingWater(), player.isSubmergedInWater(), player.isClimbing(),
-			player.getAbilities().flying || player.isGliding() || player.hasVehicle(), directional, player.isOnFire(),
-			player.isSubmergedInWater() && player.getAir() <= lowAirTicks.getAsInt(), player.getAir(), player.getHealth(), taskContext.get());
+			player.onGround(), player.isInWater(), player.isUnderWater(), player.onClimbable(),
+			player.getAbilities().flying || player.isFallFlying() || player.isPassenger(), directional, player.isOnFire(),
+			player.isUnderWater() && player.getAirSupply() <= lowAirTicks.getAsInt(), player.getAirSupply(), player.getHealth(), taskContext.get());
 		for (var event : observer.observe(sample)) sink.publish("player.physical", event.payload());
 	}
 
 	@Override public void onBoundary(LifecycleBoundary boundary, long tick) {
 		observer.reset();
 		// Leaving the world forgets it; other boundaries keep it, so the next sample does not re-signal a change.
-		if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) world = null;
+		if (boundary == LifecycleBoundary.WORLD_LEFT || boundary == LifecycleBoundary.SHUTDOWN) level = null;
 	}
 }

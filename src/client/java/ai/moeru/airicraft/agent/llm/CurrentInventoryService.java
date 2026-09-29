@@ -6,18 +6,18 @@ import ai.moeru.airicraft.agent.tasks.CraftingGridKind;
 import ai.moeru.airicraft.agent.tasks.EntitySelectorResolver;
 import ai.moeru.airicraft.agent.tasks.InventoryItemCounter;
 import ai.moeru.airicraft.agent.tasks.NearbyEntityService;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.CraftingScreenHandler;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,65 +36,65 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 	private static final double TABLE_INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final String CRAFTING_TABLE_ITEM_ID = "minecraft:crafting_table";
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 	private final InventoryItemCounter itemCounter = new InventoryItemCounter();
 
-	public CurrentInventoryService(Supplier<MinecraftClient> clientSupplier) {
+	public CurrentInventoryService(Supplier<Minecraft> clientSupplier) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
 
 	@Override
 	public CompletableFuture<String> inspectInventory(String prompt) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.completedFuture("INVENTORY_UNAVAILABLE: world_not_loaded");
 		}
 
 		List<ItemStack> stacks = new ArrayList<>();
-		for (int slot = 0; slot < client.player.getInventory().size(); slot++) {
-			stacks.add(client.player.getInventory().getStack(slot));
+		for (int slot = 0; slot < minecraft.player.getInventory().getContainerSize(); slot++) {
+			stacks.add(minecraft.player.getInventory().getItem(slot));
 		}
 
-		String dimension = client.world.getRegistryKey().getValue().toString();
-		String position = client.player.getBlockPos().getX() + "," + client.player.getBlockPos().getY() + "," + client.player.getBlockPos().getZ();
-		String equippedItemId = Registries.ITEM.getId(client.player.getMainHandStack().getItem()).toString();
-		int selectedHotbarSlot = client.player.getInventory().getSelectedSlot();
+		String dimension = minecraft.level.dimension().location().toString();
+		String position = minecraft.player.blockPosition().getX() + "," + minecraft.player.blockPosition().getY() + "," + minecraft.player.blockPosition().getZ();
+		String equippedItemId = BuiltInRegistries.ITEM.getKey(minecraft.player.getMainHandItem().getItem()).toString();
+		int selectedHotbarSlot = minecraft.player.getInventory().getSelectedSlot();
 		List<String> durability = new ArrayList<>();
 		int freeStorageSlots = 0;
 		for (int slot = 0; slot < stacks.size(); slot++) {
 			ItemStack stack = stacks.get(slot);
-			if (slot < PlayerInventory.MAIN_SIZE && stack.isEmpty()) freeStorageSlots++;
-			if (!stack.isEmpty() && stack.isDamageable()) {
-				durability.add(PlannerStateText.durability(slot, Registries.ITEM.getId(stack.getItem()).toString(),
-					stack.getMaxDamage() - stack.getDamage(), stack.getMaxDamage()));
+			if (slot < Inventory.INVENTORY_SIZE && stack.isEmpty()) freeStorageSlots++;
+			if (!stack.isEmpty() && stack.isDamageableItem()) {
+				durability.add(PlannerStateText.durability(slot, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+					stack.getMaxDamage() - stack.getDamageValue(), stack.getMaxDamage()));
 			}
 		}
 		Map<String, String> equipment = new LinkedHashMap<>();
 		for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND))
-			equipment.put(slot.getName(), Registries.ITEM.getId(client.player.getEquippedStack(slot).getItem()).toString());
+			equipment.put(slot.getName(), BuiltInRegistries.ITEM.getKey(minecraft.player.getItemBySlot(slot).getItem()).toString());
 		return CompletableFuture.completedFuture(
 			"At " + position + " in " + PlannerStateText.item(dimension) + ".\n"
-				+ PlannerStateText.inventory(itemCounter.count(client.player.getInventory())) + " " + freeStorageSlots + " free storage slots.\n"
+				+ PlannerStateText.inventory(itemCounter.count(minecraft.player.getInventory())) + " " + freeStorageSlots + " free storage slots.\n"
 				+ (freeStorageSlots == 0 ? "No empty storage slots: only compatible non-full stacks can accept pickups. Free space before collecting other items.\n" : "")
-				+ PlannerStateText.hotbar(hotbarItems(client.player.getInventory()), selectedHotbarSlot) + "\n"
+				+ PlannerStateText.hotbar(hotbarItems(minecraft.player.getInventory()), selectedHotbarSlot) + "\n"
 				+ PlannerStateText.equipment(equippedItemId, equipment) + "\n"
 				+ (durability.isEmpty() ? "" : "Durability: " + String.join("; ", durability) + ".\n")
-				+ PlannerStateText.vitals(Map.of("health", client.player.getHealth(), "maxHealth", client.player.getMaxHealth(),
-					"food", client.player.getHungerManager().getFoodLevel(), "saturation", client.player.getHungerManager().getSaturationLevel(),
-					"air", client.player.getAir(), "maxAir", client.player.getMaxAir()))
+				+ PlannerStateText.vitals(Map.of("health", minecraft.player.getHealth(), "maxHealth", minecraft.player.getMaxHealth(),
+					"food", minecraft.player.getFoodData().getFoodLevel(), "saturation", minecraft.player.getFoodData().getSaturationLevel(),
+					"air", minecraft.player.getAirSupply(), "maxAir", minecraft.player.getMaxAirSupply()))
 		);
 	}
 
 	@Override
 	public CompletableFuture<String> checkCraftables(com.google.gson.JsonObject arguments) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.completedFuture("CRAFTABLES_UNAVAILABLE: world_not_loaded");
 		}
 
-		List<CraftingOpportunity> opportunities = CraftingOpportunityResolver.availableCrafts(client.player);
-		Map<String, Integer> itemCounts = itemCounter.count(client.player.getInventory());
-		CraftingTableAccess tableAccess = craftingTableAccess(client, itemCounts);
+		List<CraftingOpportunity> opportunities = CraftingOpportunityResolver.availableCrafts(minecraft.player);
+		Map<String, Integer> itemCounts = itemCounter.count(minecraft.player.getInventory());
+		CraftingTableAccess tableAccess = craftingTableAccess(minecraft, itemCounts);
 		String outputItemId = arguments.has("outputItemId") ? arguments.get("outputItemId").getAsString() : null;
 		return CompletableFuture.completedFuture(formatCraftables(opportunities, tableAccess, outputItemId));
 	}
@@ -140,8 +140,8 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 
 	@Override
 	public CompletableFuture<String> inspectNearbyEntities(com.google.gson.JsonObject arguments) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.completedFuture("NEARBY_ENTITIES_UNAVAILABLE: world_not_loaded");
 		}
 
@@ -150,7 +150,7 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 		Set<String> entityTypeIds = arguments.has("entityTypeIds")
 			? arguments.getAsJsonArray("entityTypeIds").asList().stream().map(com.google.gson.JsonElement::getAsString).collect(Collectors.toSet())
 			: Set.of();
-		List<NearbyEntityService.NearbyEntitySnapshot> nearbyEntities = NearbyEntityService.listNearbyEntities(client, radius, maxResults, entityTypeIds);
+		List<NearbyEntityService.NearbyEntitySnapshot> nearbyEntities = NearbyEntityService.listNearbyEntities(minecraft, radius, maxResults, entityTypeIds);
 		return CompletableFuture.completedFuture(
 			"Tool result for inspect_nearby_entities: "
 				+ "nearbyRadius=" + radius
@@ -169,11 +169,11 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 			.collect(Collectors.joining("; ", "[", "]"));
 	}
 
-	private static List<PlannerStateText.HotbarSlot> hotbarItems(PlayerInventory inventory) {
+	private static List<PlannerStateText.HotbarSlot> hotbarItems(Inventory inventory) {
 		var items = new ArrayList<PlannerStateText.HotbarSlot>();
 		for (int slot = 0; slot < 9; slot++) {
-			ItemStack stack = inventory.getStack(slot);
-			items.add(new PlannerStateText.HotbarSlot(slot, Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount()));
+			ItemStack stack = inventory.getItem(slot);
+			items.add(new PlannerStateText.HotbarSlot(slot, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount()));
 		}
 		return List.copyOf(items);
 	}
@@ -188,10 +188,10 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 			.collect(Collectors.joining(", ", "[", "]"));
 	}
 
-	private static CraftingTableAccess craftingTableAccess(MinecraftClient client, Map<String, Integer> itemCounts) {
+	private static CraftingTableAccess craftingTableAccess(Minecraft minecraft, Map<String, Integer> itemCounts) {
 		return craftingTableAccess(
-			client.player.currentScreenHandler instanceof CraftingScreenHandler,
-			hasUsableNearbyCraftingTable(client, client.player),
+			minecraft.player.containerMenu instanceof CraftingMenu,
+			hasUsableNearbyCraftingTable(minecraft, minecraft.player),
 			itemCounts
 		);
 	}
@@ -213,20 +213,20 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 		return CraftingTableAccess.MISSING;
 	}
 
-	private static boolean hasUsableNearbyCraftingTable(MinecraftClient client, ClientPlayerEntity player) {
-		if (client.world == null || player == null) {
+	private static boolean hasUsableNearbyCraftingTable(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft.level == null || player == null) {
 			return false;
 		}
-		BlockPos origin = player.getBlockPos();
+		BlockPos origin = player.blockPosition();
 		for (int dx = -TABLE_SEARCH_RADIUS; dx <= TABLE_SEARCH_RADIUS; dx++) {
 			for (int dy = -TABLE_SEARCH_VERTICAL_RADIUS; dy <= TABLE_SEARCH_VERTICAL_RADIUS; dy++) {
 				for (int dz = -TABLE_SEARCH_RADIUS; dz <= TABLE_SEARCH_RADIUS; dz++) {
-					BlockPos pos = origin.add(dx, dy, dz);
-					if (origin.getSquaredDistance(pos) > TABLE_SEARCH_RADIUS * TABLE_SEARCH_RADIUS || !client.world.isChunkLoaded(pos)) {
+					BlockPos pos = origin.offset(dx, dy, dz);
+					if (origin.distSqr(pos) > TABLE_SEARCH_RADIUS * TABLE_SEARCH_RADIUS || !minecraft.level.hasChunkAt(pos)) {
 						continue;
 					}
-					if (client.world.getBlockState(pos).isOf(Blocks.CRAFTING_TABLE)
-						&& (withinInteractionRange(player, pos) || hasStandableAdjacentPosition(client, pos))) {
+					if (minecraft.level.getBlockState(pos).is(Blocks.CRAFTING_TABLE)
+						&& (withinInteractionRange(player, pos) || hasStandableAdjacentPosition(minecraft, pos))) {
 						return true;
 					}
 				}
@@ -235,29 +235,29 @@ public final class CurrentInventoryService implements CurrentInventoryTool {
 		return false;
 	}
 
-	private static boolean hasStandableAdjacentPosition(MinecraftClient client, BlockPos tablePos) {
-		for (Direction direction : Direction.Type.HORIZONTAL) {
-			if (isStandable(client, tablePos.offset(direction))) {
+	private static boolean hasStandableAdjacentPosition(Minecraft minecraft, BlockPos tablePos) {
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
+			if (isStandable(minecraft, tablePos.relative(direction))) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	private static boolean isStandable(MinecraftClient client, BlockPos pos) {
-		if (client.world == null || !client.world.isChunkLoaded(pos) || !client.world.isChunkLoaded(pos.up())) {
+	private static boolean isStandable(Minecraft minecraft, BlockPos pos) {
+		if (minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.hasChunkAt(pos.above())) {
 			return false;
 		}
-		BlockState feet = client.world.getBlockState(pos);
-		BlockState head = client.world.getBlockState(pos.up());
-		BlockState floor = client.world.getBlockState(pos.down());
-		return (feet.isAir() || feet.isReplaceable())
-			&& (head.isAir() || head.isReplaceable())
-			&& floor.isSideSolidFullSquare(client.world, pos.down(), Direction.UP);
+		BlockState feet = minecraft.level.getBlockState(pos);
+		BlockState head = minecraft.level.getBlockState(pos.above());
+		BlockState floor = minecraft.level.getBlockState(pos.below());
+		return (feet.isAir() || feet.canBeReplaced())
+			&& (head.isAir() || head.canBeReplaced())
+			&& floor.isFaceSturdy(minecraft.level, pos.below(), Direction.UP);
 	}
 
-	private static boolean withinInteractionRange(ClientPlayerEntity player, BlockPos pos) {
-		return player.squaredDistanceTo(Vec3d.ofCenter(pos)) <= TABLE_INTERACTION_RANGE_SQUARED;
+	private static boolean withinInteractionRange(LocalPlayer player, BlockPos pos) {
+		return player.distanceToSqr(Vec3.atCenterOf(pos)) <= TABLE_INTERACTION_RANGE_SQUARED;
 	}
 
 	private static int plankCount(Map<String, Integer> itemCounts) {

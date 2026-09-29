@@ -1,25 +1,25 @@
 package ai.moeru.airicraft.agent.lighting;
 
 import ai.moeru.airicraft.agent.tasks.WorldTaskType;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.WallTorchBlock;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.screen.PlayerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.LightType;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.WallTorchBlock;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.ClipContext;
 
 import java.util.List;
 import java.util.Map;
@@ -34,7 +34,7 @@ public final class LightingRuntime {
 	private LightingPolicy policy = LightingPolicy.defaults();
 	private PendingPlacement pendingPlacement;
 	private long nextAttemptTick;
-	private Vec3d stationaryPosition;
+	private Vec3 stationaryPosition;
 	private long stationarySinceTick;
 	private long lastObservedTick;
 
@@ -57,37 +57,37 @@ public final class LightingRuntime {
 		return policy;
 	}
 
-	public Optional<PlacementEvent> tick(MinecraftClient client, WorldTaskType activity, boolean actuationAllowed, long tick) {
-		if (client == null || client.world == null || client.player == null || client.interactionManager == null || !actuationAllowed) {
+	public Optional<PlacementEvent> tick(Minecraft minecraft, WorldTaskType activity, boolean actuationAllowed, long tick) {
+		if (minecraft == null || minecraft.level == null || minecraft.player == null || minecraft.gameMode == null || !actuationAllowed) {
 			pendingPlacement = null;
 			stationaryPosition = null;
 			return Optional.empty();
 		}
-		ClientPlayerEntity player = client.player;
-		boolean stationaryLongEnough = observeStationary(player.getPos(), player.isOnGround(), tick);
-		Optional<PlacementEvent> confirmation = confirmPending(client, tick);
+		LocalPlayer player = minecraft.player;
+		boolean stationaryLongEnough = observeStationary(player.position(), player.onGround(), tick);
+		Optional<PlacementEvent> confirmation = confirmPending(minecraft, tick);
 		if (confirmation.isPresent() || pendingPlacement != null || tick < nextAttemptTick) {
 			return confirmation;
 		}
 		nextAttemptTick = tick + ATTEMPT_INTERVAL_TICKS;
 
 		if (!LightingPolicyEvaluator.supportsActivity(activity, stationaryLongEnough) || !policy.enabled()
-			|| player.isUsingItem() || client.interactionManager.isBreakingBlock()
-			|| player.currentScreenHandler != player.playerScreenHandler
-			|| !player.currentScreenHandler.getCursorStack().isEmpty()) return Optional.empty();
-		BlockPos origin = player.getBlockPos();
+			|| player.isUsingItem() || minecraft.gameMode.isDestroying()
+			|| player.containerMenu != player.inventoryMenu
+			|| !player.containerMenu.getCarried().isEmpty()) return Optional.empty();
+		BlockPos origin = player.blockPosition();
 		// Do not interpret an unloaded edge of the sampling area as darkness.
-		for (BlockPos sample : BlockPos.iterate(origin.add(-2, 0, -2), origin.add(2, 0, 2))) {
-			if (!client.world.isChunkLoaded(sample)) return Optional.empty();
+		for (BlockPos sample : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {
+			if (!minecraft.level.hasChunkAt(sample)) return Optional.empty();
 		}
-		double combinedLight = averageFootLevelLight(origin, client.world::isAir, pos -> client.world.getLightLevel(pos));
-		double blockLight = averageFootLevelLight(origin, client.world::isAir, pos -> client.world.getLightLevel(LightType.BLOCK, pos));
-		boolean nearbyTorch = hasNearbyTorch(client, origin, policy.minSpacingBlocks());
+		double combinedLight = averageFootLevelLight(origin, minecraft.level::isEmptyBlock, pos -> minecraft.level.getMaxLocalRawBrightness(pos));
+		double blockLight = averageFootLevelLight(origin, minecraft.level::isEmptyBlock, pos -> minecraft.level.getBrightness(LightLayer.BLOCK, pos));
+		boolean nearbyTorch = hasNearbyTorch(minecraft, origin, policy.minSpacingBlocks());
 		boolean placementRequired = LightingPolicyEvaluator.shouldPlace(
 			policy,
 			true,
 			torchCount(player) > 0,
-			hasFootLevelSkyAccess(origin, pos -> client.world.isSkyVisible(pos)),
+			hasFootLevelSkyAccess(origin, pos -> minecraft.level.canSeeSky(pos)),
 			combinedLight,
 			blockLight,
 			nearbyTorch
@@ -95,8 +95,8 @@ public final class LightingRuntime {
 		if (!placementRequired) {
 			return Optional.empty();
 		}
-		for (PlacementCandidate candidate : placementCandidates(player.getBlockPos(), player.getHorizontalFacing())) {
-			if (tryPlace(client, player, candidate, activity, tick,
+		for (PlacementCandidate candidate : placementCandidates(player.blockPosition(), player.getDirection())) {
+			if (tryPlace(minecraft, player, candidate, activity, tick,
 				policy.mode() == LightingPolicy.Mode.SPAWN_PROOF ? blockLight : combinedLight)) {
 				break;
 			}
@@ -104,14 +104,14 @@ public final class LightingRuntime {
 		return Optional.empty();
 	}
 
-	boolean observeStationary(Vec3d position, boolean grounded, long tick) {
+	boolean observeStationary(Vec3 position, boolean grounded, long tick) {
 		if (!grounded) {
 			stationaryPosition = null;
 			lastObservedTick = tick;
 			return false;
 		}
 		if (stationaryPosition == null || tick != lastObservedTick + 1
-			|| stationaryPosition.squaredDistanceTo(position) > 0.0001D) {
+			|| stationaryPosition.distanceToSqr(position) > 0.0001D) {
 			stationaryPosition = position;
 			stationarySinceTick = tick;
 		}
@@ -123,7 +123,7 @@ public final class LightingRuntime {
 		java.util.function.ToIntFunction<BlockPos> lightAt) {
 		int total = 0;
 		int samples = 0;
-		for (BlockPos sample : BlockPos.iterate(origin.add(-2, 0, -2), origin.add(2, 0, 2))) {
+		for (BlockPos sample : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {
 			if (!isAirAt.test(sample)) continue;
 			total += lightAt.applyAsInt(sample);
 			samples++;
@@ -133,7 +133,7 @@ public final class LightingRuntime {
 	}
 
 	static boolean hasFootLevelSkyAccess(BlockPos origin, java.util.function.Predicate<BlockPos> skyVisibleAt) {
-		for (BlockPos sample : BlockPos.iterate(origin.add(-2, 0, -2), origin.add(2, 0, 2))) {
+		for (BlockPos sample : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {
 			if (skyVisibleAt.test(sample)) return true;
 		}
 		return false;
@@ -150,12 +150,12 @@ public final class LightingRuntime {
 		return policy;
 	}
 
-	private Optional<PlacementEvent> confirmPending(MinecraftClient client, long tick) {
+	private Optional<PlacementEvent> confirmPending(Minecraft minecraft, long tick) {
 		if (pendingPlacement == null) {
 			return Optional.empty();
 		}
-		BlockState state = client.world.getBlockState(pendingPlacement.target());
-		if (state.isOf(Blocks.TORCH) || state.isOf(Blocks.WALL_TORCH)) {
+		BlockState state = minecraft.level.getBlockState(pendingPlacement.target());
+		if (state.is(Blocks.TORCH) || state.is(Blocks.WALL_TORCH)) {
 			PendingPlacement confirmed = pendingPlacement;
 			pendingPlacement = null;
 			return Optional.of(new PlacementEvent(Map.of(
@@ -165,9 +165,9 @@ public final class LightingRuntime {
 				"y", confirmed.target().getY(),
 				"z", confirmed.target().getZ(),
 				"lightLevelBefore", confirmed.lightLevelBefore(),
-				"torchCount", torchCount(client.player),
+				"torchCount", torchCount(minecraft.player),
 				"side", confirmed.side(),
-				"facing", confirmed.face().asString(),
+				"facing", confirmed.face().getSerializedName(),
 				"activity", confirmed.activity() == null ? "idle" : confirmed.activity().name().toLowerCase(java.util.Locale.ROOT)
 			)));
 		}
@@ -177,38 +177,38 @@ public final class LightingRuntime {
 		return Optional.empty();
 	}
 
-	private boolean tryPlace(MinecraftClient client, ClientPlayerEntity player, PlacementCandidate candidate, WorldTaskType activity, long tick, double lightBefore) {
+	private boolean tryPlace(Minecraft minecraft, LocalPlayer player, PlacementCandidate candidate, WorldTaskType activity, long tick, double lightBefore) {
 		BlockPos target = candidate.target();
-		if (!client.world.isChunkLoaded(target)) {
+		if (!minecraft.level.hasChunkAt(target)) {
 			return false;
 		}
-		BlockState targetState = client.world.getBlockState(target);
+		BlockState targetState = minecraft.level.getBlockState(target);
 		BlockState torchState = candidate.surface() == PlacementSurface.WALL
-			? Blocks.WALL_TORCH.getDefaultState().with(WallTorchBlock.FACING, candidate.face())
-			: Blocks.TORCH.getDefaultState();
-		if (!(targetState.isAir() || targetState.isReplaceable()) || !client.world.getFluidState(target).isEmpty()
-			|| !torchState.canPlaceAt(client.world, target)) {
+			? Blocks.WALL_TORCH.defaultBlockState().setValue(WallTorchBlock.FACING, candidate.face())
+			: Blocks.TORCH.defaultBlockState();
+		if (!(targetState.isAir() || targetState.canBeReplaced()) || !minecraft.level.getFluidState(target).isEmpty()
+			|| !torchState.canSurvive(minecraft.level, target)) {
 			return false;
 		}
-		Vec3d hit = Vec3d.ofCenter(candidate.support()).add(
-			candidate.face().getOffsetX() * 0.5D,
-			candidate.face().getOffsetY() * 0.5D,
-			candidate.face().getOffsetZ() * 0.5D
+		Vec3 hit = Vec3.atCenterOf(candidate.support()).add(
+			candidate.face().getStepX() * 0.5D,
+			candidate.face().getStepY() * 0.5D,
+			candidate.face().getStepZ() * 0.5D
 		);
-		if (player.getEyePos().squaredDistanceTo(hit) > MAX_REACH_SQUARED) {
+		if (player.getEyePosition().distanceToSqr(hit) > MAX_REACH_SQUARED) {
 			return false;
 		}
 		// Ray ends just inside the support face, avoiding boundary misses and through-wall clicks.
-		Vec3d inside = hit.subtract(Vec3d.of(candidate.face().getVector()).multiply(0.001));
-		var visible = client.world.raycast(new RaycastContext(player.getEyePos(), inside,
-			RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, player));
+		Vec3 inside = hit.subtract(Vec3.atLowerCornerOf(candidate.face().getUnitVec3i()).scale(0.001));
+		var visible = minecraft.level.clip(new ClipContext(player.getEyePosition(), inside,
+			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
 		if (visible.getType() != HitResult.Type.BLOCK || !visible.getBlockPos().equals(candidate.support())) return false;
-		ActionResult result = placeWithTorch(client, player, new BlockHitResult(hit, candidate.face(), candidate.support(), false));
-		if (!result.isAccepted()) {
+		InteractionResult result = placeWithTorch(minecraft, player, new BlockHitResult(hit, candidate.face(), candidate.support(), false));
+		if (!result.consumesAction()) {
 			return false;
 		}
 		pendingPlacement = new PendingPlacement(
-			target.toImmutable(),
+			target.immutable(),
 			tick,
 			policy.revision(),
 			policy.mode(),
@@ -221,12 +221,12 @@ public final class LightingRuntime {
 	}
 
 	static List<PlacementCandidate> placementCandidates(BlockPos origin, Direction forward) {
-		Direction left = forward.rotateYCounterclockwise();
-		Direction right = forward.rotateYClockwise();
+		Direction left = forward.getCounterClockWise();
+		Direction right = forward.getClockWise();
 		List<BlockPos> anchors = List.of(
-			origin.offset(forward.getOpposite()).up(),
-			origin.up(),
-			origin.offset(forward).up()
+			origin.relative(forward.getOpposite()).above(),
+			origin.above(),
+			origin.relative(forward).above()
 		);
 		java.util.ArrayList<PlacementCandidate> candidates = new java.util.ArrayList<>(10);
 		addWallCandidates(candidates, anchors, left, "left");
@@ -243,32 +243,32 @@ public final class LightingRuntime {
 	) {
 		Direction clickedFace = wallDirection.getOpposite();
 		for (BlockPos target : targets) {
-			candidates.add(new PlacementCandidate(target, target.offset(wallDirection), clickedFace, side, PlacementSurface.WALL));
+			candidates.add(new PlacementCandidate(target, target.relative(wallDirection), clickedFace, side, PlacementSurface.WALL));
 		}
 	}
 
 	private static void addFloorCandidates(List<PlacementCandidate> candidates, BlockPos origin, Direction forward) {
 		for (BlockPos target : List.of(
-			origin.offset(forward.getOpposite()),
-			origin.offset(forward.rotateYCounterclockwise()),
-			origin.offset(forward.rotateYClockwise()),
-			origin.offset(forward)
+			origin.relative(forward.getOpposite()),
+			origin.relative(forward.getCounterClockWise()),
+			origin.relative(forward.getClockWise()),
+			origin.relative(forward)
 		)) {
-			candidates.add(new PlacementCandidate(target, target.down(), Direction.UP, "floor", PlacementSurface.FLOOR));
+			candidates.add(new PlacementCandidate(target, target.below(), Direction.UP, "floor", PlacementSurface.FLOOR));
 		}
 	}
 
-	private static boolean hasNearbyTorch(MinecraftClient client, BlockPos origin, int radius) {
-		BlockPos.Mutable cursor = new BlockPos.Mutable();
+	private static boolean hasNearbyTorch(Minecraft minecraft, BlockPos origin, int radius) {
+		BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 		for (int x = -radius; x <= radius; x++) {
 			for (int y = -2; y <= 2; y++) {
 				for (int z = -radius; z <= radius; z++) {
 					cursor.set(origin.getX() + x, origin.getY() + y, origin.getZ() + z);
-					if (!client.world.isChunkLoaded(cursor)) {
+					if (!minecraft.level.hasChunkAt(cursor)) {
 						continue;
 					}
-					BlockState state = client.world.getBlockState(cursor);
-					if (state.isOf(Blocks.TORCH) || state.isOf(Blocks.WALL_TORCH)) {
+					BlockState state = minecraft.level.getBlockState(cursor);
+					if (state.is(Blocks.TORCH) || state.is(Blocks.WALL_TORCH)) {
 						return true;
 					}
 				}
@@ -277,36 +277,36 @@ public final class LightingRuntime {
 		return false;
 	}
 
-	private static int torchCount(ClientPlayerEntity player) {
-		return player.getInventory().count(Items.TORCH);
+	private static int torchCount(LocalPlayer player) {
+		return player.getInventory().countItem(Items.TORCH);
 	}
 
-	private static ActionResult placeWithTorch(MinecraftClient client, ClientPlayerEntity player, BlockHitResult hit) {
-		if (player.getOffHandStack().isOf(Items.TORCH)) {
-			ActionResult result = client.interactionManager.interactBlock(player, Hand.OFF_HAND, hit);
-			if (result.isAccepted()) player.swingHand(Hand.OFF_HAND);
+	private static InteractionResult placeWithTorch(Minecraft minecraft, LocalPlayer player, BlockHitResult hit) {
+		if (player.getOffhandItem().is(Items.TORCH)) {
+			InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.OFF_HAND, hit);
+			if (result.consumesAction()) player.swing(InteractionHand.OFF_HAND);
 			return result;
 		}
-		ScreenHandler handler = player.currentScreenHandler;
-		for (int slot = PlayerScreenHandler.INVENTORY_START; slot < PlayerScreenHandler.HOTBAR_END; slot++) {
-			if (!handler.getSlot(slot).getStack().isOf(Items.TORCH)) continue;
+		AbstractContainerMenu menu = player.containerMenu;
+		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
+			if (!menu.getSlot(slot).getItem().is(Items.TORCH)) continue;
 			int previousSlot = player.getInventory().getSelectedSlot();
-			boolean swap = slot < PlayerScreenHandler.HOTBAR_START;
-			int torchSlot = swap ? previousSlot : slot - PlayerScreenHandler.HOTBAR_START;
-			if (swap) client.interactionManager.clickSlot(handler.syncId, slot, torchSlot, SlotActionType.SWAP, player);
+			boolean swap = slot < InventoryMenu.USE_ROW_SLOT_START;
+			int torchSlot = swap ? previousSlot : slot - InventoryMenu.USE_ROW_SLOT_START;
+			if (swap) minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slot, torchSlot, ClickType.SWAP, player);
 			player.getInventory().setSelectedSlot(torchSlot);
 			try {
-				ActionResult result = client.interactionManager.interactBlock(player, Hand.MAIN_HAND, hit);
-				if (result.isAccepted()) player.swingHand(Hand.MAIN_HAND);
+				InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+				if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 				return result;
 			}
 			finally {
-				if (swap) client.interactionManager.clickSlot(handler.syncId, slot, torchSlot, SlotActionType.SWAP, player);
+				if (swap) minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slot, torchSlot, ClickType.SWAP, player);
 				player.getInventory().setSelectedSlot(previousSlot);
-				player.networkHandler.sendPacket(new UpdateSelectedSlotC2SPacket(previousSlot));
+				player.connection.send(new ServerboundSetCarriedItemPacket(previousSlot));
 			}
 		}
-		return ActionResult.PASS;
+		return InteractionResult.PASS;
 	}
 
 	public record PlacementEvent(Map<String, Object> payload) {

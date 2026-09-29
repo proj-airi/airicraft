@@ -8,8 +8,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -47,16 +47,16 @@ public final class PlaceMemoryToolProvider implements PlannerToolProvider {
 
 	public static PlaceMemoryToolProvider forClient() {
 		return new PlaceMemoryToolProvider(() -> {
-			MinecraftClient client = MinecraftClient.getInstance();
-			if (client.world == null || client.player == null) {
+			Minecraft minecraft = Minecraft.getInstance();
+			if (minecraft.level == null || minecraft.player == null) {
 				throw new IllegalStateException("world_not_loaded");
 			}
 			var pos = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().playerFeet();
-			return new Context(client.getServer() == null ? null : client.getServer().getSavePath(WorldSavePath.ROOT),
-				client.world.getRegistryKey().getValue().toString(), pos.getX(), pos.getY(), pos.getZ());
-		}, command -> MinecraftClient.getInstance().execute(command),
-			() -> WorldPlacePreservation.reload(MinecraftClient.getInstance()),
-			current -> LocationMemoryBridge.forClient(MinecraftClient.getInstance()));
+			return new Context(minecraft.getSingleplayerServer() == null ? null : minecraft.getSingleplayerServer().getWorldPath(LevelResource.ROOT),
+				minecraft.level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
+		}, command -> Minecraft.getInstance().execute(command),
+			() -> WorldPlacePreservation.reload(Minecraft.getInstance()),
+			current -> LocationMemoryBridge.forClient(Minecraft.getInstance()));
 	}
 
 	@Override

@@ -1,12 +1,12 @@
 package ai.moeru.airicraft;
 
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.debug.DebugRenderer;
-import net.minecraft.client.render.debug.GameTestDebugRenderer;
-import net.minecraft.util.Util;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.debug.DebugRenderer;
+import net.minecraft.client.renderer.debug.GameTestDebugRenderer;
+import net.minecraft.Util;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,12 +18,12 @@ public final class HighlightManager {
 	private final Map<String, HighlightRecord> highlights = new LinkedHashMap<>();
 
 	public String addBlock(BlockPos pos, int colorArgb, Long durationMs, String overlayText) {
-		long now = Util.getMeasuringTimeMs();
+		long now = Util.getMillis();
 		purgeExpired(now);
 		String highlightId = UUID.randomUUID().toString();
 		highlights.put(highlightId, new BlockHighlight(
 			highlightId,
-			pos.toImmutable(),
+			pos.immutable(),
 			colorArgb,
 			defaultText(overlayText, pos.toShortString()),
 			expiresAt(now, durationMs)
@@ -33,7 +33,7 @@ public final class HighlightManager {
 	}
 
 	public String addRegion(BlockPos posA, BlockPos posB, int colorArgb, Long durationMs, String overlayText) {
-		long now = Util.getMeasuringTimeMs();
+		long now = Util.getMillis();
 		purgeExpired(now);
 		BlockPos min = new BlockPos(
 			Math.min(posA.getX(), posB.getX()),
@@ -59,7 +59,7 @@ public final class HighlightManager {
 	}
 
 	public List<Map<String, Object>> list() {
-		purgeExpired(Util.getMeasuringTimeMs());
+		purgeExpired(Util.getMillis());
 		rebuildBlockMarkers();
 		List<Map<String, Object>> payload = new ArrayList<>();
 		for (HighlightRecord highlight : highlights.values()) {
@@ -69,7 +69,7 @@ public final class HighlightManager {
 	}
 
 	public boolean clearById(String highlightId) {
-		purgeExpired(Util.getMeasuringTimeMs());
+		purgeExpired(Util.getMillis());
 		boolean removed = highlights.remove(highlightId) != null;
 		if (removed) {
 			rebuildBlockMarkers();
@@ -85,18 +85,18 @@ public final class HighlightManager {
 	}
 
 	public void tick() {
-		if (purgeExpired(Util.getMeasuringTimeMs())) {
+		if (purgeExpired(Util.getMillis())) {
 			rebuildBlockMarkers();
 		}
 	}
 
 	public void render(WorldRenderContext context) {
-		long now = Util.getMeasuringTimeMs();
+		long now = Util.getMillis();
 		if (purgeExpired(now)) {
 			rebuildBlockMarkers();
 		}
-		var client = MinecraftClient.getInstance();
-		if (client.worldRenderer == null || client.world == null) {
+		var minecraft = Minecraft.getInstance();
+		if (minecraft.levelRenderer == null || minecraft.level == null) {
 			return;
 		}
 		if (context.matrixStack() == null || context.consumers() == null || context.camera() == null) {
@@ -111,8 +111,8 @@ public final class HighlightManager {
 	}
 
 	private void renderRegion(RegionHighlight region, WorldRenderContext context) {
-		Box box = regionBox(region).expand(0.002D);
-		DebugRenderer.drawBox(
+		AABB box = regionBox(region).inflate(0.002D);
+		DebugRenderer.renderFilledBox(
 			context.matrixStack(),
 			context.consumers(),
 			box,
@@ -125,7 +125,7 @@ public final class HighlightManager {
 		double labelX = (box.minX + box.maxX) * 0.5D;
 		double labelY = box.maxY + 0.2D;
 		double labelZ = (box.minZ + box.maxZ) * 0.5D;
-		DebugRenderer.drawString(
+		DebugRenderer.renderFloatingText(
 			context.matrixStack(),
 			context.consumers(),
 			region.overlayText,
@@ -141,25 +141,25 @@ public final class HighlightManager {
 	}
 
 	private void rebuildBlockMarkers() {
-		var client = MinecraftClient.getInstance();
-		if (client.debugRenderer == null) {
+		var minecraft = Minecraft.getInstance();
+		if (minecraft.debugRenderer == null) {
 			return;
 		}
 
 		clearRendererMarkers();
-		long now = Util.getMeasuringTimeMs();
+		long now = Util.getMillis();
 
 		for (HighlightRecord highlight : highlights.values()) {
 			if (highlight instanceof BlockHighlight block) {
-				addColoredMarker(client.debugRenderer.gameTestDebugRenderer, block, now);
+				addColoredMarker(minecraft.debugRenderer.gameTestDebugRenderer, block, now);
 			}
 		}
 	}
 
 	private void clearRendererMarkers() {
-		var client = MinecraftClient.getInstance();
-		if (client.debugRenderer != null) {
-			client.debugRenderer.gameTestDebugRenderer.clear();
+		var minecraft = Minecraft.getInstance();
+		if (minecraft.debugRenderer != null) {
+			minecraft.debugRenderer.gameTestDebugRenderer.clear();
 		}
 	}
 
@@ -188,8 +188,8 @@ public final class HighlightManager {
 		return overlayText == null || overlayText.isBlank() ? fallback : overlayText;
 	}
 
-	private static Box regionBox(RegionHighlight region) {
-		return new Box(
+	private static AABB regionBox(RegionHighlight region) {
+		return new AABB(
 			region.minPos.getX(),
 			region.minPos.getY(),
 			region.minPos.getZ(),

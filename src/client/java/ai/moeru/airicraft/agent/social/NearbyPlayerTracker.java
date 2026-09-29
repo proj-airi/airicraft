@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.social;
 
 import ai.moeru.airicraft.agent.events.EventPublisher;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,24 +30,24 @@ public final class NearbyPlayerTracker {
 		this.nearbyRadius = nearbyRadius;
 	}
 
-	public void poll(MinecraftClient client, long tick, EventPublisher eventBuffer) {
+	public void poll(Minecraft minecraft, long tick, EventPublisher eventBuffer) {
 		Map<UUID, NearbyPlayerSnapshot> nextNearby = new LinkedHashMap<>();
 
-		if (client != null && client.world != null && client.player != null) {
-			ClientPlayerEntity self = client.player;
-			Vec3d selfPos = new Vec3d(self.getX(), self.getY(), self.getZ());
+		if (minecraft != null && minecraft.level != null && minecraft.player != null) {
+			LocalPlayer self = minecraft.player;
+			Vec3 selfPos = new Vec3(self.getX(), self.getY(), self.getZ());
 			double nearbyRadiusSquared = nearbyRadius * nearbyRadius;
-			for (AbstractClientPlayerEntity player : client.world.getPlayers()) {
+			for (AbstractClientPlayer player : minecraft.level.players()) {
 				if (player == self) {
 					continue;
 				}
 
-				if (player.squaredDistanceTo(selfPos) > nearbyRadiusSquared) {
+				if (player.distanceToSqr(selfPos) > nearbyRadiusSquared) {
 					continue;
 				}
 
-				nextNearby.put(player.getUuid(), new NearbyPlayerSnapshot(
-					player.getUuid(),
+				nextNearby.put(player.getUUID(), new NearbyPlayerSnapshot(
+					player.getUUID(),
 					player.getName().getString(),
 					player.getX(),
 					player.getY(),
@@ -61,7 +61,7 @@ public final class NearbyPlayerTracker {
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 	}
 
-	public void injectPlayerNearby(String playerName, Vec3d pos, long tick, EventPublisher eventBuffer) {
+	public void injectPlayerNearby(String playerName, Vec3 pos, long tick, EventPublisher eventBuffer) {
 		Objects.requireNonNull(playerName, "playerName");
 		Objects.requireNonNull(pos, "pos");
 		UUID playerUuid = injectedPlayerIds.computeIfAbsent(playerName, ignored -> UUID.randomUUID());
@@ -78,7 +78,7 @@ public final class NearbyPlayerTracker {
 		replaceNearbyPlayers(nextNearby, tick, eventBuffer);
 	}
 
-	public void injectPlayerMove(String playerName, Vec3d pos, long tick, EventPublisher eventBuffer) {
+	public void injectPlayerMove(String playerName, Vec3 pos, long tick, EventPublisher eventBuffer) {
 		injectPlayerNearby(playerName, pos, tick, eventBuffer);
 	}
 

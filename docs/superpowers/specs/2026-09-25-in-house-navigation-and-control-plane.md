@@ -292,10 +292,11 @@ Status (2026-09-25): done.
   locomotion+look lease on start and releases it on terminal.
   `BaritoneCameraInputMixin` gates Baritone input on lease ownership. Baritone
   pathing is otherwise unchanged.
-- **Guard test.** Scan sources and fail on player `setPressed(`,
-  `setSelectedSlot(`, `setYaw(` or `setPitch(`, or `interactionManager`
-  attack/interact calls outside the control package. The allowlist shrinks with
-  each PR.
+- **Guard test.** Scan sources and fail on player `setDown(`,
+  `setSelectedSlot(`, `setYRot(` or `setXRot(`, or `gameMode`
+  attack/interact calls outside the control package. These are Mojang names;
+  the Yarn-era draft of this spec used `setPressed`, `setYaw`, `setPitch` and
+  `interactionManager`. The allowlist shrinks with each PR.
 - **Exit criteria:**
   - existing tests pass;
   - scenario pass rate ≥ baseline;

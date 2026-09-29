@@ -5,14 +5,14 @@ import ai.moeru.airicraft.AlphaVertexConsumer;
 import ai.moeru.airicraft.WorldCameraService;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.LeavesBlock;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.block.BlockRenderManager;
-import net.minecraft.client.render.chunk.SectionBuilder;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.BlockRenderView;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.LeavesBlock;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.chunk.SectionCompiler;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.BlockAndTintGetter;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -24,23 +24,23 @@ import java.util.List;
  * opacity. Pairs with {@link RenderLayersMixin}, which moves leaves onto
  * the translucent render layer.
  */
-@Mixin(SectionBuilder.class)
+@Mixin(SectionCompiler.class)
 public abstract class SectionBuilderMixin {
 	private static final float LEAF_ALPHA = 0.4f;
 
 	@WrapOperation(
-		method = "build",
+		method = "compile",
 		at = @At(
 			value = "INVOKE",
-			target = "Lnet/minecraft/client/render/block/BlockRenderManager;renderBlock(Lnet/minecraft/block/BlockState;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/world/BlockRenderView;Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumer;ZLjava/util/List;)V"
+			target = "Lnet/minecraft/client/renderer/block/BlockRenderDispatcher;renderBatched(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/BlockAndTintGetter;Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;ZLjava/util/List;)V"
 		)
 	)
 	private void airicraft$translucentLeaves(
-		BlockRenderManager manager,
+		BlockRenderDispatcher dispatcher,
 		BlockState state,
 		BlockPos pos,
-		BlockRenderView world,
-		MatrixStack matrices,
+		BlockAndTintGetter level,
+		PoseStack poseStack,
 		VertexConsumer consumer,
 		boolean cull,
 		List<?> overlayVertices,
@@ -55,6 +55,6 @@ public abstract class SectionBuilderMixin {
 			WorldCameraService.TINT_HITS.incrementAndGet();
 			wrapped = new ai.moeru.airicraft.TintedVertexConsumer(wrapped, 0x3080FF, 0.8f);
 		}
-		original.call(manager, state, pos, world, matrices, wrapped, cull, overlayVertices);
+		original.call(dispatcher, state, pos, level, poseStack, wrapped, cull, overlayVertices);
 	}
 }

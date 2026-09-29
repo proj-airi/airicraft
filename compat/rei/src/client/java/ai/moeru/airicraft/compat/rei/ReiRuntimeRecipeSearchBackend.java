@@ -13,8 +13,8 @@ import me.shedaniel.rei.api.common.display.Display;
 import me.shedaniel.rei.api.common.entry.EntryIngredient;
 import me.shedaniel.rei.api.common.entry.EntryStack;
 import me.shedaniel.rei.api.common.util.EntryStacks;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -176,7 +176,7 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 		if (!matches) {
 			return;
 		}
-		String recipeId = display.getDisplayLocation().map(Identifier::toString).orElse("unknown");
+		String recipeId = display.getDisplayLocation().map(ResourceLocation::toString).orElse("unknown");
 		String key = role + "|" + categoryId.getIdentifier() + "|" + recipeId + "|" + entryId(matchedItem);
 		results.putIfAbsent(key, new RecipeSearchResult(
 			role,
@@ -210,7 +210,7 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 
 	private static String entryId(EntryStack<?> stack) {
 		return Optional.ofNullable(stack.getIdentifier())
-			.map(Identifier::toString)
+			.map(ResourceLocation::toString)
 			.orElse("unknown");
 	}
 
@@ -226,8 +226,8 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 		return text == null ? "" : text.replace('\n', ' ').replace('\r', ' ').strip();
 	}
 
-	private static String title(Text text) {
-		return sanitize(text == null ? "" : text.getString());
+	private static String title(Component component) {
+		return sanitize(component == null ? "" : component.getString());
 	}
 
 	private record RecipeSearchResult(

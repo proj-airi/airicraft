@@ -6,7 +6,7 @@ import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import ai.moeru.airicraft.agent.social.NearbyPlayerTracker;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -34,7 +34,7 @@ class FollowCapabilityTest {
 
 		assertFalse(session.companionActuationAllowed());
 
-		tracker.injectPlayerNearby("Alice", new Vec3d(5.0D, 64.0D, 0.0D), 10L, eventBuffer);
+		tracker.injectPlayerNearby("Alice", new Vec3(5.0D, 64.0D, 0.0D), 10L, eventBuffer);
 		FollowState acquired = capability.tick(null, session, Optional.of(goal), tracker, 11L, eventBuffer);
 
 		assertTrue(acquired.goalActive());
@@ -66,9 +66,9 @@ class FollowCapabilityTest {
 		);
 		GoalSnapshot goal = new GoalSnapshot(GoalType.FOLLOW_PLAYER, "Alice", 10L, "test");
 
-		tracker.injectPlayerNearby("Alice", new Vec3d(5.0D, 64.0D, 0.0D), 10L, eventBuffer);
+		tracker.injectPlayerNearby("Alice", new Vec3(5.0D, 64.0D, 0.0D), 10L, eventBuffer);
 		FollowState initial = capability.tick(null, session, Optional.of(goal), tracker, 11L, eventBuffer);
-		tracker.injectPlayerMove("Alice", new Vec3d(9.0D, 65.0D, -3.0D), 12L, eventBuffer);
+		tracker.injectPlayerMove("Alice", new Vec3(9.0D, 65.0D, -3.0D), 12L, eventBuffer);
 		FollowState moved = capability.tick(null, session, Optional.of(goal), tracker, 13L, eventBuffer);
 
 		assertEquals(5.0D, initial.targetX());

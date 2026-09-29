@@ -5,15 +5,15 @@ import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.integration.map.MapIntegrationBridge;
 import ai.moeru.airicraft.agent.integration.rei.ReiRecipeSearchBridge;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.tooltip.Tooltip;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.OrderedText;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -35,20 +35,20 @@ public final class OnboardingScreen extends Screen {
 	private Tab tab = Tab.PLANNER;
 	private String problem = "";
 	private List<Compatibility> compatibility = List.of();
-	private ButtonWidget finishButton;
-	private ButtonWidget checkButton;
-	private ButtonWidget modelsButton;
-	private final List<ButtonWidget> choices = new ArrayList<>();
+	private Button finishButton;
+	private Button checkButton;
+	private Button modelsButton;
+	private final List<Button> choices = new ArrayList<>();
 	private boolean dropdown;
 	private int modelOffset;
 	private String modelQuery = "";
 	private int left;
 	private int span;
-	private TextFieldWidget modelField;
+	private EditBox modelField;
 
 	private enum Tab { PLANNER, VISION, MODS }
 	private OnboardingScreen(Screen parent) {
-		super(Text.literal("Welcome to Airicraft"));
+		super(Component.literal("Welcome to Airicraft"));
 		this.parent = parent;
 		try {
 			draft = SettingsDraft.open(directory());
@@ -84,7 +84,7 @@ public final class OnboardingScreen extends Screen {
 		for (var section : Tab.values()) {
 			String name = switch (section) { case PLANNER -> "Planner"; case VISION -> "Vision"; case MODS -> "Mods"; };
 			var button = button(name, left + section.ordinal() * (span + 3) / 3, 30, (span - 6) / 3, () -> {
-				tab = section; reveal = false; clearAndInit();
+				tab = section; reveal = false; rebuildWidgets();
 			});
 			button.active = tab != section && draft != null;
 		}
@@ -92,7 +92,7 @@ public final class OnboardingScreen extends Screen {
 			compatibility("JourneyMap", "journeymap", "airicraft-journeymap-compat", MapIntegrationBridge.registry().provider("journeymap").isPresent()),
 			compatibility("REI", "roughlyenoughitems", "airicraft-rei-compat", ReiRecipeSearchBridge.backend().available()));
 		if (draft != null && tab != Tab.MODS) providerForm();
-		button("Later", left, height - 28, (span - 8) / 2, this::close);
+		button("Later", left, height - 28, (span - 8) / 2, this::onClose);
 		finishButton = button("Save & finish", left + (span + 8) / 2, height - 28, (span - 8) / 2, this::finish);
 		updateButtons();
 	}
@@ -101,15 +101,15 @@ public final class OnboardingScreen extends Screen {
 		boolean local = tab == Tab.PLANNER && codex;
 		if (tab == Tab.PLANNER) {
 			button(local ? "Local Codex" : "API provider", left, 56, (span - 6) / 2, () -> {
-				codex = !codex; planner.changed(true); clearAndInit();
-			}).setTooltip(Tooltip.of(Text.literal("Switch between an API provider and your local Codex sign-in.")));
+				codex = !codex; planner.changed(true); rebuildWidgets();
+			}).setTooltip(Tooltip.create(Component.literal("Switch between an API provider and your local Codex sign-in.")));
 			button(nativeVision ? "Image input: on" : "Image input: off", left + (span + 6) / 2, 56, (span - 6) / 2, () -> {
-				nativeVision = !nativeVision; planner.changed(false); vision.changed(true); clearAndInit();
-			}).setTooltip(Tooltip.of(Text.literal("Enable if this planner model accepts images. The connection test will include a test image.")));
+				nativeVision = !nativeVision; planner.changed(false); vision.changed(true); rebuildWidgets();
+			}).setTooltip(Tooltip.create(Component.literal("Enable if this planner model accepts images. The connection test will include a test image.")));
 		} else {
 			if (nativeVision) return;
 			button(visionEnabled ? "Separate vision: on" : "Separate vision: off", left, 56, span, () -> {
-				visionEnabled = !visionEnabled; vision.changed(false); clearAndInit();
+				visionEnabled = !visionEnabled; vision.changed(false); rebuildWidgets();
 			});
 			if (!visionEnabled) return;
 		}
@@ -119,52 +119,52 @@ public final class OnboardingScreen extends Screen {
 		});
 		if (!local) {
 			field("API key", provider.key, 108, span - 142, true, next -> { provider.key = next; provider.changed(true); });
-			button(reveal ? "Hide" : "Show", left + span - 48, 108, 48, () -> { reveal = !reveal; clearAndInit(); });
+			button(reveal ? "Hide" : "Show", left + span - 48, 108, 48, () -> { reveal = !reveal; rebuildWidgets(); });
 		}
 		modelField = field("Model", local ? codexModel : provider.model, 134, span - (local ? 90 : 116), false, next -> {
 			if (local) codexModel = next; else provider.model = next;
 			provider.changed(false);
 		});
-		modelField.setPlaceholder(Text.literal(local ? "Default, or model ID" : "Choose or type model ID"));
+		modelField.setHint(Component.literal(local ? "Default, or model ID" : "Choose or type model ID"));
 		if (!local) modelsButton = button("▼", left + span - 22, 134, 22, () -> {
 			dropdown = !dropdown; modelOffset = 0; modelQuery = ""; rebuildChoices();
 			if (dropdown) setFocused(modelField);
 		});
 		checkButton = button("Test connection", left, 163, 112, () -> check(provider, local));
-		checkButton.setTooltip(Tooltip.of(Text.literal("Sends a small test request. Provider usage charges may apply.")));
+		checkButton.setTooltip(Tooltip.create(Component.literal("Sends a small test request. Provider usage charges may apply.")));
 	}
-	private TextFieldWidget field(String label, String initial, int y, int fieldWidth, boolean secret, Consumer<String> changed) {
-		Text name = Text.literal(label);
-		var field = new SettingsTextField(textRenderer, left + 90, y, fieldWidth, 20, name) {
-			@Override protected MutableText getNarrationMessage() {
-				return secret && !reveal ? name.copy().append(" — hidden") : super.getNarrationMessage();
+	private EditBox field(String label, String initial, int y, int fieldWidth, boolean secret, Consumer<String> changed) {
+		Component name = Component.literal(label);
+		var field = new SettingsTextField(font, left + 90, y, fieldWidth, 20, name) {
+			@Override protected MutableComponent createNarrationMessage() {
+				return secret && !reveal ? name.copy().append(" — hidden") : super.createNarrationMessage();
 			}
 		};
 		field.setMaxLength(8192);
-		field.setText(initial);
-		if (secret) field.setRenderTextProvider((text, offset) -> OrderedText.styledForwardsVisitedString(reveal ? text : "•".repeat(text.length()), Style.EMPTY));
-		field.setChangedListener(next -> {
+		field.setValue(initial);
+		if (secret) field.setFormatter((text, offset) -> FormattedCharSequence.forward(reveal ? text : "•".repeat(text.length()), Style.EMPTY));
+		field.setResponder(next -> {
 			changed.accept(next);
 			if (dropdown && label.equals("Model")) { modelQuery = next; modelOffset = 0; }
 			else dropdown = false;
 			rebuildChoices(); problem = ""; updateButtons();
 		});
-		return addDrawableChild(field);
+		return addRenderableWidget(field);
 	}
-	private ButtonWidget button(String label, int x, int y, int size, Runnable action) {
-		return addDrawableChild(ButtonWidget.builder(Text.literal(label), ignored -> action.run()).dimensions(x, y, size, 20).build());
+	private Button button(String label, int x, int y, int size, Runnable action) {
+		return addRenderableWidget(Button.builder(Component.literal(label), ignored -> action.run()).bounds(x, y, size, 20).build());
 	}
 	private Provider current() { return tab == Tab.VISION ? vision : planner; }
 	private void updateButtons() {
 		if (finishButton != null) finishButton.active = ready();
 		if (checkButton != null) {
 			checkButton.active = !(current().check instanceof Running);
-			checkButton.setTooltip(Tooltip.of(Text.literal(current().check instanceof Checked checked ? checked.result().message()
+			checkButton.setTooltip(Tooltip.create(Component.literal(current().check instanceof Checked checked ? checked.result().message()
 				: "Sends a small test request. Provider usage charges may apply.")));
 		}
 		if (modelsButton != null) {
 			modelsButton.active = !current().models.isEmpty();
-			modelsButton.setTooltip(Tooltip.of(Text.literal(current().hint + " Type to filter; scroll to browse.")));
+			modelsButton.setTooltip(Tooltip.create(Component.literal(current().hint + " Type to filter; scroll to browse.")));
 		}
 	}
 	private boolean ready() {
@@ -186,8 +186,8 @@ public final class OnboardingScreen extends Screen {
 		provider.fetch = Thread.ofVirtual().unstarted(() -> {
 			var result = ProviderModels.api(url, key);
 			Thread completed = Thread.currentThread();
-			client.execute(() -> {
-				if (client.currentScreen != this || provider.fetch != completed) return;
+			minecraft.execute(() -> {
+				if (minecraft.screen != this || provider.fetch != completed) return;
 				provider.fetch = null;
 				provider.models = result.models();
 				provider.hint = result.hint();
@@ -206,8 +206,8 @@ public final class OnboardingScreen extends Screen {
 		Thread worker = Thread.ofVirtual().unstarted(() -> {
 			var result = local ? ConnectionCheck.codex(config, image) : ConnectionCheck.api(url, key, model, image, timeout);
 			Thread completed = Thread.currentThread();
-			client.execute(() -> {
-				if (client.currentScreen == this && provider.check instanceof Running running && running.worker() == completed) {
+			minecraft.execute(() -> {
+				if (minecraft.screen == this && provider.check instanceof Running running && running.worker() == completed) {
 					provider.check = new Checked(result); updateButtons();
 				}
 			});
@@ -215,7 +215,7 @@ public final class OnboardingScreen extends Screen {
 		provider.check = new Running(worker); updateButtons(); worker.start();
 	}
 	private void rebuildChoices() {
-		choices.forEach(this::remove);
+		choices.forEach(this::removeWidget);
 		choices.clear();
 		if (!dropdown) return;
 		var models = current().models.stream().filter(model -> model.toLowerCase(java.util.Locale.ROOT)
@@ -224,10 +224,10 @@ public final class OnboardingScreen extends Screen {
 		modelOffset = Math.clamp(modelOffset, 0, Math.max(0, models.size() - rows));
 		for (int i = modelOffset; i < Math.min(models.size(), modelOffset + rows); i++) {
 			String model = models.get(i);
-			var choice = button(textRenderer.trimToWidth(model, span - 104), left + 90, 157 + (i - modelOffset) * 20, span - 90, () -> {
-				modelField.setText(model); dropdown = false; rebuildChoices(); setFocused(modelField);
+			var choice = button(font.plainSubstrByWidth(model, span - 104), left + 90, 157 + (i - modelOffset) * 20, span - 90, () -> {
+				modelField.setValue(model); dropdown = false; rebuildChoices(); setFocused(modelField);
 			});
-			choice.setTooltip(Tooltip.of(Text.literal(model)));
+			choice.setTooltip(Tooltip.create(Component.literal(model)));
 			choices.add(choice);
 		}
 	}
@@ -261,44 +261,44 @@ public final class OnboardingScreen extends Screen {
 			save("plannerNativeVisionEnabled", nativeVision);
 			save("visionProviderBaseUrl", vision.url); save("visionApiKey", visionEnabled ? vision.key : ""); save("visionModel", visionEnabled ? vision.model : "");
 			OnboardingState.complete(draft);
-			draft.saveAndReload(() -> AiricraftClient.runtimeController().reload()); close();
+			draft.saveAndReload(() -> AiricraftClient.runtimeController().reload()); onClose();
 		} catch (IOException | RuntimeException exception) { problem = "Could not save. Settings may have changed; reopen setup and retry."; }
 	}
-	@Override public void close() { client.setScreen(parent instanceof AiricraftSettingsScreen screen ? screen.reopen() : parent); }
+	@Override public void onClose() { minecraft.setScreen(parent instanceof AiricraftSettingsScreen screen ? screen.reopen() : parent); }
 	@Override public void removed() {
 		if (planner != null) planner.cancel();
 		if (vision != null) vision.cancel();
 		reveal = false;
 	}
-	@Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-		context.fillGradient(0, 0, width, height, 0xFF17212E, 0xFF0B1019);
-		context.drawCenteredTextWithShadow(textRenderer, title, width / 2, 12, 0xFFFFFFFF);
+	@Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+		graphics.fillGradient(0, 0, width, height, 0xFF17212E, 0xFF0B1019);
+		graphics.drawCenteredString(font, title, width / 2, 12, 0xFFFFFFFF);
 		if (draft != null && tab == Tab.MODS) {
 			int y = 66;
 			for (var item : compatibility) {
-				context.drawTextWithShadow(textRenderer, item.name(), left, y, 0xFF8CD8FF);
-				y = paragraph(context, item.detail(), left, y + 16, span, item.blocking() ? 0xFFFFB08A : 0xFFD6DFEA) + 18;
+				graphics.drawString(font, item.name(), left, y, 0xFF8CD8FF);
+				y = paragraph(graphics, item.detail(), left, y + 16, span, item.blocking() ? 0xFFFFB08A : 0xFFD6DFEA) + 18;
 			}
 		} else if (draft != null && tab == Tab.VISION && nativeVision) {
-			paragraph(context, "Your planner handles images. No separate endpoint needed.", left, 76, span, 0xFF99E7B1);
-			paragraph(context, "Test image input from the Planner tab.", left, 110, span, 0xFFBAC7D6);
+			paragraph(graphics, "Your planner handles images. No separate endpoint needed.", left, 76, span, 0xFF99E7B1);
+			paragraph(graphics, "Test image input from the Planner tab.", left, 110, span, 0xFFBAC7D6);
 		} else if (draft != null && (tab == Tab.PLANNER || visionEnabled)) {
 			boolean local = tab == Tab.PLANNER && codex;
-			context.drawTextWithShadow(textRenderer, local ? "Executable" : "Provider URL", left, 88, 0xFFBAC7D6);
-			if (!local) context.drawTextWithShadow(textRenderer, "API key", left, 114, 0xFFBAC7D6);
-			else context.drawTextWithShadow(textRenderer, "Uses your local Codex sign-in.", left + 90, 114, 0xFFBAC7D6);
-			context.drawTextWithShadow(textRenderer, "Model", left, 140, 0xFFBAC7D6);
+			graphics.drawString(font, local ? "Executable" : "Provider URL", left, 88, 0xFFBAC7D6);
+			if (!local) graphics.drawString(font, "API key", left, 114, 0xFFBAC7D6);
+			else graphics.drawString(font, "Uses your local Codex sign-in.", left + 90, 114, 0xFFBAC7D6);
+			graphics.drawString(font, "Model", left, 140, 0xFFBAC7D6);
 			var state = current().check;
 			String status = state instanceof Running ? "Testing…" : state instanceof Checked checked ? shortResult(checked.result()) : "Not tested";
-			paragraph(context, status, left + 120, 164, span - 120, current().ready() ? 0xFF99E7B1 : 0xFFBAC7D6);
-			if (!local) context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(current().hint, span), left, 193, 0xFFBAC7D6);
-		} else if (draft != null) paragraph(context, "Optional. Add a separate model for image understanding.", left, 94, span, 0xFFBAC7D6);
-		if (!problem.isEmpty()) paragraph(context, problem, left, 193, span, 0xFFFFB08A);
-		super.render(context, mouseX, mouseY, delta);
+			paragraph(graphics, status, left + 120, 164, span - 120, current().ready() ? 0xFF99E7B1 : 0xFFBAC7D6);
+			if (!local) graphics.drawString(font, font.plainSubstrByWidth(current().hint, span), left, 193, 0xFFBAC7D6);
+		} else if (draft != null) paragraph(graphics, "Optional. Add a separate model for image understanding.", left, 94, span, 0xFFBAC7D6);
+		if (!problem.isEmpty()) paragraph(graphics, problem, left, 193, span, 0xFFFFB08A);
+		super.render(graphics, mouseX, mouseY, delta);
 		// Overlay must cover both the form and its text. Rendered last, with exclusive pointer handling.
 		if (dropdown && !choices.isEmpty()) {
-			context.fill(left + 88, 155, left + span + 2, 159 + choices.size() * 20, 0xFF101923);
-			for (var choice : choices) choice.render(context, mouseX, mouseY, delta);
+			graphics.fill(left + 88, 155, left + span + 2, 159 + choices.size() * 20, 0xFF101923);
+			for (var choice : choices) choice.render(graphics, mouseX, mouseY, delta);
 		}
 	}
 	private static String shortResult(ConnectionCheck.Result result) {
@@ -316,8 +316,8 @@ public final class OnboardingScreen extends Screen {
 			default -> "Test failed · hover for details";
 		};
 	}
-	private int paragraph(DrawContext context, String text, int x, int y, int wrap, int color) {
-		for (var line : textRenderer.wrapLines(Text.literal(text), wrap)) { context.drawTextWithShadow(textRenderer, line, x, y, color); y += 10; }
+	private int paragraph(GuiGraphics graphics, String text, int x, int y, int wrap, int color) {
+		for (var line : font.split(Component.literal(text), wrap)) { graphics.drawString(font, line, x, y, color); y += 10; }
 		return y;
 	}
 	private static Compatibility compatibility(String name, String mod, String adapter, boolean initialized) {

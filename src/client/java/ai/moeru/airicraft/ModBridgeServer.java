@@ -43,21 +43,21 @@ import com.google.gson.JsonSyntaxException;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.Level;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -281,10 +281,10 @@ public final class ModBridgeServer {
 		}
 		handleJson(exchange, () -> {
 			try {
-				var client = getClient();
+				var minecraft = getClient();
 				return Map.of(
 					"available", true,
-					"sessionState", sessionState(client),
+					"sessionState", sessionState(minecraft),
 					"worlds", singleplayerWorldService.listWorlds()
 				);
 			}
@@ -319,10 +319,10 @@ public final class ModBridgeServer {
 	private void handleServers(HttpExchange exchange) throws IOException {
 		handleJson(exchange, () -> {
 			try {
-				var client = getClient();
+				var minecraft = getClient();
 				return Map.of(
 					"available", true,
-					"sessionState", sessionState(client),
+					"sessionState", sessionState(minecraft),
 					"servers", savedServerService.listServers()
 				);
 			}
@@ -397,13 +397,13 @@ public final class ModBridgeServer {
 				throw new BridgeUnavailableException("invalid_request", "Missing command");
 			}
 			return onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				String command = request.command().trim();
 				if (command.startsWith("/")) {
 					command = command.substring(1);
 				}
-				client.player.networkHandler.sendChatCommand(command);
+				minecraft.player.connection.sendCommand(command);
 				return Map.of("sent", true, "command", command);
 			});
 		});
@@ -413,8 +413,8 @@ public final class ModBridgeServer {
 		handleJsonBody(exchange, "POST", EntityInteractionRequest.class, request -> {
 			EntityInteractionStepArgs entityInteraction = parseEntityInteractionRequest(request, false);
 			return onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				var task = agentRuntime().submitAttackEntity(entityInteraction, "bridge_player");
 				return entityInteractionResponse(task, entityInteraction, true);
 			});
@@ -425,8 +425,8 @@ public final class ModBridgeServer {
 		handleJsonBody(exchange, "POST", EntityInteractionRequest.class, request -> {
 			EntityInteractionStepArgs entityInteraction = parseEntityInteractionRequest(request, true);
 			return onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				var task = agentRuntime().submitUseEntity(entityInteraction, "bridge_player");
 				return entityInteractionResponse(task, entityInteraction, false);
 			});
@@ -436,9 +436,9 @@ public final class ModBridgeServer {
 	private void handleCameraScreenshot(HttpExchange exchange) throws IOException {
 		handleJson(exchange, "POST", () -> {
 			CompletableFuture<FirstPersonScreenshotService.CapturedScreenshot> captureFuture = onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
-				return screenshotService().requestCapture(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
+				return screenshotService().requestCapture(minecraft);
 			});
 			return cameraScreenshotPayload(awaitCameraScreenshot(captureFuture));
 		});
@@ -446,8 +446,8 @@ public final class ModBridgeServer {
 	private void handleCameraTactical(HttpExchange exchange) throws IOException {
 		handleJsonBody(exchange, "POST", TacticalCameraRequest.class, request -> {
 			CompletableFuture<WorldCameraService.TacticalResult> captureFuture = onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				WorldCameraService service = worldCameraService();
 				if (service == null) {
 					throw new BridgeUnavailableException("minecraft_unavailable", "World camera service is not available");
@@ -460,7 +460,7 @@ public final class ModBridgeServer {
 				if ("shoulder".equals(mode)) {
 					int settleFrames = request != null && request.settleFrames() != null ? request.settleFrames() : 8;
 					boolean keepPose = request != null && Boolean.TRUE.equals(request.keepPose());
-					return service.captureShoulder(client, settleFrames, keepPose);
+					return service.captureShoulder(minecraft, settleFrames, keepPose);
 				}
 				WorldCameraService.FrameResult framing;
 				if ("pose".equals(mode)) {
@@ -473,16 +473,16 @@ public final class ModBridgeServer {
 					framing = new WorldCameraService.FrameResult(pose, 0, 0, 0, 0.0);
 				}
 				else if ("auto".equals(mode)) {
-					Vec3d focus;
+					Vec3 focus;
 					if (request != null && request.x() != null && request.y() != null && request.z() != null) {
-						focus = new Vec3d(request.x(), request.y(), request.z());
+						focus = new Vec3(request.x(), request.y(), request.z());
 					}
 					else {
-						focus = client.player.getPos();
+						focus = minecraft.player.position();
 					}
 					double radius = request != null && request.radius() != null ? request.radius() : 16.0;
 					String purpose = request != null && request.purpose() != null ? request.purpose() : "surroundings";
-					framing = service.autoFrame(client, focus, radius, purpose);
+					framing = service.autoFrame(minecraft, focus, radius, purpose);
 				}
 				else {
 					throw new BridgeUnavailableException("invalid_request", "mode must be auto, pose, shoulder, or clear");
@@ -494,25 +494,25 @@ public final class ModBridgeServer {
 				boolean fadeLeaves = request == null || !Boolean.FALSE.equals(request.fadeLeaves());
 				boolean autoFade = "auto".equals(mode) && !framing.focusClear();
 				if (fadeOccluders || hideAboveY != null || autoFade || fadeLeaves) {
-					Vec3d focus = request != null && request.x() != null && request.y() != null && request.z() != null
-						? new Vec3d(request.x(), request.y(), request.z())
-						: client.player.getPos();
+					Vec3 focus = request != null && request.x() != null && request.y() != null && request.z() != null
+						? new Vec3(request.x(), request.y(), request.z())
+						: minecraft.player.position();
 					double radius = request != null && request.radius() != null ? request.radius() : 16.0;
 					String purpose = request != null && request.purpose() != null ? request.purpose() : "surroundings";
 					java.util.Set<BlockPos> occluders = fadeOccluders
-						? service.computeOccluders(client, framing.pose(), service.samplesFor(client, focus, radius, purpose))
+						? service.computeOccluders(minecraft, framing.pose(), service.samplesFor(minecraft, focus, radius, purpose))
 						: java.util.Set.of();
 					if (autoFade) {
 						// No clear pose exists: fade whatever blocks the focus sphere.
 						java.util.Set<BlockPos> focusOccluders = service.computeOccluders(
-							client, framing.pose(),
+							minecraft, framing.pose(),
 							service.focusSphereSamples(focus));
 						occluders = new java.util.HashSet<>(occluders);
 						occluders.addAll(focusOccluders);
 					}
-					service.setFade(client, new WorldCameraService.FadeFilter(occluders, hideAboveY, fadeLeaves),
-						BlockPos.ofFloored(focus).add(-(int) Math.ceil(radius) - 2, -16, -(int) Math.ceil(radius) - 2),
-						BlockPos.ofFloored(focus).add((int) Math.ceil(radius) + 2, 16, (int) Math.ceil(radius) + 2));
+					service.setFade(minecraft, new WorldCameraService.FadeFilter(occluders, hideAboveY, fadeLeaves),
+						BlockPos.containing(focus).offset(-(int) Math.ceil(radius) - 2, -16, -(int) Math.ceil(radius) - 2),
+						BlockPos.containing(focus).offset((int) Math.ceil(radius) + 2, 16, (int) Math.ceil(radius) + 2));
 					framing = new WorldCameraService.FrameResult(
 						framing.pose(), framing.candidates(), framing.samples(), framing.visibleSamples(),
 						framing.score(), occluders.size(), framing.focusClear());
@@ -521,13 +521,13 @@ public final class ModBridgeServer {
 					var qb = request.queryBox();
 					BlockPos qMin = new BlockPos(qb.get(0).intValue(), qb.get(1).intValue(), qb.get(2).intValue());
 					BlockPos qMax = new BlockPos(qb.get(3).intValue(), qb.get(4).intValue(), qb.get(5).intValue());
-					service.setTintBox(client,
-						new net.minecraft.util.math.Box(
+					service.setTintBox(minecraft,
+						new net.minecraft.world.phys.AABB(
 							qMin.getX(), qMin.getY(), qMin.getZ(),
 							qMax.getX() + 1.0, qMax.getY() + 1.0, qMax.getZ() + 1.0),
 						qMin, qMax);
 				}
-				return service.capture(client, framing.pose(), framing, settleFrames, keepPose);
+				return service.capture(minecraft, framing.pose(), framing, settleFrames, keepPose);
 			});
 			WorldCameraService.TacticalResult result = awaitTacticalCapture(captureFuture);
 			Map<String, Object> payload = new LinkedHashMap<>();
@@ -551,9 +551,9 @@ public final class ModBridgeServer {
 					shot = WorldCameraService.withQueryOverlay(
 						shot,
 						result.framing() != null ? result.framing().pose() : null,
-						getClient().options.getFov().getValue(),
-						getClient().getWindow().getFramebufferWidth()
-							/ (double) Math.max(1, getClient().getWindow().getFramebufferHeight()),
+						getClient().options.fov().get(),
+						getClient().getWindow().getWidth()
+							/ (double) Math.max(1, getClient().getWindow().getHeight()),
 						new BlockPos(qb.get(0).intValue(), qb.get(1).intValue(), qb.get(2).intValue()),
 						new BlockPos(qb.get(3).intValue(), qb.get(4).intValue(), qb.get(5).intValue()));
 				}
@@ -575,8 +575,8 @@ public final class ModBridgeServer {
 				throw new BridgeUnavailableException("invalid_request", "viewId and box [x1,y1,x2,y2] are required");
 			}
 			return onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				WorldCameraService service = worldCameraService();
 				if (service == null) {
 					throw new BridgeUnavailableException("minecraft_unavailable", "World camera service is not available");
@@ -587,7 +587,7 @@ public final class ModBridgeServer {
 				}
 				var b = request.box();
 				String expand = request.expand() != null ? request.expand() : "visible";
-				return service.inspectRegion(client, view,
+				return service.inspectRegion(minecraft, view,
 					b.get(0), b.get(1), b.get(2), b.get(3), expand);
 			});
 		});
@@ -677,32 +677,32 @@ public final class ModBridgeServer {
 			catch (ClientTickDebugController.DebugStateException exception) {
 				throw clientTickDebugBridgeException(exception);
 			}
-			MinecraftClient client = getClient();
+			Minecraft minecraft = getClient();
 			String operation = request.operation().trim().toLowerCase(Locale.ROOT);
 			return switch (operation) {
-				case "metadata" -> clientTickWorldQueryService.metadata(client, snapshot);
-				case "player_state" -> clientTickWorldQueryService.playerState(client, snapshot);
+				case "metadata" -> clientTickWorldQueryService.metadata(minecraft, snapshot);
+				case "player_state" -> clientTickWorldQueryService.playerState(minecraft, snapshot);
 				case "entities" -> clientTickEntityQueryService.query(
-					client,
+					minecraft,
 					snapshot,
 					clientTickEntityQuery(request, snapshot)
 				);
 				case "get_block" -> clientTickWorldQueryService.block(
-					client,
+					minecraft,
 					snapshot,
 					requiredCoordinate(request.x(), "x"),
 					requiredCoordinate(request.y(), "y"),
 					requiredCoordinate(request.z(), "z")
 				);
 				case "scan_box" -> clientTickWorldQueryService.scanBox(
-					client,
+					minecraft,
 					snapshot,
 					clientTickRegionBounds(request),
 					clientTickQueryCursor(request.cursor()),
 					clientTickQueryLimit(request.limit())
 				);
 				case "find_blocks" -> clientTickWorldQueryService.findBlocks(
-					client,
+					minecraft,
 					snapshot,
 					clientTickRegionBounds(request),
 					request.blockIds() == null ? Set.of() : new java.util.LinkedHashSet<>(request.blockIds()),
@@ -710,7 +710,7 @@ public final class ModBridgeServer {
 					clientTickQueryLimit(request.limit())
 				);
 				case "region_stats" -> clientTickWorldQueryService.regionStats(
-					client,
+					minecraft,
 					snapshot,
 					clientTickRegionBounds(request),
 					clientTickQueryCursor(request.cursor()),
@@ -757,9 +757,9 @@ public final class ModBridgeServer {
 		handleJsonBody(exchange, "POST", VisionDescribeRequest.class, request -> {
 			String prompt = request == null ? null : request.prompt();
 			CompletableFuture<FirstPersonScreenshotService.CapturedScreenshot> captureFuture = onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
-				return screenshotService().requestCapture(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
+				return screenshotService().requestCapture(minecraft);
 			});
 			FirstPersonScreenshotService.CapturedScreenshot screenshot = awaitCameraScreenshot(captureFuture);
 			try {
@@ -802,15 +802,15 @@ public final class ModBridgeServer {
 					throw new BridgeUnavailableException("invalid_request", "Missing waypoint payload");
 				}
 				Map<String, Object> payload = onClientThread(() -> {
-					var client = getClient();
-					ensureWorldLoaded(client);
+					var minecraft = getClient();
+					ensureWorldLoaded(minecraft);
 					MapIntegrationProvider provider = mapProvider(request.provider());
 					MapWaypoint waypoint = provider.upsertWaypoint(new MapWaypointWrite(
 						provider.id(),
 						request.id(),
 						request.name(),
 						request.dimension() == null || request.dimension().isBlank()
-							? client.world.getRegistryKey().getValue().toString()
+							? minecraft.level.dimension().location().toString()
 							: request.dimension(),
 						request.x(),
 						request.y(),
@@ -893,8 +893,8 @@ public final class ModBridgeServer {
 				}
 
 				var highlightId = onClientThread(() -> {
-					var client = getClient();
-					ensureWorldLoaded(client);
+					var minecraft = getClient();
+					ensureWorldLoaded(minecraft);
 					String kind = highlightKind(request.kind());
 					int color = parseColor(request.color());
 					Long durationMs = safeDurationMs(request.durationMs());
@@ -922,8 +922,8 @@ public final class ModBridgeServer {
 
 			String highlightId = getQuery(exchange, "id");
 			Map<String, Object> payload = onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
 				if (highlightId == null || highlightId.isBlank()) {
 					int clearedCount = highlightManager().clear();
 					return Map.of("cleared", true, "clearedCount", clearedCount);
@@ -1094,9 +1094,9 @@ public final class ModBridgeServer {
 				throw new BridgeUnavailableException("invalid_request", "Missing message");
 			}
 			return onClientThread(() -> {
-				var client = getClient();
-				ensureWorldLoaded(client);
-				String senderName = nonEmpty(request.senderName(), defaultDebugSender(client));
+				var minecraft = getClient();
+				ensureWorldLoaded(minecraft);
+				String senderName = nonEmpty(request.senderName(), defaultDebugSender(minecraft));
 				String message = request.message().trim();
 				agentRuntime().onChatReceived(senderName, message);
 
@@ -1116,8 +1116,8 @@ public final class ModBridgeServer {
 
 	private void handleAgentDebugIdleTrigger(HttpExchange exchange) throws IOException {
 		handleJsonBody(exchange, "POST", Object.class, request -> onClientThread(() -> {
-			var client = getClient();
-			ensureWorldLoaded(client);
+			var minecraft = getClient();
+			ensureWorldLoaded(minecraft);
 			PlannerTrigger trigger = agentRuntime().fireIdleIdeaTriggerManually()
 				.orElseThrow(() -> new BridgeUnavailableException("idle_trigger_unavailable", "No idle ideas are configured"));
 
@@ -2109,9 +2109,9 @@ public final class ModBridgeServer {
 	private Object createAgentActionGraphInspectResponse() {
 		return onClientThread(() -> {
 			Map<String, Object> response = new LinkedHashMap<>(new ActionGraphDebugService().inspectActionGraph());
-			MinecraftClient client = getClient();
-			response.put("worldLoaded", client.world != null);
-			response.put("sessionState", sessionState(client));
+			Minecraft minecraft = getClient();
+			response.put("worldLoaded", minecraft.level != null);
+			response.put("sessionState", sessionState(minecraft));
 			return response;
 		});
 	}
@@ -2157,21 +2157,21 @@ public final class ModBridgeServer {
 
 	private Object createFocusResponse() {
 		return onClientThread(() -> {
-			var client = getClient();
-			ensureWorldLoaded(client);
+			var minecraft = getClient();
+			ensureWorldLoaded(minecraft);
 			return Map.of(
 				"available", true,
 				"worldLoaded", true,
-				"focus", describeFocus(client)
+				"focus", describeFocus(minecraft)
 			);
 		});
 	}
 
 	private Object createNearbyEntitiesResponse() {
 		return onClientThread(() -> {
-			MinecraftClient client = getClient();
-			ensureWorldLoaded(client);
-			List<NearbyEntityService.NearbyEntitySnapshot> entities = NearbyEntityService.listNearbyEntities(client);
+			Minecraft minecraft = getClient();
+			ensureWorldLoaded(minecraft);
+			List<NearbyEntityService.NearbyEntitySnapshot> entities = NearbyEntityService.listNearbyEntities(minecraft);
 			LinkedHashMap<String, Object> response = new LinkedHashMap<>();
 			response.put("available", true);
 			response.put("worldLoaded", true);
@@ -2189,18 +2189,18 @@ public final class ModBridgeServer {
 		int radius = Math.max(0, Math.min(getIntQuery(exchange, "radius", 1), 4));
 
 		return onClientThread(() -> {
-			var client = getClient();
-			ensureWorldLoaded(client);
+			var minecraft = getClient();
+			ensureWorldLoaded(minecraft);
 
 			BlockPos center;
 			if (x == Integer.MIN_VALUE || y == Integer.MIN_VALUE || z == Integer.MIN_VALUE) {
-				center = Objects.requireNonNull(client.player).getBlockPos();
+				center = Objects.requireNonNull(minecraft.player).blockPosition();
 			}
 			else {
 				center = new BlockPos(x, y, z);
 			}
 
-			if (!isChunkLoaded(client.world, center)) {
+			if (!isChunkLoaded(minecraft.level, center)) {
 				throw new BridgeUnavailableException("chunk_not_loaded", "Target chunk is not loaded");
 			}
 
@@ -2210,23 +2210,23 @@ public final class ModBridgeServer {
 				"center", blockPos(center),
 				"chunk", Map.of("loaded", true),
 				"radius", radius,
-				"blocks", collectBlocks(client.world, center, radius)
+				"blocks", collectBlocks(minecraft.level, center, radius)
 			);
 		});
 	}
 
-	private Map<String, Object> createStatusSnapshot(MinecraftClient client) {
-		var world = client.world;
-		var player = client.player;
-		boolean worldLoaded = world != null && player != null;
+	private Map<String, Object> createStatusSnapshot(Minecraft minecraft) {
+		var level = minecraft.level;
+		var player = minecraft.player;
+		boolean worldLoaded = level != null && player != null;
 
 		Map<String, Object> response = new LinkedHashMap<>();
 		response.put("available", true);
 		response.put("bridgeAvailable", true);
 		response.put("worldLoaded", worldLoaded);
-		response.put("sessionState", sessionState(client));
-		response.put("currentScreen", currentScreenName(client));
-		response.put("canJoinWorldOrServer", !worldLoaded && client.getOverlay() == null);
+		response.put("sessionState", sessionState(minecraft));
+		response.put("currentScreen", currentScreenName(minecraft));
+		response.put("canJoinWorldOrServer", !worldLoaded && minecraft.getOverlay() == null);
 		response.put("debugDashboard", dashboardStatusSupplier.get());
 		response.put("automaticPlaytest", automaticPlaytestStatusSupplier.get());
 
@@ -2236,25 +2236,25 @@ public final class ModBridgeServer {
 		}
 
 		response.put("state", "ready");
-		response.put("dimension", world.getRegistryKey().getValue().toString());
+		response.put("dimension", level.dimension().location().toString());
 		response.put("player", Map.of(
 			"name", player.getName().getString(),
 			"x", player.getX(),
 			"y", player.getY(),
 			"z", player.getZ(),
-			"blockPos", blockPos(player.getBlockPos())
+			"blockPos", blockPos(player.blockPosition())
 		));
-		response.put("focus", describeFocus(client));
+		response.put("focus", describeFocus(minecraft));
 		return response;
 	}
 
-	private List<Map<String, Object>> collectBlocks(World world, BlockPos center, int radius) {
+	private List<Map<String, Object>> collectBlocks(Level level, BlockPos center, int radius) {
 		List<Map<String, Object>> blocks = new ArrayList<>();
 		for (int x = center.getX() - radius; x <= center.getX() + radius; x++) {
 			for (int y = center.getY() - radius; y <= center.getY() + radius; y++) {
 				for (int z = center.getZ() - radius; z <= center.getZ() + radius; z++) {
 					var pos = new BlockPos(x, y, z);
-					if (!isChunkLoaded(world, pos)) {
+					if (!isChunkLoaded(level, pos)) {
 						blocks.add(Map.of(
 							"pos", blockPos(pos),
 							"chunk", Map.of("loaded", false)
@@ -2262,10 +2262,10 @@ public final class ModBridgeServer {
 						continue;
 					}
 
-					BlockState blockState = world.getBlockState(pos);
+					BlockState blockState = level.getBlockState(pos);
 					blocks.add(Map.of(
 						"pos", blockPos(pos),
-						"id", Registries.BLOCK.getId(blockState.getBlock()).toString(),
+						"id", BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString(),
 						"chunk", Map.of("loaded", true),
 						"state", Map.of(
 							"properties", blockProperties(blockState)
@@ -2277,43 +2277,43 @@ public final class ModBridgeServer {
 		return blocks;
 	}
 
-	private Map<String, Object> describeFocus(MinecraftClient client) {
-		HitResult hitResult = client.crosshairTarget;
+	private Map<String, Object> describeFocus(Minecraft minecraft) {
+		HitResult hitResult = minecraft.hitResult;
 		if (hitResult == null) {
 			return Map.of(
 				"type", "miss",
 				"crosshair", Map.of(
-					"hitPos", vector(client.player == null ? Vec3d.ZERO : client.player.getCameraPosVec(1.0F))
+					"hitPos", vector(minecraft.player == null ? Vec3.ZERO : minecraft.player.getEyePosition(1.0F))
 				)
 			);
 		}
 
 		if (hitResult instanceof BlockHitResult blockHit) {
 			BlockPos pos = blockHit.getBlockPos();
-			World world = Objects.requireNonNull(client.world);
-			if (!isChunkLoaded(world, pos)) {
+			Level level = Objects.requireNonNull(minecraft.level);
+			if (!isChunkLoaded(level, pos)) {
 				throw new BridgeUnavailableException("chunk_not_loaded", "Target chunk is not loaded");
 			}
 
-			BlockState state = world.getBlockState(pos);
+			BlockState state = level.getBlockState(pos);
 			FluidState fluidState = state.getFluidState();
 			return Map.of(
 				"type", "block",
-				"hitPos", vector(blockHit.getPos()),
+				"hitPos", vector(blockHit.getLocation()),
 				"block", Map.of(
-					"id", Registries.BLOCK.getId(state.getBlock()).toString(),
+					"id", BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString(),
 					"pos", blockPos(pos),
-					"face", blockHit.getSide().asString(),
+					"face", blockHit.getDirection().getSerializedName(),
 					"state", Map.of("properties", blockProperties(state)),
 					"isAir", state.isAir(),
-					"isReplaceable", state.isReplaceable(),
+					"isReplaceable", state.canBeReplaced(),
 					"hasBlockEntity", state.hasBlockEntity(),
 					"light", Map.of(
-						"emitted", state.getLuminance(),
-						"local", world.getLightLevel(pos)
+						"emitted", state.getLightEmission(),
+						"local", level.getMaxLocalRawBrightness(pos)
 					),
 					"fluid", Map.of(
-						"id", Registries.FLUID.getId(fluidState.getFluid()).toString()
+						"id", BuiltInRegistries.FLUID.getKey(fluidState.getType()).toString()
 					),
 					"chunk", Map.of("loaded", true)
 				)
@@ -2324,8 +2324,8 @@ public final class ModBridgeServer {
 			Entity entity = entityHit.getEntity();
 			Map<String, Object> entityPayload = new LinkedHashMap<>();
 			entityPayload.put("id", entity.getId());
-			entityPayload.put("uuid", entity.getUuidAsString());
-			entityPayload.put("type", Registries.ENTITY_TYPE.getId(entity.getType()).toString());
+			entityPayload.put("uuid", entity.getStringUUID());
+			entityPayload.put("type", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
 			entityPayload.put("name", entity.getName().getString());
 			entityPayload.put("pos", Map.of(
 				"x", entity.getX(),
@@ -2340,14 +2340,14 @@ public final class ModBridgeServer {
 
 			return Map.of(
 				"type", "entity",
-				"hitPos", vector(entityHit.getPos()),
+				"hitPos", vector(entityHit.getLocation()),
 				"entity", entityPayload
 			);
 		}
 
 		return Map.of(
 			"type", "miss",
-			"crosshair", Map.of("hitPos", vector(hitResult.getPos()))
+			"crosshair", Map.of("hitPos", vector(hitResult.getLocation()))
 		);
 	}
 
@@ -2383,23 +2383,23 @@ public final class ModBridgeServer {
 	}
 
 	private static <T extends Comparable<T>> Object propertyValue(BlockState state, Property<T> property) {
-		return property.name(state.get(property));
+		return property.getName(state.getValue(property));
 	}
 
 	private static Map<String, Integer> blockPos(BlockPos pos) {
 		return Map.of("x", pos.getX(), "y", pos.getY(), "z", pos.getZ());
 	}
 
-	private static Map<String, Double> vector(Vec3d vec) {
+	private static Map<String, Double> vector(Vec3 vec) {
 		return Map.of("x", vec.x, "y", vec.y, "z", vec.z);
 	}
 
-	private static boolean isChunkLoaded(World world, BlockPos pos) {
-		return world.isChunkLoaded(pos);
+	private static boolean isChunkLoaded(Level level, BlockPos pos) {
+		return level.hasChunkAt(pos);
 	}
 
-	private static String currentScreenName(MinecraftClient client) {
-		return currentScreenNameForStatus(client.currentScreen, client.world != null);
+	private static String currentScreenName(Minecraft minecraft) {
+		return currentScreenNameForStatus(minecraft.screen, minecraft.level != null);
 	}
 
 	static String currentScreenNameForStatus(Screen currentScreen, boolean worldPresent) {
@@ -2412,8 +2412,8 @@ public final class ModBridgeServer {
 		return currentScreen.getClass().getSimpleName();
 	}
 
-	private static String sessionState(MinecraftClient client) {
-		return client.world != null && client.player != null ? "in_world" : "out_of_world";
+	private static String sessionState(Minecraft minecraft) {
+		return minecraft.level != null && minecraft.player != null ? "in_world" : "out_of_world";
 	}
 
 	private Object agentDebugCompactPayload(boolean started, boolean completed, long timeoutMillis) {
@@ -2460,9 +2460,9 @@ public final class ModBridgeServer {
 	}
 
 	private <T> T onClientThread(Supplier<T> supplier) {
-		var client = getClient();
+		var minecraft = getClient();
 		CompletableFuture<T> future = new CompletableFuture<>();
-		client.execute(() -> {
+		minecraft.execute(() -> {
 			try {
 				future.complete(supplier.get());
 			}
@@ -2486,16 +2486,16 @@ public final class ModBridgeServer {
 		}
 	}
 
-	private MinecraftClient getClient() {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null) {
+	private Minecraft getClient() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null) {
 			throw new BridgeUnavailableException("minecraft_unavailable", "Minecraft client is not initialized");
 		}
-		return client;
+		return minecraft;
 	}
 
-	private void ensureWorldLoaded(MinecraftClient client) {
-		if (client.world == null || client.player == null) {
+	private void ensureWorldLoaded(Minecraft minecraft) {
+		if (minecraft.level == null || minecraft.player == null) {
 			throw new BridgeUnavailableException("world_not_loaded", "No world is currently loaded");
 		}
 	}
@@ -2644,12 +2644,12 @@ public final class ModBridgeServer {
 		return value != null && Double.isFinite(value);
 	}
 
-	private static String defaultDebugSender(MinecraftClient client) {
-		if (client != null && client.player != null && client.player.getName() != null) {
-			return client.player.getName().getString();
+	private static String defaultDebugSender(Minecraft minecraft) {
+		if (minecraft != null && minecraft.player != null && minecraft.player.getName() != null) {
+			return minecraft.player.getName().getString();
 		}
-		if (client != null && client.getSession() != null && client.getSession().getUsername() != null) {
-			return client.getSession().getUsername();
+		if (minecraft != null && minecraft.getUser() != null && minecraft.getUser().getName() != null) {
+			return minecraft.getUser().getName();
 		}
 		throw new BridgeUnavailableException("minecraft_unavailable", "Minecraft session is not initialized");
 	}

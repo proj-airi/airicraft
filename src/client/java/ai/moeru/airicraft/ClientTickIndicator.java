@@ -2,9 +2,9 @@ package ai.moeru.airicraft;
 
 import ai.moeru.airicraft.debug.ClientTickDebugController;
 import ai.moeru.airicraft.debug.ClientTickTraceRecorder;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,8 +22,8 @@ final class ClientTickIndicator {
 	private static final int PADDING = 4;
 
 	void render(
-		MinecraftClient client,
-		DrawContext drawContext,
+		Minecraft minecraft,
+		GuiGraphics guiGraphics,
 		ClientTickDebugController.DebugStatus debugStatus,
 		ClientTickTraceRecorder.TraceStatus traceStatus,
 		boolean plannerEnabled,
@@ -32,27 +32,27 @@ final class ClientTickIndicator {
 		if ((debugStatus == null || !debugStatus.paused()) && (traceStatus == null || !traceStatus.active()) && plannerEnabled && !hostedPaused) {
 			return;
 		}
-		if (client == null || drawContext == null || client.textRenderer == null) {
+		if (minecraft == null || guiGraphics == null || minecraft.font == null) {
 			return;
 		}
 
-		TextRenderer textRenderer = client.textRenderer;
+		Font font = minecraft.font;
 		for (IndicatorPanel panel : layout(
 			debugStatus,
 			traceStatus,
 			plannerEnabled,
 			hostedPaused,
-			drawContext.getScaledWindowWidth(),
-			textRenderer.getWidth(PAUSED_LABEL),
-			textRenderer.getWidth(HOSTED_PAUSED_LABEL),
-			textRenderer.getWidth(TRACE_LABEL),
-			textRenderer.getWidth(PLANNER_OFF_LABEL),
-			textRenderer.fontHeight
+			guiGraphics.guiWidth(),
+			font.width(PAUSED_LABEL),
+			font.width(HOSTED_PAUSED_LABEL),
+			font.width(TRACE_LABEL),
+			font.width(PLANNER_OFF_LABEL),
+			font.lineHeight
 		)) {
 			IndicatorBounds bounds = panel.bounds();
-			drawContext.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), panel.backgroundColor());
-			drawContext.drawText(
-				textRenderer,
+			guiGraphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), panel.backgroundColor());
+			guiGraphics.drawString(
+				font,
 				panel.label(),
 				bounds.left() + PADDING,
 				bounds.top() + PADDING,

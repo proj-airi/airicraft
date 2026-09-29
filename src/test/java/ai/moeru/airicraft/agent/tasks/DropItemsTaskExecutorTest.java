@@ -40,12 +40,12 @@ class DropItemsTaskExecutorTest {
 	@Test
 	void dismissesOnlySafeTransientBusyScreens() {
 		assertTrue(DropItemsTaskExecutor.shouldDismissBusyScreen("ChatScreen"));
-		assertTrue(DropItemsTaskExecutor.shouldDismissBusyScreen("GameMenuScreen"));
+		assertTrue(DropItemsTaskExecutor.shouldDismissBusyScreen("PauseScreen"));
 
 		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen(null));
 		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen("InventoryScreen"));
-		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen("GenericContainerScreen"));
-		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen("HandledScreen"));
+		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen("ContainerScreen"));
+		assertFalse(DropItemsTaskExecutor.shouldDismissBusyScreen("AbstractContainerScreen"));
 	}
 
 	@Test

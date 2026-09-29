@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.spatial;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 
 import java.util.*;
 import java.util.function.Function;
@@ -15,12 +15,12 @@ public final class CaveRouteMap {
 		private final int sx, sy, sz;
 		private final byte[] cells;
 		public Grid(BlockPos origin, int radius, int verticalRadius, Function<BlockPos, Cell> read) {
-			min = origin.add(-radius, -verticalRadius, -radius);
+			min = origin.offset(-radius, -verticalRadius, -radius);
 			sx = sz = radius * 2 + 1;
 			sy = verticalRadius * 2 + 1;
 			cells = new byte[sx * sy * sz];
 			for (int y = 0; y < sy; y++) for (int z = 0; z < sz; z++) for (int x = 0; x < sx; x++)
-				cells[(y * sz + z) * sx + x] = (byte) read.apply(min.add(x, y, z)).ordinal();
+				cells[(y * sz + z) * sx + x] = (byte) read.apply(min.offset(x, y, z)).ordinal();
 		}
 		public Cell cell(BlockPos p) {
 			int x = p.getX() - min.getX(), y = p.getY() - min.getY(), z = p.getZ() - min.getZ();
@@ -34,7 +34,7 @@ public final class CaveRouteMap {
 		List<Destination> destinations, List<BlockPos> route) {}
 	private record QueueNode(BlockPos position, double cost) {}
 	private static final int MAX_AIR = 32768;
-	private static final Comparator<BlockPos> ORDER = Comparator.comparingInt(BlockPos::getX)
+	private static final Comparator<BlockPos> ORDER = Comparator.<BlockPos>comparingInt(BlockPos::getX)
 		.thenComparingInt(BlockPos::getY).thenComparingInt(BlockPos::getZ);
 
 	public static Result map(Grid grid, BlockPos origin, BlockPos target, double opennessWeight) {
@@ -46,14 +46,14 @@ public final class CaveRouteMap {
 		while (!pending.isEmpty()) {
 			BlockPos p = pending.removeFirst();
 			for (Direction d : Direction.values()) {
-				BlockPos q = p.offset(d);
+				BlockPos q = p.relative(d);
 				if (grid.cell(q) != Cell.OPEN || air.contains(q)) continue;
 				if (air.size() == MAX_AIR) { truncated = true; continue; }
 				air.add(q); pending.add(q);
 			}
 		}
 		Set<BlockPos> floors = new HashSet<>();
-		for (BlockPos p : air) if (air.contains(p.up()) && standable(grid, p)) floors.add(p);
+		for (BlockPos p : air) if (air.contains(p.above()) && standable(grid, p)) floors.add(p);
 		Map<BlockPos, List<BlockPos>> edges = new HashMap<>();
 		for (BlockPos p : floors) edges.put(p, neighbors(grid, floors, p));
 		Map<BlockPos, Integer> areas = new HashMap<>();
@@ -69,7 +69,7 @@ public final class CaveRouteMap {
 			if (node.cost() > costs.get(node.position())) continue;
 			for (BlockPos q : edges.getOrDefault(node.position(), List.of())) {
 				int area = areas.computeIfAbsent(q, p -> localArea(edges, p));
-				double distance = Math.sqrt(q.getSquaredDistance(node.position()));
+				double distance = Math.sqrt(q.distSqr(node.position()));
 				double next = node.cost() + distance * (1 + opennessWeight * (1 - Math.min(area, 25) / 25.0));
 				if (next >= costs.getOrDefault(q, Double.POSITIVE_INFINITY)) continue;
 				costs.put(q, next); parents.put(q, node.position()); steps.put(q, steps.get(node.position()) + 1); queue.add(new QueueNode(q, next));
@@ -77,18 +77,18 @@ public final class CaveRouteMap {
 		}
 		List<Destination> candidates = new ArrayList<>();
 		for (BlockPos p : costs.keySet()) {
-			if (p.getSquaredDistance(origin) < 36) continue;
+			if (p.distSqr(origin) < 36) continue;
 			boolean frontier = false;
-			for (Direction d : Direction.Type.HORIZONTAL) if (grid.cell(p.offset(d)) == Cell.UNKNOWN) frontier = true;
+			for (Direction d : Direction.Plane.HORIZONTAL) if (grid.cell(p.relative(d)) == Cell.UNKNOWN) frontier = true;
 			candidates.add(new Destination(p, areas.computeIfAbsent(p, q -> localArea(edges, q)), frontier,
 				costs.get(p), steps.get(p)));
 		}
 		candidates.sort(Comparator.comparingDouble((Destination d) -> -(d.localFloorArea()
-			+ (d.frontier() ? 30 : 0) + Math.sqrt(d.position().getSquaredDistance(origin)) * .4 - d.cost() * .25))
+			+ (d.frontier() ? 30 : 0) + Math.sqrt(d.position().distSqr(origin)) * .4 - d.cost() * .25))
 			.thenComparing(Destination::position, ORDER));
 		List<Destination> spread = new ArrayList<>();
 		for (Destination d : candidates) {
-			if (spread.stream().anyMatch(other -> other.position().getSquaredDistance(d.position()) < 36)) continue;
+			if (spread.stream().anyMatch(other -> other.position().distSqr(d.position()) < 36)) continue;
 			spread.add(d);
 			if (spread.size() == 4) break;
 		}
@@ -100,26 +100,26 @@ public final class CaveRouteMap {
 			List.copyOf(spread), path.size() > 256 ? List.of() : path);
 	}
 	private static boolean standable(Grid g, BlockPos p) {
-		return g.cell(p) == Cell.OPEN && g.cell(p.up()) == Cell.OPEN && g.cell(p.down()) == Cell.SUPPORT;
+		return g.cell(p) == Cell.OPEN && g.cell(p.above()) == Cell.OPEN && g.cell(p.below()) == Cell.SUPPORT;
 	}
 	private static List<BlockPos> neighbors(Grid grid, Set<BlockPos> floors, BlockPos p) {
 		List<BlockPos> result = new ArrayList<>();
-		for (Direction d : Direction.Type.HORIZONTAL) {
+		for (Direction d : Direction.Plane.HORIZONTAL) {
 			// Ordinary exploration must be able to retrace a ledge without building footholds.
 			for (int dy = 1; dy >= -1; dy--) {
-				BlockPos q = p.offset(d).up(dy);
+				BlockPos q = p.relative(d).above(dy);
 				if (!floors.contains(q)) continue;
-				boolean clear = dy <= 0 || grid.cell(p.up(2)) == Cell.OPEN;
+				boolean clear = dy <= 0 || grid.cell(p.above(2)) == Cell.OPEN;
 				for (int y = q.getY() + 2; y <= p.getY() + 1; y++)
 					clear &= grid.cell(new BlockPos(q.getX(), y, q.getZ())) == Cell.OPEN;
 				if (clear) result.add(q);
 			}
 			// One-cell gaps only, with jump headroom and no known hazard beneath the gap.
-			BlockPos middle = p.offset(d), q = p.offset(d, 2);
+			BlockPos middle = p.relative(d), q = p.relative(d, 2);
 			if (floors.contains(q) && !floors.contains(middle) && grid.cell(middle) == Cell.OPEN
-				&& grid.cell(middle.up()) == Cell.OPEN && grid.cell(middle.up(2)) == Cell.OPEN
-				&& grid.cell(p.up(2)) == Cell.OPEN && grid.cell(q.up(2)) == Cell.OPEN
-				&& grid.cell(middle.down()) != Cell.HAZARD && grid.cell(middle.down()) != Cell.UNKNOWN) result.add(q);
+				&& grid.cell(middle.above()) == Cell.OPEN && grid.cell(middle.above(2)) == Cell.OPEN
+				&& grid.cell(p.above(2)) == Cell.OPEN && grid.cell(q.above(2)) == Cell.OPEN
+				&& grid.cell(middle.below()) != Cell.HAZARD && grid.cell(middle.below()) != Cell.UNKNOWN) result.add(q);
 		}
 		return List.copyOf(result);
 	}

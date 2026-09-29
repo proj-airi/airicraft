@@ -10,8 +10,8 @@ import ai.moeru.airicraft.navigation.Path;
 import ai.moeru.airicraft.navigation.SearchBudget;
 import ai.moeru.airicraft.navigation.SearchResult;
 import ai.moeru.airicraft.navigation.Step;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,15 +31,15 @@ public final class NavigationDebugService {
 	}
 
 	/** Snapshots the terrain and starts the search. Client thread. */
-	public static Planning start(MinecraftClient client, int x, int y, int z, boolean exactY) {
-		if (client.player == null || client.world == null) throw new BridgeUnavailableException("world_not_loaded", "No world is loaded");
-		MovementPolicy policy = NavigationPolicies.forPlayer(client, MovementPolicy.defaults().waterPenalty());
+	public static Planning start(Minecraft minecraft, int x, int y, int z, boolean exactY) {
+		if (minecraft.player == null || minecraft.level == null) throw new BridgeUnavailableException("world_not_loaded", "No world is loaded");
+		MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, MovementPolicy.defaults().waterPenalty());
 		if (policy == null) throw new BridgeUnavailableException("travel_policy_unavailable", "The travel policy could not be loaded");
-		var player = client.player;
+		var player = minecraft.player;
 		GridPos start = new BodyState(player.getX(), player.getY(), player.getZ(), 0, true, false, false, false, 0).feet();
 		Goal goal = exactY ? new Goal.Block(x, y, z) : new Goal.XZ(x, z);
 		GridPos target = new GridPos(x, exactY ? y : start.y(), z);
-		WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(client.world, start, target, exactY,
+		WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(minecraft.level, start, target, exactY,
 			MinecraftCellClassifier.forPlayer(player));
 		return new Planning(NavigationPlanner.shared().submit(snapshot, policy, start, goal, target, BUDGET), snapshot, policy, goal);
 	}
@@ -90,7 +90,7 @@ public final class NavigationDebugService {
 			for (GridPos cell : step.breaks()) marks.add(new Mark(pos(cell), BREAK_COLOR, "break"));
 			if (step.place() != null) marks.add(new Mark(pos(step.place()), PLACE_COLOR, "place"));
 			for (GridPos door : step.doors()) marks.add(new Mark(pos(door), DOOR_COLOR, "door"));
-			marks.add(new Mark(pos(step.to()).down(), PATH_COLOR, null));
+			marks.add(new Mark(pos(step.to()).below(), PATH_COLOR, null));
 		}
 		int count = Math.min(MAX_HIGHLIGHTS, marks.size());
 		for (Mark mark : marks.subList(0, count)) highlights.addBlock(mark.pos(), mark.color(), duration, mark.label());

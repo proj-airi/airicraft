@@ -1,8 +1,8 @@
 package ai.moeru.airicraft.agent.session;
 
 import ai.moeru.airicraft.agent.events.EventPublisher;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.server.integrated.IntegratedServer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.server.IntegratedServer;
 
 import java.util.Map;
 
@@ -10,15 +10,15 @@ public final class SessionRuntime {
 	private static final String SOURCE = "SessionRuntime";
 	private SessionSnapshot snapshot = SessionSnapshot.initial();
 
-	public void onClientStarted(MinecraftClient client, long tick, EventPublisher eventBuffer) {
-		snapshot = deriveSnapshot(client, tick);
+	public void onClientStarted(Minecraft minecraft, long tick, EventPublisher eventBuffer) {
+		snapshot = deriveSnapshot(minecraft, tick);
 		if (!snapshot.clientBooted()) {
 			snapshot = snapshot.withClientBooted(true);
 		}
 	}
 
-	public SessionSnapshot poll(MinecraftClient client, long tick, EventPublisher eventBuffer) {
-		SessionSnapshot nextSnapshot = deriveSnapshot(client, tick).withClientBooted(true);
+	public SessionSnapshot poll(Minecraft minecraft, long tick, EventPublisher eventBuffer) {
+		SessionSnapshot nextSnapshot = deriveSnapshot(minecraft, tick).withClientBooted(true);
 		emitTransitions(snapshot, nextSnapshot, tick, eventBuffer);
 		snapshot = nextSnapshot;
 		return snapshot;
@@ -78,21 +78,21 @@ public final class SessionRuntime {
 		return snapshot;
 	}
 
-	private static SessionSnapshot deriveSnapshot(MinecraftClient client, long tick) {
-		if (client == null) {
+	private static SessionSnapshot deriveSnapshot(Minecraft minecraft, long tick) {
+		if (minecraft == null) {
 			return SessionSnapshot.initial().withTickCount(tick);
 		}
 
-		boolean worldLoaded = client.world != null && client.player != null;
-		String dimensionId = worldLoaded ? String.valueOf(client.world.getRegistryKey().getValue()) : null;
-		IntegratedServer server = client.getServer();
-		int lanPort = worldLoaded && server != null ? server.getServerPort() : 0;
-		boolean lanPublished = worldLoaded && client.isInSingleplayer() && lanPort > 0;
+		boolean worldLoaded = minecraft.level != null && minecraft.player != null;
+		String dimensionId = worldLoaded ? String.valueOf(minecraft.level.dimension().location()) : null;
+		IntegratedServer server = minecraft.getSingleplayerServer();
+		int lanPort = worldLoaded && server != null ? server.getPort() : 0;
+		boolean lanPublished = worldLoaded && minecraft.isLocalServer() && lanPort > 0;
 		SessionMode mode;
 		if (!worldLoaded) {
 			mode = SessionMode.OUT_OF_WORLD;
 		}
-		else if (!client.isInSingleplayer() || client.getCurrentServerEntry() != null) {
+		else if (!minecraft.isLocalServer() || minecraft.getCurrentServer() != null) {
 			mode = SessionMode.REMOTE_MULTIPLAYER;
 		}
 		else if (lanPublished) {
@@ -102,7 +102,7 @@ public final class SessionRuntime {
 			mode = SessionMode.SINGLEPLAYER_LOCAL;
 		}
 
-		PlayerLifecycleState playerLifecycleState = worldLoaded && (client.player.isDead() || client.player.getHealth() <= 0.0F)
+		PlayerLifecycleState playerLifecycleState = worldLoaded && (minecraft.player.isDeadOrDying() || minecraft.player.getHealth() <= 0.0F)
 			? PlayerLifecycleState.DEAD
 			: worldLoaded ? PlayerLifecycleState.ALIVE : PlayerLifecycleState.UNAVAILABLE;
 		return new SessionSnapshot(mode, true, worldLoaded, dimensionId, lanPublished, lanPort, tick, playerLifecycleState);

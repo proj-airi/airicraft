@@ -7,14 +7,14 @@ import ai.moeru.airicraft.agent.spatial.WorldTravelPolicy;
 import ai.moeru.airicraft.navigation.Avoidance;
 import ai.moeru.airicraft.navigation.Box;
 import ai.moeru.airicraft.navigation.MovementPolicy;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.EndermanEntity;
-import net.minecraft.entity.mob.Monster;
-import net.minecraft.entity.mob.ZombifiedPiglinEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.EnderMan;
+import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.monster.ZombifiedPiglin;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,16 +44,16 @@ public final class NavigationPolicies {
 	}
 
 	/** The policy for the current player, or null when the travel policy forbids moving at all. */
-	public static MovementPolicy forPlayer(MinecraftClient client, double waterPenalty) {
-		ClientPlayerEntity player = client.player;
+	public static MovementPolicy forPlayer(Minecraft minecraft, double waterPenalty) {
+		LocalPlayer player = minecraft.player;
 		MovementPolicy policy = MovementPolicy.defaults()
 			.withWaterPenalty(waterPenalty)
-			.withSprint(player.getHungerManager().getFoodLevel() > 6)
+			.withSprint(player.getFoodData().getFoodLevel() > 6)
 			.withPlaceableBlocks(throwawayCount(player));
-		WorldTravelPolicy.Limit limit = WorldTravelPolicy.limit(client.world);
+		WorldTravelPolicy.Limit limit = WorldTravelPolicy.limit(minecraft.level);
 		if (limit.closed()) return null;
 		if (limit.bounds() != null) policy = policy.withTravelBounds(box(limit.bounds()));
-		List<PlaceMemory.PreservedArea> areas = WorldPlacePreservation.areas(client.world);
+		List<PlaceMemory.PreservedArea> areas = WorldPlacePreservation.areas(minecraft.level);
 		if (areas == null) {
 			// Protection data is unavailable: no terrain edits anywhere.
 			policy = policy.withBreaking(false).withPlaceableBlocks(0);
@@ -64,29 +64,29 @@ public final class NavigationPolicies {
 		}
 		// Doors stay usable: the Baritone settings this mirrors never disabled them.
 		if (walkOnly) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
-		return policy.withAvoidances(mobAvoidances(client));
+		return policy.withAvoidances(mobAvoidances(minecraft));
 	}
 
-	public static int throwawayCount(ClientPlayerEntity player) {
+	public static int throwawayCount(LocalPlayer player) {
 		int count = 0;
 		var inventory = player.getInventory();
 		for (int slot = 0; slot < 36; slot++) {
-			ItemStack stack = inventory.getStack(slot);
+			ItemStack stack = inventory.getItem(slot);
 			if (isThrowaway(stack)) count += stack.getCount();
 		}
 		return count;
 	}
 
 	public static boolean isThrowaway(ItemStack stack) {
-		return !stack.isEmpty() && THROWAWAY_BLOCKS.contains(Registries.ITEM.getId(stack.getItem()).toString());
+		return !stack.isEmpty() && THROWAWAY_BLOCKS.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
 	}
 
-	private static List<Avoidance> mobAvoidances(MinecraftClient client) {
+	private static List<Avoidance> mobAvoidances(Minecraft minecraft) {
 		List<Avoidance> avoidances = new ArrayList<>();
-		var box = client.player.getBoundingBox().expand(MOB_SCAN_RADIUS);
-		for (LivingEntity entity : client.world.getEntitiesByClass(LivingEntity.class, box,
-			entity -> entity.isAlive() && entity instanceof Monster
-				&& !(entity instanceof EndermanEntity) && !(entity instanceof ZombifiedPiglinEntity))) {
+		var box = minecraft.player.getBoundingBox().inflate(MOB_SCAN_RADIUS);
+		for (LivingEntity entity : minecraft.level.getEntitiesOfClass(LivingEntity.class, box,
+			entity -> entity.isAlive() && entity instanceof Enemy
+				&& !(entity instanceof EnderMan) && !(entity instanceof ZombifiedPiglin))) {
 			avoidances.add(new Avoidance(entity.getX(), entity.getY(), entity.getZ(), MOB_AVOIDANCE_RADIUS, MOB_AVOIDANCE_COEFFICIENT));
 		}
 		return avoidances;

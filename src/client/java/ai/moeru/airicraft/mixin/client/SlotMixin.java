@@ -2,11 +2,11 @@ package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
 import ai.moeru.airicraft.client.CraftingResultSlotCraftEventBridge;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.slot.CraftingResultSlot;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ResultSlot;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,13 +14,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Slot.class)
 public class SlotMixin {
-	@Inject(method = "onQuickTransfer", at = @At("HEAD"))
+	@Inject(method = "onQuickCraft(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemStack;)V", at = @At("HEAD"))
 	private void airicraft$onQuickTransfer(ItemStack stack, ItemStack originalStack, CallbackInfo ci) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread()) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread()) {
 			return;
 		}
-		if (!(((Object) this) instanceof CraftingResultSlot)) {
+		if (!(((Object) this) instanceof ResultSlot)) {
 			return;
 		}
 		if (!(((Object) this) instanceof CraftingResultSlotCraftEventBridge craftingResultSlotBridge)) {
@@ -35,7 +35,7 @@ public class SlotMixin {
 			return;
 		}
 
-		String itemId = Registries.ITEM.getId(originalStack.getItem()).toString();
+		String itemId = BuiltInRegistries.ITEM.getKey(originalStack.getItem()).toString();
 		craftingResultSlotBridge.airicraft$markQuickTransferHandled();
 		AiricraftClient.runtimeController().onPlayerCraftedItem(itemId, craftedCount);
 	}

@@ -2,37 +2,37 @@ package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
 import ai.moeru.airicraft.client.CraftingResultSlotCraftEventBridge;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.slot.CraftingResultSlot;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ResultSlot;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(CraftingResultSlot.class)
+@Mixin(ResultSlot.class)
 public class CraftingResultSlotMixin implements CraftingResultSlotCraftEventBridge {
 	@Unique
 	private boolean airicraft$skipNextTakeItemCraftEvent;
 
-	@Inject(method = "onTakeItem", at = @At("HEAD"))
-	private void airicraft$onTakeItem(PlayerEntity player, ItemStack stack, CallbackInfo ci) {
+	@Inject(method = "onTake", at = @At("HEAD"))
+	private void airicraft$onTakeItem(Player player, ItemStack stack, CallbackInfo ci) {
 		if (airicraft$skipNextTakeItemCraftEvent) {
 			airicraft$skipNextTakeItemCraftEvent = false;
 			return;
 		}
-		MinecraftClient client = MinecraftClient.getInstance();
-		if (client == null || !client.isOnThread()) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || !minecraft.isSameThread()) {
 			return;
 		}
 		if (player == null || stack == null || stack.isEmpty() || stack.getCount() <= 0) {
 			return;
 		}
 
-		String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+		String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 		AiricraftClient.runtimeController().onPlayerCraftedItem(itemId, stack.getCount());
 	}
 

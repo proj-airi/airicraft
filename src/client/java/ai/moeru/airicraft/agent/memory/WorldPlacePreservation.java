@@ -3,9 +3,9 @@ package ai.moeru.airicraft.agent.memory;
 import ai.moeru.airicraft.Airicraft;
 import baritone.api.BaritoneAPI;
 import baritone.api.utils.input.Input;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.io.IOException;
 import java.util.List;
@@ -19,30 +19,30 @@ public final class WorldPlacePreservation {
 
 	private WorldPlacePreservation() {}
 
-	public static void tick(MinecraftClient client) {
-		if (current.world() != client.world || revision != LocationMemoryBridge.revision() || --ticksUntilRefresh <= 0) reload(client);
+	public static void tick(Minecraft minecraft) {
+		if (current.world() != minecraft.level || revision != LocationMemoryBridge.revision() || --ticksUntilRefresh <= 0) reload(minecraft);
 	}
 
 	public static void clear() {
 		current = new Snapshot(null, List.of(), false);
 	}
 
-	public static void reload(MinecraftClient client) {
+	public static void reload(Minecraft minecraft) {
 		ticksUntilRefresh = 20;
 		revision = LocationMemoryBridge.revision();
-		if (client.world == null || (client.getServer() == null && !FabricLoader.getInstance().isModLoaded("journeymap"))) {
-			current = new Snapshot(client.world, List.of(), false);
+		if (minecraft.level == null || (minecraft.getSingleplayerServer() == null && !FabricLoader.getInstance().isModLoaded("journeymap"))) {
+			current = new Snapshot(minecraft.level, List.of(), false);
 			return;
 		}
 		try {
-			var places = LocationMemoryBridge.forClient(client).list();
-			String dimension = client.world.getRegistryKey().getValue().toString();
-			current = new Snapshot(client.world, places.stream().filter(place -> place.dimension().equals(dimension))
+			var places = LocationMemoryBridge.forClient(minecraft).list();
+			String dimension = minecraft.level.dimension().location().toString();
+			current = new Snapshot(minecraft.level, places.stream().filter(place -> place.dimension().equals(dimension))
 				.map(LocationMemoryProvider.Location::preserveArea).filter(java.util.Objects::nonNull).toList(), false);
 		}
 		catch (IOException | RuntimeException exception) {
 			// A broken memory file must not silently turn a built home into available resources.
-			current = failedSnapshot(current, client.world);
+			current = failedSnapshot(current, minecraft.level);
 			long now = System.currentTimeMillis();
 			if (now - lastFailureLog >= 10_000L) {
 				lastFailureLog = now;
@@ -77,8 +77,8 @@ public final class WorldPlacePreservation {
 
 	/** Also guards an already-calculated path when a preserved area is added while it runs. */
 	public static boolean blocksPathBreaking(BlockPos pos) {
-		MinecraftClient client = MinecraftClient.getInstance();
-		return client.world != null && contains(client.world, pos)
+		Minecraft minecraft = Minecraft.getInstance();
+		return minecraft.level != null && contains(minecraft.level, pos)
 			&& (ai.moeru.airicraft.agent.navigation.MinecraftMotor.breakingForNavigation()
 				|| BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT));
 	}

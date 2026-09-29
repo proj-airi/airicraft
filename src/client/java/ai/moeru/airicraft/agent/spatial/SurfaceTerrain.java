@@ -1,11 +1,11 @@
 package ai.moeru.airicraft.agent.spatial;
 
-import net.minecraft.block.BlockState;
-import net.minecraft.block.MushroomBlock;
-import net.minecraft.registry.tag.BlockTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.HugeMushroomBlock;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.Level;
 
 /** Shared surface definition for observations and acquisition constraints. */
 public final class SurfaceTerrain {
@@ -16,14 +16,14 @@ public final class SurfaceTerrain {
 		return y >= groundY + (standing && !waterSurface ? 1 : 0);
 	}
 
-	public static int groundY(World world, BlockPos column) {
-		int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()) - 1;
-		while (y > world.getBottomY()) {
+	public static int groundY(Level level, BlockPos column) {
+		int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, column.getX(), column.getZ()) - 1;
+		while (y > level.getMinY()) {
 			BlockPos pos = new BlockPos(column.getX(), y, column.getZ());
-			BlockState state = world.getBlockState(pos);
+			BlockState state = level.getBlockState(pos);
 			if (!state.getFluidState().isEmpty()) break;
-			if (!state.isIn(BlockTags.LOGS) && !state.isIn(BlockTags.LEAVES) && !(state.getBlock() instanceof MushroomBlock)
-				&& !state.getCollisionShape(world, pos).isEmpty()) break;
+			if (!state.is(BlockTags.LOGS) && !state.is(BlockTags.LEAVES) && !(state.getBlock() instanceof HugeMushroomBlock)
+				&& !state.getCollisionShape(level, pos).isEmpty()) break;
 			y--;
 		}
 		return y;

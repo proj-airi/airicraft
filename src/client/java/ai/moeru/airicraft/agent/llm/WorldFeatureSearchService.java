@@ -2,16 +2,16 @@ package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.spatial.SurfaceTerrain;
 import com.google.gson.JsonObject;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.registry.tag.BlockTags;
-import net.minecraft.registry.tag.FluidTags;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -42,21 +42,21 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	private static final int FOREST_SURFACE_SCAN_DEPTH = 24;
 	private static final int FOREST_CLUSTER_DISTANCE = 8;
 
-	private final Supplier<MinecraftClient> clientSupplier;
+	private final Supplier<Minecraft> clientSupplier;
 
-	public WorldFeatureSearchService(Supplier<MinecraftClient> clientSupplier) {
+	public WorldFeatureSearchService(Supplier<Minecraft> clientSupplier) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
 
 	@Override
 	public CompletableFuture<WorldFeatureSearchResult> findFeaturesDetailed(JsonObject arguments) {
-		MinecraftClient client = clientSupplier.get();
-		if (client == null || client.world == null || client.player == null) {
+		Minecraft minecraft = clientSupplier.get();
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) {
 			return CompletableFuture.completedFuture(new WorldFeatureSearchResult("WORLD_UNAVAILABLE: world_not_loaded", List.of()));
 		}
 		try {
 			SearchRequest request = SearchRequest.from(arguments == null ? new JsonObject() : arguments);
-			return CompletableFuture.completedFuture(search(new MinecraftWorldFeatureAccess(client.world), client.player.getBlockPos(), request));
+			return CompletableFuture.completedFuture(search(new MinecraftWorldFeatureAccess(minecraft.level), minecraft.player.blockPosition(), request));
 		}
 		catch (WorldFeatureSearchException exception) {
 			return CompletableFuture.completedFuture(new WorldFeatureSearchResult("TOOL_ERROR: find_world_features " + exception.getMessage(), List.of()));
@@ -89,7 +89,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		ArrayList<FeatureCandidate> candidates = new ArrayList<>();
 		HashSet<BlockPos> visited = new HashSet<>();
 		access.forEachCandidatePosition(origin, request.maxDistanceBlocks(), request.direction(), FeatureKind.WATER_BODY, pos -> {
-			BlockPos seed = pos.toImmutable();
+			BlockPos seed = pos.immutable();
 			if (!request.accepts(origin, seed) || visited.contains(seed) || !access.sample(seed).plainWaterSource()) {
 				return;
 			}
@@ -127,7 +127,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 				break;
 			}
 			for (Direction direction : Direction.values()) {
-				BlockPos next = pos.offset(direction).toImmutable();
+				BlockPos next = pos.relative(direction).immutable();
 				if (visited.contains(next) || distance(origin, next) > maxDistanceBlocks || !access.isLoaded(next)) {
 					continue;
 				}
@@ -175,7 +175,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	private static List<FeatureCandidate> findForests(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
 		HashMap<Column, BlockPos> stemsByColumn = new HashMap<>();
 		access.forEachCandidatePosition(origin, request.maxDistanceBlocks(), request.direction(), FeatureKind.FOREST, pos -> {
-			BlockPos immutable = pos.toImmutable();
+			BlockPos immutable = pos.immutable();
 			if (!request.accepts(origin, immutable) || !access.sample(immutable).log()
 				|| (request.surfaceOnly() && !access.isSurface(immutable))) {
 				return;
@@ -259,7 +259,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		for (int dx = -4; dx <= 4; dx++) {
 			for (int dy = -2; dy <= 8; dy++) {
 				for (int dz = -4; dz <= 4; dz++) {
-					BlockPos pos = logPos.add(dx, dy, dz);
+					BlockPos pos = logPos.offset(dx, dy, dz);
 					if (access.isLoaded(pos) && access.sample(pos).leaves()) {
 						return true;
 					}
@@ -271,7 +271,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 
 	private static TargetSelection targetWithStand(WorldFeatureAccess access, List<BlockPos> positions, BlockPos origin, boolean surfaceOnly) {
 		List<BlockPos> sorted = positions.stream()
-			.map(BlockPos::toImmutable)
+			.map(BlockPos::immutable)
 			.sorted(Comparator.comparingInt(pos -> distance(origin, pos)))
 			.toList();
 		for (BlockPos pos : sorted) {
@@ -285,9 +285,9 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 
 	private static Optional<BlockPos> nearestStandableAdjacent(WorldFeatureAccess access, BlockPos targetPos, BlockPos origin, boolean surfaceOnly) {
 		ArrayList<BlockPos> candidates = new ArrayList<>();
-		for (Direction direction : Direction.Type.HORIZONTAL) {
+		for (Direction direction : Direction.Plane.HORIZONTAL) {
 			for (int dy = -1; dy <= 2; dy++) {
-				candidates.add(targetPos.offset(direction).add(0, dy, 0).toImmutable());
+				candidates.add(targetPos.relative(direction).offset(0, dy, 0).immutable());
 			}
 		}
 		return candidates.stream()
@@ -505,7 +505,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 				? List.of()
 				: observedPositions.stream()
 					.filter(Objects::nonNull)
-					.map(BlockPos::toImmutable)
+					.map(BlockPos::immutable)
 					.toList();
 		}
 	}
@@ -515,8 +515,8 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 
 	private record TargetSelection(BlockPos targetPos, Optional<BlockPos> standPos) {
 		TargetSelection {
-			targetPos = targetPos.toImmutable();
-			standPos = standPos == null ? Optional.empty() : standPos.map(BlockPos::toImmutable);
+			targetPos = targetPos.immutable();
+			standPos = standPos == null ? Optional.empty() : standPos.map(BlockPos::immutable);
 		}
 	}
 
@@ -563,10 +563,10 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	}
 
 	private static final class MinecraftWorldFeatureAccess implements WorldFeatureAccess {
-		private final World world;
+		private final Level level;
 
-		private MinecraftWorldFeatureAccess(World world) {
-			this.world = Objects.requireNonNull(world, "world");
+		private MinecraftWorldFeatureAccess(Level level) {
+			this.level = Objects.requireNonNull(level, "world");
 		}
 
 		@Override
@@ -584,11 +584,11 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 					if (direction.isPresent() && direction.get() != directionFrom(origin, columnPos)) {
 						continue;
 					}
-					if (!world.isChunkLoaded(columnPos)) {
+					if (!level.hasChunkAt(columnPos)) {
 						continue;
 					}
-					int topY = world.getTopY(Heightmap.Type.WORLD_SURFACE, columnPos.getX(), columnPos.getZ());
-					int minY = Math.max(world.getBottomY(), topY - scanDepth);
+					int topY = level.getHeight(Heightmap.Types.WORLD_SURFACE, columnPos.getX(), columnPos.getZ());
+					int minY = Math.max(level.getMinY(), topY - scanDepth);
 					for (int y = topY; y >= minY; y--) {
 						consumer.accept(new BlockPos(columnPos.getX(), y, columnPos.getZ()));
 					}
@@ -598,40 +598,40 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 
 		@Override
 		public boolean isLoaded(BlockPos pos) {
-			return world.isChunkLoaded(pos);
+			return level.hasChunkAt(pos);
 		}
 
 		@Override
 		public SampledBlock sample(BlockPos pos) {
-			if (!world.isChunkLoaded(pos)) {
+			if (!level.hasChunkAt(pos)) {
 				return SampledBlock.EMPTY;
 			}
-			BlockState state = world.getBlockState(pos);
+			BlockState state = level.getBlockState(pos);
 			FluidState fluidState = state.getFluidState();
-			boolean plainWaterSource = state.isOf(Blocks.WATER) && fluidState.isIn(FluidTags.WATER) && fluidState.isStill();
+			boolean plainWaterSource = state.is(Blocks.WATER) && fluidState.is(FluidTags.WATER) && fluidState.isSource();
 			return new SampledBlock(
 				plainWaterSource,
-				state.isIn(BlockTags.LOGS),
-				state.isIn(BlockTags.LEAVES)
+				state.is(BlockTags.LOGS),
+				state.is(BlockTags.LEAVES)
 			);
 		}
 
 		@Override
 		public boolean isSurface(BlockPos pos) {
-			return world.isChunkLoaded(pos) && pos.getY() >= SurfaceTerrain.groundY(world, pos);
+			return level.hasChunkAt(pos) && pos.getY() >= SurfaceTerrain.groundY(level, pos);
 		}
 
 		@Override
 		public boolean isStandable(BlockPos pos) {
-			if (!world.isChunkLoaded(pos) || !world.isChunkLoaded(pos.up()) || !world.isChunkLoaded(pos.down())) {
+			if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.above()) || !level.hasChunkAt(pos.below())) {
 				return false;
 			}
-			BlockState feet = world.getBlockState(pos);
-			BlockState head = world.getBlockState(pos.up());
-			BlockState floor = world.getBlockState(pos.down());
-			return (feet.isAir() || feet.isReplaceable())
-				&& (head.isAir() || head.isReplaceable())
-				&& floor.isSideSolidFullSquare(world, pos.down(), Direction.UP);
+			BlockState feet = level.getBlockState(pos);
+			BlockState head = level.getBlockState(pos.above());
+			BlockState floor = level.getBlockState(pos.below());
+			return (feet.isAir() || feet.canBeReplaced())
+				&& (head.isAir() || head.canBeReplaced())
+				&& floor.isFaceSturdy(level, pos.below(), Direction.UP);
 		}
 	}
 

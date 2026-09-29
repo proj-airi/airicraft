@@ -3,10 +3,10 @@ package ai.moeru.airicraft.agent.llm;
 import ai.moeru.airicraft.agent.spatial.CaveRouteMap;
 import ai.moeru.airicraft.agent.spatial.CaveRouteMap.Cell;
 import com.google.gson.*;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.block.Blocks;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.Blocks;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -36,27 +36,27 @@ public final class CaveMapToolProvider implements PlannerToolProvider {
 	}
 	@Override public CompletableFuture<String> execute(PlannerToolCall call) {
 		var result = new CompletableFuture<String>();
-		MinecraftClient client = MinecraftClient.getInstance();
-		client.execute(() -> {
+		Minecraft minecraft = Minecraft.getInstance();
+		minecraft.execute(() -> {
 			try {
-				if (client.world == null || client.player == null) throw new IllegalStateException("world_not_loaded");
+				if (minecraft.level == null || minecraft.player == null) throw new IllegalStateException("world_not_loaded");
 				var args = call.arguments();
 				int radius = integer(args, "radius", 24, 8, 32), vertical = integer(args, "verticalRadius", 16, 4, 24);
 				double preference = weight(args);
-				BlockPos destination = target(args), origin = client.player.getBlockPos().toImmutable();
-				String dimension = client.world.getRegistryKey().getValue().toString();
+				BlockPos destination = target(args), origin = minecraft.player.blockPosition().immutable();
+				String dimension = minecraft.level.dimension().location().toString();
 				long started = System.nanoTime();
-				var world = client.world;
+				var level = minecraft.level;
 				var hazards = Set.of(Blocks.LAVA, Blocks.FIRE, Blocks.SOUL_FIRE, Blocks.MAGMA_BLOCK, Blocks.CAMPFIRE, Blocks.SOUL_CAMPFIRE, Blocks.CACTUS, Blocks.POWDER_SNOW);
 				var grid = new CaveRouteMap.Grid(origin, radius, vertical, p -> {
-					if (p.getY() < world.getBottomY() || p.getY() > world.getTopYInclusive() || !world.isChunkLoaded(p)) return Cell.UNKNOWN;
-					var state = world.getBlockState(p);
+					if (p.getY() < level.getMinY() || p.getY() > level.getMaxY() || !level.hasChunkAt(p)) return Cell.UNKNOWN;
+					var state = level.getBlockState(p);
 					if (state.isAir()) return Cell.OPEN;
 					if (hazards.contains(state.getBlock())) return Cell.HAZARD;
 					if (!state.getFluidState().isEmpty()) return Cell.WATER;
-					var shape = state.getCollisionShape(world, p);
-					if (shape.isEmpty() || shape.getMax(Direction.Axis.Y) <= .125) return Cell.OPEN;
-					return state.isSideSolidFullSquare(world, p, Direction.UP) ? Cell.SUPPORT : Cell.BLOCKED;
+					var shape = state.getCollisionShape(level, p);
+					if (shape.isEmpty() || shape.max(Direction.Axis.Y) <= .125) return Cell.OPEN;
+					return state.isFaceSturdy(level, p, Direction.UP) ? Cell.SUPPORT : Cell.BLOCKED;
 				});
 				long captureMs = (System.nanoTime() - started) / 1_000_000;
 				CompletableFuture.supplyAsync(() -> CaveRouteMap.map(grid, origin, destination, preference)).whenComplete((map, error) -> {

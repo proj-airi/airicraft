@@ -4,8 +4,8 @@ import ai.moeru.airicraft.Airicraft;
 import ai.moeru.airicraft.ClientRuntimeController;
 import ai.moeru.airicraft.PlannerDebugOverlayMode;
 import ai.moeru.airicraft.agent.recording.AutomaticPlaytestRecording;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -43,12 +43,12 @@ public final class AutomaticPlaytestRuntime {
 	/** Runs on the server thread; frozen simulation still processes joins and disconnects. */
 	public void onHostedServerTick(net.minecraft.server.MinecraftServer server) {
 		String companion = hostingCompanionUuid;
-		boolean empty = hosted() && companion != null && server.isRemote()
-			&& server.getPlayerManager().getPlayerList().stream().allMatch(p -> p.getUuidAsString().equals(companion));
+		boolean empty = hosted() && companion != null && server.isPublished()
+			&& server.getPlayerList().getPlayers().stream().allMatch(p -> p.getStringUUID().equals(companion));
 		boolean startupFinished = hostingStartupFinished;
-		switch (emptyPause.update(empty, server.getTickManager().isFrozen(), startupFinished)) {
-			case FREEZE -> server.getTickManager().setFrozen(true);
-			case RESUME -> server.getTickManager().setFrozen(false);
+		switch (emptyPause.update(empty, server.tickRateManager().isFrozen(), startupFinished)) {
+			case FREEZE -> server.tickRateManager().setFrozen(true);
+			case RESUME -> server.tickRateManager().setFrozen(false);
 			case NONE -> { }
 		}
 		empty = empty && startupFinished;
@@ -59,11 +59,11 @@ public final class AutomaticPlaytestRuntime {
 	public boolean emptyHostPaused() { return emptyHostPaused; }
 
 	/** Render-loop maintenance must not accumulate a visual backlog while game ticks are gated. */
-	public void maintainPausedHost(MinecraftClient client) {
+	public void maintainPausedHost(Minecraft minecraft) {
 		if (state != State.RECORDING || recording == null) return;
 		try {
 			recording.recordVisualHistory(controller.liveRecording());
-			pollParticipants(client);
+			pollParticipants(minecraft);
 		} catch (IOException exception) { fail(exception); }
 	}
 
@@ -72,36 +72,36 @@ public final class AutomaticPlaytestRuntime {
 		this.root = root;
 	}
 
-	public void onClientTick(MinecraftClient client) {
+	public void onClientTick(Minecraft minecraft) {
 		if (!enabled()) return;
-		configurePresentation(client);
-		if (client.world == null || client.getServer() == null) return;
+		configurePresentation(minecraft);
+		if (minecraft.level == null || minecraft.getSingleplayerServer() == null) return;
 		// World/player objects exist before DownloadingTerrainScreen finishes ticking.
 		// Latch readiness only once the client has actually reached the game screen.
-		if (hosted() && client.player != null && client.currentScreen == null) hostingStartupFinished = true;
+		if (hosted() && minecraft.player != null && minecraft.screen == null) hostingStartupFinished = true;
 		try {
 			if (state == State.IDLE) {
-				if (client.player == null) return;
+				if (minecraft.player == null) return;
 				Map<String, Object> context = Map.of(
 					"clock", ai.moeru.airicraft.debug.ServerTickDebugRuntime.tickAnchor(),
-					"worldPath", client.getServer().getSavePath(WorldSavePath.ROOT).toString(),
-					"dimension", client.world.getRegistryKey().getValue().toString(),
+					"worldPath", minecraft.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toString(),
+					"dimension", minecraft.level.dimension().location().toString(),
 					"mode", hosted() ? "hosted" : "automatic",
 					// Recorder Plays are per connection; this identifies the companion's among testers'.
-					"playerUuid", client.player.getUuidAsString(),
-					"playerName", client.player.getName().getString());
+					"playerUuid", minecraft.player.getStringUUID(),
+					"playerName", minecraft.player.getName().getString());
 				String runId = System.getProperty("airicraft.automaticPlaytestId");
 				recording = runId == null ? new AutomaticPlaytestRecording(root, context) : new AutomaticPlaytestRecording(root, runId, context);
 				if (hosted()) {
-					participants = new HostedPlaytestParticipants(client.player.getUuidAsString());
-					hostingCompanionUuid = client.player.getUuidAsString();
+					participants = new HostedPlaytestParticipants(minecraft.player.getStringUUID());
+					hostingCompanionUuid = minecraft.player.getStringUUID();
 				}
 				state = State.RECORDING;
 			}
-			if (state == State.REPORT_PENDING && resultCommitted) { pause(client); return; }
+			if (state == State.REPORT_PENDING && resultCommitted) { pause(minecraft); return; }
 			if (state == State.RECORDING) {
 				recording.recordTick(controller.agentRuntime(), controller.liveRecording());
-				if (participants != null) pollParticipants(client);
+				if (participants != null) pollParticipants(minecraft);
 			}
 		}
 		catch (IOException exception) {
@@ -109,24 +109,24 @@ public final class AutomaticPlaytestRuntime {
 		}
 	}
 
-	private void configurePresentation(MinecraftClient client) {
+	private void configurePresentation(Minecraft minecraft) {
 		if (presentationConfigured) return;
-		var window = client.getWindow();
+		var window = minecraft.getWindow();
 		if (window.isFullscreen()) {
-			window.toggleFullscreen();
-			client.options.getFullscreen().setValue(false);
+			window.toggleFullScreen();
+			minecraft.options.fullscreen().set(false);
 			return;
 		}
 		// Fullscreen changes take effect at the next rendered frame, not at toggleFullscreen().
-		if (GLFW.glfwGetWindowMonitor(window.getHandle()) != 0) return;
-		GLFW.glfwMaximizeWindow(window.getHandle());
+		if (GLFW.glfwGetWindowMonitor(window.getWindow()) != 0) return;
+		GLFW.glfwMaximizeWindow(window.getWindow());
 		controller.setPlannerDebugOverlayMode(PlannerDebugOverlayMode.CONVERSATION);
 		presentationConfigured = true;
 		Airicraft.LOGGER.info("Automatic playtest presentation: maximized window, conversation overlay enabled");
 	}
 
 	/** Reads the integrated server's connection list on its own thread; the client never iterates it directly. */
-	private void pollParticipants(MinecraftClient client) throws IOException {
+	private void pollParticipants(Minecraft minecraft) throws IOException {
 		if (playerQuery != null) {
 			if (!playerQuery.isDone()) return;
 			PlayerListSnapshot snapshot;
@@ -141,22 +141,22 @@ public final class AutomaticPlaytestRuntime {
 		}
 		if (--participantPollCountdown > 0) return;
 		participantPollCountdown = PARTICIPANT_POLL_TICKS;
-		var server = client.getServer();
+		var server = minecraft.getSingleplayerServer();
 		playerQuery = server.submit(() -> {
-			var players = server.getPlayerManager().getPlayerList().stream()
-				.map(player -> new HostedPlaytestParticipants.Participant(player.getUuidAsString(), player.getName().getString()))
+			var players = server.getPlayerList().getPlayers().stream()
+				.map(player -> new HostedPlaytestParticipants.Participant(player.getStringUUID(), player.getName().getString()))
 				.toList();
-			return new PlayerListSnapshot(server.getTicks(), players);
+			return new PlayerListSnapshot(server.getTickCount(), players);
 		});
 	}
 
 	public String report(String description) {
-		MinecraftClient client = MinecraftClient.getInstance();
+		Minecraft minecraft = Minecraft.getInstance();
 		if (!enabled()) return "TOOL_ERROR: something_wrong: automatic_playtest_disabled";
 		if (hosted()) return "TOOL_ERROR: something_wrong: hosted_playtest";
-		if (client.world == null || client.getServer() == null)
+		if (minecraft.level == null || minecraft.getSingleplayerServer() == null)
 			return "TOOL_ERROR: something_wrong: local_singleplayer_required";
-		if (state == State.IDLE) onClientTick(client);
+		if (state == State.IDLE) onClientTick(minecraft);
 		if (state == State.CAPTURE_READY) {
 			return "Tool result for something_wrong: reportId=" + recording.id()
 				+ " state=CAPTURE_READY outputDir=" + recording.pendingDirectory() + ". This playtest was already reported; the launcher will finalize its Recorder Play.";
@@ -180,13 +180,13 @@ public final class AutomaticPlaytestRuntime {
 	/** Called only after the tool receipt is recorded; never wait for a frozen planner tick. */
 	public void resultCommitted() { resultCommitted = true; }
 
-	private void pause(MinecraftClient client) {
+	private void pause(Minecraft minecraft) {
 		state = State.PAUSING;
 		long reportSessionEpoch = sessionEpoch;
 		try {
 			var trace = controller.clientTickDebugRuntime().traceStatus();
 			if (trace.active()) controller.clientTickDebugRuntime().stopTrace(trace.traceId());
-			controller.clientTickDebugRuntime().pause(client, false).whenComplete((capture, failure) -> client.execute(() -> {
+			controller.clientTickDebugRuntime().pause(minecraft, false).whenComplete((capture, failure) -> minecraft.execute(() -> {
 				if (sessionEpoch != reportSessionEpoch) return;
 				if (failure != null) { fail(failure); return; }
 				try {
@@ -209,19 +209,19 @@ public final class AutomaticPlaytestRuntime {
 	public boolean captureReady() { return state == State.CAPTURE_READY; }
 
 	/** Complete the paused world checkpoint before allowing normal disconnect/Recorder Play finalization. */
-	public java.util.concurrent.CompletableFuture<Void> prepareShutdown(MinecraftClient client) {
-		var server = client.getServer();
+	public java.util.concurrent.CompletableFuture<Void> prepareShutdown(Minecraft minecraft) {
+		var server = minecraft.getSingleplayerServer();
 		if (!captureReady() || server == null) return java.util.concurrent.CompletableFuture.completedFuture(null);
 		var activeRecording = recording;
 		return server.submit(() -> {
 			try {
 				var clock = ai.moeru.airicraft.debug.ServerTickDebugRuntime.controller().status();
 				if (!clock.paused()) throw new IllegalStateException("World checkpoint requires the report pause");
-				server.getPlayerManager().saveAllPlayerData();
-				server.save(false, true, true);
-				activeRecording.saveWorldCheckpoint(server.getSavePath(WorldSavePath.ROOT), Map.of(
+				server.getPlayerList().saveAll();
+				server.saveAllChunks(false, true, true);
+				activeRecording.saveWorldCheckpoint(server.getWorldPath(LevelResource.ROOT), Map.of(
 					"serverTickId", clock.serverTickId(),
-					"worldTime", server.getOverworld().getTime(), "timeOfDay", server.getOverworld().getTimeOfDay(),
+					"worldTime", server.overworld().getGameTime(), "timeOfDay", server.overworld().getDayTime(),
 					"capturedWhilePaused", true));
 			}
 			catch (IOException exception) { throw new java.io.UncheckedIOException(exception); }

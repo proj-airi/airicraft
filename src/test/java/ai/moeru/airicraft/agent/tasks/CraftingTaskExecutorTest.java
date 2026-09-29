@@ -3,8 +3,8 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
-import net.minecraft.recipe.NetworkRecipeId;
-import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.inventory.InventoryMenu;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -94,12 +94,12 @@ class CraftingTaskExecutorTest {
 
 	@Test
 	void portableCraftingTableSourceSlotsIncludeOffhand() {
-		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(PlayerScreenHandler.INVENTORY_START));
-		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(PlayerScreenHandler.HOTBAR_START));
-		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(PlayerScreenHandler.OFFHAND_ID));
+		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(InventoryMenu.INV_SLOT_START));
+		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(InventoryMenu.USE_ROW_SLOT_START));
+		assertTrue(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(InventoryMenu.SHIELD_SLOT));
 
-		assertFalse(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(PlayerScreenHandler.CRAFTING_INPUT_START));
-		assertFalse(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(PlayerScreenHandler.EQUIPMENT_START));
+		assertFalse(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(InventoryMenu.CRAFT_SLOT_START));
+		assertFalse(CraftingTaskExecutor.isPortableCraftingTableSourceSlot(InventoryMenu.ARMOR_SLOT_START));
 	}
 
 	@Test
@@ -145,9 +145,9 @@ class CraftingTaskExecutorTest {
 		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting(null));
 		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("InventoryScreen"));
 		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("ChatScreen"));
-		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("GameMenuScreen"));
-		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("GenericContainerScreen"));
-		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("HandledScreen"));
+		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("PauseScreen"));
+		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("ContainerScreen"));
+		assertFalse(CraftingTaskExecutor.isVisibleScreenBlockingCrafting("AbstractContainerScreen"));
 	}
 
 	@Test
@@ -184,9 +184,9 @@ class CraftingTaskExecutorTest {
 
 	@Test
 	void craftPlanCarriesResolvedNetworkRecipeId() {
-		NetworkRecipeId networkRecipeId = new NetworkRecipeId(42);
+		RecipeDisplayId recipeDisplayId = new RecipeDisplayId(42);
 		CraftingOpportunityResolver.CraftingRecipeResolution resolution = new CraftingOpportunityResolver.CraftingRecipeResolution(
-			networkRecipeId,
+			recipeDisplayId,
 			null,
 			4,
 			2,
@@ -197,18 +197,18 @@ class CraftingTaskExecutorTest {
 
 		CraftingTaskExecutor.CraftingPlan plan = CraftingTaskExecutor.toCraftingPlanForTests(resolution);
 
-		assertEquals(networkRecipeId, plan.networkRecipeId());
+		assertEquals(recipeDisplayId, plan.networkRecipeId());
 		assertEquals(8, plan.targetOutputCount());
 	}
 
 	@Test
 	void recipeFillRequestUsesHandlerSyncId() {
-		NetworkRecipeId networkRecipeId = new NetworkRecipeId(7);
+		RecipeDisplayId recipeDisplayId = new RecipeDisplayId(7);
 
-		CraftingTaskExecutor.RecipeFillRequest request = CraftingTaskExecutor.recipeFillRequestForTests(123, networkRecipeId);
+		CraftingTaskExecutor.RecipeFillRequest request = CraftingTaskExecutor.recipeFillRequestForTests(123, recipeDisplayId);
 
 		assertEquals(123, request.syncId());
-		assertEquals(networkRecipeId, request.networkRecipeId());
+		assertEquals(recipeDisplayId, request.networkRecipeId());
 		assertFalse(request.craftAll());
 	}
 

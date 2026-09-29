@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

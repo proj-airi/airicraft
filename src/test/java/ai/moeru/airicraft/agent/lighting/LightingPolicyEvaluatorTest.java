@@ -1,8 +1,8 @@
 package ai.moeru.airicraft.agent.lighting;
 
 import org.junit.jupiter.api.Test;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import ai.moeru.airicraft.agent.tasks.WorldTaskType;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,7 +13,7 @@ class LightingPolicyEvaluatorTest {
 	@Test
 	void skyAccessAtAnySampleIncludingAnEdgeVetoesBothLightingTriggers() {
 		BlockPos origin = new BlockPos(10, 64, -8);
-		for (BlockPos openCell : BlockPos.iterate(origin.add(-2, 0, -2), origin.add(2, 0, 2))) {
+		for (BlockPos openCell : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {
 			boolean skyAccess = LightingRuntime.hasFootLevelSkyAccess(origin, openCell::equals);
 			assertTrue(skyAccess, "Every cell in the 5x5 foot-level area must be checked: " + openCell);
 			for (LightingPolicy.Mode mode : LightingPolicy.Mode.values()) {
@@ -32,7 +32,7 @@ class LightingPolicyEvaluatorTest {
 		BlockPos origin = new BlockPos(10, 64, -8);
 		var sampled = new java.util.HashSet<BlockPos>();
 		assertFalse(LightingRuntime.hasFootLevelSkyAccess(origin, pos -> {
-			sampled.add(pos.toImmutable());
+			sampled.add(pos.immutable());
 			return pos.getY() != origin.getY() || Math.abs(pos.getX() - origin.getX()) > 2
 				|| Math.abs(pos.getZ() - origin.getZ()) > 2;
 		}));
@@ -48,7 +48,7 @@ class LightingPolicyEvaluatorTest {
 			assertEquals(64, pos.getY());
 			assertTrue(Math.abs(pos.getX() - origin.getX()) <= 2);
 			assertTrue(Math.abs(pos.getZ() - origin.getZ()) <= 2);
-			sampled.add(pos.toImmutable());
+			sampled.add(pos.immutable());
 			return pos.equals(origin) ? 3 : 4;
 		});
 		assertEquals(25, sampled.size());
@@ -60,7 +60,7 @@ class LightingPolicyEvaluatorTest {
 
 	@Test
 	void aDarkCenterDoesNotTriggerWhenTheAreaAverageIsBright() {
-		BlockPos origin = BlockPos.ORIGIN;
+		BlockPos origin = BlockPos.ZERO;
 		double average = LightingRuntime.averageFootLevelLight(origin, pos -> true, pos -> pos.equals(origin) ? 0 : 5);
 		assertFalse(LightingPolicyEvaluator.shouldPlace(LightingPolicy.defaults(), true, true, false, average, 0, false));
 	}
@@ -68,7 +68,7 @@ class LightingPolicyEvaluatorTest {
 	@Test
 	void idlePlacementRequiresFiveContinuousSecondsAndRestartsAfterMovement() {
 		var runtime = new LightingRuntime();
-		var position = new net.minecraft.util.math.Vec3d(0.5, 64, 0.5);
+		var position = new net.minecraft.world.phys.Vec3(0.5, 64, 0.5);
 		for (long tick = 0; tick < 100; tick++) assertFalse(runtime.observeStationary(position, true, tick));
 		assertTrue(runtime.observeStationary(position, true, 100));
 		assertTrue(LightingPolicyEvaluator.supportsActivity(null, true));

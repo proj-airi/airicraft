@@ -11,9 +11,9 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.Collections;
 import java.util.Locale;
@@ -22,7 +22,7 @@ import java.util.WeakHashMap;
 
 public class AiricraftClient implements ClientModInitializer {
 	private static final ClientRuntimeController RUNTIME_CONTROLLER = new ClientRuntimeController();
-	private static final Identifier PLANNER_DEBUG_OVERLAY_ID = Identifier.of("airicraft", "planner_debug_overlay");
+	private static final ResourceLocation PLANNER_DEBUG_OVERLAY_ID = ResourceLocation.fromNamespaceAndPath("airicraft", "planner_debug_overlay");
 	private static final Set<Screen> SCREEN_OVERLAY_HOOKS = Collections.newSetFromMap(new WeakHashMap<>());
 
 	public static ClientRuntimeController runtimeController() {
@@ -34,22 +34,22 @@ public class AiricraftClient implements ClientModInitializer {
 		ai.moeru.airicraft.settings.AiricraftSettings.register();
 		net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.START_SERVER_TICK.register(
 			server -> RUNTIME_CONTROLLER.automaticPlaytest().onHostedServerTick(server));
-		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+		ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> dispatcher.register(
 			ClientCommandManager.literal("airicraft")
 				.then(ClientCommandManager.literal("noplanner")
 					.executes(context -> {
 						boolean enabled = RUNTIME_CONTROLLER.togglePlannerEnabled();
-						context.getSource().sendFeedback(Text.literal("Airicraft planner: " + (enabled ? "on" : "off")));
+						context.getSource().sendFeedback(Component.literal("Airicraft planner: " + (enabled ? "on" : "off")));
 						return 1;
 					}))
 				.then(ClientCommandManager.literal("reload")
 					.executes(context -> {
 						try {
-							context.getSource().sendFeedback(Text.literal(RUNTIME_CONTROLLER.reload().feedbackText()));
+							context.getSource().sendFeedback(Component.literal(RUNTIME_CONTROLLER.reload().feedbackText()));
 							return 1;
 						}
 						catch (BridgeUnavailableException exception) {
-							context.getSource().sendError(Text.literal("Airicraft reload failed: " + exception.getMessage()));
+							context.getSource().sendError(Component.literal("Airicraft reload failed: " + exception.getMessage()));
 							return 0;
 						}
 					}))
@@ -77,7 +77,7 @@ public class AiricraftClient implements ClientModInitializer {
 					.then(ClientCommandManager.literal("verbose")
 						.executes(context -> {
 							RUNTIME_CONTROLLER.setPlannerDebugConversationVerbose(!RUNTIME_CONTROLLER.plannerDebugConversationVerbose());
-							context.getSource().sendFeedback(Text.literal(
+							context.getSource().sendFeedback(Component.literal(
 								"Airicraft debug verbose: " + (RUNTIME_CONTROLLER.plannerDebugConversationVerbose() ? "on" : "off")));
 							return 1;
 						}))
@@ -98,27 +98,27 @@ public class AiricraftClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(RUNTIME_CONTROLLER::onClientTick);
 		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(RUNTIME_CONTROLLER::onWorldRender);
 		HudElementRegistry.attachElementAfter(VanillaHudElements.SUBTITLES, PLANNER_DEBUG_OVERLAY_ID, RUNTIME_CONTROLLER::onHudRender);
-		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+		ScreenEvents.AFTER_INIT.register((minecraft, screen, scaledWidth, scaledHeight) -> {
 			if (!SCREEN_OVERLAY_HOOKS.add(screen)) {
 				return;
 			}
-			ScreenEvents.afterRender(screen).register((screenInstance, drawContext, mouseX, mouseY, tickDelta) -> RUNTIME_CONTROLLER.onScreenRender(drawContext));
+			ScreenEvents.afterRender(screen).register((screenInstance, guiGraphics, mouseX, mouseY, tickDelta) -> RUNTIME_CONTROLLER.onScreenRender(guiGraphics));
 			ScreenMouseEvents.allowMouseScroll(screen).register((screenInstance, mouseX, mouseY, horizontalAmount, verticalAmount) ->
 				!RUNTIME_CONTROLLER.onScreenMouseScroll(mouseX, mouseY, verticalAmount)
 			);
 		});
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> RUNTIME_CONTROLLER.onWorldLeave());
-		ClientLifecycleEvents.CLIENT_STOPPING.register(client -> RUNTIME_CONTROLLER.shutdown());
+		ClientPlayConnectionEvents.DISCONNECT.register((listener, minecraft) -> RUNTIME_CONTROLLER.onWorldLeave());
+		ClientLifecycleEvents.CLIENT_STOPPING.register(minecraft -> RUNTIME_CONTROLLER.shutdown());
 	}
 
-	private static Text debugOverlayText(PlannerDebugOverlayMode mode) {
-		return Text.literal("Airicraft debug overlay: " + mode.name().toLowerCase(Locale.ROOT));
+	private static Component debugOverlayText(PlannerDebugOverlayMode mode) {
+		return Component.literal("Airicraft debug overlay: " + mode.name().toLowerCase(Locale.ROOT));
 	}
 
-	private static Text debugOverlayText(PlannerDebugOverlayMode mode, PlannerConversationView view) {
+	private static Component debugOverlayText(PlannerDebugOverlayMode mode, PlannerConversationView view) {
 		if (mode != PlannerDebugOverlayMode.CONVERSATION) {
 			return debugOverlayText(mode);
 		}
-		return Text.literal("Airicraft debug overlay: conversation (" + view.name().toLowerCase(Locale.ROOT) + ")");
+		return Component.literal("Airicraft debug overlay: conversation (" + view.name().toLowerCase(Locale.ROOT) + ")");
 	}
 }

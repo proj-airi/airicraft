@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,8 +12,8 @@ final class AcquisitionPickupSites {
 
 	static List<BlockPos> find(BlockPos drop, Predicate<BlockPos> standable) {
 		List<BlockPos> sites = new ArrayList<>();
-		for (BlockPos feet : BlockPos.iterate(drop.add(-1, 0, -1), drop.add(1, 1, 1))) {
-			if (standable.test(feet)) sites.add(feet.toImmutable());
+		for (BlockPos feet : BlockPos.betweenClosed(drop.offset(-1, 0, -1), drop.offset(1, 1, 1))) {
+			if (standable.test(feet)) sites.add(feet.immutable());
 		}
 		return List.copyOf(sites);
 	}

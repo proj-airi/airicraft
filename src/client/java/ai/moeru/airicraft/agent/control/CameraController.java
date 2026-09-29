@@ -1,14 +1,14 @@
 package ai.moeru.airicraft.agent.control;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.RaycastContext;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -20,7 +20,7 @@ public final class CameraController {
 	private CameraMotion activeMotion;
 	private RotationSpring spring;
 	private boolean directRequest;
-	private ClientPlayerEntity controlledPlayer;
+	private LocalPlayer controlledPlayer;
 	private CompletableFuture<Void> alignment;
 
 	public CameraController() { this(0); }
@@ -33,31 +33,31 @@ public final class CameraController {
 	public int defaultLerpTicks() { return defaultLerpTicks; }
 
 	/** Submit an aim target. Exact interactions use isLookingAt; mining uses blockHit. */
-	public Optional<Rotation> lookAt(MinecraftClient client, Vec3d target) {
-		return startLookAt(client, target, defaultLerpTicks, "action");
+	public Optional<Rotation> lookAt(Minecraft minecraft, Vec3 target) {
+		return startLookAt(minecraft, target, defaultLerpTicks, "action");
 	}
 
-	public Optional<Rotation> faceDirection(ClientPlayerEntity player, String direction) {
+	public Optional<Rotation> faceDirection(LocalPlayer player, String direction) {
 		if (player == null) return Optional.empty();
 		Optional<Rotation> rotation = directionRotation(direction);
 		rotation.ifPresent(value -> request(player, value, defaultLerpTicks, "vision", true));
 		return rotation;
 	}
 
-	public Optional<Rotation> startLookAt(MinecraftClient client, Vec3d target, String reason) {
-		return startLookAt(client, target, defaultLerpTicks, reason);
+	public Optional<Rotation> startLookAt(Minecraft minecraft, Vec3 target, String reason) {
+		return startLookAt(minecraft, target, defaultLerpTicks, reason);
 	}
 
-	public Optional<Rotation> startLookAt(MinecraftClient client, Vec3d target, int durationTicks, String reason) {
-		ClientPlayerEntity player = client == null ? null : client.player;
+	public Optional<Rotation> startLookAt(Minecraft minecraft, Vec3 target, int durationTicks, String reason) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null) return Optional.empty();
-		Optional<Rotation> rotation = lookRotation(player.getEyePos(), target);
+		Optional<Rotation> rotation = lookRotation(player.getEyePosition(), target);
 		rotation.ifPresent(value -> request(player, value, durationTicks, reason, true));
 		return rotation;
 	}
 
 	/** Baritone supplies targets only; this controller owns rotation writes. */
-	public void lookFromBaritone(ClientPlayerEntity player, float yaw, float pitch) {
+	public void lookFromBaritone(LocalPlayer player, float yaw, float pitch) {
 		if (acceptsBaritoneTarget()) request(player, new Rotation(yaw, pitch), defaultLerpTicks, "baritone", false);
 	}
 
@@ -66,51 +66,51 @@ public final class CameraController {
 			&& (activeMotion == null || "baritone".equals(activeMotion.reason()));
 	}
 
-	private void request(ClientPlayerEntity player, Rotation target, int ticks, String reason, boolean direct) {
+	private void request(LocalPlayer player, Rotation target, int ticks, String reason, boolean direct) {
 		if (controlledPlayer != player) {
 			clear();
 			controlledPlayer = player;
 		}
 		if (alignment != null) return;
 		directRequest |= direct;
-		startMotion(new Rotation(player.getYaw(), player.getPitch()), target, ticks, reason);
+		startMotion(new Rotation(player.getYRot(), player.getXRot()), target, ticks, reason);
 	}
 
-	public boolean isLookingAt(MinecraftClient client, Vec3d target) {
-		return isLookingAt(client, target, 0.01F);
+	public boolean isLookingAt(Minecraft minecraft, Vec3 target) {
+		return isLookingAt(minecraft, target, 0.01F);
 	}
 
-	public boolean isLookingAt(MinecraftClient client, Vec3d target, float tolerance) {
-		if (client == null || client.player == null) return false;
-		return lookRotation(client.player.getEyePos(), target)
-			.map(rotation -> aligned(new Rotation(client.player.getYaw(), client.player.getPitch()), rotation, tolerance))
+	public boolean isLookingAt(Minecraft minecraft, Vec3 target, float tolerance) {
+		if (minecraft == null || minecraft.player == null) return false;
+		return lookRotation(minecraft.player.getEyePosition(), target)
+			.map(rotation -> aligned(new Rotation(minecraft.player.getYRot(), minecraft.player.getXRot()), rotation, tolerance))
 			.orElse(false);
 	}
 
-	public boolean isAimingAt(MinecraftClient client, net.minecraft.util.math.Box bounds) {
-		if (client == null || client.player == null) return false;
-		Vec3d eye = client.player.getEyePos();
-		return bounds.contains(eye) || bounds.raycast(eye,
-			eye.add(client.player.getRotationVec(1.0F).multiply(6.0D))).isPresent();
+	public boolean isAimingAt(Minecraft minecraft, net.minecraft.world.phys.AABB bounds) {
+		if (minecraft == null || minecraft.player == null) return false;
+		Vec3 eye = minecraft.player.getEyePosition();
+		return bounds.contains(eye) || bounds.clip(eye,
+			eye.add(minecraft.player.getViewVector(1.0F).scale(6.0D))).isPresent();
 	}
 
 	/** Aim inside the selection shape, including thin blocks such as leaf litter and crops. */
-	public Optional<Rotation> lookAtBlock(MinecraftClient client, BlockPos pos) {
-		if (client == null || client.player == null || client.world == null) return Optional.empty();
-		return blockAim(pos, client.world.getBlockState(pos).getOutlineShape(client.world, pos), client.player.getEyePos())
-			.flatMap(aim -> lookAt(client, aim));
+	public Optional<Rotation> lookAtBlock(Minecraft minecraft, BlockPos pos) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) return Optional.empty();
+		return blockAim(pos, minecraft.level.getBlockState(pos).getShape(minecraft.level, pos), minecraft.player.getEyePosition())
+			.flatMap(aim -> lookAt(minecraft, aim));
 	}
 
-	static Optional<Vec3d> blockAim(BlockPos pos, VoxelShape shape, Vec3d eye) {
-		return shape.getBoundingBoxes().stream()
+	static Optional<Vec3> blockAim(BlockPos pos, VoxelShape shape, Vec3 eye) {
+		return shape.toAabbs().stream()
 			.map(box -> box.getCenter().add(pos.getX(), pos.getY(), pos.getZ()))
-			.min(java.util.Comparator.comparingDouble(eye::squaredDistanceTo));
+			.min(java.util.Comparator.comparingDouble(eye::distanceToSqr));
 	}
 
 	/** Fresh player-direction raycast: render-frame crosshairTarget can lag camera ticks. */
-	public Optional<BlockHitResult> blockHit(MinecraftClient client, BlockPos target) {
-		if (client == null || client.player == null || client.world == null) return Optional.empty();
-		return blockHit(raycast(client.player, client.player.getRotationVec(1.0F)), target);
+	public Optional<BlockHitResult> blockHit(Minecraft minecraft, BlockPos target) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) return Optional.empty();
+		return blockHit(raycast(minecraft.player, minecraft.player.getViewVector(1.0F)), target);
 	}
 
 	static Optional<BlockHitResult> blockHit(HitResult hit, BlockPos target) {
@@ -118,28 +118,28 @@ public final class CameraController {
 			? Optional.of(block) : Optional.empty();
 	}
 
-	private static BlockHitResult raycast(ClientPlayerEntity player, Vec3d direction) {
-		Vec3d eye = player.getEyePos();
-		return player.getWorld().raycast(new RaycastContext(eye, eye.add(direction.multiply(player.getBlockInteractionRange())),
-			RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, player));
+	private static BlockHitResult raycast(LocalPlayer player, Vec3 direction) {
+		Vec3 eye = player.getEyePosition();
+		return player.level().clip(new ClipContext(eye, eye.add(direction.scale(player.blockInteractionRange())),
+			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
 	}
 
 	public boolean capturePending() { return alignment != null; }
 
 	/** Hold path input while turning on the ground; preserve airborne/swimming control. */
-	public boolean allowsBaritoneInput(ClientPlayerEntity player, baritone.api.utils.input.Input input) {
+	public boolean allowsBaritoneInput(LocalPlayer player, baritone.api.utils.input.Input input) {
 		if (activeMotion == null || input == baritone.api.utils.input.Input.SNEAK) return true;
 		if (!"baritone".equals(activeMotion.reason())) return false;
 		return switch (input) {
 			case CLICK_LEFT -> {
-				var intended = raycast(player, Vec3d.fromPolar(activeMotion.target().pitch(), activeMotion.target().yaw()));
+				var intended = raycast(player, Vec3.directionFromRotation(activeMotion.target().pitch(), activeMotion.target().yaw()));
 				yield intended.getType() == HitResult.Type.BLOCK
-					&& blockHit(raycast(player, player.getRotationVec(1.0F)), intended.getBlockPos()).isPresent();
+					&& blockHit(raycast(player, player.getViewVector(1.0F)), intended.getBlockPos()).isPresent();
 			}
-			case CLICK_RIGHT -> aligned(new Rotation(player.getYaw(), player.getPitch()), activeMotion.target(), 0.5F);
+			case CLICK_RIGHT -> aligned(new Rotation(player.getYRot(), player.getXRot()), activeMotion.target(), 0.5F);
 			case MOVE_FORWARD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, JUMP, SPRINT ->
-				!player.isOnGround() || player.isTouchingWater()
-					|| Math.abs(MathHelper.wrapDegrees(activeMotion.target().yaw() - player.getYaw())) < 10.0F;
+				!player.onGround() || player.isInWater()
+					|| Math.abs(Mth.wrapDegrees(activeMotion.target().yaw() - player.getYRot())) < 10.0F;
 			case SNEAK -> true;
 		};
 	}
@@ -150,17 +150,17 @@ public final class CameraController {
 		return alignment;
 	}
 
-	public void tick(MinecraftClient client) {
-		ClientPlayerEntity player = client == null ? null : client.player;
+	public void tick(Minecraft minecraft) {
+		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null || !player.isAlive() || (controlledPlayer != null && controlledPlayer != player)) {
 			clear();
 			return;
 		}
-		tickMotion(new Rotation(player.getYaw(), player.getPitch())).ifPresent(rotation -> {
+		tickMotion(new Rotation(player.getYRot(), player.getXRot())).ifPresent(rotation -> {
 			// Leave previous angles intact for Minecraft's render interpolation.
-			player.setYaw(rotation.yaw());
-			player.setPitch(rotation.pitch());
-			player.setHeadYaw(rotation.yaw());
+			player.setYRot(rotation.yaw());
+			player.setXRot(rotation.pitch());
+			player.setYHeadRot(rotation.yaw());
 		});
 		directRequest = false;
 		if (activeMotion == null && alignment != null) {
@@ -202,7 +202,7 @@ public final class CameraController {
 		if (activeMotion == null) return Optional.empty();
 		Rotation rotation = spring.advance(activeMotion.target(), 0.05D, activeMotion.frequency());
 		if (aligned(rotation, activeMotion.target(), 0.01F) && spring.atRest()) {
-			rotation = new Rotation(rotation.yaw() + MathHelper.wrapDegrees(activeMotion.target().yaw() - rotation.yaw()),
+			rotation = new Rotation(rotation.yaw() + Mth.wrapDegrees(activeMotion.target().yaw() - rotation.yaw()),
 				activeMotion.target().pitch());
 			activeMotion = null;
 			spring = null;
@@ -211,22 +211,22 @@ public final class CameraController {
 	}
 
 	private static boolean aligned(Rotation current, Rotation target, float tolerance) {
-		return Math.abs(MathHelper.wrapDegrees(target.yaw() - current.yaw())) < tolerance
+		return Math.abs(Mth.wrapDegrees(target.yaw() - current.yaw())) < tolerance
 			&& Math.abs(target.pitch() - current.pitch()) < tolerance;
 	}
 
-	public static Optional<Rotation> lookRotation(Vec3d eyePos, Vec3d target) {
+	public static Optional<Rotation> lookRotation(Vec3 eyePos, Vec3 target) {
 		if (eyePos == null || target == null) {
 			return Optional.empty();
 		}
-		Vec3d delta = target.subtract(eyePos);
+		Vec3 delta = target.subtract(eyePos);
 		double horizontalDistance = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
 		if (horizontalDistance < 1.0E-7D && Math.abs(delta.y) < 1.0E-7D) {
 			return Optional.empty();
 		}
 		float yaw = (float) Math.toDegrees(Math.atan2(delta.z, delta.x)) - 90.0F;
 		float pitch = (float) -Math.toDegrees(Math.atan2(delta.y, horizontalDistance));
-		return Optional.of(new Rotation(yaw, MathHelper.clamp(pitch, -90.0F, 90.0F)));
+		return Optional.of(new Rotation(yaw, Mth.clamp(pitch, -90.0F, 90.0F)));
 	}
 
 	public static Optional<Rotation> directionRotation(String direction) {

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.llm;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
@@ -13,7 +13,7 @@ class CaveSurveyToolProviderTest {
 			List.of(origin, origin.east(), new BlockPos(3, 64, 0), east, east, north)));
 	}
 	@Test void noObservedFloorsDoesNotInventAnExplorationGoal() {
-		assertTrue(CaveSurveyToolProvider.selectWaypoints(BlockPos.ORIGIN, List.of()).isEmpty());
+		assertTrue(CaveSurveyToolProvider.selectWaypoints(BlockPos.ZERO, List.of()).isEmpty());
 	}
 	@Test void surveyIsReadOnlyAndRadiusIsBounded() {
 		var provider = new CaveSurveyToolProvider(ignored -> {});
