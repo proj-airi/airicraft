@@ -238,18 +238,23 @@ public final class WakeScheduler {
 	}
 
 	/**
-	 * A {@code PREEMPT} wake at the head asks the planner to cancel a turn that its safety change made stale. Whether
+	 * A pending {@code PREEMPT} wake asks the planner to cancel a turn that its safety change made stale. Whether
 	 * that works is audited once per outcome; the wake keeps waiting when the turn cannot be preempted.
 	 */
 	private boolean preempt(TaskWakeHost host) {
-		Wake head = taskWakes.peekFirst();
-		if (head == null || !head.preempts()) return false;
+		// The newest safety epoch decides, wherever its wake waits: ordinary task wakes queued earlier do not shield
+		// the stale turn.
+		Wake preempting = null;
+		for (Wake wake : taskWakes) if (wake.preempts()) preempting = wake;
+		if (preempting == null) return false;
 		String outcome = host.preemptInFlight();
 		if (!"preempted".equals(outcome)) {
-			auditDeferred(host, head, "preempt." + outcome);
+			auditDeferred(host, preempting, "preempt." + outcome);
 			return false;
 		}
-		audit(host, head, "preempted", "preempt.safety_epoch");
+		audit(host, preempting, "preempted", "preempt.safety_epoch");
+		// The reflex is why the planner wakes now; earlier wakes stay queued behind it (or are satisfied by its turn).
+		if (taskWakes.remove(preempting)) taskWakes.addFirst(preempting);
 		return !host.plannerInFlight();
 	}
 

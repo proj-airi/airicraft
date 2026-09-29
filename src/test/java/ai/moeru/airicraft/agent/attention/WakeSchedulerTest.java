@@ -37,6 +37,19 @@ class WakeSchedulerTest {
 		}
 	}
 
+	@Test void aPreemptWakeBehindAnOrdinaryWakeStillPreemptsAndGoesFirst() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		host.preemption = "preempted";
+		scheduler.offerTask(Wake.task(30, 10, 0, null));
+		scheduler.offerTask(Wake.task(30, 11, 0, null).preempting());
+		assertTrue(scheduler.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "preempted:11:preempt.safety_epoch", "deliver:11"), host.log);
+		assertTrue(scheduler.releaseTaskWake(host));
+		assertEquals("deliver:10", host.log.getLast(), "the earlier wake stays queued behind the reflex");
+	}
+
 	@Test void thePendingSetIsBoundedAndKeepsAttentionAndPreemptingWakes() {
 		var scheduler = new WakeScheduler();
 		var host = new Host();
