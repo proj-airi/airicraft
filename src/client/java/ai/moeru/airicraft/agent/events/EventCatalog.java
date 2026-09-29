@@ -109,8 +109,9 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.threat_detected", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.threat_detected", true, null, true)),
 
 			// rules
-			new EventTypeSpec("rules.reverted", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy", "SaliencePolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.reverted")),
+			new EventTypeSpec("rules.reverted", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy", "SaliencePolicy"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("rules.reverted")),
 			new EventTypeSpec("rules.step_failed", false, EventFamily.INTERNAL, Set.of("RuleAttentionPolicy", "SaliencePolicy"), EventVisibility.DIAGNOSTIC, EventRoutingProfile.rawOnly("rules.step_failed")),
+			new EventTypeSpec("rules.updated", false, EventFamily.INTERNAL, Set.of("PlannerRules"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("rules.updated")),
 
 			// session
 			new EventTypeSpec("session.connection_lost", false, EventFamily.INTERNAL, Set.of("SessionRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("session.connection_lost", true, null, false)),

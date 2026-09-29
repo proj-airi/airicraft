@@ -246,6 +246,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final FoodOutcomeIndex foodOutcomes = new FoodOutcomeIndex(32);
 	private final AttentionDecisionLog attentionDecisionLog = new AttentionDecisionLog();
 	private final RuleAttentionPolicy attentionPolicy;
+	private final ai.moeru.airicraft.rules.RulesStore rulesStore = new ai.moeru.airicraft.rules.RulesStore();
+	private ai.moeru.airicraft.agent.rules.PlannerRules plannerRules;
 	private final WakePresenter wakePresenter;
 	private final EventPolicyState eventPolicyState = new EventPolicyState();
 	private final ActiveJobRuntime activeJobRuntime = new ActiveJobRuntime();
@@ -463,6 +465,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.saliencePolicy = new ai.moeru.airicraft.agent.perception.SaliencePolicy(eventBus,
 			ai.moeru.airicraft.rules.RuleModule.bundledSalience());
 		this.saliencePolicy.recordSteps(salienceStepLog::record);
+		this.attentionPolicy.useRevert(rulesStore);
+		this.saliencePolicy.useRevert(rulesStore);
+		this.plannerRules = new ai.moeru.airicraft.agent.rules.PlannerRules(rulesStore, plannerRulesHost());
 		// Queued candidates belong to the world and the life they were seen in.
 		lifecycleDispatcher.register("salience", EnumSet.of(LifecycleBoundary.WORLD_LEFT, LifecycleBoundary.AWAITING_RESPAWN,
 			LifecycleBoundary.SHUTDOWN), (boundary, tick) -> saliencePolicy.clear());
@@ -610,6 +615,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	private void tickClient(Minecraft minecraft) {
 		eventBus.bindOwnerThread(Thread.currentThread());
+		plannerRules.drain();
 		drainInteractionEvidence(minecraft);
 		ai.moeru.airicraft.agent.spatial.WorldTravelPolicy.tick(minecraft, activeTaskInProgress());
 		stopWorkOutsideTravelBounds(minecraft);
@@ -872,6 +878,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 
 	/** Selects the salience rule module; the controller passes the config override or the bundled module. */
 	public void useSalienceRules(ai.moeru.airicraft.rules.RuleModule module) {
+		rulesStore.reset(module);
 		saliencePolicy.useModule(module);
 	}
 
@@ -1728,13 +1735,64 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	/** Attention decision totals and the latest decisions, for the bridge debug state and the dashboard. */
 	/** Selects the attention rule module; the controller passes the config override or the bundled module. */
 	public void useAttentionRules(ai.moeru.airicraft.rules.RuleModule module) {
+		rulesStore.reset(module);
 		attentionPolicy.useModule(module);
+	}
+
+	/** The planner's authorship of its own rule modules; the rules tools are bound to it. */
+	public ai.moeru.airicraft.agent.rules.PlannerRules plannerRules() {
+		return plannerRules;
+	}
+
+	private ai.moeru.airicraft.agent.rules.PlannerRules.Host plannerRulesHost() {
+		return new ai.moeru.airicraft.agent.rules.PlannerRules.Host() {
+			@Override public long tick() { return tickCount; }
+
+			@Override public boolean safetyHoldOpen() { return survivalReflexRuntime.snapshot().holdId() != null; }
+
+			@Override public ai.moeru.airicraft.rules.RuleModule running(ai.moeru.airicraft.rules.RuleModule.Hook hook) {
+				return hook == ai.moeru.airicraft.rules.RuleModule.Hook.SALIENCE ? saliencePolicy.module() : attentionPolicy.module();
+			}
+
+			@Override public void activate(ai.moeru.airicraft.rules.RuleModule module) {
+				if (module.hook() == ai.moeru.airicraft.rules.RuleModule.Hook.SALIENCE) saliencePolicy.useModule(module);
+				else attentionPolicy.useModule(module);
+			}
+
+			@Override public List<ai.moeru.airicraft.agent.attention.AttentionDecision> decisions() {
+				return attentionDecisionLog.latest(ai.moeru.airicraft.agent.attention.AttentionDecisionLog.DEFAULT_CAPACITY);
+			}
+
+			@Override public Map<Long, SemanticEvent> events() {
+				var events = new LinkedHashMap<Long, SemanticEvent>();
+				for (SemanticEvent event : eventBus.query(null).events()) events.put(event.seqNo(), event);
+				return events;
+			}
+
+			@Override public List<ai.moeru.airicraft.agent.perception.SaliencePolicy.StepRecord> salienceSteps() {
+				return salienceStepLog.query(null).entries().stream().map(ai.moeru.airicraft.agent.perception.SalienceStepLog.Entry::step).toList();
+			}
+
+			@Override public Map<String, Object> summary(ai.moeru.airicraft.rules.RuleModule.Hook hook) {
+				if (hook == ai.moeru.airicraft.rules.RuleModule.Hook.SALIENCE) return saliencePolicy.debugState();
+				var summary = new LinkedHashMap<String, Object>(attentionPolicy.debugState());
+				var byRule = new java.util.TreeMap<String, Integer>();
+				for (var decision : attentionDecisionLog.latest(100)) byRule.merge(decision.ruleId(), 1, Integer::sum);
+				summary.put("recentRuleIds", byRule);
+				return summary;
+			}
+
+			@Override public void publish(String type, Map<String, Object> payload) {
+				eventBus.from(ai.moeru.airicraft.agent.rules.PlannerRules.SOURCE).publish(tickCount, type, payload);
+			}
+		};
 	}
 
 	public Map<String, Object> debugAttentionState() {
 		var state = new LinkedHashMap<String, Object>(attentionDecisionLog.debugState(32));
 		state.put("rules", attentionPolicy.debugState());
 		state.put("scheduler", dialogueRuntime.wakeSchedulerDebugState());
+		state.put("plannerRules", plannerRules.debugState());
 		return state;
 	}
 

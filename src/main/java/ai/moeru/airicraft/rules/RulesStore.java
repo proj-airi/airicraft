@@ -107,6 +107,11 @@ public final class RulesStore implements RuleRevert {
 		}
 	}
 
+	/** The number the next accepted version will get. */
+	public synchronized int nextNumber(RuleModule.Hook hook) {
+		return slots.get(hook).next;
+	}
+
 	/** The tick from which another accepted edit is allowed, or {@code -1} if one is allowed now. */
 	public synchronized long retryAtTick(RuleModule.Hook hook, long tick) {
 		ArrayDeque<Long> updates = slots.get(hook).updates;

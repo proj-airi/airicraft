@@ -790,7 +790,7 @@
         "SaliencePolicy"
       ],
       "profile": null,
-      "observeVisible": false,
+      "observeVisible": true,
       "extraWake": null
     },
     {
@@ -801,6 +801,15 @@
       ],
       "profile": null,
       "observeVisible": false,
+      "extraWake": null
+    },
+    {
+      "type": "rules.updated",
+      "producers": [
+        "PlannerRules"
+      ],
+      "profile": null,
+      "observeVisible": true,
       "extraWake": null
     },
     {

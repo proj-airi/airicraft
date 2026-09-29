@@ -34,6 +34,27 @@ class RuntimeFlightRecorderTest {
 		assertEquals("something_wrong", records.getLast().get("parsedResponse").getAsString());
 	}
 
+	@Test void recordsEachPlannerRuleVersionOnceWithItsSource() throws Exception {
+		var store = new ai.moeru.airicraft.rules.RulesStore();
+		var writer = new RuntimeFlightRecorder(root);
+		store.append(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION, ai.moeru.airicraft.rules.RulesStore.Kind.UPDATE,
+			"(lib => ({step(){}}))", "mute pickups while building", 40, 0, java.util.Map.of("replayed", 3));
+		writer.drainPlannerRules(store, "one");
+		writer.drainPlannerRules(store, "again");
+		store.append(ai.moeru.airicraft.rules.RuleModule.Hook.ATTENTION, ai.moeru.airicraft.rules.RulesStore.Kind.ROLLBACK,
+			null, "back to the base", 90, 0, null);
+		writer.drainPlannerRules(store, "two");
+		var lines = Files.readAllLines(root.resolve("planner-rules.jsonl"));
+		assertEquals(2, lines.size());
+		var first = JsonParser.parseString(lines.getFirst()).getAsJsonObject().getAsJsonObject("rules");
+		assertEquals("attention", first.get("hook").getAsString());
+		assertEquals("(lib => ({step(){}}))", first.get("source").getAsString());
+		assertEquals("mute pickups while building", first.get("reason").getAsString());
+		assertEquals(3, first.getAsJsonObject("replay").get("replayed").getAsInt());
+		var second = JsonParser.parseString(lines.getLast()).getAsJsonObject().getAsJsonObject("rules");
+		assertTrue(second.get("activatesBase").getAsBoolean());
+	}
+
 	@Test void laterCallsCanFinishFirstWithoutLosingEarlierFailures() throws Exception {
 		var source = new LlmFlightRecorder();
 		var writer = new RuntimeFlightRecorder(root);
