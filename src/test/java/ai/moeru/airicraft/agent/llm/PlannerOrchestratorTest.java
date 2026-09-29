@@ -1786,6 +1786,98 @@ class PlannerOrchestratorTest {
 		assertEquals(1, backend.callCount());
 	}
 
+	private static PlannerOrchestrator preemptionOrchestrator(RecordingBackend backend, List<String> invokedTools) {
+		return newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY,
+			3, 10, 10, 100, 128, Clock.systemUTC(),
+			toolCall -> {
+				invokedTools.add(toolCall.name());
+				return CompletableFuture.completedFuture("Tool result for " + toolCall.name() + ": ok");
+			},
+			PlannerChatSink.NO_OP);
+	}
+
+	private static void awaitCalls(PlannerOrchestrator orchestrator, RecordingBackend backend, int calls) {
+		Instant deadline = Instant.now().plus(Duration.ofSeconds(2));
+		while (backend.callCount() < calls && Instant.now().isBefore(deadline)) orchestrator.poll();
+		assertEquals(calls, backend.callCount());
+	}
+
+	@Test
+	void aNewSafetyEpochPreemptsAnUnexternalizedTurn() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		assertEquals(PlannerOrchestrator.Preemption.NOTHING_IN_FLIGHT, orchestrator.preemptStaleTurn());
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		assertEquals(PlannerOrchestrator.Preemption.NOT_STALE, orchestrator.preemptStaleTurn(), "the turn is valid for the current epoch");
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.PREEMPTED, orchestrator.preemptStaleTurn());
+		assertEquals(List.of(1L), backend.discardedGenerations(), "the backend is asked to cancel the call");
+		List<StalePlannerRejection> preempted = orchestrator.drainStalePlannerRejections();
+		assertEquals(1, preempted.size());
+		assertTrue(preempted.getFirst().preempted());
+		assertEquals("PLANNER_REQUEST", preempted.getFirst().phase());
+		assertEquals(0L, preempted.getFirst().requestSafetyEpoch());
+		assertEquals(1L, preempted.getFirst().currentSafetyEpoch());
+
+		backend.succeed(0, replyOnly("too late"));
+		for (int i = 0; i < 20; i++) assertNull(orchestrator.poll(), "a preempted turn's late response is never applied");
+		assertTrue(orchestrator.drainStalePlannerRejections().isEmpty());
+	}
+
+	@Test
+	void aHoldChangeWithinTheEpochIsNotPreempted() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		orchestrator.updateSafetyContext(1L, "hold-1", false);
+		orchestrator.submit(autonomousRequestAt(20L, 2_000L, "reflex resolved holdId=hold-1", "survival-resolved").withSafetyContext(1L, "hold-1"));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		orchestrator.updateSafetyContext(1L, null, false);
+		assertEquals(PlannerOrchestrator.Preemption.NOT_STALE, orchestrator.preemptStaleTurn());
+		assertTrue(orchestrator.hasInFlight());
+	}
+
+	@Test
+	void aTurnIsNeverPreemptedAfterASideEffectTool() {
+		RecordingBackend backend = new RecordingBackend();
+		var invokedTools = new ArrayList<String>();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, invokedTools);
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("cancel", PlannerToolCatalog.CANCEL_TASK, new JsonObject(), null)), null));
+		awaitCalls(orchestrator, backend, 2);
+		assertEquals(List.of(PlannerToolCatalog.CANCEL_TASK), invokedTools);
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.SIDE_EFFECT_TOOL_RAN, orchestrator.preemptStaleTurn());
+		assertTrue(orchestrator.hasInFlight());
+		backend.succeed(1, replyOnly("follow-up after the side effect"));
+		List<StalePlannerRejection> rejected = awaitStaleRejections(orchestrator);
+		assertFalse(rejected.getFirst().preempted(), "it is rejected on completion, as before Phase 5");
+	}
+
+	@Test
+	void readToolResultsSurviveAPreemption() {
+		RecordingBackend backend = new RecordingBackend();
+		PlannerOrchestrator orchestrator = preemptionOrchestrator(backend, new ArrayList<>());
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "continue mining").withSafetyContext(0L, null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("look", PlannerToolCatalog.INSPECT_INVENTORY, new JsonObject(), null)), null));
+		awaitCalls(orchestrator, backend, 2);
+
+		orchestrator.updateSafetyContext(1L, "hold-1", true);
+		assertEquals(PlannerOrchestrator.Preemption.PREEMPTED, orchestrator.preemptStaleTurn());
+		assertEquals("TOOL_FOLLOW_UP", orchestrator.drainStalePlannerRejections().getFirst().phase());
+		// This test backend cannot cancel: let the orphaned call finish so it frees its attempt slot.
+		backend.succeed(1, replyOnly("late"));
+		backend.awaitCompletions(2, Duration.ofSeconds(1));
+		orchestrator.submit(autonomousRequestAt(20L, 2_000L, "reflex started", "reflex-started").withSafetyContext(1L, "hold-1"));
+		awaitCalls(orchestrator, backend, 3);
+		assertTrue(backend.conversation(2).messages().stream().anyMatch(message -> message.content().contains("Tool result: INVENTORY_UNAVAILABLE")),
+			"the read tool's exchange is kept as evidence");
+	}
+
 	@Test
 	void reflexEpochRejectsOldPlannerToolsAndLaunchesConsolidatedSafeTurn() {
 		RecordingBackend backend = new RecordingBackend();

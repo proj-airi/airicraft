@@ -496,6 +496,52 @@ public final class PlannerOrchestrator {
 		safetyLaunchBlocked = false;
 	}
 
+	/** What {@link #preemptStaleTurn()} did; the scheduler records the lowercase name as its gate. */
+	public enum Preemption {
+		PREEMPTED,
+		NOTHING_IN_FLIGHT,
+		NOT_STALE,
+		TOOL_EXECUTING,
+		SIDE_EFFECT_TOOL_RAN,
+		REPLY_ACCEPTED;
+
+		public String gate() {
+			return name().toLowerCase(Locale.ROOT);
+		}
+	}
+
+	/**
+	 * Cancels the active turn when a safety epoch newer than its request made it stale and it has externalized
+	 * nothing: its model call is still running, no tool is executing, and no tool other than a read tool ran in this
+	 * generation (spec O3: never preempt after a side effect). The result is the same as a stale rejection, only
+	 * earlier: the generation is discarded, and its trigger is not replayed; read-tool results stay as evidence.
+	 * A hold change within the same epoch is not preempted, since the planner's own tools can cause it.
+	 */
+	public Preemption preemptStaleTurn() {
+		long generation = sessionCoordinator.activeGeneration();
+		if (!enabled || generation <= 0L || !sessionCoordinator.hasReplaceableActiveSession()) return Preemption.NOTHING_IN_FLIGHT;
+		PlannerContextSnapshot snapshot = sessionCoordinator.contextSnapshotFor(generation);
+		PlannerRequest request = snapshot == null ? null : snapshot.request();
+		if (request == null || request.safetyEpoch() >= minimumSafetyEpoch) return Preemption.NOT_STALE;
+		if (pendingToolExecution != null) return Preemption.TOOL_EXECUTING;
+		if (awaitingAcceptedReplyRecord) return Preemption.REPLY_ACCEPTED;
+		if (recordedToolExchanges(generation).stream().anyMatch(exchange -> exchange.toolCall() == null
+			|| !toolRegistry.isReadTool(exchange.toolCall().name()))) return Preemption.SIDE_EFFECT_TOOL_RAN;
+		PlannerSessionPhase phase = sessionCoordinator.activePhase();
+		commitRecordedToolExchanges(generation);
+		stalePlannerRejections.addLast(new StalePlannerRejection(generation, request.safetyEpoch(), minimumSafetyEpoch,
+			request.safetyHoldId(), currentSafetyHoldId, phase == null ? "UNKNOWN" : phase.name(), true));
+		turnJournal.markSuperseded(generation);
+		contextAggregator.dropSupersededGeneration(sessionCoordinator.supersedeActiveSessionIfReplaceable());
+		committedSnapshotGenerations.remove(generation);
+		recordConversationSources();
+		endTurnSpan();
+		// Wait for an identified ownership/event wake; do not replay the obsolete trigger.
+		pendingSubmitRequest = null;
+		clearCoalesceState();
+		return Preemption.PREEMPTED;
+	}
+
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
 		if (stalePlannerRejections.isEmpty()) {
 			return List.of();
