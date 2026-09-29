@@ -130,6 +130,21 @@ class WakeCharacterizationTest {
 				.anyMatch(trigger -> "@agent line 4".equals(trigger.text())));
 		}
 	}
+	/** W9: the tool queue asks for its own review at a report_to_me checkpoint and when its FIFO runs empty. */
+	@Test void tool_queue_review() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			h.backend.injectMockResponse(ai.moeru.airicraft.agent.llm.PlannerResponse.toolCalls(List.of(
+				new ai.moeru.airicraft.agent.llm.PlannerToolCall("look", ai.moeru.airicraft.agent.llm.PlannerToolCatalog.INSPECT_INVENTORY, new com.google.gson.JsonObject(), null),
+				new ai.moeru.airicraft.agent.llm.PlannerToolCall("report", ai.moeru.airicraft.agent.llm.PlannerQueueToolProvider.REPORT, new com.google.gson.JsonObject(), null)), null));
+			h.chat("Alex", "@agent check your inventory and tell me");
+			h.tick(20);
+			var outcomes = auditOutcomes(h);
+			assertTrue(outcomes.stream().anyMatch(outcome -> outcome.startsWith("submitted:W9")), outcomes.toString());
+			assertTrue(h.backend.requests().size() >= 2, "the review wakes the planner");
+			h.transcript("tool_queue_review").assertMatchesGolden("tool_queue_review");
+		}
+	}
 	@Test void damage_outside_reflex() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerHealthUpdated(true, 20, 16); h.tick(10);

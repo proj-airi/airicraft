@@ -1,0 +1,196 @@
+{
+  "events": [
+    {
+      "payload": {
+        "player": "Alex",
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "seqNo": 1,
+      "tick": 1,
+      "type": "social.player_joined_nearby"
+    },
+    {
+      "payload": {
+        "message": "@agent check your inventory and tell me",
+        "normalizedMessage": "@agent check your inventory and tell me",
+        "player": "Alex"
+      },
+      "seqNo": 2,
+      "tick": 1,
+      "type": "social.player_spoke"
+    },
+    {
+      "payload": {
+        "message": "@agent check your inventory and tell me",
+        "normalizedMessage": "@agent check your inventory and tell me",
+        "player": "Alex"
+      },
+      "seqNo": 3,
+      "tick": 1,
+      "type": "social.player_addressed_agent"
+    },
+    {
+      "payload": {
+        "objective": {}
+      },
+      "seqNo": 4,
+      "tick": 1,
+      "type": "objective.changed"
+    }
+  ],
+  "requests": [
+    {
+      "discarded": false,
+      "generation": 1,
+      "index": 1,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "USER_TURN",
+          "role": "user",
+          "text": "Alex: @agent check your inventory and tell me"
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 0,
+        "decisionOwner": "controller",
+        "events": [
+          {
+            "payload": {
+              "player": "Alex",
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "seqNo": 1,
+            "tick": 1,
+            "type": "social.player_joined_nearby"
+          },
+          {
+            "payload": {
+              "objective": {}
+            },
+            "seqNo": 4,
+            "tick": 1,
+            "type": "objective.changed"
+          }
+        ],
+        "notices": [
+          "<time>",
+          "Session mode is currently remote multiplayer.",
+          "Primary interaction player is Alex.",
+          "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
+          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+        ],
+        "serverTick": -1,
+        "stateBaseline": true,
+        "throughEventSequence": 4,
+        "tick": 1,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        }
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 1
+    },
+    {
+      "discarded": false,
+      "generation": 2,
+      "index": 2,
+      "newMessages": [
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "INVENTORY_UNAVAILABLE: world_not_loaded"
+        },
+        {
+          "kind": "TOOL_RESULT",
+          "role": "tool",
+          "text": "Report checkpoint reached; execution continues."
+        }
+      ],
+      "observe": {
+        "actuatorOwner": "idle",
+        "afterEventSequence": 4,
+        "decisionOwner": "controller",
+        "events": [],
+        "notices": [
+          "report_to_me reached. Review the requested results; the remaining FIFO continues independently.",
+          "REPORT REQUEST: {}"
+        ],
+        "serverTick": -1,
+        "throughEventSequence": 4,
+        "tick": 4,
+        "toolQueue": {
+          "aborting": false,
+          "pending": []
+        },
+        "wake": [
+          {
+            "reason": "tool_queue_review"
+          }
+        ]
+      },
+      "owner": "controller",
+      "phase": "PLANNER_REQUEST",
+      "prefix": {
+        "systemSha": "0ef14b425ca781b7a2f42f590e0817a45c091e3bfb5ca67d90884af92f20f6d1",
+        "toolsSha": "a2308933ade8f281d78df6950274019fb1453d9d1a2b2755f39a9594d677d539"
+      },
+      "tick": 4
+    }
+  ],
+  "scenario": "tool_queue_review",
+  "wakeAudit": [
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "DIRECT_GUIDANCE"
+      ],
+      "owner": "controller",
+      "path": "W1",
+      "serverTick": -1,
+      "speakers": [
+        "Alex"
+      ],
+      "tick": 1,
+      "triggerTypes": [
+        "CHAT"
+      ],
+      "wakeTick": 1
+    },
+    {
+      "coalescingKeys": [],
+      "kind": "submitted",
+      "origins": [
+        "AUTONOMOUS"
+      ],
+      "owner": "controller",
+      "path": "W9",
+      "review": "checkpoint",
+      "serverTick": -1,
+      "speakers": [
+        "tool_queue"
+      ],
+      "tick": 4,
+      "triggerTypes": [
+        "SYSTEM"
+      ],
+      "wakeTick": 4
+    }
+  ]
+}
