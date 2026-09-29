@@ -33,7 +33,6 @@ final class WakeScenarioHarness implements AutoCloseable {
 		// Decide through the bundled GraalJS rules, not the cold-engine fallback; both decide identically.
 		try {
 			ai.moeru.airicraft.rules.RuleEngine.shared(ai.moeru.airicraft.rules.RuleModule.bundledAttention()).awaitReady(Duration.ofSeconds(60));
-			ai.moeru.airicraft.rules.RuleEngine.shared(ai.moeru.airicraft.rules.RuleModule.bundledSalience()).awaitReady(Duration.ofSeconds(60));
 		}
 		catch (ai.moeru.airicraft.rules.RuleException exception) { throw new AssertionError(exception); }
 		backend.closeGate();
@@ -86,7 +85,12 @@ final class WakeScenarioHarness implements AutoCloseable {
 	}
 	void event(String type, Map<String, Object> payload) { runtime.appendEventForTests(type, payload); }
 	/** A noticing sensor's candidate, as if sampled this tick; the next tick's salience step decides on it. */
-	void candidate(ai.moeru.airicraft.agent.perception.PerceptCandidate candidate) { runtime.saliencePolicyForTests().offer(candidate, tick); }
+	void candidate(ai.moeru.airicraft.agent.perception.PerceptCandidate candidate) {
+		// Decide through the warm bundled salience rules; only scenarios that notice something pay for the warm-up.
+		try { ai.moeru.airicraft.rules.RuleEngine.shared(ai.moeru.airicraft.rules.RuleModule.bundledSalience()).awaitReady(Duration.ofSeconds(60)); }
+		catch (ai.moeru.airicraft.rules.RuleException exception) { throw new AssertionError(exception); }
+		runtime.saliencePolicyForTests().offer(candidate, tick);
+	}
 	static ai.moeru.airicraft.agent.perception.PerceptCandidate block(String blockId, int x, int y, int z, double distance) {
 		return new ai.moeru.airicraft.agent.perception.PerceptCandidate("block:" + blockId + "@" + x + "," + y + "," + z, "block",
 			Map.of("blockId", blockId, "x", x, "y", y, "z", z, "distance", distance, "direction", "north",

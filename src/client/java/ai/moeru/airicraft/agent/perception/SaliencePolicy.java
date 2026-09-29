@@ -50,6 +50,8 @@ public final class SaliencePolicy {
 	private final ArrayDeque<Pending> pending = new ArrayDeque<>();
 	private final ArrayDeque<Map<String, Object>> recent = new ArrayDeque<>();
 	private Consumer<StepRecord> recorder = ignored -> { };
+	private RuleModule module;
+	/** Built on first use, so a runtime that never notices anything never warms a salience engine. */
 	private RuleEngine engine;
 	private String ruleState = "{}";
 	private int consecutiveFailures;
@@ -73,13 +75,19 @@ public final class SaliencePolicy {
 		if (Objects.requireNonNull(module, "module").hook() != RuleModule.Hook.SALIENCE) {
 			throw new IllegalArgumentException("not a salience module: " + module.origin());
 		}
-		engine = RuleEngine.shared(module);
+		this.module = module;
+		engine = null;
 		ruleState = "{}";
 		consecutiveFailures = 0;
 	}
 
 	public synchronized RuleModule module() {
-		return engine.module();
+		return module;
+	}
+
+	private RuleEngine engine() {
+		if (engine == null) engine = RuleEngine.shared(module);
+		return engine;
 	}
 
 	public synchronized void recordSteps(Consumer<StepRecord> recorder) {
@@ -88,7 +96,7 @@ public final class SaliencePolicy {
 
 	/** Block ids and {@code #tags} the module asked the host to scan for; empty while the engine is cold. */
 	public synchronized Set<String> blockInterests() {
-		var interests = engine.interests();
+		var interests = engine().interests();
 		var blocks = new LinkedHashSet<String>();
 		if (interests.has("blocks") && interests.get("blocks").isJsonArray()) {
 			for (JsonElement element : interests.getAsJsonArray("blocks")) {
@@ -123,12 +131,12 @@ public final class SaliencePolicy {
 	public synchronized List<Percept> step(long tick, Map<String, Object> context, int candidatesPerStep) {
 		expire(tick);
 		if (pending.isEmpty()) return List.of();
-		RuleException loadFailure = engine.loadFailure();
+		RuleException loadFailure = engine().loadFailure();
 		if (loadFailure != null) {
 			fail(tick, loadFailure);
 			return List.of();
 		}
-		if (!engine.ready()) return List.of();
+		if (!engine().ready()) return List.of();
 		var batch = new ArrayList<Pending>();
 		for (Pending entry : pending) {
 			if (batch.size() >= candidatesPerStep) break;
@@ -138,7 +146,7 @@ public final class SaliencePolicy {
 		String stateBefore = ruleState;
 		RuleStepResult result;
 		try {
-			result = engine.step(input.toString(), ruleState);
+			result = engine().step(input.toString(), ruleState);
 		}
 		catch (RuleException exception) {
 			if (!"cold".equals(exception.code())) fail(tick, exception);
@@ -149,7 +157,7 @@ public final class SaliencePolicy {
 		steps++;
 		consecutiveFailures = 0;
 		maxStepNanos = Math.max(maxStepNanos, result.nanos());
-		recorder.accept(new StepRecord(tick, engine.module().origin(), input, stateBefore, result.percepts(), result.drops()));
+		recorder.accept(new StepRecord(tick, module.origin(), input, stateBefore, result.percepts(), result.drops()));
 		var out = new ArrayList<Percept>();
 		var decided = new LinkedHashSet<String>();
 		for (JsonElement element : result.percepts()) {
@@ -183,9 +191,9 @@ public final class SaliencePolicy {
 	/** Engine status, counters and recent decisions for the bridge debug state and the dashboard. */
 	public synchronized Map<String, Object> debugState() {
 		var result = new LinkedHashMap<String, Object>();
-		result.put("module", engine.module().origin());
-		result.put("ready", engine.ready());
-		result.put("blockInterests", blockInterests().size());
+		result.put("module", module.origin());
+		result.put("ready", engine != null && engine.ready());
+		result.put("blockInterests", engine == null ? 0 : blockInterests().size());
 		result.put("pending", pending.size());
 		result.put("steps", steps);
 		result.put("percepts", percepts);
@@ -214,23 +222,24 @@ public final class SaliencePolicy {
 		failures++;
 		consecutiveFailures++;
 		lastFailure = exception.code() + ": " + exception.getMessage();
-		String failedModule = engine.module().origin();
+		String failedModule = module.origin();
 		diagnostics.publish(tick, "rules.step_failed", Map.of(
 			"module", failedModule,
 			"code", exception.code(),
 			"message", String.valueOf(exception.getMessage()),
 			"candidates", pending.size()
 		), SOURCE, null);
-		boolean loadFailed = engine.loadFailure() != null;
-		if (!engine.module().bundled() && (loadFailed || consecutiveFailures >= REVERT_AFTER_FAILURES)) {
-			engine = RuleEngine.shared(RuleModule.bundledSalience());
+		boolean loadFailed = engine().loadFailure() != null;
+		if (!module.bundled() && (loadFailed || consecutiveFailures >= REVERT_AFTER_FAILURES)) {
+			module = RuleModule.bundledSalience();
+			engine = RuleEngine.shared(module);
 			ruleState = "{}";
 			consecutiveFailures = 0;
 			reverts++;
-			Airicraft.LOGGER.warn("Salience rules {} failed ({}); reverted to {}", failedModule, lastFailure, engine.module().origin());
+			Airicraft.LOGGER.warn("Salience rules {} failed ({}); reverted to {}", failedModule, lastFailure, module.origin());
 			diagnostics.publish(tick, "rules.reverted", Map.of(
 				"from", failedModule,
-				"to", engine.module().origin(),
+				"to", module.origin(),
 				"reason", loadFailed ? "load_failed" : "consecutive_step_failures"
 			), SOURCE, null);
 		}

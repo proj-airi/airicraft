@@ -56,6 +56,8 @@ public final class CodexAppServerLlmBackend implements LlmBackend {
 
 	private volatile CodexAppServerClient client;
 	private volatile String canonicalThreadId;
+	/** Observation state the thread already holds: advanced only by a turn that completed. */
+	private ai.moeru.airicraft.agent.llm.ObservationPresenter committedPresenter = new ai.moeru.airicraft.agent.llm.ObservationPresenter();
 	private volatile String responseModel;
 
 	public CodexAppServerLlmBackend(
@@ -123,7 +125,11 @@ public final class CodexAppServerLlmBackend implements LlmBackend {
 			}
 			JsonObject turnParams = new JsonObject();
 			turnParams.addProperty("threadId", threadId);
-			turnParams.add("input", codec.turnInput(conversation));
+			ai.moeru.airicraft.agent.llm.ObservationPresenter presenter;
+			synchronized (lifecycleLock) {
+				presenter = committedPresenter.copy();
+			}
+			turnParams.add("input", codec.turnInput(conversation, presenter));
 			turnParams.add("additionalContext", codec.turnAdditionalContext());
 			turnParams.add("outputSchema", codec.outputSchema());
 			turnParams.addProperty("approvalPolicy", "never");
@@ -163,6 +169,9 @@ public final class CodexAppServerLlmBackend implements LlmBackend {
 			}
 			if (turnResult.agentMessage() == null || turnResult.agentMessage().isBlank()) {
 				throw new IOException("Codex app-server turn completed without an agent message");
+			}
+			synchronized (lifecycleLock) {
+				if (threadId.equals(canonicalThreadId)) committedPresenter = presenter;
 			}
 			PlannerResponse response = codec.parse(turnResult.agentMessage(), generation);
 			LlmCallResult<PlannerResponse> result = LlmCallResult.of(response, LlmUsageSnapshot.unknown(), null, effectiveModel());
@@ -326,6 +335,7 @@ public final class CodexAppServerLlmBackend implements LlmBackend {
 			CandidateTurn[] abandonedCandidates = candidates.values().toArray(CandidateTurn[]::new);
 			client = null;
 			canonicalThreadId = null;
+			committedPresenter = new ai.moeru.airicraft.agent.llm.ObservationPresenter();
 			responseModel = null;
 			candidates.clear();
 			discardedGenerations.clear();

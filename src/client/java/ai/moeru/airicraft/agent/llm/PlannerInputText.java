@@ -33,6 +33,8 @@ public final class PlannerInputText {
 		if (patch != null) out.append(patch.isJsonArray() && patch.getAsJsonArray().isEmpty()
 			? "State unchanged since the previous observation.\n"
 			: "State changes (RFC 6902 JSON Patch against the previous observation's state): " + text(patch) + "\n");
+		JsonElement changes = context.take("currentChanges");
+		if (changes != null) out.append(changes(changes));
 		context.take("stateBaseline");
 		JsonElement current = context.take("current");
 		JsonElement currentWork = current != null && current.isJsonObject() ? current.getAsJsonObject().get("work") : null;
@@ -105,6 +107,52 @@ public final class PlannerInputText {
 			add(parts, f.phrase(key, switch (key) { case "updatedTick" -> "updated tick "; case "holdId" -> "hold "; default -> key + " "; }));
 		add(parts, f.rest());
 		return String.join("; ", parts) + ".";
+	}
+
+	/** State changes since the previous observation, in the terms the model reasons in (spec P15). */
+	private static String changes(JsonElement value) {
+		if (!value.isJsonObject()) return "State changes: " + text(value) + "\n";
+		Fields f = new Fields(value.getAsJsonObject());
+		if (!f.has("inventory") && !f.has("vitals") && !f.has("moved") && !f.has("patch") && f.rest().isEmpty()) {
+			return "State unchanged since the previous observation.\n";
+		}
+		var out = new StringBuilder("State changes since the previous observation:\n");
+		JsonElement inventory = f.take("inventory");
+		if (inventory != null && inventory.isJsonArray()) {
+			var parts = new ArrayList<String>();
+			for (JsonElement entry : inventory.getAsJsonArray()) {
+				JsonObject item = entry.getAsJsonObject();
+				long change = item.get("change").getAsLong(), total = item.get("total").getAsLong();
+				parts.add(PlannerStateText.item(item.get("itemId").getAsString()) + " " + (change > 0 ? "+" : "") + change
+					+ (total == 0 ? " (none left)" : " (" + total + ")"));
+			}
+			out.append("Inventory: ").append(String.join(", ", parts)).append('\n');
+		}
+		JsonElement vitals = f.take("vitals");
+		if (vitals != null && vitals.isJsonArray()) {
+			var parts = new ArrayList<String>();
+			for (JsonElement entry : vitals.getAsJsonArray()) {
+				JsonObject vital = entry.getAsJsonObject();
+				parts.add(vital.get("field").getAsString() + " " + (vital.has("from") ? text(vital.get("from")) + " -> " : "") + text(vital.get("to")));
+			}
+			out.append("Vitals: ").append(String.join("; ", parts)).append('\n');
+		}
+		JsonElement moved = f.take("moved");
+		if (moved != null && moved.isJsonObject()) {
+			out.append("Moved from block ").append(point(moved.getAsJsonObject().get("from"))).append(" to ")
+				.append(point(moved.getAsJsonObject().get("to"))).append(".\n");
+		}
+		JsonElement patch = f.take("patch");
+		if (patch != null) out.append("Other changes (RFC 6902 JSON Patch against the previous observation's state): ").append(text(patch)).append('\n');
+		String rest = f.rest();
+		if (!rest.isEmpty()) out.append(rest).append('\n');
+		return out.toString();
+	}
+
+	private static String point(JsonElement value) {
+		if (!value.isJsonObject()) return text(value);
+		JsonObject point = value.getAsJsonObject();
+		return "(" + point.get("x") + "," + point.get("y") + "," + point.get("z") + ")";
 	}
 
 	/** Wake entries lead the observation: an event wake names the event line below, a derived wake its reason. */

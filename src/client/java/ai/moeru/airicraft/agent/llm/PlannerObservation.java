@@ -33,6 +33,11 @@ public final class PlannerObservation {
 		return List.of(LlmChatMessage.assistantToolCall("", call), LlmChatMessage.tool(callId, GSON.toJson(fields), fields));
 	}
 
+	/** An {@code observe} the runtime issued with a decision context, as opposed to one the model asked for. */
+	public static boolean isRuntimeCall(String callId) {
+		return callId != null && callId.startsWith(RUNTIME_CALL_ID_PREFIX);
+	}
+
 	public static String render(Map<String, Object> payload) {
 		return GSON.toJson(payload);
 	}
