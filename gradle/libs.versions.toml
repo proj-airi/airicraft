@@ -1,0 +1,88 @@
+[versions]
+# Fabric: check these on https://fabricmc.net/develop
+minecraft = "1.21.8"
+yarn = "1.21.8+build.1"
+fabric-loader = "0.19.5"
+loom = "1.18-SNAPSHOT"
+fabric-api = "0.136.1+1.21.8"
+
+cloth-config = "19.0.147"
+modmenu = "15.0.2"
+rei = "20.0.811"
+architectury = "17.0.6"
+journeymap-api = "2.0.0-1.21.7-SNAPSHOT"
+journeymap-mod = "1.21.8-6.0.0-beta.52+fabric"
+
+# Must match the version vendor/action-plan-advisor publishes.
+action-plan-advisor = "0.1.0"
+snakeyaml = "2.4"
+opentelemetry = "1.60.1"
+graalvm = "25.0.4"
+
+hotswap-agent = "2.0.3"
+sponge-mixin = "0.17.3+mixin.0.8.7"	# Must match the version with fabric-loaders one.
+shadow = "9.6.+"
+axion-release = "1.21.4"
+
+picocli = "4.7.6"
+jackson = "2.18.2"
+junit = "5.11.4"
+
+[libraries]
+minecraft = { module = "com.mojang:minecraft", version.ref = "minecraft" }
+yarn = { module = "net.fabricmc:yarn", version.ref = "yarn" }
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+fabric-api = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api" }
+cloth-config = { module = "me.shedaniel.cloth:cloth-config-fabric", version.ref = "cloth-config" }
+modmenu = { module = "com.terraformersmc:modmenu", version.ref = "modmenu" }
+rei-api = { module = "me.shedaniel:RoughlyEnoughItems-api-fabric", version.ref = "rei" }
+rei-mod = { module = "me.shedaniel:RoughlyEnoughItems-fabric", version.ref = "rei" }
+architectury = { module = "dev.architectury:architectury-fabric", version.ref = "architectury" }
+journeymap-api = { module = "info.journeymap:journeymap-api-fabric", version.ref = "journeymap-api" }
+journeymap-mod = { module = "maven.modrinth:journeymap", version.ref = "journeymap-mod" }
+
+action-plan-advisor = { module = "ai.moeru:action-plan-advisor", version.ref = "action-plan-advisor" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry" }
+opentelemetry-sdk = { module = "io.opentelemetry:opentelemetry-sdk", version.ref = "opentelemetry" }
+opentelemetry-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "opentelemetry" }
+graalvm-polyglot = { module = "org.graalvm.polyglot:polyglot", version.ref = "graalvm" }
+graalvm-js-language = { module = "org.graalvm.js:js-language", version.ref = "graalvm" }
+graalvm-regex = { module = "org.graalvm.regex:regex", version.ref = "graalvm" }
+graalvm-truffle-api = { module = "org.graalvm.truffle:truffle-api", version.ref = "graalvm" }
+graalvm-truffle-runtime = { module = "org.graalvm.truffle:truffle-runtime", version.ref = "graalvm" }
+graalvm-truffle-compiler = { module = "org.graalvm.truffle:truffle-compiler", version.ref = "graalvm" }
+graalvm-sdk-collections = { module = "org.graalvm.sdk:collections", version.ref = "graalvm" }
+graalvm-sdk-nativeimage = { module = "org.graalvm.sdk:nativeimage", version.ref = "graalvm" }
+graalvm-sdk-word = { module = "org.graalvm.sdk:word", version.ref = "graalvm" }
+graalvm-sdk-jniutils = { module = "org.graalvm.sdk:jniutils", version.ref = "graalvm" }
+graalvm-shadowed-icu4j = { module = "org.graalvm.shadowed:icu4j", version.ref = "graalvm" }
+graalvm-shadowed-xz = { module = "org.graalvm.shadowed:xz", version.ref = "graalvm" }
+
+hotswap-agent = { module = "org.hotswapagent:hotswap-agent", version.ref = "hotswap-agent" }
+sponge-mixin = { module = "net.fabricmc:sponge-mixin", version.ref = "sponge-mixin" }
+
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+[bundles]
+# Non-mod libraries nested in the Airicraft jar; production-style clients also put them on the classpath.
+runtime-libraries = ["snakeyaml", "opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp"]
+# Concrete GraalJS jars: the js-community aggregate adds POM files that Fabric cannot load.
+graaljs = [
+	"graalvm-polyglot", "graalvm-js-language", "graalvm-regex",
+	"graalvm-truffle-api", "graalvm-truffle-runtime", "graalvm-truffle-compiler",
+	"graalvm-sdk-collections", "graalvm-sdk-nativeimage", "graalvm-sdk-word", "graalvm-sdk-jniutils",
+	"graalvm-shadowed-icu4j", "graalvm-shadowed-xz",
+]
+# REI plus the mods it needs at runtime.
+rei-runtime = ["rei-mod", "architectury", "cloth-config"]
+
+[plugins]
+fabric-loom-remap = { id = "net.fabricmc.fabric-loom-remap", version.ref = "loom" }
+axion-release = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion-release" }
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

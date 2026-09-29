@@ -1,5 +1,5 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	alias(libs.plugins.fabric.loom.remap)
 }
 
 version = rootProject.version
@@ -69,34 +69,29 @@ configurations {
 def reiCompatProject = rootProject.findProject(":compat:rei")
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	minecraft libs.minecraft
+	mappings variantOf(libs.yarn) { classifier("v2") }
+	modImplementation libs.fabric.loader
+	modImplementation libs.fabric.api
 	clientCompileOnly rootProject.sourceSets.main.output
 	clientCompileOnly rootProject.sourceSets.client.output
-	modCompileOnlyApi "info.journeymap:journeymap-api-fabric:${project.journeymap_api_version}"
-	modRuntimeOnly "maven.modrinth:journeymap:${project.journeymap_mod_version}"
+	modCompileOnlyApi libs.journeymap.api
+	modRuntimeOnly libs.journeymap.mod
 
-	journeyMapCompatMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-	journeyMapCompatMods "maven.modrinth:journeymap:${project.journeymap_mod_version}"
+	journeyMapCompatMods libs.fabric.api
+	journeyMapCompatMods libs.journeymap.mod
 	if (reiCompatProject != null) {
-		journeyMapCompatMods "me.shedaniel:RoughlyEnoughItems-fabric:${project.rei_version}"
-		journeyMapCompatMods "dev.architectury:architectury-fabric:${project.architectury_version}"
-		journeyMapCompatMods "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+		journeyMapCompatMods libs.bundles.rei.runtime
 	}
-	journeyMapCompatLibraries "org.yaml:snakeyaml:2.4"
-	journeyMapCompatLibraries "io.opentelemetry:opentelemetry-api:1.60.1"
-	journeyMapCompatLibraries "io.opentelemetry:opentelemetry-sdk:1.60.1"
-	journeyMapCompatLibraries "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	journeyMapCompatLibraries libs.bundles.runtime.libraries
 
-	testImplementation platform("org.junit:junit-bom:5.11.4")
-	testImplementation "org.junit.jupiter:junit-jupiter"
+	testImplementation platform(libs.junit.bom)
+	testImplementation libs.junit.jupiter
 	// Tests need the same named API classes as client code, not the intermediary artifact.
 	testImplementation files(sourceSets.client.compileClasspath)
 	testImplementation rootProject.sourceSets.main.output
 	testImplementation rootProject.sourceSets.client.output
-	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+	testRuntimeOnly libs.junit.platform.launcher
 }
 
 processResources {

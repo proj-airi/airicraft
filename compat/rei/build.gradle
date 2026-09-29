@@ -1,5 +1,5 @@
 plugins {
-	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	alias(libs.plugins.fabric.loom.remap)
 }
 
 version = rootProject.version
@@ -53,29 +53,22 @@ configurations {
 }
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	minecraft libs.minecraft
+	mappings variantOf(libs.yarn) { classifier("v2") }
+	modImplementation libs.fabric.loader
+	modImplementation libs.fabric.api
 	clientCompileOnly rootProject.sourceSets.main.output
 	clientCompileOnly rootProject.sourceSets.client.output
-	modCompileOnly "me.shedaniel:RoughlyEnoughItems-api-fabric:${project.rei_version}"
-	modRuntimeOnly "me.shedaniel:RoughlyEnoughItems-fabric:${project.rei_version}"
-	modRuntimeOnly "dev.architectury:architectury-fabric:${project.architectury_version}"
-	modRuntimeOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+	modCompileOnly libs.rei.api
+	modRuntimeOnly libs.bundles.rei.runtime
 
-	reiCompatMods "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-	reiCompatMods "me.shedaniel:RoughlyEnoughItems-fabric:${project.rei_version}"
-	reiCompatMods "dev.architectury:architectury-fabric:${project.architectury_version}"
-	reiCompatMods "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
-	reiCompatLibraries "org.yaml:snakeyaml:2.4"
-	reiCompatLibraries "io.opentelemetry:opentelemetry-api:1.60.1"
-	reiCompatLibraries "io.opentelemetry:opentelemetry-sdk:1.60.1"
-	reiCompatLibraries "io.opentelemetry:opentelemetry-exporter-otlp:1.60.1"
+	reiCompatMods libs.fabric.api
+	reiCompatMods libs.bundles.rei.runtime
+	reiCompatLibraries libs.bundles.runtime.libraries
 
-	testImplementation platform("org.junit:junit-bom:5.11.4")
-	testImplementation "org.junit.jupiter:junit-jupiter"
-	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+	testImplementation platform(libs.junit.bom)
+	testImplementation libs.junit.jupiter
+	testRuntimeOnly libs.junit.platform.launcher
 }
 
 processResources {
