@@ -96,6 +96,22 @@ final class WakeScenarioHarness implements AutoCloseable {
 			Map.of("blockId", blockId, "x", x, "y", y, "z", z, "distance", distance, "direction", "north",
 				"exposedFaces", java.util.List.of("up"), "dimension", "minecraft:overworld"));
 	}
+	/** A reflex begins, opening safety epoch {@code epoch} as {@code SurvivalReflexRuntime.begin} would. */
+	void reflexStarted(long epoch) {
+		try {
+			var field = EmbodiedAgentRuntime.class.getDeclaredField("survivalReflexRuntime");
+			field.setAccessible(true);
+			var reflex = (ai.moeru.airicraft.agent.reflex.SurvivalReflexRuntime) field.get(runtime);
+			var snapshot = reflex.getClass().getDeclaredField("snapshot");
+			snapshot.setAccessible(true);
+			snapshot.set(reflex, new ai.moeru.airicraft.agent.reflex.SurvivalReflexSnapshot(
+				ai.moeru.airicraft.agent.reflex.SurvivalReflexState.ACTIVE, ai.moeru.airicraft.agent.reflex.SurvivalReflexCause.DROWNING,
+				ai.moeru.airicraft.agent.reflex.SurvivalReflexAction.SWIM_TO_AIR, epoch, null, null, null, java.util.List.of(),
+				10f, 20f, 100, 300, tick, tick, 0, null));
+		} catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+		reflex(new ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent("reflex.started",
+			Map.of("safetyEpoch", epoch, "cause", "DROWNING", "action", "SWIM_TO_AIR")));
+	}
 	void reflex(ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent event) {
 		try {
 			var field = EmbodiedAgentRuntime.class.getDeclaredField("survivalReflexRuntime");

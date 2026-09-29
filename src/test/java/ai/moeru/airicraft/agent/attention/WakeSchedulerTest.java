@@ -29,6 +29,35 @@ class WakeSchedulerTest {
 		@Override public void audit(Wake wake, String kind, String gate) { log.add(kind + ":" + wake.eventSequence() + ":" + gate); }
 		@Override public void superseded(Wake wake, String reason, String currentMissionId) { log.add("superseded:" + wake.eventSequence() + ":" + reason); }
 		@Override public void deliver(Wake wake) { log.add("deliver:" + wake.eventSequence()); }
+		String preemption = "nothing_in_flight";
+		@Override public String preemptInFlight() {
+			log.add("preempt?");
+			if ("preempted".equals(preemption)) inFlight = false;
+			return preemption;
+		}
+	}
+
+	@Test void aPreemptWakeCancelsAStaleTurnAndIsDeliveredAtOnce() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.inFlight = true;
+		scheduler.offerTask(Wake.task(1, 10, 0, null));
+		assertFalse(scheduler.releaseTaskWake(host), "an ordinary wake waits for the turn");
+		assertEquals(List.of(), host.log, "and never asks to preempt");
+
+		var preempting = new WakeScheduler();
+		preempting.offerTask(Wake.task(2, 11, 0, null).preempting());
+		host.preemption = "side_effect_tool_ran";
+		assertFalse(preempting.releaseTaskWake(host));
+		assertFalse(preempting.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "dropped:11:preempt.side_effect_tool_ran", "preempt?"), host.log,
+			"a refusal is audited once and the wake keeps waiting");
+		host.preemption = "preempted";
+		assertTrue(preempting.releaseTaskWake(host));
+		assertEquals(List.of("preempt?", "preempted:11:preempt.safety_epoch", "deliver:11"), host.log.subList(3, 6));
+		var debugged = new WakeScheduler();
+		debugged.offerTask(Wake.task(3, 12, 0, null).preempting());
+		assertEquals("PREEMPT", ((java.util.Map<?, ?>) ((List<?>) debugged.debugState().get("pending")).getFirst()).get("delivery"));
 	}
 
 	@Test void releasesOneWakeInOrderWithAttentionFirst() {

@@ -8,12 +8,28 @@ import java.util.Objects;
  * the scheduler refactor. {@code eventRefs} are raw-log sequence numbers of the evidence that justified it.
  *
  * @param missionId the mission the wake belongs to, or {@code null}; a changed mission supersedes it
+ * @param delivery {@code PREEMPT} may cancel a turn its safety change made stale; otherwise {@code IMMEDIATE}
  */
-public record Wake(String path, Urgency urgency, long tick, List<Long> eventRefs, long guidanceRevision, String missionId) {
+public record Wake(String path, Urgency urgency, long tick, List<Long> eventRefs, long guidanceRevision, String missionId,
+	Delivery delivery) {
 	public Wake {
 		Objects.requireNonNull(path, "path");
 		Objects.requireNonNull(urgency, "urgency");
 		eventRefs = List.copyOf(eventRefs);
+		delivery = delivery == null ? Delivery.IMMEDIATE : delivery;
+	}
+
+	public Wake(String path, Urgency urgency, long tick, List<Long> eventRefs, long guidanceRevision, String missionId) {
+		this(path, urgency, tick, eventRefs, guidanceRevision, missionId, Delivery.IMMEDIATE);
+	}
+
+	/** The same wake, allowed to preempt a turn that a newer safety epoch made stale. */
+	public Wake preempting() {
+		return new Wake(path, urgency, tick, eventRefs, guidanceRevision, missionId, Delivery.PREEMPT);
+	}
+
+	public boolean preempts() {
+		return delivery == Delivery.PREEMPT;
 	}
 
 	/** A task wakeup (W2): work, task, reflex or blocked-goal evidence, queued behind earlier wakes. */

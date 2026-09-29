@@ -419,6 +419,19 @@
       "extraWake": null
     },
     {
+      "type": "planner.turn_preempted",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": null,
+        "bypass": true
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "planner.unknown_intent",
       "producers": [
         "DialogueCore"

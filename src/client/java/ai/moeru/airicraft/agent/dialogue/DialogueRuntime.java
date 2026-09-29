@@ -892,6 +892,11 @@ public final class DialogueRuntime {
 		if (!externalDriverActive) wakeScheduler.offerTask(Wake.task(tick, eventSequence, userGuidanceRevision, missionId));
 	}
 
+	/** A task wakeup for a new safety epoch ({@code PREEMPT}): it may cancel a turn the epoch made stale. */
+	public void queueTaskPreemption(long tick, long eventSequence) {
+		if (!externalDriverActive) wakeScheduler.offerTask(Wake.task(tick, eventSequence, userGuidanceRevision, null).preempting());
+	}
+
 	private boolean submitNextPendingInternalTaskUpdate(
 		EventStream eventBuffer, SessionSnapshot sessionSnapshot, Optional<GoalSnapshot> activeGoal,
 		TaskSnapshot activeTask, MissionExecutionSnapshot missionExecution
@@ -936,6 +941,7 @@ public final class DialogueRuntime {
 		@Override public long guidanceRevision() { return userGuidanceRevision; }
 		@Override public String currentMissionId() { return missionId(activeTask, missionExecution); }
 		@Override public void audit(Wake wake, String kind, String gate) { recordTaskAudit(wake, kind, gate); }
+		@Override public String preemptInFlight() { return activePlanner().preemptStaleTurn().gate(); }
 		@Override public void superseded(Wake wake, String reason, String currentMissionId) {
 			recordSupersededInternalTaskUpdate(wake, reason, currentMissionId, wake.tick(), eventBuffer);
 		}

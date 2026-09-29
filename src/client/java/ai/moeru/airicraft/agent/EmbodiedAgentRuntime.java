@@ -1171,7 +1171,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		List<SurvivalReflexEvent> events = survivalReflexRuntime.drainEvents();
 		for (SurvivalReflexEvent event : events) {
 			var observed = eventBus.from("SurvivalReflexRuntime").publish(tickCount, event.type(), event.payload());
-			if (List.of("reflex.started", "reflex.resolved", "reflex.threat_detected", "reflex.actuator_failed").contains(event.type()))
+			// A reflex start opens a new safety epoch: its wake may preempt the turn that epoch made stale.
+			if (event.type().equals("reflex.started")) dialogueRuntime.queueTaskPreemption(tickCount, observed.seqNo());
+			else if (List.of("reflex.resolved", "reflex.threat_detected", "reflex.actuator_failed").contains(event.type()))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, observed.seqNo());
 			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable"))
 				dialogueRuntime.queueTaskAttention(tickCount, observed.seqNo());
@@ -1187,7 +1189,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void recordStalePlannerRejections() {
 		dialogueRuntime.drainStalePlannerRejections().forEach(rejection -> eventBus.from("EmbodiedAgentRuntime").publish(
 			tickCount,
-			"planner.stale_response_rejected",
+			rejection.preempted() ? "planner.turn_preempted" : "planner.stale_response_rejected",
 			mapOfNullable(
 				"generation", rejection.generation(),
 				"requestSafetyEpoch", rejection.requestSafetyEpoch(),

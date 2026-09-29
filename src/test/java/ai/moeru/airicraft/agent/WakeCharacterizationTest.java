@@ -81,6 +81,26 @@ class WakeCharacterizationTest {
 			h.transcript("reflex_started_then_resolved_with_hold").assertMatchesGolden("reflex_started_then_resolved_with_hold");
 		}
 	}
+	/** Phase 5: a reflex start opens a new safety epoch, and its wake preempts the turn that epoch made stale. */
+	@Test void safety_epoch_preempts_turn() {
+		try (var h = new WakeScenarioHarness()) {
+			h.tick(1);
+			var held = h.backend.holdNext();
+			h.chat("Alex", "@agent gather wood");
+			h.backend.awaitRequests(1, Duration.ofSeconds(1));
+			h.reflexStarted(1);
+			h.tick(1);
+			assertTrue(held.isCancelled(), "the stale call is cancelled, not paid for to the end");
+			assertEquals(2, h.backend.requests().size(), "the reflex wake is delivered in the same tick");
+			assertEquals(h.backend.requests().get(0).observedAtTick() + 1, h.backend.requests().get(1).observedAtTick());
+			assertEquals(List.of("submitted:W1", "preempted:W2:preempt.safety_epoch", "submitted:W2"), auditOutcomes(h));
+			assertTrue(h.runtime.recentEvents(null).events().stream().anyMatch(event -> event.type().equals("planner.turn_preempted")));
+			assertTrue(h.runtime.recentEvents(null).events().stream().noneMatch(event -> event.type().equals("planner.stale_response_rejected")));
+			h.tick(10);
+			assertEquals(2, h.backend.requests().size());
+			h.transcript("safety_epoch_preempts_turn").assertMatchesGolden("safety_epoch_preempts_turn");
+		}
+	}
 	@Test void damage_outside_reflex() {
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.runtime.onPlayerHealthUpdated(true, 20, 16); h.tick(10);

@@ -46,6 +46,14 @@ public final class WakeScheduler {
 
 		/** Submits the wake to the planner; the host records its final audit outcome. */
 		void deliver(Wake wake);
+
+		/**
+		 * Asks the active planner to cancel its turn if a newer safety epoch made it stale and it has externalized
+		 * nothing ({@code PREEMPT}). Returns the gate naming the outcome: {@code preempted}, or why not.
+		 */
+		default String preemptInFlight() {
+			return "nothing_in_flight";
+		}
 	}
 
 	/** Facts and delivery for trigger wakes (W1, W4-W7). */
@@ -118,7 +126,8 @@ public final class WakeScheduler {
 	 * new guidance or a changed mission are dropped on the way. Returns whether a wake was delivered.
 	 */
 	public boolean releaseTaskWake(TaskWakeHost host) {
-		if (host.externalDriverActive() || taskWakes.isEmpty() || host.plannerInFlight()) return false;
+		if (host.externalDriverActive() || taskWakes.isEmpty()) return false;
+		if (host.plannerInFlight() && !preempt(host)) return false;
 		if (host.plannerUnavailable()) {
 			taskWakes.clear();
 			return false;
@@ -154,6 +163,22 @@ public final class WakeScheduler {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * A {@code PREEMPT} wake at the head asks the planner to cancel a turn that its safety change made stale. Whether
+	 * that works is audited once per outcome; the wake keeps waiting when the turn cannot be preempted.
+	 */
+	private boolean preempt(TaskWakeHost host) {
+		Wake head = taskWakes.peekFirst();
+		if (head == null || !head.preempts()) return false;
+		String outcome = host.preemptInFlight();
+		if (!"preempted".equals(outcome)) {
+			auditDeferred(host, head, "preempt." + outcome);
+			return false;
+		}
+		audit(host, head, "preempted", "preempt.safety_epoch");
+		return !host.plannerInFlight();
 	}
 
 	/**
@@ -237,6 +262,7 @@ public final class WakeScheduler {
 			entry.put("eventRefs", wake.eventRefs());
 			entry.put("guidanceRevision", wake.guidanceRevision());
 			entry.put("missionId", wake.missionId());
+			entry.put("delivery", wake.delivery().name());
 			pending.add(entry);
 		}
 		var held = new ArrayList<Map<String, Object>>();
