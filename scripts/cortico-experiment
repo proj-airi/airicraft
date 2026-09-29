@@ -22,7 +22,7 @@ work_dir="$repo_root/.cortico-experiment"
 pin() { node -e "const p=require('$exp_dir/pins.json'); console.log(p['$1']['$2'])"; }
 
 fetch_pinned() {
-	local name="$1" dir="$work_dir/$1" repo sha
+	local name="$1" dir="$work_dir/$1" repo sha current
 	repo="$(pin "$name" repo)"
 	sha="$(pin "$name" sha)"
 	mkdir -p "$dir"
@@ -30,22 +30,31 @@ fetch_pinned() {
 		git -C "$dir" init -q
 		git -C "$dir" remote add origin "$repo"
 	fi
-	if [[ "$(git -C "$dir" rev-parse -q --verify HEAD 2>/dev/null || true)" != "$sha" ]]; then
-		if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+	# The `pinned` tag marks the upstream commit; patches sit on top of it.
+	current="$(git -C "$dir" rev-parse -q --verify 'refs/tags/pinned^{commit}' 2>/dev/null || true)"
+	if [[ "$current" != "$sha" ]]; then
+		if [[ -n "$(git -C "$dir" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
 			echo "error: $dir has local changes; refusing to move it to $sha" >&2
 			exit 1
 		fi
 		GIT_LFS_SKIP_SMUDGE=1 git -C "$dir" fetch -q --depth 1 origin "$sha"
 		git -C "$dir" checkout -q --detach FETCH_HEAD
+		git -C "$dir" tag -f pinned FETCH_HEAD >/dev/null
+		rm -f "$dir/.git/patches-applied"
 	fi
 	echo "$name pinned at $sha"
 }
 
+# Apply the patch series on top of `pinned`. Re-applies from scratch when the series changed.
 apply_patches() {
-	local name="$1" patch_dir="$exp_dir/patches/$1" dir="$work_dir/$1"
+	local name="$1" patch_dir="$exp_dir/patches/$1" dir="$work_dir/$1" want have
 	compgen -G "$patch_dir/*.patch" >/dev/null || return 0
-	if git -C "$dir" log -1 --format=%s | grep -q '^cortico-experiment patches'; then return 0; fi
+	want="$(cat "$patch_dir"/*.patch | sha256sum | cut -d' ' -f1)"
+	have="$(cat "$dir/.git/patches-applied" 2>/dev/null || true)"
+	[[ "$want" == "$have" ]] && { echo "$name: patches already applied"; return 0; }
+	git -C "$dir" reset -q --hard pinned
 	git -C "$dir" -c user.name=experiment -c user.email=experiment@invalid am -q "$patch_dir"/*.patch
+	echo "$want" >"$dir/.git/patches-applied"
 	echo "$name: patches applied"
 }
 

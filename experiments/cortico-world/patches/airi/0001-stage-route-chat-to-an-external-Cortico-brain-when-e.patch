@@ -1,0 +1,677 @@
+From f7083a8cbd5e2839d8a90d7df559a1fbd9ccddc8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 29 Sep 2026 20:02:31 +0000
+Subject: [PATCH] stage: route chat to an external Cortico brain when enabled
+ (from moeru-ai/airi#2634)
+
+Reduced to the stage-side store, the early-return switches in chat.ts,
+context-bridge.ts and the character orchestrator, and the shared frame
+schema. Excludes the bridge package, spark/channel client, memory settings
+page, i18n and vendor patch. Voice-input routing (stage-web index.vue) is
+omitted; main has diverged there.
+
+Original work by peachoolong-uwu in moeru-ai/airi#2634.
+---
+ .../stores/character/orchestrator/store.ts    |   5 +
+ packages/stage-ui/src/stores/chat.ts          |  36 +-
+ packages/stage-ui/src/stores/cortico.ts       | 325 ++++++++++++++++++
+ .../src/stores/mods/api/context-bridge.ts     |  13 +-
+ .../packages/server-sdk-shared/src/cortico.ts | 157 +++++++++
+ .../packages/server-sdk-shared/src/index.ts   |   1 +
+ 6 files changed, 533 insertions(+), 4 deletions(-)
+ create mode 100644 packages/stage-ui/src/stores/cortico.ts
+ create mode 100644 server/packages/server-sdk-shared/src/cortico.ts
+
+diff --git a/packages/stage-ui/src/stores/character/orchestrator/store.ts b/packages/stage-ui/src/stores/character/orchestrator/store.ts
+index bb1182c..f718270 100644
+--- a/packages/stage-ui/src/stores/character/orchestrator/store.ts
++++ b/packages/stage-ui/src/stores/character/orchestrator/store.ts
+@@ -8,6 +8,7 @@ import { ref } from 'vue'
+ import { useCharacterNotebookStore, useCharacterStore } from '../'
+ import { useAiriRuntimePrompt } from '../../../composables/use-airi-runtime-prompt'
+ import { useLLM } from '../../ai/chat-llm/llm'
++import { useCorticoStore } from '../../cortico'
+ import { useModsServerChannelStore } from '../../mods/api/channel-server'
+ import { useConsciousnessStore } from '../../modules/consciousness'
+ 
+@@ -272,6 +273,10 @@ export const useCharacterOrchestratorStore = defineStore('character-orchestrator
+ 
+     eventUnsubscribes.push(
+       modsServerChannelStore.onEvent('spark:notify', async (event) => {
++        // The cortico persona loop owns spark:notify while enabled; running
++        // the dedicated reaction agent too would split the brain.
++        if (useCorticoStore().enabled)
++          return
+         try {
+           await handleIncomingSparkNotify(event)
+         }
+diff --git a/packages/stage-ui/src/stores/chat.ts b/packages/stage-ui/src/stores/chat.ts
+index 3cd770f..a0a6fed 100644
+--- a/packages/stage-ui/src/stores/chat.ts
++++ b/packages/stage-ui/src/stores/chat.ts
+@@ -43,6 +43,7 @@ import { useConsciousnessStore } from './modules/consciousness'
+ import { useVisionStore } from './modules/vision'
+ import { useWebSearchStore } from './modules/web-search'
+ import { executeToolCallRerun } from './tool-call-rerun'
++import { useCorticoStore } from './cortico'
+ 
+ interface ForkOptions {
+   fromSessionId?: string
+@@ -180,6 +181,9 @@ export const useChatStore = defineStore('chat', () => {
+   // the system prompt is composed, which would expose web_search on the first turn
+   // without its paired prompt-injection defense.
+   useWebSearchStore()
++  // Instantiate the cortico store eagerly so its enabled-watcher auto-connects
++  // the bridge socket on page load instead of waiting for the first send.
++  useCorticoStore()
+   const consciousnessStore = useConsciousnessStore()
+   const artistryAutonomousStore = useAutonomousArtistryStore()
+   const { activeModel, activeProvider } = storeToRefs(consciousnessStore)
+@@ -206,8 +210,12 @@ export const useChatStore = defineStore('chat', () => {
+    * A promoted renderer restarts the leader-owned cloud consumer.
+    */
+   async function initialize(syncedPinia: SyncedPiniaRuntime) {
+-    stopLeadershipListener ??= syncedPinia.onLeadershipChange((isLeader) => {
+-      if (!isLeader) {
++    const cortico = useCorticoStore()
++    stopLeadershipListener ??= syncedPinia.onLeadershipChange((leader) => {
++      // The bridge socket lives only on the leader window; followers keep
++      // state synced through pinia and never replay frames locally.
++      cortico.setLeader(leader)
++      if (!leader) {
+         chatSession.dispose()
+         return
+       }
+@@ -455,6 +463,13 @@ export const useChatStore = defineStore('chat', () => {
+     options: ChatOrchestratorSendOptions,
+     targetSessionId?: string,
+   ) {
++    const cortico = useCorticoStore()
++    if (cortico.enabled) {
++      const sessionId = targetSessionId ?? chatSession.activeSessionId
++      const message: ChatHistoryItem = { role: 'user', content: sendingMessage, createdAt: Date.now() }
++      await cortico.send(sendingMessage, undefined, sessionId)
++      return { messages: [message], sessionId }
++    }
+     return runtime.ingest(sendingMessage, options, targetSessionId)
+   }
+ 
+@@ -488,8 +503,23 @@ export const useChatStore = defineStore('chat', () => {
+       content: errorMessageFrom(error) ?? 'Unknown chat operation failure',
+     })
+   }
+-
+   async function executeSend(payload: ChatSendPayload): Promise<ChatSendResult> {
++    const cortico = useCorticoStore()
++    if (cortico.enabled) {
++      const message: ChatHistoryItem = { role: 'user', content: payload.text, createdAt: Date.now() }
++      chatSession.appendSessionMessage(payload.sessionId, message)
++      const images = (payload.attachments ?? [])
++        .filter(a => a.type === 'image')
++        .map(a => `data:${a.mimeType};base64,${a.data}`)
++      await runtime.hooks.emitBeforeSendHooks(payload.text, {
++        turnId: nanoid(),
++        message: { role: 'assistant', content: '', slices: [], tool_results: [] },
++        contexts: {},
++        composedMessage: [],
++      })
++      await cortico.send(payload.text, images, payload.sessionId)
++      return { messages: [message], sessionId: payload.sessionId }
++    }
+     const providerId = activeProvider.value
+     const modelId = activeModel.value
+     if ((!providerId || !modelId) && (providerId !== 'prompt-api'))
+diff --git a/packages/stage-ui/src/stores/cortico.ts b/packages/stage-ui/src/stores/cortico.ts
+new file mode 100644
+index 0000000..a2c900c
+--- /dev/null
++++ b/packages/stage-ui/src/stores/cortico.ts
+@@ -0,0 +1,325 @@
++import type { CorticoMemoryFrame, CorticoServerFrame } from '@proj-airi/server-sdk-shared'
++import type { ChatStreamEventContext } from '../types/chat'
++
++import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
++import { nanoid } from 'nanoid'
++import { defineStore } from 'pinia'
++import { computed, ref, watch } from 'vue'
++
++import { useChatSessionStore } from './chat/session-store'
++import { useConsciousnessStore } from './modules/consciousness'
++import { useProviderConfigStore } from './providers/config'
++// Function-level use only: chat.ts imports this store, so a module-level
++// binding here would create a cycle. Pinia resolves the store at call time.
++import { useChatStore } from './chat'
++
++const DEFAULT_BRIDGE_URL = 'ws://localhost:6122'
++
++/**
++ * Drives the Cortico persona path: stage input goes to the bridge as events,
++ * persona output comes back as speak/act/delta frames which are replayed
++ * through the standard chat hooks so TTS, motion and the chat UI work
++ * unchanged.
++ */
++export const useCorticoStore = defineStore('cortico', () => {
++  const enabled = useLocalStorageManualReset<boolean>('settings/cortico/enabled', false)
++  const bridgeUrl = useLocalStorageManualReset<string>('settings/cortico/bridge-url', DEFAULT_BRIDGE_URL)
++
++  const connected = ref(false)
++  const connecting = ref(false)
++  const lastError = ref<string | null>(null)
++  /**
++   * Multi-window runtimes (tamagotchi) instantiate this store per window.
++   * Only the leader window may hold the bridge socket: followers would
++   * double-append replies and double-fire TTS/motion hooks. Single-window
++   * apps never call `setLeader`, so the default stays connected-capable.
++   */
++  const isLeader = ref(true)
++  /** Draft model output streamed before the persona speaks. */
++  const draftText = ref('')
++  /** Latest memory snapshot from the bridge; `queryMemory()` refreshes it. */
++  const memory = ref<CorticoMemoryFrame | null>(null)
++
++  let socket: WebSocket | null = null
++  let turnContext: ChatStreamEventContext | null = null
++  let turnComposed = false
++
++  function ensureTurn(): ChatStreamEventContext {
++    if (!turnContext) {
++      turnContext = {
++        turnId: nanoid(),
++        message: { role: 'assistant', content: '', slices: [], tool_results: [] },
++        contexts: {},
++        composedMessage: [],
++      }
++    }
++    return turnContext
++  }
++
++  async function emitLiteral(literal: string) {
++    const chat = useChatStore()
++    const context = ensureTurn()
++    if (!turnComposed) {
++      turnComposed = true
++      await chat.emitBeforeMessageComposedHooks('', context)
++    }
++    await chat.emitTokenLiteralHooks(literal, context)
++  }
++
++  async function emitSpecial(special: string) {
++    const chat = useChatStore()
++    await chat.emitTokenSpecialHooks(special, ensureTurn())
++  }
++
++  async function endTurn() {
++    if (!turnContext)
++      return
++    const chat = useChatStore()
++    const context = turnContext
++    turnContext = null
++    turnComposed = false
++    draftText.value = ''
++    await chat.emitStreamEndHooks(context)
++    await chat.emitAssistantResponseEndHooks('', context)
++  }
++
++  /**
++   * Human-readable conversation tag, QQ-style. Resolution order: user-set
++   * title → persona-assigned name (also stored in title) → first user
++   * message snippet → `会话N` by creation order.
++   */
++  function sessionLabel(sessionId: string): string {
++    const session = useChatSessionStore()
++    const meta = session.sessionMetas[sessionId]
++    if (meta?.title?.trim())
++      return meta.title.trim().slice(0, 40)
++    const firstUser = (session.getSessionMessagesIfLoaded(sessionId) ?? [])
++      .find(m => m.role === 'user' && typeof m.content === 'string' && m.content.trim())
++    if (firstUser)
++      return String(firstUser.content).trim().slice(0, 20)
++    const ordered = Object.values(session.sessionMetas)
++      .sort((a, b) => a.createdAt - b.createdAt)
++    const idx = ordered.findIndex(m => m.sessionId === sessionId)
++    return `会话${idx >= 0 ? idx + 1 : '?'}`
++  }
++
++  /** Pushes the session roster so the persona can address conversations. */
++  function pushSessions() {
++    if (!socket || !connected.value)
++      return
++    const session = useChatSessionStore()
++    socket.send(JSON.stringify({
++      type: 'sessions',
++      sessions: Object.keys(session.sessionMetas)
++        .map(id => ({ id, label: sessionLabel(id) })),
++    }))
++  }
++
++  function onFrame(frame: CorticoServerFrame) {
++    const session = useChatSessionStore()
++    switch (frame.type) {
++      case 'delta': {
++        // Uncommitted model output: surface as the draft indicator only.
++        draftText.value += frame.text
++        break
++      }
++      case 'speak': {
++        const targetId = frame.sessionId ?? session.activeSessionId
++        // Channel conversations live on the bridge; only append to sessions
++        // the stage actually has (appendSessionMessage would mint one).
++        if (session.getSessionMessagesIfLoaded(targetId)) {
++          session.appendSessionMessage(targetId, {
++            role: 'assistant',
++            content: frame.text,
++            slices: [{ type: 'text', text: frame.text }],
++            tool_results: [],
++            createdAt: Date.now(),
++          })
++        }
++        void emitLiteral(frame.text)
++        break
++      }
++      case 'act': {
++        const payload: Record<string, unknown> = {}
++        if (frame.emotion)
++          payload.emotion = frame.emotion
++        if (frame.motion)
++          payload.motion = frame.motion
++        if (Object.keys(payload).length > 0)
++          void emitSpecial(`<|ACT ${JSON.stringify(payload)}|>`)
++        if (frame.delay !== undefined)
++          void emitSpecial(`<|DELAY ${frame.delay}|>`)
++        break
++      }
++      case 'call': {
++        const callPayload = frame.payload === undefined ? [frame.name] : [frame.name, frame.payload]
++        void emitSpecial(`<|CALL ${JSON.stringify(callPayload)}|>`)
++        break
++      }
++      case 'name_session': {
++        const meta = session.sessionMetas[frame.sessionId]
++        if (meta) {
++          session.sessionMetas[frame.sessionId] = { ...meta, title: frame.label }
++          session.persistSessionMessages(frame.sessionId)
++        }
++        break
++      }
++      case 'turn_end':
++        void endTurn()
++        break
++      case 'sys':
++        break
++      case 'memory':
++        memory.value = frame
++        break
++    }
++  }
++
++  function connect() {
++    if (!isLeader.value)
++      return
++    if (socket || connecting.value)
++      return
++    connecting.value = true
++    lastError.value = null
++    const ws = new WebSocket(bridgeUrl.value || DEFAULT_BRIDGE_URL)
++    socket = ws
++    ws.onopen = () => {
++      if (socket !== ws) {
++        // Stale attempt (disconnect raced the handshake): drop it quietly and
++        // release the connecting flag — no live socket is mid-handshake.
++        connecting.value = false
++        ws.close()
++        return
++      }
++      connecting.value = false
++      connected.value = true
++      ws.send(JSON.stringify({ type: 'hello', name: 'user' }))
++      pushProvider()
++      pushSessions()
++    }
++    ws.onmessage = (event) => {
++      if (socket !== ws)
++        return
++      try {
++        onFrame(JSON.parse(String(event.data)) as CorticoServerFrame)
++      }
++      catch {
++        // Malformed frames are ignored; the bridge owns the protocol.
++      }
++    }
++    ws.onclose = () => {
++      // A stale socket's close must not clear the live connection's state.
++      if (socket !== ws)
++        return
++      socket = null
++      connected.value = false
++      connecting.value = false
++      void endTurn()
++    }
++    ws.onerror = () => {
++      if (socket === ws)
++        lastError.value = 'Cortico bridge unreachable'
++    }
++  }
++
++  function disconnect() {
++    // Detach before closing so the socket's own onclose can't clear state.
++    const ws = socket
++    socket = null
++    connected.value = false
++    connecting.value = false
++    ws?.close()
++  }
++
++  /** Called by the chat store's leadership listener in multi-window apps. */
++  function setLeader(leader: boolean) {
++    isLeader.value = leader
++  }
++
++  /** Sends user text to the persona as an `airi.user_message` event. */
++  async function send(text: string, images?: string[], sessionId?: string) {
++    if (!connected.value) {
++      connect()
++      const deadline = Date.now() + 5000
++      while (!connected.value && Date.now() < deadline)
++        await new Promise(resolve => setTimeout(resolve, 100))
++    }
++    if (!socket || !connected.value)
++      throw new Error('Cortico bridge is not connected')
++    const session = useChatSessionStore()
++    const targetId = sessionId ?? session.activeSessionId
++    socket.send(JSON.stringify({
++      type: 'msg',
++      text,
++      ...(images?.length ? { images } : {}),
++      ...(targetId ? { session: { id: targetId, label: sessionLabel(targetId) } } : {}),
++    }))
++  }
++
++  /** Requests a fresh memory snapshot; the reply lands in `memory`. */
++  function queryMemory() {
++    if (socket && connected.value)
++      socket.send(JSON.stringify({ type: 'memory_query' }))
++  }
++
++  /**
++   * Pushes the stage's active chat provider to the bridge so generation
++   * happens through the endpoint configured in AIRI settings.
++   */
++  function pushProvider() {
++    if (!socket || !connected.value)
++      return
++    const consciousness = useConsciousnessStore()
++    const providerConfig = useProviderConfigStore()
++    const providerId = consciousness.activeProvider
++    const model = consciousness.activeModel
++    const config = providerId ? providerConfig.getProviderConfig(providerId) : undefined
++    const baseUrl = typeof config?.baseUrl === 'string' ? config.baseUrl.trim() : ''
++    const apiKey = typeof config?.apiKey === 'string' ? config.apiKey.trim() : ''
++    socket.send(JSON.stringify({
++      type: 'provider',
++      config: baseUrl && model ? { baseUrl, ...(apiKey ? { apiKey } : {}), model } : null,
++    }))
++  }
++
++  const ready = computed(() => enabled.value && connected.value)
++
++  // Persisted toggle survives reloads; keep the socket in sync with it.
++  // Multi-window apps additionally gate on leadership (see isLeader).
++  watch([enabled, bridgeUrl, isLeader], ([on, , leader]) => {
++    if (on && leader)
++      connect()
++    else
++      disconnect()
++  }, { immediate: true })
++
++  // Provider changes in AIRI settings propagate to the bridge.
++  watch(
++    () => [useConsciousnessStore().activeProvider, useConsciousnessStore().activeModel],
++    () => pushProvider(),
++  )
++
++  // Session roster changes (new/deleted/renamed) propagate to the bridge.
++  watch(
++    () => useChatSessionStore().sessionMetas,
++    () => pushSessions(),
++    { deep: true },
++  )
++
++  return {
++    enabled,
++    bridgeUrl,
++    connected,
++    connecting,
++    lastError,
++    draftText,
++    memory,
++    ready,
++    connect,
++    disconnect,
++    send,
++    queryMemory,
++    setLeader,
++  }
++})
+diff --git a/packages/stage-ui/src/stores/mods/api/context-bridge.ts b/packages/stage-ui/src/stores/mods/api/context-bridge.ts
+index cecc385..f6f6175 100644
+--- a/packages/stage-ui/src/stores/mods/api/context-bridge.ts
++++ b/packages/stage-ui/src/stores/mods/api/context-bridge.ts
+@@ -18,6 +18,7 @@ import { useLlmStreamingControlStore } from '../../ai/chat-llm/streaming-control
+ import { useCharacterOrchestratorStore } from '../../character'
+ import { useChatStore } from '../../chat'
+ import { useChatContextStore } from '../../chat/context-store'
++import { useCorticoStore } from '../../cortico'
+ import { useChatSessionStore } from '../../chat/session-store'
+ import { useChatStreamStore } from '../../chat/stream-store'
+ import { useContextObservabilityStore } from '../../devtools/context-observability'
+@@ -457,6 +458,10 @@ export const useContextBridgeStore = defineStore('mods:api:context-bridge', () =
+       contextChannel = createContextChannel()
+ 
+       const registerConsumers = () => {
++        // The cortico bridge registers its own chat-ingestion consumer; the
++        // stage must not compete for input events while the persona owns them.
++        if (useCorticoStore().enabled)
++          return
+         for (const consumerEvent of consumerRegistrationEvents) {
+           serverChannelStore.send({
+             type: 'module:consumer:register',
+@@ -540,6 +545,9 @@ export const useContextBridgeStore = defineStore('mods:api:context-bridge', () =
+         }
+ 
+         if (event.type === 'request') {
++          // The cortico persona owns spark:notify while enabled.
++          if (useCorticoStore().enabled)
++            return
+           if (sparkNotifyHostRole.value !== 'main' || event.fromInstanceId === sparkNotifyBridgeInstanceId) {
+             return
+           }
+@@ -587,6 +595,8 @@ export const useContextBridgeStore = defineStore('mods:api:context-bridge', () =
+       disposeHookFns.value.push(stopSparkNotifyBridgeWatch)
+ 
+       disposeHookFns.value.push(serverChannelStore.onContextUpdate((event) => {
++        if (useCorticoStore().enabled)
++          return
+         contextObservability.recordLifecycle({
+           phase: 'server-received',
+           channel: 'server',
+@@ -645,8 +655,9 @@ export const useContextBridgeStore = defineStore('mods:api:context-bridge', () =
+           details: contextMessage,
+         })
+       }))
+-
+       disposeHookFns.value.push(serverChannelStore.onEvent('input:text', async (event) => {
++        if (useCorticoStore().enabled)
++          return
+         const {
+           text,
+           textRaw,
+diff --git a/server/packages/server-sdk-shared/src/cortico.ts b/server/packages/server-sdk-shared/src/cortico.ts
+new file mode 100644
+index 0000000..d47f7cb
+--- /dev/null
++++ b/server/packages/server-sdk-shared/src/cortico.ts
+@@ -0,0 +1,157 @@
++import * as v from 'valibot'
++
++/**
++ * Wire protocol between the AIRI stage (browser) and the Cortico bridge
++ * (`@proj-airi/cortico-bridge`). The bridge hosts a Cortico Core + Persona
++ * (corti-soulmate) and exposes the stage as a Cortico `World` named `airi`.
++ *
++ * Client → server frames describe stage input (chat text, hearing, vision).
++ * Server → client frames carry persona output: draft reasoning deltas,
++ * `airi_speak` utterances, `airi_act` stage directions, and turn boundaries.
++ */
++
++export const CorticoHelloSchema = v.object({
++  type: v.literal('hello'),
++  /** Display name attached to pushed events; defaults to `user`. */
++  name: v.optional(v.string()),
++})
++
++export const CorticoMessageSchema = v.object({
++  type: v.literal('msg'),
++  text: v.pipe(v.string(), v.minLength(1)),
++  /** Image attachments as data URLs (`data:<mime>;base64,…`). */
++  images: v.optional(v.array(v.string())),
++  /** Originating chat session; the persona sees it as a conversation tag. */
++  session: v.optional(v.object({
++    id: v.pipe(v.string(), v.minLength(1)),
++    label: v.pipe(v.string(), v.minLength(1)),
++  })),
++})
++
++/**
++ * Pushes the stage's chat session roster so the persona can address
++ * conversations by label, QQ-style. Sent on connect and on roster changes.
++ */
++export const CorticoSessionsSchema = v.object({
++  type: v.literal('sessions'),
++  sessions: v.array(v.object({
++    id: v.pipe(v.string(), v.minLength(1)),
++    label: v.pipe(v.string(), v.minLength(1)),
++  })),
++})
++
++/**
++ * Pushes the stage's active chat provider to the bridge. The bridge generates
++ * through this OpenAI-compatible endpoint, so provider management stays in
++ * AIRI settings. `null` clears the pushed configuration.
++ */
++export const CorticoProviderSchema = v.object({
++  type: v.literal('provider'),
++  config: v.nullable(v.object({
++    baseUrl: v.pipe(v.string(), v.minLength(1)),
++    apiKey: v.optional(v.string()),
++    model: v.pipe(v.string(), v.minLength(1)),
++  })),
++})
++
++export const CorticoEventSchema = v.object({
++  type: v.literal('event'),
++  /** Event kind, pushed as `airi.<kind>` (e.g. `hearing`, `vision`). */
++  kind: v.pipe(v.string(), v.minLength(1)),
++  text: v.pipe(v.string(), v.minLength(1)),
++})
++
++/** Asks the bridge for a snapshot of the persona's memory workspace. */
++export const CorticoMemoryQuerySchema = v.object({
++  type: v.literal('memory_query'),
++})
++
++export const CorticoClientFrameSchema = v.union([
++  CorticoHelloSchema,
++  CorticoMessageSchema,
++  CorticoEventSchema,
++  CorticoProviderSchema,
++  CorticoSessionsSchema,
++  CorticoMemoryQuerySchema,
++])
++
++export type CorticoClientFrame = v.InferOutput<typeof CorticoClientFrameSchema>
++
++export function parseCorticoClientFrame(frame: unknown): CorticoClientFrame {
++  return v.parse(CorticoClientFrameSchema, frame)
++}
++
++/** Draft model output streamed before the persona commits to speaking. */
++export interface CorticoDeltaFrame {
++  type: 'delta'
++  text: string
++}
++
++/** `airi_speak` tool invocation: text to voice and show as the reply. */
++export interface CorticoSpeakFrame {
++  type: 'speak'
++  text: string
++  /** Target chat session the reply belongs to. */
++  sessionId?: string
++}
++
++/** `airi_act` tool invocation: stage direction (emotion/motion/delay). */
++export interface CorticoActFrame {
++  type: 'act'
++  emotion?: string
++  motion?: string
++  delay?: number
++  /** Target chat session the act belongs to. */
++  sessionId?: string
++}
++
++/** Model turn finished; the stage may close the current TTS session. */
++export interface CorticoTurnEndFrame {
++  type: 'turn_end'
++}
++
++/** Bridge status or error notice for the UI. */
++export interface CorticoSysFrame {
++  type: 'sys'
++  text: string
++}
++
++/** `airi_call` tool invocation: invoke a stage capability (mods call). */
++export interface CorticoCallFrame {
++  type: 'call'
++  name: string
++  payload?: unknown
++}
++
++/** `airi_name_session` tool invocation: persona named a conversation. */
++export interface CorticoNameSessionFrame {
++  type: 'name_session'
++  sessionId: string
++  label: string
++}
++
++/** Snapshot of the persona's memory workspace, sent on `memory_query`. */
++export interface CorticoMemoryFrame {
++  type: 'memory'
++  /** Absolute path of the memory workspace on the bridge host. */
++  dir: string
++  /** Top-level sections with file counts and the newest entries. */
++  sections: Array<{
++    name: string
++    files: number
++    /** Newest file names (mtime desc, capped by the bridge). */
++    recent: string[]
++  }>
++  /** Total tracked files across sections. */
++  totalFiles: number
++}
++
++export type CorticoServerFrame
++  = | CorticoDeltaFrame
++    | CorticoSpeakFrame
++    | CorticoActFrame
++    | CorticoTurnEndFrame
++    | CorticoSysFrame
++    | CorticoCallFrame
++    | CorticoNameSessionFrame
++    | CorticoMemoryFrame
+diff --git a/server/packages/server-sdk-shared/src/index.ts b/server/packages/server-sdk-shared/src/index.ts
+index 523b9ef..bd7448b 100644
+--- a/server/packages/server-sdk-shared/src/index.ts
++++ b/server/packages/server-sdk-shared/src/index.ts
+@@ -1 +1,2 @@
++export * from './cortico'
+ export * from './v2'
