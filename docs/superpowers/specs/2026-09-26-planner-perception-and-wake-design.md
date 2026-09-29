@@ -980,24 +980,38 @@ hour no worse; no new failure classes in playtest review.
 
 ### Phase 4: perception layer and salience sensors
 
-- [ ] Add `agent.perception` with the Sensor API, the registry,
+Plan: [`plans/2026-09-29-planner-event-system-phase-4.md`](../plans/2026-09-29-planner-event-system-phase-4.md).
+
+- [x] Add `agent.perception` with the Sensor API, the registry,
   `Hysteresis` and `NoticedMemory`, with unit tests.
-- [ ] Migrate the existing observers (4.5 table).
-- [ ] Add `NotableBlockSensor`, `EntityNoticeSensor`, `DroppedItemSensor`,
-  `EnvironmentSensor` and `InventoryDeltaSensor`. Put the Java-side budgets
-  (radius, K, R) in `agent.yml` (`perception:`), reloadable through
-  `airicraft reload`.
-- [ ] Write the bundled `salience/default.js`: notable blocks, entity
+- [x] Migrate the existing observers (4.5 table). `ChatIngestService` is
+  stateless and stays a callback ingress.
+- [x] Add `NotableBlockSensor`, `EntityNoticeSensor`, `DroppedItemSensor`
+  and `EnvironmentSensor`, with the Java-side budgets (radius, K, R) in
+  `agent.yml` (`perception:`), reloadable through `airicraft reload`.
+  `InventoryDeltaSensor` was replaced by delta-first observation state
+  (plan P2, P15), which reports inventory changes with totals.
+- [x] Write the bundled `salience/default.js`: notable blocks, entity
   categories, the contextual garbage list, vein clustering, and offer
   deduplication.
-- [ ] Add new evaluation scenarios:
-  - `notice-diamond`: an exposed diamond vein beside a path, and a fully
-    enclosed one that must **not** be noticed.
-  - `notice-drop`: valuable and garbage drops near the path.
+- [x] Add evaluation coverage. The two scenarios became one course:
+  - `scripts/perception-baseline` walks the evaluator's `notice_walk` course
+    without a model, passing 3 of 3 runs. It checks that the exposed vein
+    and the bread are noticed, the sealed ore never is, and the cobblestone
+    is dropped as garbage.
+  - `scenarios/notice-walk` is the same course for a model run. Reviewing
+    what the controller chooses to do needs that run.
+- [ ] Budget check: measured with the sensor registry's per-tick timings
+  (not Arthas), in a cloud container with software rendering at load 4 on
+  4 cores:
+  - all sensors: 359 µs mean per tick, of which the new sensors are 198 µs;
+  - the block scan: 86 µs mean, 408 µs p99;
+  - a salience step: 4 ms p50, 18 ms p99, on the few ticks with candidates.
 
-  Check the wakes, and review what the controller chooses to do.
-- [ ] Budget check: perception tick cost measured with Arthas `trace` on a
-  loaded world, within the budget set in Phase 0.
+  This is over the plan's P9 budget. Pre-existing observers read similarly
+  inflated here (the physical sensor: 59 µs mean). It needs a measurement
+  on a real machine; if salience stays over budget, move its step off the
+  client thread.
 
 ### Phase 5: priority refinements
 

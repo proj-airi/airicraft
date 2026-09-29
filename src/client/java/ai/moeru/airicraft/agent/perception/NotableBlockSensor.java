@@ -2,8 +2,6 @@ package ai.moeru.airicraft.agent.perception;
 
 import ai.moeru.airicraft.agent.LifecycleBoundary;
 import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 import net.minecraft.block.BlockState;
@@ -26,7 +24,10 @@ public final class NotableBlockSensor implements Sensor {
 
 	private final NotableBlockScanner scanner = new NotableBlockScanner();
 	private final Supplier<Set<String>> interests;
-	private final Map<String, TagKey<net.minecraft.block.Block>> tags = new HashMap<>();
+	/** Interests resolved to block objects and tags once per change, so the scan compares objects, not id strings. */
+	private Set<String> resolvedFor = Set.of();
+	private Set<net.minecraft.block.Block> interestingBlocks = Set.of();
+	private java.util.List<TagKey<net.minecraft.block.Block>> interestingTags = java.util.List.of();
 
 	public NotableBlockSensor(Supplier<Set<String>> interests) {
 		this.interests = interests;
@@ -45,6 +46,7 @@ public final class NotableBlockSensor implements Sensor {
 		if (!Scopes.ready(client)) return;
 		Set<String> wanted = interests.get();
 		if (wanted.isEmpty()) return;
+		resolve(wanted);
 		var world = client.world;
 		var player = client.player;
 		Vec3d eye = player.getEyePos();
@@ -53,7 +55,7 @@ public final class NotableBlockSensor implements Sensor {
 		NotableBlockScanner.Blocks blocks = new NotableBlockScanner.Blocks() {
 			@Override public String blockId(int x, int y, int z) {
 				BlockState state = world.getBlockState(pos.set(x, y, z));
-				return state.isAir() ? null : interesting(state, wanted) ? Registries.BLOCK.getId(state.getBlock()).toString() : "";
+				return state.isAir() ? null : interesting(state) ? Registries.BLOCK.getId(state.getBlock()).toString() : "";
 			}
 
 			@Override public boolean opaque(int x, int y, int z) {
@@ -74,17 +76,25 @@ public final class NotableBlockSensor implements Sensor {
 		}
 	}
 
-	private boolean interesting(BlockState state, Set<String> wanted) {
-		if (wanted.contains(Registries.BLOCK.getId(state.getBlock()).toString())) return true;
-		for (String entry : wanted) {
-			if (!entry.startsWith("#")) continue;
-			var tag = tags.computeIfAbsent(entry, key -> {
-				Identifier id = Identifier.tryParse(key.substring(1));
-				return id == null ? null : TagKey.of(RegistryKeys.BLOCK, id);
-			});
-			if (tag != null && state.isIn(tag)) return true;
-		}
+	private boolean interesting(BlockState state) {
+		if (interestingBlocks.contains(state.getBlock())) return true;
+		for (var tag : interestingTags) if (state.isIn(tag)) return true;
 		return false;
+	}
+
+	private void resolve(Set<String> wanted) {
+		if (wanted.equals(resolvedFor)) return;
+		var blocks = new java.util.HashSet<net.minecraft.block.Block>();
+		var tags = new java.util.ArrayList<TagKey<net.minecraft.block.Block>>();
+		for (String entry : wanted) {
+			Identifier id = Identifier.tryParse(entry.startsWith("#") ? entry.substring(1) : entry);
+			if (id == null) continue;
+			if (entry.startsWith("#")) tags.add(TagKey.of(RegistryKeys.BLOCK, id));
+			else Registries.BLOCK.getOptionalValue(id).ifPresent(blocks::add);
+		}
+		interestingBlocks = Set.copyOf(blocks);
+		interestingTags = java.util.List.copyOf(tags);
+		resolvedFor = Set.copyOf(wanted);
 	}
 
 	@Override public void onBoundary(LifecycleBoundary boundary, long tick) {

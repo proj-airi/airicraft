@@ -51,7 +51,8 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 
 ```text
 {tick, seed,
- attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal, pendingCraftToolResult},
+ attention: {proactiveSocialMode, reflexOwnsActuation, activeJobType, activeJobIdle, activeJobTerminal, pendingCraftToolResult,
+             activeJobTargets},
  plannerRules: [{index, ruleId, effect, reason, match: {eventType, player, speaker, actor, itemId, damageTypeId, attackerName}}],
  events: [{seqNo, type, fields, profile: {semantic, trigger, bypass}, plannerEnabled,
            evidence: {addressedToAgent, resetCommand, senderWithinChatDistance}}]}
@@ -59,7 +60,9 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 
 - `plannerRules` holds the planner's `update_event_policy` rules in order. The latest matching rule wins.
 - `fields` holds the payload values the policy reads (`player`, `speaker`, `actor`, `itemId`, `damageTypeId`,
-  `attackerName`, `state`), as strings.
+  `attackerName`, `state`, `blockId`, `change`), as strings.
+- `activeJobTargets` lists the block and item ids the running job works on (a mining job's block ids, a collect job's
+  target blocks and accepted items).
 
 `step` must return one decision per event:
 
@@ -67,7 +70,7 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 {decisions: [{seqNo, emitSemantic,
               ruleMatch: {effect, ruleIndex, ruleId, reason, bypassed},
               policy:    {effect, ruleIndex, ruleId, reason, bypassed},
-              wake:      {delivery: NONE|IMMEDIATE, urgency: CRITICAL|DIRECT|HIGH|NORMAL|LOW|SELF, ruleId, reason}}],
+              wake:      {delivery: NONE|IMMEDIATE|DEBOUNCE, urgency: CRITICAL|DIRECT|HIGH|NORMAL|LOW|SELF, ruleId, reason}}],
  state}
 ```
 
@@ -80,8 +83,48 @@ A module is one JavaScript expression: a factory that receives the bundled libra
 - `ruleIndex` is `-1` or the index of the planner rule named by `ruleId`. Any other value makes the step fail with
   `malformed_decision`.
 - `wake.ruleId` must be 1–128 characters and `reason` at most 256.
+- `DEBOUNCE` holds the wake until 10 ticks pass without another debounced wake, or 100 ticks after the oldest, and
+  then delivers all held wakes as one batch. A wake delivered in the meantime takes the held ones with it. Critical,
+  direct and high urgency are never held.
+- The bundled module debounces percepts (`perception.*`) at `LOW` urgency. A percept about a block or item the running
+  job targets is `NONE`. `perception.environment_changed` wakes only for dusk while idle; other changes are evidence.
 - Do not start rule ids with an event-id namespace such as `social.`. Use prefixes like `chat.`, `ownership.` or your
   own.
+
+## Salience rules
+
+A second hook decides what the agent notices (spec section 5). Java sensors hand over honest candidates: things the
+player could actually perceive, each once, as plain records. A block is a candidate only when a raycast from the eyes
+reaches one of its faces exposed to a non-opaque neighbour, so a block sealed in stone never is. The salience module
+decides which candidates become percepts. It never sees the live world.
+
+The bundled module is `src/main/resources/airicraft/rules/salience/default.js`. Override it with
+`config/airicraft/rules/salience.js`; reload and startup treat it exactly like an attention override.
+
+```text
+module: {interests: {blocks: [ids or #tags]}, step(input, state, lib)}
+input:  {tick, seed,
+         context: {objective, constraints, wanted: [itemIds], inventory: {itemId: count}, activeJobType, activeJobTargets, idle},
+         candidates: [{id, kind: block|item|entity|entity_lost|environment, ...evidence}]}
+output: {percepts: [{type, payload, candidateIds}], drops: [{candidateId, reason}], state}
+```
+
+- `interests.blocks` is what the block sensor scans for. Every entry costs raycasts; keep it short. `#tag` entries
+  match block tags.
+- `type` must be one of `perception.block_noticed`, `perception.item_noticed`, `perception.entity_noticed`,
+  `perception.entity_lost` or `perception.environment_changed`; other percepts are rejected and counted.
+- Candidates neither turned into a percept nor dropped are recorded as `dropped:unselected`.
+- At most `perception.candidatesPerStep` candidates (default 50) go into one step, oldest first. A failed step keeps
+  its candidates for up to 20 ticks, and an override that fails 3 steps in a row reverts to the bundled module.
+- The bundled module notices notable ores, spawners, chests and portals (adjacent blocks form one vein percept),
+  players, villagers, named or tamed animals, food animals when their products are wanted, dropped items that are not
+  common garbage (unless the goal or a job wants them), and environment changes. It drops offered items (the offer is
+  already a percept) and anything the running job owns, and applies per-category cooldowns and hourly caps.
+
+`airicraft agent debug state` shows the salience engine as `[perceptionSalience]` (percepts, drops, step timings);
+`--verbose` adds per-sensor timings and the recent decisions. Recorded runs write `salience-steps.jsonl`; re-run them
+with `./gradlew salienceReplay -Pairicraft.replayRun=<run-dir> [-Pairicraft.replaySalienceModule=<salience.js>]`,
+which writes `salience-replay.json` with the steps whose percepts or drops differ.
 
 ## Sandbox
 

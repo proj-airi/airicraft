@@ -13,6 +13,77 @@ observers move behind one Sensor API.
 sections 4.5, 4.12, 5 and 6 (Phase 4). **Previous phase:**
 [`plans/2026-09-28-planner-event-system-phase-3.md`](2026-09-28-planner-event-system-phase-3.md).
 
+## Status (2026-09-29)
+
+Slices 4a–4g are implemented on `claude/hopeful-gauss-1gjr8v`.
+
+- **Behaviour preservation:**
+  - 4a and 4b left every golden and `wakeAudit` byte-identical, and a 50×
+    repeat of both golden classes passed.
+  - 4c–4e changed no existing golden. 4d added five percept scenarios.
+- **Perception baseline** (`scripts/perception-baseline`, no model): 3 of 3
+  runs passed on `notice_walk`.
+  - The exposed diamond vein and the bread were noticed.
+  - The sealed emerald ore was never a candidate.
+  - The cobblestone was dropped as garbage.
+  - Events were never truncated.
+  - Percept wake decisions ran at 10.4–10.8 per minute during the walk (the
+    over-waking metric for Phase 5).
+- **Live smoke** (stub endpoint): a noticed vein was debounced, then named in
+  `observe.wake` with its event, and the observation carried only the
+  changed state.
+- **Delta-first state (4f):** presented observation characters over the 33
+  golden requests.
+  - OpenAI-compatible: 43,503 → 43,549, flat, since this backend already
+    sent patch deltas.
+  - Codex: 35,789 → 32,691, down 8.7%.
+
+  The golden scenarios are one to three requests long, so most of their
+  observations are baselines.
+- **Budget (P9): not met in this environment.** Measured in a container with
+  software rendering at load average 4 on 4 cores:
+  - all sensors: 359 µs mean per tick, of which the new sensors are 198 µs;
+  - the block scan: 86 µs mean, 408 µs p99;
+  - a salience step: 4 ms p50, 18 ms p99, on ticks with candidates.
+
+  Pre-existing observers read similarly inflated here (the physical sensor:
+  59 µs mean). This needs a measurement on a real machine. If salience
+  stays over, move its step off the client thread; that reverses the
+  synchronous-step choice, so it is the user's call.
+
+## Revisions during implementation (2026-09-29)
+
+- **No `ChatIngress` wrapper.** `ChatIngestService` is stateless; it stays
+  a callback ingress.
+- **One notice course and scenario, not two.** `notice_walk` has the
+  exposed vein, the sealed ore and both drops. `scenarios/notice-walk`
+  holds the same course, with its world trimmed to the course's regions
+  (5.7 MB).
+- **Evaluator checks:** `event_absent`, plus an optional `payload` match
+  for `event_contains` and `event_absent`.
+- **Each baseline run builds the course 64 blocks further south**, because
+  the agent correctly remembers what it noticed for 10 minutes.
+- **The salience engine warms on first use.** Otherwise every runtime a
+  test builds starts a 600-step warm-up and loads the test JVM.
+- **The size guard compares JSON sizes**, the changes against the state,
+  and never applies to an unchanged state.
+- **Codex keeps the presenter state its thread already holds** and
+  advances it only when a turn completes.
+- **Salience replay is its own task**, `./gradlew salienceReplay`, beside
+  `attentionReplay`.
+- **Lost entities:** Java offers an `entity_lost` candidate for every
+  noticed entity that leaves. The salience module keeps only those it
+  turned into percepts.
+- **Percept rule ids use `percept.*`**, so the event inventory scan does
+  not mistake them for event types.
+- **The block sensor resolves interests to block objects** once per change,
+  instead of building an id string for every scanned block.
+- **New lifecycle participants:** `salience`, `notable_blocks`,
+  `dropped_items`, `entities` and `environment`, before `nearby`.
+- **Follow-up, not in scope:** the ambient "World evidence snapshot" notice
+  counts nearby blocks in a cube, hidden ones included. That contradicts
+  the no-X-ray rule; it is older than Phase 4 (R6 kept ambient notices).
+
 ## Where Phase 4 starts
 
 What Phases 1–3 already provide, and what is missing:
@@ -73,15 +144,15 @@ implementation. Each has a recommendation.
 
 ### Task 1: package `agent.perception`
 
-- [ ] `Sensor` (`id()`, `sample(SensorContext, PerceptSink)`,
+- [x] `Sensor` (`id()`, `sample(SensorContext, PerceptSink)`,
   `onBoundary(LifecycleBoundary, tick)`), `SensorRegistry` (order, per-sensor
   nanos counters, registration into `LifecycleDispatcher`), `SensorContext`
   (tick, client view, budgets) and `PerceptSink` (publishes through the bus,
   or hands candidates to salience).
-- [ ] `Hysteresis` (enter and exit ranges, line of sight to enter) and
+- [x] `Hysteresis` (enter and exit ranges, line of sight to enter) and
   `NoticedMemory` (per world and dimension, LRU, TTL), with unit tests
   covering TTL expiry, LRU eviction, dimension switch and boundary reset.
-- [ ] `AgentConfig.PerceptionConfig` and the `perception:` section of
+- [x] `AgentConfig.PerceptionConfig` and the `perception:` section of
   `agent.yml` (P9 defaults), read strictly on reload. Add them to
   `agent.yml.example`.
 
@@ -89,15 +160,15 @@ implementation. Each has a recommendation.
 
 ### Task 2: sensors around today's observers
 
-- [ ] `PhysicalSensor`, `ItemOfferSensor`, `DamageSensor` (callback ingress
+- [x] `PhysicalSensor`, `ItemOfferSensor`, `DamageSensor` (callback ingress
   plus tick pruning) and `SocialPresenceSensor` wrap the existing cores, with
   the same call order inside `tickClient`.
-- [ ] `ChatIngress` wraps `ChatIngestService` as a callback ingress with
+- [x] `ChatIngress` wraps `ChatIngestService` as a callback ingress with
   boundary resets. `SlowMiningObserver` and `WorkProgressWatchdog` stay in
   the work package as monitors (spec 4.5 table).
-- [ ] The lifecycle participants keep their ids, and a test pins
+- [x] The lifecycle participants keep their ids, and a test pins
   `LifecycleDispatcher.table()`.
-- [ ] Full build; goldens and `wakeAudit` byte-identical; a 50× repeat of
+- [x] Full build; goldens and `wakeAudit` byte-identical; a 50× repeat of
   the golden classes. Commit:
   `refactor(perception): run existing observers as sensors`.
 
@@ -105,35 +176,35 @@ implementation. Each has a recommendation.
 
 ### Task 3: engine support for a second module
 
-- [ ] `kernel.js` passes `percepts` and `drops` through, and `load` returns
+- [x] `kernel.js` passes `percepts` and `drops` through, and `load` returns
   the module's `interests` (P3). `RuleStepResult` gains `percepts` and
   `drops`.
-- [ ] `RuleModule.bundledSalience()`, a salience warm-up input, and
+- [x] `RuleModule.bundledSalience()`, a salience warm-up input, and
   `SalienceRuleSource` (override `config/airicraft/rules/salience.js`, strict
   validation on reload, startup reverts to the bundled module), following
   `AttentionRuleSource`.
-- [ ] `SaliencePolicy`: host-owned state, the 50-candidate cap with
+- [x] `SaliencePolicy`: host-owned state, the 50-candidate cap with
   carry-over, the P5 failure path and revert, and decision counters for
   `agent debug state` and the dashboard.
 
 ### Task 4: bundled `salience/default.js`
 
-- [ ] Interests: diamond, emerald and ancient-debris ores (with their
+- [x] Interests: diamond, emerald and ancient-debris ores (with their
   deepslate variants), spawners, chests and portals.
-- [ ] Block clustering into one vein percept with a count (`lib.cluster`).
-- [ ] Entity categories: players, villagers and traders, named or tamed
+- [x] Block clustering into one vein percept with a count (`lib.cluster`).
+- [x] Entity categories: players, villagers and traders, named or tamed
   animals, and food or breeding animals only when `wanted` or the goal names
   them. Skip reflex-tracked hostiles.
-- [ ] The contextual garbage list (spec section 5), overridden by `wanted`.
-- [ ] Offer deduplication (P11) and notice budgets (P6).
-- [ ] Rule tests in the real sandbox against JSON fixtures, with state
+- [x] The contextual garbage list (spec section 5), overridden by `wanted`.
+- [x] Offer deduplication (P11) and notice budgets (P6).
+- [x] Rule tests in the real sandbox against JSON fixtures, with state
   threaded through steps: clustering, garbage and `wanted`, budgets,
   determinism, and the failure paths.
 
 ### Task 5: catalog and attention
 
-- [ ] Add the P14 types to `EventCatalog` and `event-inventory.json`.
-- [ ] `activeJobTargets` in `AttentionState` and the attention input. P7
+- [x] Add the P14 types to `EventCatalog` and `event-inventory.json`.
+- [x] `activeJobTargets` in `AttentionState` and the attention input. P7
   branches in `attention/default.js` and `ReferenceAttentionPolicy`, with
   parity tests.
 
@@ -141,11 +212,11 @@ implementation. Each has a recommendation.
 
 ### Task 6: scheduler hold
 
-- [ ] Implement P8 in `WakeScheduler`: the hold, quiet and maximum release,
+- [x] Implement P8 in `WakeScheduler`: the hold, quiet and maximum release,
   piggy-backing on an immediate release, satisfaction, boundary clearing,
   the clamp for protected urgencies, and the audit kinds. Unit tests with a
   fake tick source.
-- [ ] New golden scenarios with injected candidates:
+- [x] New golden scenarios with injected candidates:
   - `percept_block_idle`: one vein percept is released after 10 quiet
     ticks, and `observe.wake` names it;
   - `percept_owned_by_mining`: `NONE` while a mining job targets that ore;
@@ -163,25 +234,25 @@ implementation. Each has a recommendation.
 
 ### Task 7: `NotableBlockSensor`
 
-- [ ] Incremental shell scan (at most K positions per tick) of the interest
+- [x] Incremental shell scan (at most K positions per tick) of the interest
   set, an exposed-face test, and at most R raycasts per tick from the eyes
   to the exposed face. Fully enclosed blocks never become candidates.
-- [ ] A pure core over a block-lookup function, with tests: exposed vs
+- [x] A pure core over a block-lookup function, with tests: exposed vs
   enclosed, a glass window counts as transparent, budget respected, memory
   prevents repeats.
 
 ### Task 8: `DroppedItemSensor` and `EntityNoticeSensor`
 
-- [ ] Items: first sight with line of sight within radius, keyed by uuid.
+- [x] Items: first sight with line of sight within radius, keyed by uuid.
   Attribution is `thrown_by_player` from the offer inference,
   `own_mining_drop` when a job owns the position, otherwise `unknown`.
-- [ ] Entities: hysteresis enter and exit, `reflexTracked` flag, equipment
+- [x] Entities: hysteresis enter and exit, `reflexTracked` flag, equipment
   summary; exit candidates only for entities that became percepts.
-- [ ] Pure-core tests with synthetic entity lists.
+- [x] Pure-core tests with synthetic entity lists.
 
 ### Task 9: `EnvironmentSensor`
 
-- [ ] Transitions only: dusk and dawn from time of day, rain and thunder
+- [x] Transitions only: dusk and dawn from time of day, rain and thunder
   start and stop, biome at the feet (100-tick hysteresis), and darkness at
   the feet (connected-light mode, with hysteresis). Dimension changes stay
   `session.*` events.
@@ -190,18 +261,18 @@ implementation. Each has a recommendation.
 
 ### Task 10: one delta presenter for both backends
 
-- [ ] Extract the baseline and delta logic from `PlannerSnapshotPresentation`
+- [x] Extract the baseline and delta logic from `PlannerSnapshotPresentation`
   into a shared presenter. `PlannerReferences.presentMessages` and
   `CodexPlannerResponseCodec` both use it. Replaying the same accepted
   history still gives the same presentation (request-local, as today).
-- [ ] Baseline rules: an explicit `observe` call, the periodic baseline, and
+- [x] Baseline rules: an explicit `observe` call, the periodic baseline, and
   the size guard, on top of today's triggers. Unit tests for each trigger,
   and one pinning that the automatic decision-context observation stays a
   delta.
-- [ ] Semantic inventory and vitals deltas in `PlannerInputText`; velocity
+- [x] Semantic inventory and vitals deltas in `PlannerInputText`; velocity
   and sub-block position noise dropped from deltas. Tests with before and
   after states.
-- [ ] Prompt-size check (as R10 in Phase 3), measured on the presented text
+- [x] Prompt-size check (as R10 in Phase 3), measured on the presented text
   of all golden requests for both backends: Phase 3 vs Phase 4. Record it
   here. Commit: `feat(observe): delta-first state for both backends`.
 
@@ -209,39 +280,42 @@ implementation. Each has a recommendation.
 
 ### Task 11
 
-- [ ] Notice courses in the evaluator (`NoticeCourses`,
+- [x] Notice courses in the evaluator (`NoticeCourses`,
   `NoticeCourseFixtureService`), the `event_absent` check, and
   `scripts/perception-baseline` (P12). Run it here in a disposable world.
 - [ ] Budget (P9): per-sensor nanos from the registry counters, and Arthas
   `trace` of `SensorRegistry.sample` on a loaded world during a 5-minute
   walk. Record the numbers in this plan.
-- [ ] Salience replay (P13) on a recorded baseline run: zero diff against the
+- [x] Salience replay (P13) on a recorded baseline run: zero diff against the
   bundled module.
-- [ ] Live smoke with the stub endpoint (as in Phase 3): an exposed vein
+- [x] Live smoke with the stub endpoint (as in Phase 3): an exposed vein
   beside the path produces one `perception.block_noticed` wake after the
   debounce, rendered in the observation text.
-- [ ] Save `notice-diamond` and `notice-drop` world archives and scenario
+- [x] Save `notice-diamond` and `notice-drop` world archives and scenario
   files from the fixtures; the user decides whether to run them with a
   model.
-- [ ] Docs: spec Phase 4 checklist, `docs/attention-rules.md` (salience
+- [x] Docs: spec Phase 4 checklist, `docs/attention-rules.md` (salience
   module, `interests`, overrides), a `docs/perception.md` (sensors, budgets,
   the honesty rule, the baseline), and the `AGENTS.md` key files and
   behaviour notes.
 
 ## Exit criteria
 
-- [ ] Build green. 4a and 4b leave every golden byte-identical, and the
+- [x] Build green. 4a and 4b leave every golden byte-identical, and the
   golden repeat is stable.
-- [ ] The notice baseline passes: the exposed vein is noticed, the enclosed
+- [x] The notice baseline passes: the exposed vein is noticed, the enclosed
   vein never is, valuable drops are noticed, garbage is dropped with a
   reason, and an offer is a single wake.
-- [ ] Perception stays within the P9 budget on a loaded world.
-- [ ] No existing wake changes: `wakeAudit` in existing goldens is
+- [ ] Perception stays within the P9 budget on a loaded world. Not met in the
+  cloud container; see Status.
+- [x] No existing wake changes: `wakeAudit` in existing goldens is
   unchanged.
-- [ ] Wakes per minute during the baseline walk are recorded as the
+- [x] Wakes per minute during the baseline walk are recorded as the
   over-waking metric (spec risk), for Phase 5's bucket tuning.
 - [ ] Both backends present `current` as deltas between baselines, and the
-  prompt-size check shows fewer presented characters than Phase 3.
+  prompt-size check shows fewer presented characters than Phase 3. Codex is
+  down 8.7%; the OpenAI-compatible backend is flat (+0.1%), because it
+  already sent patch deltas. See Status.
 
 ## Risks
 

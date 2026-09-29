@@ -63,6 +63,8 @@ public final class SaliencePolicy {
 	private long expired;
 	private long rejected;
 	private long maxStepNanos;
+	private final long[] stepWindow = new long[256];
+	private long timedSteps;
 	private String lastFailure = "";
 
 	public SaliencePolicy(EventPublisher diagnostics, RuleModule module) {
@@ -157,6 +159,7 @@ public final class SaliencePolicy {
 		steps++;
 		consecutiveFailures = 0;
 		maxStepNanos = Math.max(maxStepNanos, result.nanos());
+		stepWindow[(int) (timedSteps++ % stepWindow.length)] = result.nanos();
 		recorder.accept(new StepRecord(tick, module.origin(), input, stateBefore, result.percepts(), result.drops()));
 		var out = new ArrayList<Percept>();
 		var decided = new LinkedHashSet<String>();
@@ -204,6 +207,11 @@ public final class SaliencePolicy {
 		result.put("consecutiveFailures", consecutiveFailures);
 		result.put("reverts", reverts);
 		result.put("maxStepMicros", maxStepNanos / 1_000L);
+		int count = (int) Math.min(timedSteps, stepWindow.length);
+		long[] recentSteps = java.util.Arrays.copyOf(stepWindow, count);
+		java.util.Arrays.sort(recentSteps);
+		result.put("stepP50Micros", count == 0 ? 0 : recentSteps[count / 2] / 1_000L);
+		result.put("stepP99Micros", count == 0 ? 0 : recentSteps[Math.min(count - 1, (int) Math.ceil(count * .99) - 1)] / 1_000L);
 		result.put("stateBytes", ruleState.getBytes(StandardCharsets.UTF_8).length);
 		result.put("lastFailure", lastFailure);
 		result.put("recent", List.copyOf(recent));

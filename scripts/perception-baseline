@@ -152,18 +152,21 @@ def sensor_costs(state: dict[str, Any]) -> dict[str, Any]:
                              "samples": values.get("samples", 0)}
                     for sensor, values in sensors.items()},
         "salienceMaxStepMicros": perception.get("maxStepMicros"),
+        "salienceStepP50Micros": perception.get("stepP50Micros"),
+        "salienceStepP99Micros": perception.get("stepP99Micros"),
         "salienceSteps": perception.get("steps"),
         "salienceFailures": perception.get("failures"),
     }
 
 
-def run_course(call: BridgeCall, timeout_seconds: float, settle_seconds: float = 1.5, decide_seconds: float = 6.0,
+def run_course(call: BridgeCall, timeout_seconds: float, run: int = 0, settle_seconds: float = 1.5, decide_seconds: float = 6.0,
                poll_seconds: float = 0.5, sleep: Callable[[float], None] = time.sleep,
                clock: Callable[[], float] = time.monotonic) -> dict[str, Any]:
-    built = call("POST", COURSE_ROUTE, {"action": "build"})
-    sleep(settle_seconds)
+    # The vein is within sight of the start, so percepts count from the build, not from the walk.
     since = int(call("GET", EVENTS_ROUTE, None).get("latestSeqNo", 0))
     before = call("GET", STATE_ROUTE, None)
+    built = call("POST", COURSE_ROUTE, {"action": "build", "run": run})
+    sleep(settle_seconds)
     cursor = int(call("GET", TIMELINE_ROUTE, None).get("latestEntryId", 0))
     started = clock()
     goal = built["goal"]
@@ -223,7 +226,7 @@ def main(argv: list[str]) -> int:
     results: list[dict[str, Any]] = []
     try:
         for run in range(1, args.runs + 1):
-            result = run_course(call, args.timeout_seconds)
+            result = run_course(call, args.timeout_seconds, run=run)
             result["run"] = run
             results.append(result)
             failed = [check["check"] for check in result["checks"] if not check["passed"]]

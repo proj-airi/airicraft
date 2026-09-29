@@ -32,11 +32,13 @@ import java.util.Set;
  *   <li>an emerald ore sealed inside that thick wall, every neighbour stone (must never be noticed: no X-ray);</li>
  *   <li>bread and cobblestone on the corridor floor, pickup disabled (bread noticed, cobblestone dropped as garbage).</li>
  * </ul>
- * The player starts at the west end; the goal is the east end.
+ * The player starts at the west end; the goal is the east end. Each {@code run} is built {@link #RUN_SPACING} blocks
+ * further south, so what the agent remembers noticing in one run does not hide the next run's course.
  */
 final class NoticeCourseFixtureService {
 	static final String COURSE = "notice_walk";
 	private static final int COURSE_Y = 200;
+	static final int RUN_SPACING = 64;
 	private static final int PLACE_FLAGS = Block.NOTIFY_LISTENERS;
 	// Course-local bounds: a solid stone box with a corridor carved through it.
 	private static final int MIN_X = 0, MAX_X = 30, MIN_Y = 0, MAX_Y = 4, MIN_Z = -4, MAX_Z = 5;
@@ -68,7 +70,7 @@ final class NoticeCourseFixtureService {
 				if (request.course() != null && !request.course().isBlank() && !COURSE.equals(request.course().trim())) {
 					throw new FixtureException("unknown_course", "Unknown notice course: " + request.course());
 				}
-				yield build(world, player);
+				yield build(world, player, Math.max(0, request.run()));
 			}
 			case "cleanup" -> {
 				cleanup(world, player);
@@ -78,10 +80,10 @@ final class NoticeCourseFixtureService {
 		};
 	}
 
-	private Map<String, Object> build(ServerWorld world, ServerPlayerEntity player) {
+	private Map<String, Object> build(ServerWorld world, ServerPlayerEntity player, int run) {
 		clear(world);
 		if (origin == null) origin = new Origin(world.getRegistryKey(), player.getPos(), player.getYaw(), player.getPitch());
-		base = new BlockPos(MathHelper.floor(origin.position().x), COURSE_Y, MathHelper.floor(origin.position().z));
+		base = new BlockPos(MathHelper.floor(origin.position().x), COURSE_Y, MathHelper.floor(origin.position().z) + run * RUN_SPACING);
 		builtIn = world.getRegistryKey();
 		for (BlockPos pos : BlockPos.iterate(at(MIN_X, MIN_Y, MIN_Z), at(MAX_X, MAX_Y, MAX_Z))) {
 			world.setBlockState(pos, Blocks.STONE.getDefaultState(), PLACE_FLAGS);
@@ -106,6 +108,7 @@ final class NoticeCourseFixtureService {
 		payload.put("available", true);
 		payload.put("action", "build");
 		payload.put("course", COURSE);
+		payload.put("run", run);
 		payload.put("start", point(at(START[0], START[1], START[2])));
 		BlockPos goal = at(GOAL[0], GOAL[1], GOAL[2]);
 		payload.put("goal", Map.of("x", goal.getX(), "y", goal.getY(), "z", goal.getZ(), "exactY", true));
@@ -162,7 +165,7 @@ final class NoticeCourseFixtureService {
 		}
 	}
 
-	record Request(String action, String course) {
+	record Request(String action, String course, int run) {
 	}
 
 	private record Origin(RegistryKey<World> world, Vec3d position, float yaw, float pitch) {

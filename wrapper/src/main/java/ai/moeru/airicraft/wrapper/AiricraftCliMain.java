@@ -2711,7 +2711,7 @@ public final class AiricraftCliMain {
 			if (!perception.isEmpty()) {
 				LinkedHashMap<String, Object> salience = new LinkedHashMap<>();
 				copy(salience, perception, "module", "ready", "blockInterests", "pending", "steps", "percepts", "drops", "expired",
-					"failures", "reverts", "maxStepMicros", "lastFailure");
+					"failures", "reverts", "stepP99Micros", "maxStepMicros", "lastFailure");
 				view.put("perceptionSalience", salience);
 			}
 			if (verbose) {

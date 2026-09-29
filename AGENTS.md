@@ -40,6 +40,7 @@
   - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
 - Navigation baseline: run `scripts/navigation-baseline` against `scripts/codex-driver-evaluator` in a disposable world. It builds deterministic courses and drives `navigate_to` without a model. See `docs/navigation-baseline.md`.
+- Perception baseline: `scripts/perception-baseline` against the same client walks the evaluator's `notice_walk` course without a model and checks honest noticing (exposed vein noticed, sealed ore never, garbage dropped) and sensor cost. See `docs/perception.md`.
 - Arthas CLI live-debug:
   - Cold-start path: `scripts/arthas kickstart` starts `runClient`, waits for the bridge, joins the first saved world, opens LAN, and attaches Arthas for later probes. It is cold-only and fails fast if a client is already running.
   - Manual start: `./gradlew runClient`
@@ -92,8 +93,12 @@
   - `WakeScheduler`: pending task wakes, G4 admission and G5 release; `IdleHook`: goal continuation and idle think
   - `WakePresenter`: planner-trigger prose per event type
   - `AttentionDecisionLog`, `AttentionReplay`: decision history and recorded-run replay
+- `src/client/java/ai/moeru/airicraft/agent/perception/`
+  - `Sensor`, `SensorRegistry` (order, per-sensor timings), `NoticedMemory`, `Hysteresis`
+  - noticing sensors: pure cores (`NotableBlockScanner`, `DroppedItemNoticer`, `EntityNoticer`, `EnvironmentWatcher`) and client adapters
+  - `SaliencePolicy`: the salience rule hook (candidates to percepts); `SalienceReplay` re-runs recorded steps
 - `src/main/java/ai/moeru/airicraft/rules/` and `src/main/resources/airicraft/rules/`
-  - sandboxed GraalJS rule engine, kernel, `lib.js` and the bundled `attention/default.js`
+  - sandboxed GraalJS rule engine, kernel, `lib.js` and the bundled `attention/default.js` and `salience/default.js`
 
 ## Key Wrapper Files
 
@@ -174,6 +179,8 @@
 ## Behavior Notes
 
 - Every routed event gets one attention decision (stage, rule id, reason), summarized by `airicraft agent debug state` (decisions with `--verbose`) and shown in the dashboard Attention view. Recorded runs write `attention-decisions.jsonl`; replay with `./gradlew attentionReplay -Pairicraft.replayRun=<dir>` and `python3 scripts/wake_ledger.py replay-summary <dir>`.
+- The companion notices what a player could: sensors hand honest candidates (line of sight, blocks with an exposed face; no X-ray) to the GraalJS salience module (`salience/default.js`, override `config/airicraft/rules/salience.js`), which publishes `perception.*` events. Percepts wake the planner debounced (10 quiet ticks); a percept about the running job's own target does not. Budgets are `perception:` in `agent.yml`. See `docs/perception.md`.
+- Observations report `current` as changes (inventory `+n (total)`, vitals, block moves, a JSON Patch for the rest); full state comes first, after world changes, gaps and compaction, when the planner calls `observe` itself, and every 20 observations or 6,000 ticks. Both backends.
 - Each observe says why the planner woke (`observe.wake`: an event `seqNo`/type, or `goal_continuation`, `idle_think`, `delegation`, `evaluation`, `tool_queue_review`); the evidence is `observe.events` (types the catalog marks `PLANNER`) and `current`; per-event advice is `observe.hints` (`provenance: runtime_hint`). Event wakes, goal continuation, idle think and task wakes carry no prose; standing rules live in `prompts/planner-system.md` and tool descriptions.
 - Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
