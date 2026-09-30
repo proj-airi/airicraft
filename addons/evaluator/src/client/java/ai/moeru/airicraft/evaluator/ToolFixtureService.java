@@ -98,7 +98,7 @@ final class ToolFixtureService {
 		origin = new Origin(currentLevel.dimension(), player.position(), player.getYRot(), player.getXRot());
 		ServerLevel level = currentLevel;
 		center = new BlockPos(Mth.floor(origin.position().x), ARENA_Y, Mth.floor(origin.position().z));
-		level.getServer().setDifficulty("normal".equalsIgnoreCase(request.difficulty()) ? Difficulty.NORMAL : Difficulty.PEACEFUL, false);
+		level.getServer().setDifficulty(difficulty(request.difficulty()), false);
 		level.setDayTime(1000L);
 		fill(level, center.offset(-RADIUS, -1, -RADIUS), center.offset(RADIUS, -1, RADIUS), Blocks.STONE);
 		fill(level, center.offset(-RADIUS, 0, -RADIUS), center.offset(RADIUS, HEIGHT, RADIUS), Blocks.AIR);
@@ -236,6 +236,12 @@ final class ToolFixtureService {
 		if (!player.teleportTo(level, position.x, position.y, position.z, Set.<Relative>of(), player.getYRot(), player.getXRot(), true)) {
 			throw new FixtureException("fixture_setup_failed", "Failed to teleport the tool fixture player");
 		}
+	}
+
+	private static Difficulty difficulty(String name) {
+		if ("normal".equalsIgnoreCase(name)) return Difficulty.NORMAL;
+		if ("easy".equalsIgnoreCase(name)) return Difficulty.EASY;
+		return Difficulty.PEACEFUL;
 	}
 
 	record Request(String action, String difficulty, Map<String, Integer> items, List<BlockSpec> blocks, String type,
