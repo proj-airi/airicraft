@@ -197,6 +197,9 @@ tick ratio is 0.93 and every course is within +15% of Baritone. `far_xz` needed 
 way: the executor re-checked arrival after the path reported it had reached the goal and
 rejected a legitimate finish; the path's own `AT_GOAL` is now authoritative.
 
+A rerun on the final commit (`af8bd4d2`) passed 60 of 60 again, with the same medians to within
+a few ticks (`gap_bridge` 67, `far_xz` 1723), no stalls and no health lost.
+
 The benchmark covers movement only. `scripts/run-live-tool-smoke` drives the tools that
 ride on the control plane (equip, eat, place, break, attack, drop, craft, use a block,
 lure) against fixture arenas and records a JSON report; see its header for the scenarios.
