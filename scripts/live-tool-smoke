@@ -61,6 +61,18 @@ class Arena:
     def at(self, dx: int, dy: int, dz: int) -> dict[str, int]:
         return {"x": self.center["x"] + dx, "y": self.center["y"] + dy, "z": self.center["z"] + dz}
 
+    def give(self, items: dict[str, int]) -> None:
+        """Give items on the server, then wait until the client's own inventory shows them: tools read the client."""
+        self.fixture(action="give", items=items)
+        names = [item.split(":", 1)[-1].replace("_", " ") for item in items]  # the tool answers in prose: "iron sword"
+        if not self.wait(lambda: all(name in self.tool("inspect_inventory", {})["text"] for name in names), 15):
+            raise RuntimeError(f"the client never saw {sorted(items)}")
+
+    def set_hunger(self, hunger: int) -> None:
+        """Set hunger on the server and wait for the client's food data to follow (it is not exposed to tools)."""
+        self.fixture(action="hunger", hunger=hunger)
+        time.sleep(3.0)
+
     def state(self, query: list[dict[str, int]] | None = None, entities: list[str] | None = None) -> dict[str, Any]:
         return self.fixture(action="state", query=query or [], entities=entities or [])
 
@@ -94,7 +106,7 @@ def outcome(name: str, passed: bool, detail: str, receipt: dict[str, Any] | None
 
 def scenario_equip_item(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:wooden_pickaxe": 1, "minecraft:iron_sword": 1})
+    arena.give({"minecraft:wooden_pickaxe": 1, "minecraft:iron_sword": 1})
     receipt = arena.tool("equip_item", {"itemId": "minecraft:iron_sword"})
     arena.wait(lambda: arena.state()["heldItem"] == "minecraft:iron_sword", 10)
     held = arena.state()["heldItem"]
@@ -103,8 +115,8 @@ def scenario_equip_item(arena: Arena) -> dict[str, Any]:
 
 def scenario_eat_food(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:bread": 2})
-    arena.fixture(action="hunger", hunger=8)
+    arena.give({"minecraft:bread": 2})
+    arena.set_hunger(8)
     receipt = arena.tool("eat_food", {"itemId": "minecraft:bread"})
     ate = arena.wait(lambda: arena.state()["hunger"] > 8, 15)
     after = arena.state()
@@ -114,7 +126,7 @@ def scenario_eat_food(arena: Arena) -> dict[str, Any]:
 
 def scenario_place_block(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:cobblestone": 8})
+    arena.give({"minecraft:cobblestone": 8})
     target = arena.at(2, 0, 0)
     arena.inspect_around(target)
     receipt = arena.tool("place_block", {"itemId": "minecraft:cobblestone", **target, "facePreference": "down"})
@@ -126,7 +138,7 @@ def scenario_break_blocks(arena: Arena) -> dict[str, Any]:
     arena.reset()
     lower, upper = arena.at(2, 0, 0), arena.at(2, 1, 0)
     arena.fixture(action="set_blocks", blocks=[{**lower, "block": "minecraft:dirt"}, {**upper, "block": "minecraft:dirt"}])
-    arena.fixture(action="give", items={"minecraft:iron_shovel": 1})
+    arena.give({"minecraft:iron_shovel": 1})
     arena.inspect_around(lower)
     receipt = arena.tool("break_blocks", {"targets": [{**lower, "expectedBlockIds": ["minecraft:dirt"]},
                                                          {**upper, "expectedBlockIds": ["minecraft:dirt"]}]})
@@ -136,8 +148,8 @@ def scenario_break_blocks(arena: Arena) -> dict[str, Any]:
 
 def scenario_attack_entity(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:iron_sword": 1})
-    cow = arena.fixture(action="spawn", type="minecraft:cow", **{k: v for k, v in arena.at(4, 0, 0).items()})
+    arena.give({"minecraft:iron_sword": 1})
+    cow =arena.fixture(action="spawn", type="minecraft:cow", **{k: v for k, v in arena.at(4, 0, 0).items()})
     uuid = cow["uuid"]
     receipt = arena.tool("attack_entity", {"uuid": uuid, "entityTypeId": "minecraft:cow", "mode": "kill"})
     dead = arena.wait(lambda: not arena.state(entities=[uuid])["entities"][0]["alive"], 40)
@@ -146,7 +158,7 @@ def scenario_attack_entity(arena: Arena) -> dict[str, Any]:
 
 def scenario_drop_items(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:dirt": 5})
+    arena.give({"minecraft:dirt": 5})
     receipt = arena.tool("drop_items", {"itemId": "minecraft:dirt", "quantity": 3})
     dropped = arena.wait(lambda: sum(d["count"] for d in arena.state()["drops"] if d["item"] == "minecraft:dirt") >= 3, 15)
     left = arena.state()["inventory"].get("minecraft:dirt", 0)
@@ -155,7 +167,7 @@ def scenario_drop_items(arena: Arena) -> dict[str, Any]:
 
 def scenario_craft_recipe(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:oak_planks": 4})
+    arena.give({"minecraft:oak_planks": 4})
     listing = arena.tool("check_craftables", {})
     match = re.search(r'"recipeId"\s*:\s*"(minecraft:stick[^"]*)"', listing["text"]) or re.search(r'(minecraft:stick)\b', listing["text"])
     if not match:
@@ -166,9 +178,26 @@ def scenario_craft_recipe(arena: Arena) -> dict[str, Any]:
                    f"sticks {arena.state()['inventory'].get('minecraft:stick', 0)}", receipt)
 
 
+def scenario_use_block(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    lever, backing = arena.at(2, 0, 0), arena.at(2, 0, 1)
+    arena.fixture(action="set_blocks", blocks=[{**backing, "block": "minecraft:stone"}, {**lever, "block": "minecraft:lever"}])
+    arena.inspect_around(lever)
+
+    def powered() -> bool:
+        entry = arena.state([lever])["blocks"][0]
+        return "powered=true" in entry.get("state", "")
+
+    before = powered()
+    receipt = arena.tool("use_block", {**lever})
+    toggled = arena.wait(powered, 20)
+    return outcome("use_block", receipt["accepted"] and not before and toggled,
+                   f"lever powered before {before}, after {powered()}", receipt)
+
+
 def scenario_lure_entities(arena: Arena) -> dict[str, Any]:
     arena.reset()
-    arena.fixture(action="give", items={"minecraft:wheat": 4})
+    arena.give({"minecraft:wheat": 4})
     cows = [arena.fixture(action="spawn", type="minecraft:cow", **arena.at(-4, 0, dz)) for dz in (-1, 1)]
     tokens = [cow["uuid"].replace("-", "")[:8] for cow in cows]
     low, high = arena.at(5, 0, -1), arena.at(7, 1, 1)
@@ -194,6 +223,7 @@ SCENARIOS: dict[str, Callable[[Arena], dict[str, Any]]] = {
     "attack_entity": scenario_attack_entity,
     "drop_items": scenario_drop_items,
     "craft_recipe": scenario_craft_recipe,
+    "use_block": scenario_use_block,
     "lure_entities": scenario_lure_entities,
 }
 

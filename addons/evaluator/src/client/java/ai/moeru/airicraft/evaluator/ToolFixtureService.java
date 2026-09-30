@@ -73,6 +73,11 @@ final class ToolFixtureService {
 				yield state(level, player, null);
 			}
 			case "spawn" -> spawn(level, request);
+			case "teleport" -> {
+				teleport(player, level, new Vec3(request.x() + 0.5D, request.y(), request.z() + 0.5D));
+				player.setDeltaMovement(Vec3.ZERO);
+				yield state(level, player, null);
+			}
 			case "hunger" -> {
 				player.getFoodData().setFoodLevel(request.hunger() == null ? 20 : request.hunger());
 				player.getFoodData().setSaturation(0.0F);
@@ -84,7 +89,7 @@ final class ToolFixtureService {
 				yield Map.of("available", true, "action", "cleanup");
 			}
 			default -> throw new FixtureException("invalid_request",
-				"action must be arena, clear, give, set_blocks, spawn, hunger, state, or cleanup");
+				"action must be arena, clear, give, set_blocks, spawn, teleport, hunger, state, or cleanup");
 		};
 	}
 
@@ -189,8 +194,9 @@ final class ToolFixtureService {
 		List<Map<String, Object>> blocks = new ArrayList<>();
 		if (request != null && request.query() != null) {
 			for (Pos pos : request.query()) {
+				var blockState = level.getBlockState(new BlockPos(pos.x(), pos.y(), pos.z()));
 				blocks.add(Map.of("x", pos.x(), "y", pos.y(), "z", pos.z(), "block",
-					BuiltInRegistries.BLOCK.getKey(level.getBlockState(new BlockPos(pos.x(), pos.y(), pos.z())).getBlock()).toString()));
+					BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString(), "state", blockState.toString()));
 			}
 		}
 		payload.put("blocks", blocks);
