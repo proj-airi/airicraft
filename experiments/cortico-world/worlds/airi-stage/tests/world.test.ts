@@ -14,7 +14,7 @@ beforeEach(() => { scratchDir = mkdtempSync(join(tmpdir(), 'airi-stage-')); });
 afterEach(() => rmSync(scratchDir, { recursive: true, force: true }));
 
 const call = {} as ToolCallContext;
-const cfg = () => ({ enabled: true, host: '127.0.0.1', port: 0 });
+const cfg = () => ({ enabled: true, host: '127.0.0.1', port: 0, speechEndTrigger: 'piggyback' as const });
 
 async function startWorld() {
   const world = new AiriStageWorld({ cfg: cfg(), timezone: 'UTC', botName: 'Bot' });
@@ -128,6 +128,21 @@ describe('airi stage world', () => {
     await until(() => host.events.length === 1);
     expect(host.events[0]).toMatchObject({ type: 'airi.speech_ended', origin: 'internal', tags: ['speak'], text: 'speech was cut off: "a line"' });
     expect(host.pushOpts[0]).toEqual({ trigger: 'piggyback' });
+    stage.socket.close();
+    await world.stop();
+  });
+
+  it.each(['debounce', 'flush'] as const)('speechEndTrigger=%s makes playback end wake the persona', async (trigger) => {
+    const world = new AiriStageWorld({ cfg: { ...cfg(), speechEndTrigger: trigger }, timezone: 'UTC', botName: 'Bot' });
+    const host = new FakeHost();
+    await world.start(host);
+    const stage = await connectStage(world.port);
+    await until(() => stage.frames.length === 1);
+    await tool(world, 'airi_speak').handler({ text: 'a line' }, call);
+    await until(() => stage.frames.some((f) => f.type === 'speak'));
+    stage.send({ type: 'speech_end', id: String(stage.frames.find((f) => f.type === 'speak')!.id) });
+    await until(() => host.events.length === 1);
+    expect(host.pushOpts[0]).toEqual({ trigger });
     stage.socket.close();
     await world.stop();
   });

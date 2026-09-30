@@ -225,7 +225,7 @@ export class AiriStageWorld implements World {
     });
   }
 
-  /** Playback result of one utterance; rides along with the next wake instead of causing one. */
+  /** Playback result of one utterance. By default it rides along with the next wake; `speechEndTrigger` can make it wake. */
   private async onSpeechEnd(id: string, interrupted: boolean): Promise<void> {
     const text = this.speaking.get(id);
     if (text === undefined) return;
@@ -234,7 +234,7 @@ export class AiriStageWorld implements World {
     await this.push(
       'airi.speech_ended',
       interrupted ? `speech was cut off: "${shown}"` : `finished speaking: "${shown}"`,
-      'piggyback',
+      this.opts.cfg.speechEndTrigger,
       { origin: 'internal', tags: ['speak'], meta: { id, interrupted } },
     );
   }

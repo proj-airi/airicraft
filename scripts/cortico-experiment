@@ -8,6 +8,7 @@ usage() {
 		'Usage: scripts/cortico-experiment <command>' \
 		'' \
 		'  setup [cortico|airi|all]  Fetch pinned checkouts (default: cortico), apply patches, install dependencies.' \
+		'  client [world] | client stop  Launch the airicraft client (driver mode, Xvfb, software GL) and join a scenario world.' \
 		'  test                      Run the World tests against the pinned Cortico.' \
 		'  env                       Print the environment used to run Cortico with the airicraft World.' \
 		'' \
@@ -71,6 +72,32 @@ case "$cmd" in
 			apply_patches airi
 		}
 		(cd "$exp_dir" && pnpm install)
+		;;
+	client)
+		# Needs JAVA_HOME at a JDK 25+, xvfb-run, and a built mod (./gradlew build). Processes do not survive a
+		# container restart, so run this again after one.
+		if [[ "${2:-}" == stop ]]; then
+			[[ -f "$work_dir/client.pid" ]] && kill -- "-$(cat "$work_dir/client.pid")" 2>/dev/null || true
+			rm -f "$work_dir/client.pid"
+			exit 0
+		fi
+		world="${2:-pickup}"
+		state_file="${AIRICRAFT_BRIDGE_STATE_FILE:-$HOME/.airicraft/bridge-state.json}"
+		cli="$repo_root/wrapper/build/install/airicraft/bin/airicraft"
+		mkdir -p "$work_dir" "$repo_root/run/saves"
+		[[ -d "$repo_root/run/saves/$world" ]] || unzip -q "$repo_root/scenarios/$world/world.zip" -d "$repo_root/run/saves/$world"
+		rm -f "$state_file"
+		(cd "$repo_root" && LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe setsid nohup xvfb-run -a -s "-screen 0 1280x720x24" \
+			scripts/codex-driver --max-workers=1 >"$work_dir/client.log" 2>&1 </dev/null & echo $! >"$work_dir/client.pid")
+		for _ in $(seq 1 90); do [[ -f "$state_file" ]] && break; sleep 5; done
+		[[ -f "$state_file" ]] || { echo "error: the client never opened its bridge; see $work_dir/client.log" >&2; exit 1; }
+		sleep 20
+		world_id="$("$cli" worlds list 2>/dev/null | awk -F': ' '/^worldId:/ {print $2; exit}')"
+		[[ -n "$world_id" ]] || { echo "error: no saved world found" >&2; exit 1; }
+		"$cli" worlds join --world-id "$world_id" >/dev/null
+		for _ in $(seq 1 40); do "$cli" status 2>/dev/null | grep -q '^worldLoaded: true' && { echo "in world $world_id"; exit 0; }; sleep 3; done
+		echo "error: the world did not finish loading" >&2
+		exit 1
 		;;
 	test)
 		[[ -d "$work_dir/cortico" ]] || { echo "run: scripts/cortico-experiment setup" >&2; exit 1; }

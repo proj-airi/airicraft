@@ -7,7 +7,7 @@
  *
  * Prints a summary and writes it to $E2E_SUMMARY when set.
  */
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import WebSocket from 'ws';
 
@@ -48,7 +48,7 @@ writeFileSync(resolve(deployDir, 'config.json'), JSON.stringify({
   worlds: {
     terminal: { enabled: false },
     airicraft: { enabled: true, pollIntervalMs: 200 },
-    airi: { enabled: true, port: stagePort },
+    airi: { enabled: true, port: stagePort, speechEndTrigger: process.env.E2E_SPEECH_END ?? 'piggyback' },
   },
 }));
 
@@ -60,6 +60,7 @@ if (process.env.E2E_STREAMER) {
 
 const turns: unknown[] = [];
 const stageFrames: Array<Record<string, unknown>> = [];
+const startedAt = Date.now();
 
 /** What the scripted model does with a delivered frame. */
 const script = (frame: string) => {
@@ -100,23 +101,51 @@ if (!process.env.E2E_NO_STAND_IN) {
   await new Promise<void>((resolveOpen, reject) => { socket.once('open', () => resolveOpen()); socket.once('error', reject); });
   socket.on('message', (raw) => {
     const frame = JSON.parse(String(raw)) as Record<string, unknown>;
-    stageFrames.push(frame);
+    stageFrames.push({ ...frame, atMs: Date.now() - startedAt });
     if (frame.type === 'speak' || frame.type === 'act') console.log('[stage]', JSON.stringify(frame).slice(0, 200));
     if (frame.type === 'speak') setTimeout(() => socket.send(JSON.stringify({ type: 'speech_end', id: frame.id })), 400);
   });
   socket.send(JSON.stringify({ type: 'hello', name: 'viewer' }));
-  setTimeout(() => socket.send(JSON.stringify({ type: 'msg', text: 'hello from the audience', session: { id: 's1', label: 'chat' } })), 4000);
-  if (process.env.E2E_WALK) setTimeout(() => socket.send(JSON.stringify({ type: 'msg', text: `please walk to ${process.env.E2E_WALK}`, session: { id: 's1', label: 'chat' } })), 9000);
+  const say = (text: string) => socket.send(JSON.stringify({ type: 'msg', text, session: { id: 's1', label: 'chat' } }));
+  if (process.env.E2E_CHAT_SCRIPT) {
+    // A simulated audience: [{ "atSec": 5, "text": "name: message" }, ...]
+    const lines = JSON.parse(readFileSync(resolve(process.env.E2E_CHAT_SCRIPT), 'utf8')) as Array<{ atSec: number; text: string }>;
+    for (const line of lines) setTimeout(() => say(line.text), line.atSec * 1000);
+  } else {
+    setTimeout(() => say('hello from the audience'), 4000);
+    if (process.env.E2E_WALK) setTimeout(() => say(`please walk to ${process.env.E2E_WALK}`), 9000);
+  }
 }
 
-await new Promise((r) => setTimeout(r, seconds * 1000));
+// Cost guard: stop early once the model spend reaches E2E_MAX_COST dollars (read from Cortico's usage log).
+const maxCost = Number(process.env.E2E_MAX_COST ?? 0.05);
+const spent = (): number => {
+  const file = resolve(deployDir, 'data/usage.jsonl');
+  if (!existsSync(file)) return 0;
+  return readFileSync(file, 'utf8').split('\n').reduce((sum, line) => {
+    try { return sum + (JSON.parse(line).attempt?.meters?.native?.cost ?? 0); } catch { return sum; }
+  }, 0);
+};
+let stoppedByGuard = false;
+await new Promise<void>((done) => {
+  const timer = setTimeout(() => { clearInterval(guard); done(); }, seconds * 1000);
+  const guard = setInterval(() => {
+    if (spent() >= maxCost) { stoppedByGuard = true; clearTimeout(timer); clearInterval(guard); done(); }
+  }, 3000);
+});
+if (stoppedByGuard) console.log(`[e2e] stopped early: spend reached $${maxCost}`);
 stage?.close();
 await bot.shutdown('e2e done');
 
 const summary = {
   seconds,
+  ranMs: Date.now() - startedAt,
+  stoppedByGuard,
+  speechEndTrigger: process.env.E2E_SPEECH_END ?? 'piggyback',
+  tickMin: Number(process.env.E2E_TICK_MIN ?? 0.2),
+  streamer: Boolean(process.env.E2E_STREAMER),
   turns: turns.length,
-  stageFrames: stageFrames.map((f) => (f.type === 'speak' ? { type: 'speak', text: f.text } : { type: f.type, ...(f.emotion ? { emotion: f.emotion } : {}) })),
+  stageFrames: stageFrames.map((f) => ({ atMs: f.atMs, type: f.type, ...(f.text ? { text: f.text } : {}), ...(f.emotion ? { emotion: f.emotion } : {}) })),
   turnDetail: turns,
 };
 if (process.env.E2E_SUMMARY) writeFileSync(process.env.E2E_SUMMARY, JSON.stringify(summary, null, 2));
