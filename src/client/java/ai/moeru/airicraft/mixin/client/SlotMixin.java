@@ -17,10 +17,10 @@ public class SlotMixin {
 	@Inject(method = "onQuickCraft(Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/item/ItemStack;)V", at = @At("HEAD"))
 	private void airicraft$onQuickTransfer(ItemStack stack, ItemStack originalStack, CallbackInfo ci) {
 		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft == null || !minecraft.isSameThread()) {
+		if (!minecraft.isSameThread()) {
 			return;
 		}
-		if (!(((Object) this) instanceof ResultSlot)) {
+		if (!(((Slot)(Object) this) instanceof ResultSlot)) {
 			return;
 		}
 		if (!(((Object) this) instanceof CraftingResultSlotCraftEventBridge craftingResultSlotBridge)) {

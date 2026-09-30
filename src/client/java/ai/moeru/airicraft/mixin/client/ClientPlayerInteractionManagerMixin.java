@@ -3,6 +3,8 @@ package ai.moeru.airicraft.mixin.client;
 import ai.moeru.airicraft.AiricraftClient;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 import ai.moeru.airicraft.debug.ClientTickPlayerActionEvents;
+import com.llamalad7.mixinextras.sugar.Share;
+import com.llamalad7.mixinextras.sugar.ref.LocalRef;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -17,7 +19,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -26,16 +27,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(MultiPlayerGameMode.class)
 public class ClientPlayerInteractionManagerMixin {
 	@Shadow
-	private float destroyProgress;
+    public float destroyProgress;
 
 	@Shadow
 	private boolean isDestroying;
-
-	@Unique
-	private String airicraft$breakingBlockId;
-
-	@Unique
-	private BlockPos airicraft$breakingBlockPos;
 
 	@Inject(method = "startDestroyBlock", at = @At("HEAD"), cancellable = true)
 	private void airicraft$captureAttackStart(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
@@ -103,32 +98,41 @@ public class ClientPlayerInteractionManagerMixin {
 	}
 
 	@Inject(method = "destroyBlock", at = @At("HEAD"))
-	private void airicraft$captureBrokenBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-		airicraft$breakingBlockId = null;
-		airicraft$breakingBlockPos = null;
+	private void airicraft$captureBrokenBlock(
+		BlockPos pos,
+		CallbackInfoReturnable<Boolean> cir,
+		@Share("brokenBlockId") LocalRef<String> brokenBlockId,
+		@Share("brokenBlockPos") LocalRef<BlockPos> brokenBlockPos
+	) {
 		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft == null || !minecraft.isSameThread() || minecraft.level == null || pos == null) {
+		if (!minecraft.isSameThread() || minecraft.level == null || pos == null) {
 			return;
 		}
 
 		BlockState state = minecraft.level.getBlockState(pos);
-		if (state == null || state.isAir()) {
+		if (state.isAir()) {
 			return;
 		}
-		airicraft$breakingBlockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-		airicraft$breakingBlockPos = pos.immutable();
+		brokenBlockId.set(BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+		brokenBlockPos.set(pos.immutable());
 	}
 
 	@Inject(method = "destroyBlock", at = @At("RETURN"))
-	private void airicraft$reportBrokenBlock(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-		if (!Boolean.TRUE.equals(cir.getReturnValue()) || airicraft$breakingBlockId == null || airicraft$breakingBlockPos == null) {
+	private void airicraft$reportBrokenBlock(
+		BlockPos pos,
+		CallbackInfoReturnable<Boolean> cir,
+		@Share("brokenBlockId") LocalRef<String> brokenBlockId,
+		@Share("brokenBlockPos") LocalRef<BlockPos> brokenBlockPos
+	) {
+		BlockPos brokenPos = brokenBlockPos.get();
+		if (!Boolean.TRUE.equals(cir.getReturnValue()) || brokenBlockId.get() == null || brokenPos == null) {
 			return;
 		}
 		AiricraftClient.runtimeController().onPlayerMinedBlock(
-			airicraft$breakingBlockId,
-			airicraft$breakingBlockPos.getX(),
-			airicraft$breakingBlockPos.getY(),
-			airicraft$breakingBlockPos.getZ()
+			brokenBlockId.get(),
+			brokenPos.getX(),
+			brokenPos.getY(),
+			brokenPos.getZ()
 		);
 	}
 }

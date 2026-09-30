@@ -14,6 +14,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 import java.util.List;
@@ -26,7 +27,8 @@ import java.util.List;
  */
 @Mixin(SectionCompiler.class)
 public abstract class SectionBuilderMixin {
-	private static final float LEAF_ALPHA = 0.4f;
+	@Unique
+    private static final float LEAF_ALPHA = 0.4f;
 
 	@WrapOperation(
 		method = "compile",
@@ -48,10 +50,10 @@ public abstract class SectionBuilderMixin {
 	) {
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
 		VertexConsumer wrapped = consumer;
-		if (service != null && state.getBlock() instanceof LeavesBlock && service.fadeLeavesActive()) {
+		if (state.getBlock() instanceof LeavesBlock && service.fadeLeavesActive()) {
 			wrapped = new AlphaVertexConsumer(wrapped, LEAF_ALPHA);
 		}
-		if (service != null && service.tintContains(pos)) {
+		if (service.tintContains(pos)) {
 			WorldCameraService.TINT_HITS.incrementAndGet();
 			wrapped = new ai.moeru.airicraft.TintedVertexConsumer(wrapped, 0x3080FF, 0.8f);
 		}

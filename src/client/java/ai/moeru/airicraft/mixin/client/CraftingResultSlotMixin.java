@@ -25,7 +25,7 @@ public class CraftingResultSlotMixin implements CraftingResultSlotCraftEventBrid
 			return;
 		}
 		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft == null || !minecraft.isSameThread()) {
+		if (!minecraft.isSameThread()) {
 			return;
 		}
 		if (player == null || stack == null || stack.isEmpty() || stack.getCount() <= 0) {

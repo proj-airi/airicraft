@@ -2,14 +2,13 @@ package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
 import ai.moeru.airicraft.WorldCameraService;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.core.BlockPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * World-camera occluder fading: blocks in the active fade filter are meshed
@@ -17,11 +16,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(RenderSectionRegion.class)
 public abstract class ChunkRendererRegionMixin {
-	@Inject(method = "getBlockState", at = @At("RETURN"), cancellable = true)
-	private void airicraft$fadeOccluders(BlockPos pos, CallbackInfoReturnable<BlockState> cir) {
+	@ModifyReturnValue(method = "getBlockState", at = @At("RETURN"))
+	private BlockState airicraft$fadeOccluders(BlockState original, BlockPos pos) {
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
-		if (service != null && service.isFaded(pos, cir.getReturnValue())) {
-			cir.setReturnValue(Blocks.AIR.defaultBlockState());
+		if (service.isFaded(pos, original)) {
+			return Blocks.AIR.defaultBlockState();
 		}
+		return original;
 	}
 }
