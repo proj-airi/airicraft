@@ -155,7 +155,9 @@ test('attention view explains wakes, pending wakes and the rule engine, filtered
       latest:[decision(1,'pickup.item_picked_up','IMMEDIATE','RULES','catalog.trigger'),
         decision(2,'combat.damage_taken','NONE','FALLBACK','ownership.reflex_actuation')],
       rules:{module:'config:rules/attention.js',ready:true,steps:5,fallbacks:1,failures:1,clamps:2,reverts:0,rebuilds:0,stateBytes:2,lastFailure:'guest_error: bad'},
-      scheduler:{pending:[{path:'W2',urgency:'HIGH',tick:30,eventRefs:[7],guidanceRevision:0}],retainedBy:'G5.run_policy'}}}}]);
+      scheduler:{pending:[{path:'W2',urgency:'HIGH',tick:30,eventRefs:[7],guidanceRevision:0}],retainedBy:'G5.run_policy'},
+      plannerRules:{attention:{activeVersion:2,edits:[{version:1,kind:'update',reason:'mute pickups while building',tick:40},
+        {version:2,kind:'rollback',reason:'too quiet',tick:90}]},salience:{activeVersion:0,edits:[]}}}}}]);
     const all = el('content').textContent;
     state.search = 'reflex'; render();
     return {all, filtered: el('content').textContent};
@@ -165,6 +167,8 @@ test('attention view explains wakes, pending wakes and the rule engine, filtered
   assert.match(result.all, /held by G5\.run_policy/);
   assert.match(result.all, /pickup\.item_picked_up/);
   assert.match(result.all, /wake · LOW/);
+  assert.match(result.all, /attention v2 · salience base/);
+  assert.match(result.all, /mute pickups while building/);
   assert.match(result.filtered, /combat\.damage_taken/);
   assert.doesNotMatch(result.filtered, /pickup\.item_picked_up/);
 });

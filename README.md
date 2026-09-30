@@ -228,7 +228,7 @@ The companion plays a character defined by a Character Card V3 file, the format 
 
 ### Planner perception and attention
 
-The companion notices what a player standing in its place could notice, with no X-ray, and each noticed thing reaches the planner as an ordinary `perception.*` event. Sandboxed GraalJS rules decide which events wake the planner; the wake scheduler times the wakes, lets a reflex start preempt a stale turn, and budgets autonomous wakes and supersedes. Override the rules in `config/airicraft/rules/` and apply them with `airicraft reload`. See [perception](docs/perception.md) and [attention rules](docs/attention-rules.md).
+The companion notices what a player standing in its place could notice, with no X-ray, and each noticed thing reaches the planner as an ordinary `perception.*` event. Sandboxed GraalJS rules decide which events wake the planner; the wake scheduler times the wakes, lets a reflex start preempt a stale turn, and budgets autonomous wakes and supersedes. Override the rules in `config/airicraft/rules/` and apply them with `airicraft reload`. The planner can also tune its own rules for the session (`inspect_rules`, `update_rules`, `read_rules_docs`): each edit is replayed against recent history first, and a broken one is rolled back. See [perception](docs/perception.md) and [attention rules](docs/attention-rules.md).
 
 ### Hosted playtests
 

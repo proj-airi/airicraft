@@ -31,6 +31,7 @@ public final class RuntimeFlightRecorder {
 	private boolean llmCallsTruncated;
 	private boolean attentionDecisionsTruncated;
 	private final TreeSet<Long> pendingLlmCalls = new TreeSet<>();
+	private final java.util.Set<String> recordedRuleVersions = new java.util.HashSet<>();
 
 	public RuntimeFlightRecorder(Path outputDir) throws IOException {
 		this.outputDir = outputDir.toAbsolutePath().normalize();
@@ -44,6 +45,7 @@ public final class RuntimeFlightRecorder {
 		drainLlmCalls(runtime::llmFlightRecords, collectedAt);
 		drainAttentionDecisions(runtime.attentionDecisionLog(), collectedAt);
 		drainSalienceSteps(runtime.salienceStepLog(), collectedAt);
+		drainPlannerRules(runtime.plannerRules().store(), collectedAt);
 	}
 
 	public Map<String, Object> statusPayload() {
@@ -121,6 +123,27 @@ public final class RuntimeFlightRecorder {
 			record.put("drops", step.drops());
 			appendJsonl(outputDir.resolve("salience-steps.jsonl"), Map.of("collectedAt", collectedAt, "sequence", entry.sequence(), "step", record));
 			latestSalienceStep = entry.sequence();
+		}
+	}
+
+	/** Every version the planner activated, with its source, so a playtest review can read what it wrote. */
+	void drainPlannerRules(ai.moeru.airicraft.rules.RulesStore store, String collectedAt) throws IOException {
+		for (var hook : ai.moeru.airicraft.rules.RuleModule.Hook.values()) {
+			for (var version : store.history(hook)) {
+				if (!recordedRuleVersions.add(hook + ":" + version.number() + ":" + version.tick())) continue;
+				var record = new LinkedHashMap<String, Object>();
+				record.put("hook", hook.name().toLowerCase());
+				record.put("version", version.number());
+				record.put("kind", version.kind().name().toLowerCase());
+				record.put("tick", version.tick());
+				record.put("reason", version.reason());
+				record.put("sha", version.sha());
+				record.put("fallback", version.fallback());
+				record.put("activatesBase", version.base());
+				record.put("source", version.source());
+				record.put("replay", version.replay());
+				appendJsonl(outputDir.resolve("planner-rules.jsonl"), Map.of("collectedAt", collectedAt, "rules", record));
+			}
 		}
 	}
 

@@ -355,6 +355,11 @@ function renderAttention(snapshot) {
   const decisions = searched.filter(d => state.attentionShowRaw || d.ruleId !== 'catalog.raw_only').slice().reverse();
   const hiddenRaw = searched.length - decisions.length;
   const counts = Object.entries(attention.countsByRule || {}).sort((a, b) => b[1] - a[1]);
+  // What the planner wrote itself: the active version per hook and its latest edits (newest first).
+  const authored = attention.plannerRules || {};
+  const edits = ['attention', 'salience'].flatMap(hook => ((authored[hook] || {}).edits || []).map(edit => ({hook, ...edit})))
+    .sort((a, b) => b.tick - a.tick);
+  const authoredActive = ['attention', 'salience'].map(hook => `${hook} ${(authored[hook] || {}).activeVersion ? 'v' + authored[hook].activeVersion : 'base'}`).join(' · ');
   const decisionRow = d => `<tr data-key="decision-${d.seqNo}" class="${d.delivery === 'IMMEDIATE' ? 'wakes' : 'quiet'}">
       <td class="nowrap">${fmt.format(d.tick)}</td><td>${escapeHtml(d.type)}</td>
       <td class="nowrap"><span class="badge stage-${escapeHtml(String(d.stage).toLowerCase())}">${escapeHtml(d.stage)}</span></td>
@@ -368,6 +373,10 @@ function renderAttention(snapshot) {
       ${statCard('Pending wakes', fmt.format(pending.length), scheduler.retainedBy ? `held by ${scheduler.retainedBy}` : 'not held', 'cyan')}
     </div>
     ${rules.lastFailure ? `<div class="warning" style="margin-top:12px">Last rule failure: ${escapeHtml(rules.lastFailure)}</div>` : ''}
+    <section class="card" style="margin-top:12px">
+      <div class="card-head"><h2>Planner-authored rules</h2><small>${escapeHtml(authoredActive)}</small></div>
+      <div class="card-body">${edits.length ? `<table class="attention-table"><thead><tr><th>tick</th><th>hook</th><th>version</th><th>kind</th><th>reason</th></tr></thead><tbody>${edits.map(e => `<tr data-key="edit-${escapeHtml(e.hook)}-${e.version}"><td class="nowrap">${fmt.format(e.tick)}</td><td>${escapeHtml(e.hook)}</td><td>v${e.version}</td><td>${escapeHtml(e.kind)}</td><td>${escapeHtml(e.reason)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">The planner has not edited its rules.</p>'}</div>
+    </section>
     <section class="card" style="margin-top:12px">
       <div class="card-head"><h2>Attention decisions</h2><small>${decisions.length} of ${fmt.format(attention.recorded || 0)} recorded${hiddenRaw ? ` · ${hiddenRaw} raw-only hidden` : ''} · filter by event type, rule id or stage · <label class="inline-toggle" data-key="attention-raw-toggle"><input type="checkbox" id="attention-raw"${state.attentionShowRaw ? ' checked' : ''}> show raw-only</label></small></div>
       <div class="card-body table-wrap"><table class="attention-table">

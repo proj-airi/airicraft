@@ -1,7 +1,7 @@
 # Planner perception, attention, and wakes
 
-Status: accepted (2026-09-26); implemented through Phase 5 (2026-09-29). Phase 6, planner-authored rules, is the
-remaining step.
+Status: accepted (2026-09-26); implemented through Phase 6 (2026-09-29). The perception performance work
+(P9) is the remaining step.
 
 ## Context
 
@@ -50,7 +50,7 @@ wake audits, reviewed golden transcripts, defect probes, baseline metrics,
 and a real-sandbox GraalJS spike. Acceptance of this design is not evidence
 that the proposed runtime budget is met. Later phases depend on those results.
 
-## Implementation (Phases 1–5)
+## Implementation (Phases 1–6)
 
 - One event log and one sequence space; the catalog decides what `observe` shows. Wakes reference evidence
   (`observe.wake`) instead of carrying prose (Phases 1–3).
@@ -63,5 +63,12 @@ that the proposed runtime budget is met. Later phases depend on those results.
   autonomous-wake leaky bucket and the notice budgets live in the bundled GraalJS modules (O7), and the constitution
   and clamp keep protected wakes out of their reach (Phase 5).
 - Reflex inputs stay tick-sampled outside the bus; the reflex publishes only its outputs.
+- Planner-authored rules (O11, Phase 6): the planner reads and replaces its attention and salience modules with
+  `inspect_rules`, `update_rules` and `read_rules_docs`. An edit is loaded, run once and replayed against the recent
+  decision and step logs next to the running module, and the replay diff is returned before the edit activates; a
+  module that fails to evaluate is rejected. Versions are bounded (8 per hook), a rollback or automatic revert is a
+  new version, and a failing version reverts to the one it replaced. Edits are session-local, rate-limited and refused
+  during a safety hold; `rules.updated` and `rules.reverted` are evidence in `observe`. The constitution, the clamp and
+  the scheduler's timings stay Java, so no edit can reach them.
 
 The perception cost budget is still to be measured on a real machine; that work follows the refactor.

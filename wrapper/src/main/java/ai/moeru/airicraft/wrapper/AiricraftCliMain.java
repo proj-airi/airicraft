@@ -2706,6 +2706,8 @@ public final class AiricraftCliMain {
 				Object retainedBy = map(attention.get("scheduler")).get("retainedBy");
 				if (retainedBy != null) view.put("attentionRetainedBy", retainedBy);
 				view.put("attentionRules", map(attention.get("rules")));
+				Map<String, Object> plannerRules = map(attention.get("plannerRules"));
+				if (!plannerRules.isEmpty()) view.put("plannerRules", plannerRules);
 			}
 			Map<String, Object> perception = map(payload.get("perception"));
 			if (!perception.isEmpty()) {

@@ -5,6 +5,7 @@ import ai.moeru.airicraft.agent.events.EventPublisher;
 import ai.moeru.airicraft.rules.RuleEngine;
 import ai.moeru.airicraft.rules.RuleException;
 import ai.moeru.airicraft.rules.RuleModule;
+import ai.moeru.airicraft.rules.RuleRevert;
 import ai.moeru.airicraft.rules.RuleStepResult;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -60,6 +61,7 @@ public final class SaliencePolicy {
 	private final ArrayDeque<Map<String, Object>> recent = new ArrayDeque<>();
 	private Consumer<StepRecord> recorder = ignored -> { };
 	private RuleModule module;
+	private RuleRevert revert = RuleRevert.toBundled(RuleModule.Hook.SALIENCE);
 	/** Built on first use, so a runtime that never notices anything never warms a salience engine. */
 	private RuleEngine engine;
 	private String ruleState = "{}";
@@ -94,6 +96,11 @@ public final class SaliencePolicy {
 
 	public synchronized RuleModule module() {
 		return module;
+	}
+
+	/** Chooses where a failing override reverts; the runtime passes the planner's version store. */
+	public synchronized void useRevert(RuleRevert revert) {
+		this.revert = Objects.requireNonNull(revert, "revert");
 	}
 
 	private RuleEngine engine() {
@@ -261,15 +268,19 @@ public final class SaliencePolicy {
 		), SOURCE, null);
 		boolean loadFailed = engine().loadFailure() != null;
 		if (!module.bundled() && (loadFailed || consecutiveFailures >= REVERT_AFTER_FAILURES)) {
-			module = RuleModule.bundledSalience();
+			RuleRevert.Result target = revert.revert(module, tick);
+			module = target.to();
 			engine = RuleEngine.shared(module);
 			ruleState = "{}";
 			consecutiveFailures = 0;
 			reverts++;
 			Airicraft.LOGGER.warn("Salience rules {} failed ({}); reverted to {}", failedModule, lastFailure, module.origin());
 			diagnostics.publish(tick, "rules.reverted", Map.of(
+				"hook", "salience",
 				"from", failedModule,
 				"to", module.origin(),
+				"fromVersion", target.fromVersion(),
+				"toVersion", target.toVersion(),
 				"reason", loadFailed ? "load_failed" : "consecutive_step_failures"
 			), SOURCE, null);
 		}

@@ -84,15 +84,52 @@ public final class RuleEngine implements AutoCloseable {
 	}
 
 	/**
+	 * A warming engine for {@code module} that no runtime uses yet, so building it never closes the override that is
+	 * running. Close it after use, or {@link #adopt} it once the module is accepted.
+	 */
+	public static RuleEngine detached(RuleModule module) {
+		return new RuleEngine(module);
+	}
+
+	/**
+	 * Registers a warm detached engine as the shared engine for its module, replacing the hook's previous override, so
+	 * the runtime's {@code shared(module)} finds it already warm. If the module already has a shared engine, that one
+	 * stays and {@code engine} is closed.
+	 */
+	public static synchronized RuleEngine adopt(RuleEngine engine) {
+		RuleModule module = engine.module;
+		String key = module.hook() + ":" + module.origin() + "#" + module.sha();
+		RuleEngine existing = SHARED.get(key);
+		if (existing != null) {
+			if (existing != engine) engine.close();
+			return existing;
+		}
+		if (!module.bundled()) {
+			SHARED.entrySet().removeIf(entry -> {
+				if (entry.getValue().module.bundled() || entry.getValue().module.hook() != module.hook()) return false;
+				entry.getValue().close();
+				return true;
+			});
+		}
+		SHARED.put(key, engine);
+		return engine;
+	}
+
+	/** Runs the same one-step check as {@link #validate} on this engine, which must be ready. */
+	public void checkEmptyStep() throws RuleException {
+		step(module.hook() == RuleModule.Hook.SALIENCE
+			? "{\"tick\":0,\"seed\":1,\"context\":{},\"candidates\":[]}"
+			: "{\"tick\":0,\"seed\":1,\"attention\":{},\"plannerRules\":[],\"events\":[]}", "{}");
+	}
+
+	/**
 	 * Builds a private engine, waits for it and runs one step with an empty input. Used to reject an invalid
 	 * override before it replaces anything.
 	 */
 	public static void validate(RuleModule module, Duration timeout) throws RuleException {
 		try (RuleEngine engine = new RuleEngine(module)) {
 			engine.awaitReady(timeout);
-			engine.step(module.hook() == RuleModule.Hook.SALIENCE
-				? "{\"tick\":0,\"seed\":1,\"context\":{},\"candidates\":[]}"
-				: "{\"tick\":0,\"seed\":1,\"attention\":{},\"plannerRules\":[],\"events\":[]}", "{}");
+			engine.checkEmptyStep();
 		}
 	}
 
