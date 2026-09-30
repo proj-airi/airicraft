@@ -275,6 +275,29 @@ Status (2026-09-25): done.
 
 ### Phase 1 — Control plane, with Baritone as a lease holder (M, Track A)
 
+Status (2026-09-30): in progress. Done:
+
+- `ControlArbiter`, `ControlLease`, `ControlFrame`, `Channel`, `Priority` and
+  `ChannelIntent` in `navigation-core` (package `ai.moeru.airicraft.control`), with unit
+  tests. Channels so far: locomotion, look and hotbar; primary and secondary join with the
+  click writers. An acquire at equal priority takes over, so a holder that never released
+  cannot lock out its successor.
+- `ControlPlane` (adapter) applies one merged frame per client tick, right after the
+  navigation backend ticks. `release` clears channels in the calling tick and consumes the
+  release edge, so `cancel()` stays synchronous and the frame never clears keys over another
+  actuator's input.
+- `MinecraftMotor` (in-house backend) holds a `FOREGROUND` lease on locomotion and look and
+  submits intents. Its block break, place and use calls and its hotbar selection still go
+  straight to the interaction manager and inventory.
+- Live check (1 run per course, in-house backend, headless client): all 12 benchmark courses
+  passed, with no health lost and no stalls. `flat_walk` took 83 ticks over 22.0 blocks,
+  matching the 83 ticks and 21.97 blocks recorded before the change. Five runs per course
+  are still needed to compare against the baseline.
+
+Not started: `MovementController` and the other key writers, the `autoJump` writes,
+`Input` installation, the hotbar and click channels, the Baritone lease holder and the
+guard test.
+
 - **Add the control plane.** Add `ControlArbiter` (core) and `ControlPlane`
   (adapter). Move all key-binding and `autoJump` writes into the plane.
   `MovementController` becomes a thin intent builder, or is deleted.
