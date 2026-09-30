@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -35,7 +35,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	private static final String INVENTORY_SCREEN_DISMISSED = "inventory_screen_dismissed";
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade navigationFacade;
+	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController("drop_items", Priority.FOREGROUND);
 
@@ -54,11 +54,11 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public DropItemsTaskExecutor(BaritoneFacade navigationFacade) {
+	public DropItemsTaskExecutor(NavigationFacade navigationFacade) {
 		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
-	public DropItemsTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
+	public DropItemsTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
@@ -66,7 +66,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");

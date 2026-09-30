@@ -3,7 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.client.Minecraft;
@@ -39,7 +39,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade navigationFacade;
+	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController("entity_interaction", Priority.FOREGROUND);
 
@@ -62,11 +62,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade) {
+	public EntityInteractionTaskExecutor(NavigationFacade navigationFacade) {
 		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
-	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
+	public EntityInteractionTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
@@ -74,11 +74,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade) {
 		this(clientSupplier, navigationFacade, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");

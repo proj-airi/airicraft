@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
@@ -714,7 +714,7 @@ class BaritoneTaskExecutorTest {
 		);
 	}
 
-	private static final class FakeBaritoneFacade implements BaritoneFacade {
+	private static final class FakeBaritoneFacade implements NavigationFacade {
 		private int applySettingsCalls;
 		private final List<GoalPosition> navigateCalls = new ArrayList<>();
 		private final List<String> followCalls = new ArrayList<>();

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.navigation;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.navigation.BodyState;
 import ai.moeru.airicraft.navigation.Goal;
@@ -20,15 +20,15 @@ import java.util.Optional;
  * navigation-core against the same goal, and the outcome lands in the task's diagnostics. Nothing
  * the shadow plan does actuates.
  */
-public final class ShadowedBaritoneFacade implements BaritoneFacade {
+public final class ShadowedBaritoneFacade implements NavigationFacade {
 	private static final SearchBudget BUDGET = new SearchBudget(250_000, 1_500_000_000L, 2.0);
-	private final BaritoneFacade delegate;
+	private final NavigationFacade delegate;
 	private final NavigationPlanner planner;
 	private NavigationPlanner.Pending shadow;
 	private double captureMillis;
 	private String shadowSkipped;
 
-	public ShadowedBaritoneFacade(BaritoneFacade delegate, NavigationPlanner planner) {
+	public ShadowedBaritoneFacade(NavigationFacade delegate, NavigationPlanner planner) {
 		this.delegate = delegate;
 		this.planner = planner;
 	}

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 
 /**
  * Shared ownership boundary for transitions between Baritone users.
@@ -11,7 +11,7 @@ final class BaritoneReleaseBarrier {
 	private BaritoneReleaseBarrier() {
 	}
 
-	static boolean releaseAndDrain(BaritoneFacade baritone) {
+	static boolean releaseAndDrain(NavigationFacade baritone) {
 		if (baritone == null || !baritone.isLoaded()) {
 			return true;
 		}
@@ -21,7 +21,7 @@ final class BaritoneReleaseBarrier {
 		return released(baritone);
 	}
 
-	static boolean released(BaritoneFacade baritone) {
+	static boolean released(NavigationFacade baritone) {
 		return baritone == null
 			|| !baritone.isLoaded()
 			|| (!baritone.processActive() && !baritone.cancellationPending());

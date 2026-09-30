@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,7 +24,7 @@ import java.util.Objects;
 public final class MinecraftUnderwaterEscapeController {
 	private final MovementController movement;
 	private final CameraController camera;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade baritone;
 	private final UnderwaterEscapeNavigator navigator;
 	private Minecraft activeClient;
 
@@ -35,7 +35,7 @@ public final class MinecraftUnderwaterEscapeController {
 	private boolean waitingForBaritoneRelease;
 
 	public MinecraftUnderwaterEscapeController(
-		BaritoneFacade baritone,
+		NavigationFacade baritone,
 		MovementController movement,
 		CameraController camera
 	) {

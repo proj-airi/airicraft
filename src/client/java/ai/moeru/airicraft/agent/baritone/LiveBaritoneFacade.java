@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.baritone;
 
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
@@ -19,7 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
-public final class LiveBaritoneFacade implements BaritoneFacade {
+public final class LiveBaritoneFacade implements NavigationFacade {
 	private final IBaritone baritone;
 	private final Runnable settingsApplier;
 	private final java.util.function.BooleanSupplier arrivalSupported;

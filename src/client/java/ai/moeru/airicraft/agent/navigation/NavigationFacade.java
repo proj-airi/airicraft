@@ -1,10 +1,10 @@
-package ai.moeru.airicraft.agent.baritone;
+package ai.moeru.airicraft.agent.navigation;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 
 import java.util.Optional;
 
-public interface BaritoneFacade {
+public interface NavigationFacade {
 	boolean isLoaded();
 
 	void applySettings();

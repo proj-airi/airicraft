@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.*;
 import ai.moeru.airicraft.agent.session.*;
 import org.junit.jupiter.api.Test;
@@ -574,7 +574,7 @@ class TargetAcquisitionTaskExecutorTest {
 		}
 		public void cancelBreaking() {}
 	}
-	static final class FakeNavigation implements BaritoneFacade {
+	static final class FakeNavigation implements NavigationFacade {
 		boolean active;
 		boolean goalReached;
 		List<GoalPosition> goals = new ArrayList<>();

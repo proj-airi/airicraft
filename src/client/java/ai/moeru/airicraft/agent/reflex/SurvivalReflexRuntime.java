@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.reflex;
 
 import ai.moeru.airicraft.agent.AgentConfig;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -45,7 +45,7 @@ public final class SurvivalReflexRuntime {
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
 	private final CameraController cameraController;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade baritone;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
 	private final Map<String, ObservedThreat> observedThreats = new LinkedHashMap<>();
 	private final List<SurvivalReflexEvent> pendingEvents = new ArrayList<>();
@@ -94,11 +94,11 @@ public final class SurvivalReflexRuntime {
 		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), null);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone) {
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade baritone) {
 		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), baritone);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone, CameraController cameraController) {
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade baritone, CameraController cameraController) {
 		this(config, new MovementController("reflex", Priority.REFLEX), cameraController, baritone);
 	}
 
@@ -114,7 +114,7 @@ public final class SurvivalReflexRuntime {
 		AgentConfig.ReflexConfig config,
 		MovementController movementController,
 		CameraController cameraController,
-		BaritoneFacade baritone
+		NavigationFacade baritone
 	) {
 		this.config = Objects.requireNonNullElseGet(config, AgentConfig.ReflexConfig::defaults);
 		this.movementController = Objects.requireNonNull(movementController, "movementController");

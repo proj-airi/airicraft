@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -209,7 +209,7 @@ class LureEntitiesTaskExecutorTest {
 		public void beginTravel() { settingsOwned = true; }
 		public void release() { settingsOwned = false; }
 	}
-	private static final class Navigation implements BaritoneFacade {
+	private static final class Navigation implements NavigationFacade {
 		final Environment env;
 		Navigation(Environment env) { this.env=env; }
 		boolean active;

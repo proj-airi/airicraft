@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.world.phys.Vec3;
@@ -12,7 +12,7 @@ import java.util.Set;
 
 /** Owns acquisition, follower pacing and animal arrival; gates remain explicit world actions. */
 public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
-	private final BaritoneFacade navigation;
+	private final NavigationFacade navigation;
 	private final Environment environment;
 	private WorldTaskRequest request;
 	private LureEntitiesStepArgs args;
@@ -25,8 +25,8 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 	private TaskTerminalEvent terminal;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public LureEntitiesTaskExecutor(BaritoneFacade navigation) { this(navigation, new MinecraftLureEntitiesEnvironment()); }
-	LureEntitiesTaskExecutor(BaritoneFacade navigation, Environment environment) {
+	public LureEntitiesTaskExecutor(NavigationFacade navigation) { this(navigation, new MinecraftLureEntitiesEnvironment()); }
+	LureEntitiesTaskExecutor(NavigationFacade navigation, Environment environment) {
 		this.navigation = java.util.Objects.requireNonNull(navigation);
 		this.environment = java.util.Objects.requireNonNull(environment);
 	}

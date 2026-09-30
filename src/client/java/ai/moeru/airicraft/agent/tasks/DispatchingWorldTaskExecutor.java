@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 
 import java.util.LinkedHashSet;
@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private final ExecutorSet executors;
-	private final BaritoneFacade sharedBaritone;
+	private final NavigationFacade sharedBaritone;
 	private WorldTaskExecutor activeExecutor;
 	private WorldTaskType activeType;
 	private NavigationStallWatchdog navigationStall;
@@ -19,7 +19,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private String stalledTaskId;
 	private TaskExecutionSnapshot transitionSnapshot = TaskExecutionSnapshot.idle();
 
-	public DispatchingWorldTaskExecutor(ExecutorSet executors, BaritoneFacade sharedBaritone) {
+	public DispatchingWorldTaskExecutor(ExecutorSet executors, NavigationFacade sharedBaritone) {
 		this.executors = Objects.requireNonNull(executors, "executors");
 		this.sharedBaritone = sharedBaritone;
 	}
@@ -66,7 +66,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		transitionSnapshot = TaskExecutionSnapshot.idle();
 		var result = activeExecutor.tick(sessionSnapshot, activeTask);
 		var progress = sharedBaritone == null || !sessionSnapshot.companionActuationAllowed()
-			? Optional.<BaritoneFacade.NavigationProgress>empty() : sharedBaritone.navigationProgress();
+			? Optional.<NavigationFacade.NavigationProgress>empty() : sharedBaritone.navigationProgress();
 		if (result.isPresent() || progress.isEmpty()) navigationStall.clear();
 		else if (navigationStall.observe(sessionSnapshot.tickCount(), progress.orElseThrow())) {
 			deactivate(sessionSnapshot);

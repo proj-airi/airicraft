@@ -7,7 +7,7 @@ import ai.moeru.airicraft.agent.AgentConfigLoader;
 import ai.moeru.airicraft.agent.attention.AttentionRuleSource;
 import ai.moeru.airicraft.rules.RuleModule;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.baritone.LiveBaritoneFacade;
 import ai.moeru.airicraft.agent.character.CharacterCardLoader;
 import ai.moeru.airicraft.agent.control.CameraController;
@@ -55,11 +55,11 @@ public final class ClientRuntimeController {
 	private final FirstPersonScreenshotService screenshotService = new FirstPersonScreenshotService();
 	private final WorldCameraService worldCameraService = new WorldCameraService(screenshotService);
 	private final ClientTickDebugRuntime clientTickDebugRuntime = new ClientTickDebugRuntime(screenshotService);
-	private final BaritoneFacade baritoneBackend = new ai.moeru.airicraft.agent.navigation.ShadowedBaritoneFacade(
+	private final NavigationFacade baritoneBackend = new ai.moeru.airicraft.agent.navigation.ShadowedBaritoneFacade(
 		new LiveBaritoneFacade(), ai.moeru.airicraft.agent.navigation.NavigationPlanner.shared());
 	private final ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade airicraftBackend;
 	/** The backend consumers of the current runtime use; chosen by navigation.backend at start and reload. */
-	private volatile BaritoneFacade baritoneFacade;
+	private volatile NavigationFacade baritoneFacade;
 	private final CameraController cameraController;
 	private final ControlPlane controlPlane;
 	private volatile EmbodiedAgentRuntime agentRuntime;
@@ -432,7 +432,7 @@ public final class ClientRuntimeController {
 		cameraController.clear();
 		cameraController.updateDefaultLerpTicks(nextConfig.cameraLerpDefaultTicks());
 		EmbodiedAgentRuntime previousRuntime = currentAgentRuntime();
-		BaritoneFacade nextFacade = navigationBackend(nextConfig);
+		NavigationFacade nextFacade = navigationBackend(nextConfig);
 		if (nextFacade != baritoneFacade) {
 			baritoneFacade.cancel();
 			baritoneFacade = nextFacade;
@@ -487,7 +487,7 @@ public final class ClientRuntimeController {
 		return state;
 	}
 
-	private BaritoneFacade navigationBackend(AiricraftConfig airicraftConfig) {
+	private NavigationFacade navigationBackend(AiricraftConfig airicraftConfig) {
 		String override = System.getProperty("airicraft.navigation.backend", "").trim();
 		if (!override.isEmpty() && !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_BARITONE)
 			&& !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_AIRICRAFT)) {

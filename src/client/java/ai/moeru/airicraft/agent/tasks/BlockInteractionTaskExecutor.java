@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -64,7 +64,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController("block_interaction", Priority.FOREGROUND);
 	private final int targetDelayTicks;
-	private final BaritoneFacade baritoneFacade;
+	private final NavigationFacade baritoneFacade;
 
 	private WorldTaskRequest appliedTask;
 	private boolean terminalEventEmitted;
@@ -93,7 +93,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, new CameraController(), targetDelayTicks, null);
 	}
 
-	public BlockInteractionTaskExecutor(int targetDelayTicks, BaritoneFacade baritoneFacade) {
+	public BlockInteractionTaskExecutor(int targetDelayTicks, NavigationFacade baritoneFacade) {
 		this(Minecraft::getInstance, new CameraController(), targetDelayTicks, baritoneFacade);
 	}
 
@@ -101,7 +101,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, cameraController, targetDelayTicks, null);
 	}
 
-	public BlockInteractionTaskExecutor(int targetDelayTicks, CameraController cameraController, BaritoneFacade baritoneFacade) {
+	public BlockInteractionTaskExecutor(int targetDelayTicks, CameraController cameraController, NavigationFacade baritoneFacade) {
 		this(Minecraft::getInstance, cameraController, targetDelayTicks, baritoneFacade);
 	}
 
@@ -117,7 +117,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, cameraController, targetDelayTicks, null);
 	}
 
-	BlockInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController, int targetDelayTicks, BaritoneFacade baritoneFacade) {
+	BlockInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController, int targetDelayTicks, NavigationFacade baritoneFacade) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
 		this.targetDelayTicks = Math.max(0, targetDelayTicks);

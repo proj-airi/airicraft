@@ -89,8 +89,8 @@ class SurvivalReflexRuntimeTest {
 	@Test void combatRoutingPreservesConfiguredPathConstraintsOnStartAndReplan() {
 		var settingsResets = new java.util.concurrent.atomic.AtomicInteger();
 		var routes = new java.util.ArrayList<ai.moeru.airicraft.agent.goals.GoalPosition>();
-		var facade = (ai.moeru.airicraft.agent.baritone.BaritoneFacade) java.lang.reflect.Proxy.newProxyInstance(
-			getClass().getClassLoader(), new Class<?>[]{ai.moeru.airicraft.agent.baritone.BaritoneFacade.class},
+		var facade = (ai.moeru.airicraft.agent.navigation.NavigationFacade) java.lang.reflect.Proxy.newProxyInstance(
+			getClass().getClassLoader(), new Class<?>[]{ai.moeru.airicraft.agent.navigation.NavigationFacade.class},
 			(proxy, method, args) -> {
 				switch (method.getName()) {
 					case "applySettings" -> { settingsResets.incrementAndGet(); return null; }

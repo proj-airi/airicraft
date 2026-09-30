@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -44,7 +44,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private static final int PICKUP_TIMEOUT_TICKS = 80;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade baritone;
 	private final CameraController camera;
 	private final MovementController movement;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
@@ -67,13 +67,13 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private BlockPos groundingTarget;
 	private int groundingTicks;
 
-	public UnderwaterHarvestTaskExecutor(BaritoneFacade baritone, CameraController camera) {
+	public UnderwaterHarvestTaskExecutor(NavigationFacade baritone, CameraController camera) {
 		this(Minecraft::getInstance, baritone, camera);
 	}
 
 	UnderwaterHarvestTaskExecutor(
 		Supplier<Minecraft> clientSupplier,
-		BaritoneFacade baritone,
+		NavigationFacade baritone,
 		CameraController camera
 	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");

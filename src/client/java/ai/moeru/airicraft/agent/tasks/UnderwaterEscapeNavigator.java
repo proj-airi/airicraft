@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 
 import java.util.LinkedHashSet;
@@ -15,7 +15,7 @@ import java.util.Set;
  * It owns only Baritone goals that it starts and never issues unverified vertical movement.
  */
 public final class UnderwaterEscapeNavigator {
-	private final BaritoneFacade baritone;
+	private final NavigationFacade baritone;
 	private final WaypointDriver waypointDriver;
 	private final Config config;
 	private final Set<UnderwaterEscapeSearch.Position> failedTargets = new LinkedHashSet<>();
@@ -32,11 +32,11 @@ public final class UnderwaterEscapeNavigator {
 	private AfterRelease afterRelease;
 	private String afterReleaseReason;
 
-	public UnderwaterEscapeNavigator(BaritoneFacade baritone, WaypointDriver waypointDriver) {
+	public UnderwaterEscapeNavigator(NavigationFacade baritone, WaypointDriver waypointDriver) {
 		this(baritone, waypointDriver, Config.defaults());
 	}
 
-	public UnderwaterEscapeNavigator(BaritoneFacade baritone, WaypointDriver waypointDriver, Config config) {
+	public UnderwaterEscapeNavigator(NavigationFacade baritone, WaypointDriver waypointDriver, Config config) {
 		this.baritone = baritone;
 		this.waypointDriver = Objects.requireNonNull(waypointDriver, "waypointDriver");
 		this.config = Objects.requireNonNull(config, "config");

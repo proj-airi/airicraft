@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -20,7 +20,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private static final double RECOVERY_WATER_PENALTY_MULTIPLIER = 4.0D;
 	private static final double MAX_RECOVERY_WATER_PENALTY = 48.0D;
 
-	private final BaritoneFacade facade;
+	private final NavigationFacade facade;
 	private final WaterProgressObserver waterProgressObserver;
 	private final NavigationStallWatchdog navigationStall = new NavigationStallWatchdog();
 	private final WaterStallRecovery waterStallRecovery = new WaterStallRecovery();
@@ -38,15 +38,15 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private NavigationRunMetrics metrics;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public BaritoneTaskExecutor(BaritoneFacade facade) {
+	public BaritoneTaskExecutor(NavigationFacade facade) {
 		this(Minecraft::getInstance, facade);
 	}
 
-	BaritoneTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade facade) {
+	BaritoneTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade facade) {
 		this(facade, () -> waterProgressSample(clientSupplier.get()));
 	}
 
-	BaritoneTaskExecutor(BaritoneFacade facade, WaterProgressObserver waterProgressObserver) {
+	BaritoneTaskExecutor(NavigationFacade facade, WaterProgressObserver waterProgressObserver) {
 		this.facade = Objects.requireNonNull(facade, "facade");
 		this.waterProgressObserver = Objects.requireNonNull(waterProgressObserver, "waterProgressObserver");
 		this.facade.applySettings();

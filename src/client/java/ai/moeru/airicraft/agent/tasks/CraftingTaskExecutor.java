@@ -2,7 +2,7 @@ package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -41,7 +41,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private static final double TABLE_INTERACTION_RANGE_SQUARED = 20.25D;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade baritoneFacade;
+	private final NavigationFacade baritoneFacade;
 	private final CameraController cameraController;
 	private final WorldTaskExecutor portableTablePlacementExecutor;
 
@@ -65,11 +65,11 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public CraftingTaskExecutor(BaritoneFacade baritoneFacade) {
+	public CraftingTaskExecutor(NavigationFacade baritoneFacade) {
 		this(Minecraft::getInstance, baritoneFacade, new CameraController());
 	}
 
-	public CraftingTaskExecutor(BaritoneFacade baritoneFacade, CameraController cameraController) {
+	public CraftingTaskExecutor(NavigationFacade baritoneFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, baritoneFacade, cameraController);
 	}
 
@@ -77,11 +77,11 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade) {
 		this(clientSupplier, baritoneFacade, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade, CameraController cameraController) {
 		this(
 			clientSupplier,
 			baritoneFacade,
@@ -92,7 +92,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 	CraftingTaskExecutor(
 		Supplier<Minecraft> clientSupplier,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade baritoneFacade,
 		CameraController cameraController,
 		WorldTaskExecutor portableTablePlacementExecutor
 	) {

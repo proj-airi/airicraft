@@ -7,7 +7,7 @@ import ai.moeru.airicraft.BridgeUnavailableException;
 import ai.moeru.airicraft.FirstPersonScreenshotService;
 import ai.moeru.airicraft.SingleplayerWorldService;
 import ai.moeru.airicraft.agent.behavior.BehaviorTreeRuntime;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.baritone.BaritonePathfindSettings;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.behavior.BehaviorTreeSnapshot;
@@ -365,7 +365,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade
+		NavigationFacade baritoneFacade
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
 			smeltingProcessManager, cameraController, baritoneFacade, new MiningOpportunityPolicyState(), new MiningOpportunityJournal());
@@ -379,7 +379,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade baritoneFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
@@ -396,7 +396,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade baritoneFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal
 	) {
@@ -412,7 +412,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade baritoneFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal,
 		java.util.function.Function<AgentConfig.LlmConfig, ai.moeru.airicraft.agent.llm.LlmBackend> backendFactory,

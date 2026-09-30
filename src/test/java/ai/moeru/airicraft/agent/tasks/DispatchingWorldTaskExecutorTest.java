@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -27,10 +27,10 @@ class DispatchingWorldTaskExecutorTest {
 			var facade = new RecordingBaritone();
 			var dispatcher = new Fixture().dispatcher(facade);
 			dispatcher.tick(snapshot(), Optional.of(request));
-			facade.progress = new BaritoneFacade.NavigationProgress(0,64,0,true,null,0);
+			facade.progress = new NavigationFacade.NavigationProgress(0,64,0,true,null,0);
 			assertTrue(dispatcher.tick(snapshot().withTickCount(10), Optional.of(request)).isEmpty());
 			for (int tick=11; tick<110; tick++) {
-				facade.progress = new BaritoneFacade.NavigationProgress(0, tick%2==0?64:65.2,0,tick%2==0,null,0);
+				facade.progress = new NavigationFacade.NavigationProgress(0, tick%2==0?64:65.2,0,tick%2==0,null,0);
 				assertTrue(dispatcher.tick(snapshot().withTickCount(tick), Optional.of(request)).isEmpty());
 			}
 			assertEquals(TaskExecutionState.FAILED, dispatcher.tick(snapshot().withTickCount(110), Optional.of(request)).orElseThrow().terminalState());
@@ -213,7 +213,7 @@ class DispatchingWorldTaskExecutorTest {
 		private final RecordingExecutor blockInteraction = new RecordingExecutor();
 		private final RecordingExecutor blockBreak = new RecordingExecutor();
 
-		private DispatchingWorldTaskExecutor dispatcher(BaritoneFacade baritone) {
+		private DispatchingWorldTaskExecutor dispatcher(NavigationFacade baritone) {
 			return new DispatchingWorldTaskExecutor(new DispatchingWorldTaskExecutor.ExecutorSet(
 				mining, crafting, dropItems, entity, smelting, surface, blockInteraction, blockBreak
 			), baritone);
@@ -275,9 +275,9 @@ class DispatchingWorldTaskExecutorTest {
 		@Override public void shutdown() { shutdownCalls++; }
 	}
 
-	private static final class RecordingBaritone implements BaritoneFacade {
-		private BaritoneFacade.NavigationProgress progress;
-		@Override public Optional<BaritoneFacade.NavigationProgress> navigationProgress() { return Optional.ofNullable(progress); }
+	private static final class RecordingBaritone implements NavigationFacade {
+		private NavigationFacade.NavigationProgress progress;
+		@Override public Optional<NavigationFacade.NavigationProgress> navigationProgress() { return Optional.ofNullable(progress); }
 		private boolean active;
 		private boolean cancellationPending;
 		private int cancelCalls;

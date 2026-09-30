@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import org.junit.jupiter.api.Test;
 
@@ -341,7 +341,7 @@ class UnderwaterEscapeNavigatorTest {
 		}
 	}
 
-	private static final class RecordingBaritone implements BaritoneFacade {
+	private static final class RecordingBaritone implements NavigationFacade {
 		private final List<GoalPosition> navigateCalls = new ArrayList<>();
 		private final ArrayDeque<String> pathEvents = new ArrayDeque<>();
 		private boolean loaded = true;

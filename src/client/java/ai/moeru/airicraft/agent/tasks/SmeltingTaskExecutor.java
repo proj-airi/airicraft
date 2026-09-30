@@ -2,7 +2,7 @@ package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.world.level.block.state.BlockState;
@@ -37,7 +37,7 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 
 	private final Supplier<Minecraft> clientSupplier;
 	private final SmeltingProcessManager processManager;
-	private final BaritoneFacade baritoneFacade;
+	private final NavigationFacade baritoneFacade;
 	private final PlacementSneakController placementSneakController = new PlacementSneakController();
 
 	private WorldTaskRequest appliedTask;
@@ -54,11 +54,11 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, processManager, null);
 	}
 
-	public SmeltingTaskExecutor(SmeltingProcessManager processManager, BaritoneFacade baritoneFacade) {
+	public SmeltingTaskExecutor(SmeltingProcessManager processManager, NavigationFacade baritoneFacade) {
 		this(Minecraft::getInstance, processManager, baritoneFacade);
 	}
 
-	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, BaritoneFacade baritoneFacade) {
+	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, NavigationFacade baritoneFacade) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.processManager = Objects.requireNonNull(processManager, "processManager");
 		this.baritoneFacade = baritoneFacade;

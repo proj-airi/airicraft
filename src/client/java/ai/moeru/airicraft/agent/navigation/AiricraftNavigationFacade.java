@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.navigation;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.navigation.BodyState;
@@ -23,13 +23,13 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * The in-house navigation backend behind the {@link BaritoneFacade} interface, so existing consumers
+ * The in-house navigation backend behind the {@link NavigationFacade} interface, so existing consumers
  * can run on it before they move to a typed navigation service. It plans in segments through loaded
  * terrain, follows with {@link PathFollower}, and reports Baritone-style path events: {@code AT_GOAL}
  * on arrival and {@code CALC_FAILED} when no route remains. Cancellation is synchronous and emits no
  * event. Client thread only; {@link #tick} runs once per client tick.
  */
-public final class AiricraftNavigationFacade implements BaritoneFacade {
+public final class AiricraftNavigationFacade implements NavigationFacade {
 	private static final SearchBudget BUDGET = new SearchBudget(250_000, 1_500_000_000L, 2.0);
 	private static final int SUPPORT_WAIT_TICKS = 40;
 	/** Segments in a row that end no closer to the goal before navigation gives up. */

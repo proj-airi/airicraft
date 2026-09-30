@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -40,7 +40,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private static final double TARGET_FORWARD_HORIZONTAL_DISTANCE_SQUARED = 4.0D;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade baritoneFacade;
+	private final NavigationFacade baritoneFacade;
 	private final MovementController movementController = new MovementController("return_to_surface", Priority.FOREGROUND);
 	private final CameraController cameraController;
 	private final OwnedKeyPress jumpKeyControl = new OwnedKeyPress();
@@ -59,19 +59,19 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private int towerSupportUnavailableTicks;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public ReturnToSurfaceTaskExecutor(BaritoneFacade baritoneFacade) {
+	public ReturnToSurfaceTaskExecutor(NavigationFacade baritoneFacade) {
 		this(Minecraft::getInstance, baritoneFacade);
 	}
 
-	ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade) {
+	ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade) {
 		this(clientSupplier, baritoneFacade, new CameraController());
 	}
 
-	public ReturnToSurfaceTaskExecutor(BaritoneFacade baritoneFacade, CameraController cameraController) {
+	public ReturnToSurfaceTaskExecutor(NavigationFacade baritoneFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, baritoneFacade, cameraController);
 	}
 
-	private ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade baritoneFacade, CameraController cameraController) {
+	private ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.baritoneFacade = baritoneFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
