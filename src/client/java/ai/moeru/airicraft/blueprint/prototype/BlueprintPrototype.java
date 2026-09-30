@@ -51,6 +51,7 @@ public final class BlueprintPrototype {
         for(String key:List.of("interior","ignoredFields"))if(node.has(key))info.put(key,node.get(key).deepCopy());
         components.add(info);
         if(node.has("volume")) {
+            info.put("volumeSize",node.getAsJsonObject("volume").get("size").deepCopy());
             JsonObject volume=node.getAsJsonObject("volume"); BlockPos size=vector(volume.get("size"));
             if(size.getX()<1||size.getY()<1||size.getZ()<1||(long)size.getX()*size.getY()*size.getZ()>8192) throw new IllegalArgumentException("volume_limit");
             BlockState state=parseState(volume.get("state").getAsString()).rotate(switch(rot) {case 90->BlockRotation.CLOCKWISE_90; case 180->BlockRotation.CLOCKWISE_180;case 270->BlockRotation.COUNTERCLOCKWISE_90;default->BlockRotation.NONE;});

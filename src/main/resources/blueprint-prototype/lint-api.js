@@ -156,6 +156,49 @@ function runRule(snapshot,input,check) {
     return {known:true,positions:missing,unknown:uncertain,evidence:{surface:s.path,edge:r.edge,checkedColumns:columns.size,height:r.height},reason:'Guardrail must rise above the protected walking surface'};
   }
 
+  function walkableArea(c) {
+    const r=c.guidance.walkable,s=byPath.get(r?.surface);
+    if(!s)return {known:false,reason:'WalkableArea requires an existing surface component path'};
+    let selection=r.blocks;
+    if(selection===undefined) {
+      const size=s.volumeSize;
+      if(!Array.isArray(size)||size.length!==3)return {known:false,reason:'Select support blocks explicitly for a composite surface'};
+      if(size[0]*size[2]>1024)return {known:false,reason:'WalkableArea selection exceeds 1024 support blocks'};
+      selection=[];for(let x=0;x<size[0];x++)for(let z=0;z<size[2];z++)selection.push([x,size[1]-1,z]);
+    }
+    if(!Array.isArray(selection)||!selection.length||selection.length>1024||selection.some(p=>!Array.isArray(p)||p.length!==3||p.some(n=>!Number.isInteger(n)||Math.abs(n)>128)))return {known:false,reason:'Select 1..1024 integer support-block coordinates'};
+    if(s.volumeSize&&selection.some(p=>p.some((n,i)=>n<0||n>=s.volumeSize[i])))return {known:false,reason:'Selected support block lies outside the referenced volume'};
+    const unique=new Map(selection.map(p=>{const w=position(s,p);return [w.join(','),w];}));
+    const missing=[],uncertain=new Map(),blockers=new Map();let patches=0;
+    for(const p of unique.values()) {
+      const v=voxel(p);
+      if(!v?.[3]||v[7]){uncertain.set(p.join(','),p);continue;}
+      if(!v[4].length){missing.push({position:p,owner:owned.get(p.join(','))?.owner||null});continue;}
+      // Partition the collision footprint into exposed horizontal top faces. This
+      // measures both stair treads independently, and slab tops at their true height.
+      const bs=v[4];
+      if(bs.some(b=>b.some(n=>!Number.isFinite(n)||n<0||n>1))){uncertain.set(p.join(','),p);continue;}
+      const xs=[...new Set([0,1,...bs.flatMap(b=>[b[0],b[3]])])].sort((a,b)=>a-b),zs=[...new Set([0,1,...bs.flatMap(b=>[b[2],b[5]])])].sort((a,b)=>a-b);
+      if(xs.length*zs.length>256){uncertain.set(p.join(','),p);continue;}
+      let unsupported=false;
+      for(let i=0;i<xs.length-1;i++)for(let j=0;j<zs.length-1;j++) {
+        const x=(xs[i]+xs[i+1])/2,z=(zs[j]+zs[j+1])/2,tops=bs.filter(b=>x>b[0]&&x<b[3]&&z>b[2]&&z<b[5]).map(b=>b[4]);
+        if(!tops.length){unsupported=true;continue;}
+        const y=p[1]+Math.max(...tops),a=[p[0]+xs[i],y,p[2]+zs[j]],b=[p[0]+xs[i+1],y+2,p[2]+zs[j+1]];patches++;
+        for(let bx=Math.floor(a[0]+.001);bx<=Math.floor(b[0]-.001);bx++)
+        for(let bz=Math.floor(a[2]+.001);bz<=Math.floor(b[2]-.001);bz++)
+        for(let by=Math.floor(a[1]+.001);by<=Math.floor(b[1]-.001);by++) {
+          const q=[bx,by,bz],w=voxel(q),cell=owned.get(q.join(','));
+          if(!w?.[3]||w[7]){uncertain.set(q.join(','),q);continue;}
+          if(w[4].some(t=>bx+t[0]<b[0]-.001&&bx+t[3]>a[0]+.001&&by+t[1]<b[1]-.001&&by+t[4]>a[1]+.001&&bz+t[2]<b[2]-.001&&bz+t[5]>a[2]+.001))
+            blockers.set(q.join(','),{position:q,owner:cell?.owner||null,state:cell?.state||null,support:p,clearanceVolume:{min:a,max:b}});
+        }
+      }
+      if(unsupported)uncertain.set(p.join(','),p);
+    }
+    return {known:true,missing,blockers:[...blockers.values()],unknown:[...uncertain.values()],evidence:{surface:s.path,selectedBlocks:unique.size,checkedPatches:patches,requiredClearance:2,method:'Two vertical blocks above each exposed support patch; final collision geometry'}};
+  }
+
   const checked=new Set(),assessments=[];let tracked=false;
   const ctx={revision:snapshot.revision,
     components:({type}={})=>components.filter(c=>!type||c.type===type),
@@ -163,7 +206,7 @@ function runRule(snapshot,input,check) {
     cells:c=>snapshot.cells.filter(b=>b.owner===c.path||b.owner.startsWith(c.path+'.')),
     block:p=>{const v=voxel(p);return v?{known:v[3],collisionBoxes:v[4],emission:v[5],estimatedBlockLight:v[6],fluid:v[7]}:{known:false};},
     track:()=>{tracked=true;}, checked:(c,result)=>{tracked=true;checked.add(c.path);if(result)assessments.push({component:c.path,...result});},
-    access:{entrance,stair,connected}, protection,lighting:{darkWalkingSurfaces:lighting},
+    access:{entrance,stair,connected,walkableArea}, protection,lighting:{darkWalkingSurfaces:lighting},
     warn:f=>report({...f,level:'warning'}),
     info:f=>report({...f,level:'info'}),
     unverified:(c,reason)=>report({component:c.path,level:'unverified',message:reason}),

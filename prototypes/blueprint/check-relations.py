@@ -43,7 +43,7 @@ for name,start,end,bounds in [('watchtower',[4,0,-2],[4,7,4],[[-1,0,-3],[9,8,10]
 # Uncertainty stays local to the body's collision/support volume.
 def unknown(y,blocked=False):
     extra="Solid({id:'wall',at:[0,0,2],size:[1,2,1],material:'stone'})," if blocked else ''
-    return "function design(){return Assembly({id:'s',children:[Solid({id:'unknown',at:[0,"+str(y)+",0],size:[1,1,1],material:'stone_slab'}),"+extra+"WalkRoute({id:'path',from:[0,0,-2],to:[0,0,2],bounds:[[0,0,-2],[0,0,2]]})]});}"
+    return "function design(){return Assembly({id:'s',children:[Solid({id:'unknown',at:[0,"+str(y)+",0],size:[1,1,1],material:'iron_bars'}),"+extra+"WalkRoute({id:'path',from:[0,0,-2],to:[0,0,2],bounds:[[0,0,-2],[0,0,2]]})]});}"
 assert lint('unknown-on-route',unknown(0))['connected-route']['findings'][0]['level']=='unverified'
 assert not lint('unknown-above-route',unknown(3))['connected-route']['findings']
 assert lint('known-blocker-despite-unknown',unknown(0,True))['connected-route']['findings'][0]['level']=='warning'

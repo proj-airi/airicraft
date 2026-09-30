@@ -176,3 +176,27 @@ These are semantic component declarations, not execution instructions. `WalkRout
 The editor includes `Advice demo · advice-bridge-before` (unchanged Qwen geometry plus explicit review relationships) and `advice-bridge-after` (human repair). The former reports a failed connection and two flush-rail warnings; adding approach stairs and raising rails clears all three. The repaired bridge **retains its y=1 deck**, so it still does not meet the original brief's requested y=0 datum. These examples demonstrate the selected advice, not full brief compliance. Original `variety-*` trial sources remain unchanged.
 
 Run `python3 prototypes/blueprint/check-relations.py` for route/step repair, rotation, width, blocked endpoints and provenance, local uncertainty, guardrail repair, semantic entrances, applicability, suppression and saved Qwen warehouse/courtyard/watchtower replay. The replay adds explicit route declarations without changing geometry. Shared JS is registered for both offline and live lint, but this iteration is validated only in the offline worker/editor; Minecraft and Java builds remain off.
+
+## Walkable support surfaces
+
+`WalkableArea` is a blueprint-only annotation on the **support blocks**, with no emitted cells:
+
+```js
+Floor({id:'floor',size:[7,1,5],material:'stone_bricks'});
+WalkableArea({id:'aisle',surface:'workshop.floor',
+  blocks:[[3,0,0],[3,0,1],[3,0,2],[3,0,3],[3,0,4]]});
+```
+
+Compose those components under `Assembly({id:'workshop',children:[...]})`. `surface` is an exact component path. `blocks` selects integer support-block coordinates in **that referenced component's local frame**, independently of the annotation's own transform. Omit `blocks` to select the referenced volume's entire declared top layer. Composite surfaces, such as a Staircase, require explicit support-block coordinates. Selections are bounded to 1–1024 blocks; invalid references/selections remain unverified advice.
+
+The compiler preserves `volumeSize` separately from final cell ownership. Removing or overwriting a floor therefore does not erase its intended walkable selection. The `walkable-area` JS rule checks final collision geometry at each selected support block:
+
+- No collision support: missing-support warning, including any component that replaced it.
+- Obstruction within **two blocks vertically above an exposed support face**: clearance warning with blocker coordinates, owner, support coordinate and clearance volume.
+- Unknown, fluid or incomplete support geometry: unverified, without hiding independently known obstructions.
+
+For a full floor block at y=0, y=1 and y=2 must be clear. The exposed collision tops of slabs and stair treads are measured at their actual heights; lower and upper stair treads are checked separately. The offline fixture now recognizes ordinary bottom/top/double slabs. Partial-footprint surfaces remain conservative/unverified. This rule checks vertical clearance over selected surfaces, not player-width clearance or route connectivity: keep `WalkRoute` for required connections. Annotate circulation surfaces rather than furniture footprints. The two-block style recommendation is intentionally stricter than the route helper's 1.8-block body.
+
+The editor's `advice-walkable-before` and `advice-walkable-after` demos mark only a workshop's center aisle. The original beam leaves one block above it; raising the beam clears both the surface warning and the required aisle connection. These are human-authored demos. Original Qwen designs remain unchanged.
+
+`python3 prototypes/blueprint/check-walkable.py` verifies support removal, low/two-high ceilings, subset selection, ownership, rotation, slab/stair heights, uncertainty, suppression and annotation-only geometry. Shared rules and volume metadata are wired into the live compiler, but validation for this iteration remains offline; no Minecraft launch or Java build was performed.

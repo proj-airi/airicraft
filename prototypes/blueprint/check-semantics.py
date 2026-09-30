@@ -16,7 +16,7 @@ f=lint('roof-hole',roof_source(hole=True))['room-coverage']['findings'];assert l
 assert not lint('open-courtyard',roof_source(hole=True,open_air=True))['room-coverage']['findings']
 assert not lint('rotated-covered',roof_source(rotate=90))['room-coverage']['findings']
 f=lint('rotated-hole',roof_source(hole=True,rotate=90))['room-coverage']['findings'];assert f[0]['positions']==[[-2,4,2]]
-f=lint('unknown-roof',roof_source(material='stone_slab'))['room-coverage']['findings'];assert [a['level'] for a in f]==['unverified']
+f=lint('unknown-roof',roof_source(material='iron_bars'))['room-coverage']['findings'];assert [a['level'] for a in f]==['unverified']
 old=(HERE/'examples/two-story.js').read_text();r=lint('qwen-two-story',old)
 assert len(r['room-coverage']['findings'])==2
 assert len(r['component-semantics']['findings'])==2

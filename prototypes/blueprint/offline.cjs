@@ -26,6 +26,7 @@ function compile(tree,revision) {
     const r=((rotation+(n.rotate||0))%360+360)%360,allowed=[...inherited,...(n.replaces?(Array.isArray(n.replaces)?n.replaces:[n.replaces]):[])];
     const g={...guidance,...n.guidance},info={path:p,type:n.type||'Component',origin:at,rotation:r,guidance:g};
     for(const k of ['interior','ignoredFields'])if(n[k])info[k]=n[k];
+    if(n.volume)info.volumeSize=vec(n.volume.size);
     if(n.anchors)info.anchors=Object.fromEntries(Object.entries(n.anchors).map(([k,v])=>[k,add(at,rot(vec(v),r))]));components.push(info);
     if(n.foundation)throw Error('offline_foundation_requires_a_terrain_fixture');
     if(n.volume){const size=vec(n.volume.size);if(size.some(v=>v<1)||size.reduce((a,b)=>a*b,1)>8192)throw Error('volume_limit');const s=state(n.volume.state,r);
@@ -45,6 +46,7 @@ function shape(s){
   const id=s.split('[')[0].replace('minecraft:','');
   if(['air','cave_air'].includes(id))return {boxes:[],opaque:false,emission:0};
   if(id.endsWith('_door')&&id!=='iron_door')return {boxes:[],opaque:false,emission:0};
+  if(id.endsWith('_slab')){const type=/type=(bottom|top|double)/.exec(s)?.[1]||'bottom';return {boxes:[[0,type==='top'?.5:0,0,1,type==='bottom'?.5:1,1]],opaque:type==='double',emission:0};}
   if(id.endsWith('_stairs')&&!s.includes('shape=inner')&&!s.includes('shape=outer')){
     const facing=/facing=(\w+)/.exec(s)?.[1]||'north',upper=s.includes('half=top');
     const second={north:[0,0,0,1,1,.5],south:[0,0,.5,1,1,1],east:[.5,0,0,1,1,1],west:[0,0,0,.5,1,1]}[facing];
@@ -67,7 +69,7 @@ function capture(draft){
   for(let i=0;i<queue.length;i++){const v=queue[i];if(v[6]<=1)continue;for(const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]){const k=add(v.slice(0,3),d).join(','),n=grid.get(k);if(n&&!opaque.has(k)&&n[6]<v[6]-1){n[6]=v[6]-1;queue.push(n);}}}
   return {revision:draft.revision,components:draft.components,cells:draft.cells,geometry,lightingMethod:'Offline approximate block-light flood fill; no skylight or engine validation',accessMethod:'Offline straight stairs/full-cube fixture; open wooden doors; flat ground top y=0; unknown shapes unverified'};
 }
-function defaults(){return ['entrance-access','room-lighting','room-coverage','stair-access','component-semantics','connected-route','guardrail-protection'].map(id=>({id,source:resource(id+'.js')}));}
+function defaults(){return ['entrance-access','room-lighting','room-coverage','stair-access','component-semantics','connected-route','guardrail-protection','walkable-area'].map(id=>({id,source:resource(id+'.js')}));}
 function execute(a){
   if(a.op==='draft')return compile(evaluate(resource('components.js')+'\n'+a.source,'design(input)',{}),a.revision||1);
   if(a.op==='lint'){

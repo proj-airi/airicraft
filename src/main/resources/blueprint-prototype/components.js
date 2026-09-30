@@ -55,3 +55,8 @@ function WalkRoute({from,to,bounds,width=.6,guidance={},...p}) {
 function Guardrail({surface,edge,height=1,guidance={},...p}) {
   return Assembly({...p,type:'Guardrail',guidance:{...guidance,guardrail:{surface,edge,height}}});
 }
+// Blueprint-only intent attached to support blocks, never to the air above them.
+// blocks are integer coordinates in the referenced component's local frame.
+function WalkableArea({surface,blocks,guidance={},...p}) {
+  return Component({...p,type:'WalkableArea',guidance:{...guidance,walkable:{surface,...(blocks===undefined?{}:{blocks})}}});
+}
