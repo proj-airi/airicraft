@@ -294,9 +294,20 @@ Status (2026-09-30): in progress. Done:
   matching the 83 ticks and 21.97 blocks recorded before the change. Five runs per course
   are still needed to compare against the baseline.
 
-Not started: `MovementController` and the other key writers, the `autoJump` writes,
-`Input` installation, the hotbar and click channels, the Baritone lease holder and the
-guard test.
+- `MovementController` (used by the reflex and eight executors) keeps its API and stuck
+  detection but holds a locomotion lease under an owner name and priority: the reflex is
+  `REFLEX`, executors are `FOREGROUND`. `ControlPlane.shared()` is the one plane per client.
+  The plane owns the `autoJump` option: it saves the player's value once and restores it when
+  no holder wants the assist, which fixes interleaved controllers restoring the wrong value.
+- Live check of the reflex, before and after the change (one run each, evaluator
+  `survival-fixture` modes, no model): drowning starts and resolves after 96 ticks before and
+  92 after, with no health lost and the same final position; the flee and defend fixtures
+  raise the same reflex events within a few ticks, and health is unchanged. Zombie chases
+  differ by a few blocks between runs.
+
+Not started: the other direct key writers (`OwnedKeyPress`, `PlacementSneakController`,
+`PlayerItemUseController`), `Input` installation instead of key bindings, the hotbar and
+click channels, the Baritone lease holder and the guard test.
 
 - **Add the control plane.** Add `ControlArbiter` (core) and `ControlPlane`
   (adapter). Move all key-binding and `autoJump` writes into the plane.
