@@ -179,6 +179,9 @@ public final class ModBridgeServer {
 			httpServer.createContext("/v1/reload", this::handleReload);
 			httpServer.createContext("/v1/worlds", this::handleWorlds);
 			httpServer.createContext("/v1/worlds/join", this::handleJoinWorld);
+			httpServer.createContext("/v1/worlds/create", this::handleCreateWorld);
+			httpServer.createContext("/v1/worlds/rename", this::handleRenameWorld);
+			httpServer.createContext("/v1/worlds/delete", this::handleDeleteWorld);
 			httpServer.createContext("/v1/servers", this::handleServers);
 			httpServer.createContext("/v1/servers/join", this::handleJoinServer);
 			httpServer.createContext("/v1/focus", exchange -> handleJson(exchange, this::createFocusResponse));
@@ -299,6 +302,36 @@ public final class ModBridgeServer {
 		catch (SingleplayerWorldService.SingleplayerWorldException exception) {
 			throw new BridgeUnavailableException(exception.code(), exception.getMessage());
 		}
+	}
+
+	private void handleCreateWorld(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", CreateWorldRequest.class, request -> {
+			if (request == null) throw new BridgeUnavailableException("invalid_request", "Missing request");
+			try { return singleplayerWorldService.createWorld(request.name(), request.seed()); }
+			catch (SingleplayerWorldService.SingleplayerWorldException exception) {
+				throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+			}
+		});
+	}
+
+	private void handleRenameWorld(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", RenameWorldRequest.class, request -> {
+			if (request == null) throw new BridgeUnavailableException("invalid_request", "Missing request");
+			try { return singleplayerWorldService.renameWorld(request.worldId(), request.name()); }
+			catch (SingleplayerWorldService.SingleplayerWorldException exception) {
+				throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+			}
+		});
+	}
+
+	private void handleDeleteWorld(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", JoinWorldRequest.class, request -> {
+			if (request == null) throw new BridgeUnavailableException("invalid_request", "Missing request");
+			try { return singleplayerWorldService.deleteWorld(request.worldId()); }
+			catch (SingleplayerWorldService.SingleplayerWorldException exception) {
+				throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+			}
+		});
 	}
 
 	private void handleJoinWorld(HttpExchange exchange) throws IOException {
@@ -2740,6 +2773,10 @@ public final class ModBridgeServer {
 		String overlayText
 	) {
 	}
+
+	private record CreateWorldRequest(String name, Long seed) {}
+
+	private record RenameWorldRequest(String worldId, String name) {}
 
 	private record JoinWorldRequest(String worldId) {
 	}

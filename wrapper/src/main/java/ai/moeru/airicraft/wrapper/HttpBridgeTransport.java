@@ -82,6 +82,7 @@ final class HttpBridgeTransport implements MinecraftTransport {
 
 	private static Duration requestTimeout(String path) {
 		return switch (path) {
+			case "/v1/worlds/create", "/v1/worlds/rename", "/v1/worlds/delete" -> Duration.ofSeconds(125);
 			case "/v1/reload" -> RELOAD_REQUEST_TIMEOUT;
 			case "/v1/camera/screenshot", "/v1/map/image" -> SCREENSHOT_REQUEST_TIMEOUT;
 			case "/v1/vision/describe" -> VISION_REQUEST_TIMEOUT;

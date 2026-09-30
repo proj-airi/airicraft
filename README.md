@@ -314,6 +314,13 @@ Related upstream references:
 - [HotswapAgent](https://github.com/HotswapProjects/HotswapAgent)
 - [Fabric HotSwap guide](https://docs.fabricmc.net/develop/getting-started/intellij-idea/launching-the-game)
 
+### Singleplayer save management
+
+The wrapper can create and join new worlds, rename save display names, and delete
+closed saves. Launch straight into an existing save with
+`scripts/codex-driver --world "Save folder"` (or `./gradlew runClient -Pairicraft.world="Save folder"`).
+See [save management](docs/save-management.md) for commands and behavior.
+
 ### Agent debug CLI
 
 The agent has turns, not ticks. These commands use the client tick as the only debug clock. Minecraft targets 20 client ticks each second.

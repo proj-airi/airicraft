@@ -1550,6 +1550,47 @@ class AiricraftCliMainTest {
 	}
 
 	@Test
+	void createsWorldWithDefaultsAndOptionalSeed() {
+		TestTransport transport = new TestTransport();
+		transport.when("POST", "/v1/worlds/create").payload = Map.of("started", true, "worldId", "test-12345678");
+		CliResult result = execute(transport, "worlds", "create", "--name", "Test world", "--seed", "42");
+		assertEquals(0, result.exitCode());
+		assertEquals(Map.of("name", "Test world", "seed", 42L), transport.lastRequest("POST", "/v1/worlds/create").body());
+		assertTrue(result.output().contains("started: true"));
+	}
+
+	@Test
+	void renamesSaveDisplayNameByWorldId() {
+		TestTransport transport = new TestTransport();
+		transport.when("POST", "/v1/worlds/rename").payload = Map.of("renamed", true);
+		assertEquals(0, execute(transport, "worlds", "rename", "--world-id", "test-12345678", "--name", "New name").exitCode());
+		assertEquals(Map.of("worldId", "test-12345678", "name", "New name"), transport.lastRequest("POST", "/v1/worlds/rename").body());
+	}
+
+	@Test
+	void deletesSaveByWorldIdAndSurfacesLockFailure() {
+		TestTransport transport = new TestTransport();
+		transport.when("POST", "/v1/worlds/delete").payload = Map.of("deleted", true);
+		assertEquals(0, execute(transport, "worlds", "delete", "--world-id", "test-12345678").exitCode());
+		assertEquals(Map.of("worldId", "test-12345678"), transport.lastRequest("POST", "/v1/worlds/delete").body());
+		transport.when("POST", "/v1/worlds/delete").failure = new BridgeUnavailableException("world_locked", "Save is locked");
+		CliResult failure = execute(transport, "worlds", "delete", "--world-id", "test-12345678");
+		assertEquals(4, failure.exitCode());
+		assertTrue(failure.output().contains("error_code: world_locked"));
+	}
+
+	@Test
+	void rejectsMissingSaveIdentifiersAndBlankNamesBeforeTransport() {
+		TestTransport transport = new TestTransport();
+		assertEquals(2, execute(transport, "worlds", "delete").exitCode());
+		assertEquals(2, execute(transport, "worlds", "create", "--name", " ").exitCode());
+		assertEquals(2, execute(transport, "worlds", "rename", "--world-id", "test-12345678", "--name", " ").exitCode());
+		assertFalse(transport.requested("POST", "/v1/worlds/create"));
+		assertFalse(transport.requested("POST", "/v1/worlds/rename"));
+		assertFalse(transport.requested("POST", "/v1/worlds/delete"));
+	}
+
+	@Test
 	void worldsListOmitsVerboseFieldsByDefault() {
 		TestTransport transport = new TestTransport();
 		transport.when("GET", "/v1/worlds").payload = linkedMap(

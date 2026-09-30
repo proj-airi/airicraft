@@ -1,13 +1,28 @@
 package ai.moeru.airicraft;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.level.GameType;
+import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.WorldDataConfiguration;
+import net.minecraft.FileUtil;
+import net.minecraft.world.level.validation.ContentValidationException;
 import net.minecraft.world.Difficulty;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.presets.WorldPresets;
+import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.LevelStorageException;
 import net.minecraft.world.level.storage.LevelSummary;
+import net.minecraft.util.DirectoryLock;
 
+import java.io.IOException;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -67,6 +82,121 @@ public final class SingleplayerWorldService {
 		catch (java.util.concurrent.TimeoutException exception) {
 			throw new SingleplayerWorldException("singleplayer_timeout", "Timed out waiting for the server difficulty request", exception);
 		}
+	}
+
+	/** Uses the native generator and enters the world, as the Create World screen does. */
+	public Map<String, Object> createWorld(String name, Long seed) {
+		String displayName = validatedDisplayName(name);
+		Minecraft client = requireClient();
+		return runOnClientThread(client, () -> {
+			requireSaveManagementScreen(client);
+			LevelStorageSource storage = client.getLevelSource();
+			String directory;
+			try {
+				directory = FileUtil.findAvailableName(storage.getBaseDir(), displayName, "");
+				// Reserve atomically: never let the loader open an existing save on a name collision.
+				Files.createDirectory(storage.getLevelPath(directory));
+			}
+			catch (IOException exception) {
+				throw new SingleplayerWorldException("world_create_failed", "Could not reserve a new save folder", exception);
+			}
+			var configuration = WorldDataConfiguration.DEFAULT;
+			var info = new LevelSettings(displayName, GameType.SURVIVAL, false,
+				Difficulty.NORMAL, false, new GameRules(configuration.enabledFeatures()), configuration);
+			var options = seed == null ? WorldOptions.defaultWithRandomSeed()
+				: new WorldOptions(seed, true, false);
+			client.createWorldOpenFlows().createFreshLevel(directory, info, options,
+				lookup -> lookup.lookupOrThrow(Registries.WORLD_PRESET)
+					.getOrThrow(WorldPresets.NORMAL).value().createWorldDimensions(),
+				client.screen);
+			// The native loader catches failures internally; do not claim it started on that path.
+			if (client.getSingleplayerServer() == null) {
+				throw new SingleplayerWorldException("world_create_failed", "World creation did not start a server; inspect the client logs and save folder: " + directory);
+			}
+			return Map.of("started", true, "worldId", worldId(directory), "name", directory,
+				"displayName", displayName, "seed", options.seed());
+		}, Duration.ofSeconds(120));
+	}
+
+	public Map<String, Object> renameWorld(String worldId, String name) {
+		String displayName = validatedDisplayName(name);
+		LevelSummary summary = requireSummary(worldId);
+		Minecraft client = requireClient();
+		return runOnClientThread(client, () -> {
+			requireSaveManagementScreen(client);
+			renameSave(client.getLevelSource(), summary.getLevelId(), displayName);
+			return Map.of("renamed", true, "worldId", worldId(summary), "name", summary.getLevelId(), "displayName", displayName);
+		}, Duration.ofSeconds(120));
+	}
+
+	public Map<String, Object> deleteWorld(String worldId) {
+		LevelSummary summary = requireSummary(worldId);
+		Minecraft client = requireClient();
+		return runOnClientThread(client, () -> {
+			requireSaveManagementScreen(client);
+			deleteSave(client.getLevelSource(), summary.getLevelId());
+			return Map.of("deleted", true, "worldId", worldId(summary), "name", summary.getLevelId());
+		}, Duration.ofSeconds(120));
+	}
+
+	private LevelSummary requireSummary(String id) {
+		LevelSummary summary = findSummaryByWorldId(id);
+		if (summary == null) throw new SingleplayerWorldException("world_not_found", "World not found: " + id);
+		return summary;
+	}
+
+	private static void requireSaveManagementScreen(Minecraft client) {
+		if (isInWorld(client) || client.getSingleplayerServer() != null) {
+			throw new SingleplayerWorldException("already_in_world", "Leave the current world before managing saves");
+		}
+		if (!(client.screen instanceof TitleScreen)
+			&& !(client.screen instanceof SelectWorldScreen)) {
+			throw new SingleplayerWorldException("world_management_busy", "Open the title or world selection screen before managing saves");
+		}
+	}
+
+	private static String validatedDisplayName(String name) {
+		if (name == null || name.isBlank() || name.length() > 255 || name.chars().anyMatch(Character::isISOControl)) {
+			throw new SingleplayerWorldException("invalid_request", "Save name must contain 1-255 characters and no control characters");
+		}
+		return name.trim();
+	}
+
+	static void renameSave(LevelStorageSource storage, String directory, String name) {
+		String displayName = validatedDisplayName(name);
+		mutateSave(storage, directory, session -> session.renameLevel(displayName));
+	}
+
+	static void deleteSave(LevelStorageSource storage, String directory) {
+		mutateSave(storage, directory, LevelStorageSource.LevelStorageAccess::deleteLevel);
+	}
+
+	private static void mutateSave(LevelStorageSource storage, String directory, SaveMutation mutation) {
+		Path path = storage.getLevelPath(directory);
+		if (!path.normalize().getParent().equals(storage.getBaseDir().normalize())
+			|| Files.isSymbolicLink(path)) {
+			throw new SingleplayerWorldException("invalid_request", "Save must be a direct, non-symlink child of the saves folder");
+		}
+		if (!Files.isDirectory(path) || !Files.exists(path.resolve("level.dat"))) {
+			throw new SingleplayerWorldException("world_not_found", "Save no longer exists: " + directory);
+		}
+		try (var session = storage.validateAndCreateAccess(directory)) {
+			mutation.apply(session);
+		}
+		catch (DirectoryLock.LockException | OverlappingFileLockException exception) {
+			throw new SingleplayerWorldException("world_locked", "Save is in use: " + directory, exception);
+		}
+		catch (ContentValidationException exception) {
+			throw new SingleplayerWorldException("world_symlink_disallowed", "Save contains disallowed symbolic links: " + directory, exception);
+		}
+		catch (IOException exception) {
+			throw new SingleplayerWorldException("world_save_failed", "Could not modify save: " + directory, exception);
+		}
+	}
+
+	@FunctionalInterface
+	private interface SaveMutation {
+		void apply(LevelStorageSource.LevelStorageAccess session) throws IOException;
 	}
 
 	public List<Map<String, Object>> listWorlds() {
@@ -259,7 +389,11 @@ public final class SingleplayerWorldService {
 		return minecraft.level != null || minecraft.player != null;
 	}
 
-	private static <T> T runOnClientThread(Minecraft minecraft, java.util.function.Supplier<T> supplier) {
+	private static <T> T runOnClientThread(Minecraft client, java.util.function.Supplier<T> supplier) {
+		return runOnClientThread(client, supplier, JOIN_TIMEOUT);
+	}
+
+	private static <T> T runOnClientThread(Minecraft minecraft, java.util.function.Supplier<T> supplier, Duration timeout) {
 		CompletableFuture<T> future = new CompletableFuture<>();
 		minecraft.execute(() -> {
 			try {
@@ -271,7 +405,7 @@ public final class SingleplayerWorldService {
 		});
 
 		try {
-			return future.get(JOIN_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+			return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 		}
 		catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();

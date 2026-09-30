@@ -95,6 +95,13 @@ public final class SmeltingProcessManager {
 		return !processesById.isEmpty();
 	}
 
+	/** Preserve active furnace interactions and stations with no block position to reopen. */
+	public boolean requiresOpenScreen(String dimensionId, int syncId, WorldTaskType activeTaskType) {
+		return activeTaskType == WorldTaskType.SMELT_ITEMS
+			|| activeTaskType == WorldTaskType.COLLECT_SMELTED_ITEMS
+			|| processesByStation.containsKey(new SmeltingStationKey(dimensionId + "#open_screen", syncId, 0, 0));
+	}
+
 	public List<SmeltingProcessSnapshot> processSnapshots() {
 		return processesById.values().stream()
 			.sorted(Comparator.comparing(TrackedProcess::processId))

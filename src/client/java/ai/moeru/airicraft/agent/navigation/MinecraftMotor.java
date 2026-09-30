@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.navigation;
 
 import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.control.ControlPlane;
+import ai.moeru.airicraft.agent.control.MovementScreenCloser;
 import ai.moeru.airicraft.agent.tasks.MiningToolPreparation;
 import ai.moeru.airicraft.control.Channel;
 import ai.moeru.airicraft.control.ChannelIntent;
@@ -55,6 +56,8 @@ public final class MinecraftMotor {
 		double yaw = Math.toRadians(player.getYRot());
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
+		MovementScreenCloser.closeIfMoving(minecraft, Math.abs(forward) > KEY_THRESHOLD || Math.abs(left) > KEY_THRESHOLD
+			|| intent.jump() || intent.sneak() && player.isInWater());
 		plane.submit(lease, new ChannelIntent.Locomotion(forward > KEY_THRESHOLD, forward < -KEY_THRESHOLD,
 			left > KEY_THRESHOLD, left < -KEY_THRESHOLD, intent.jump(), intent.sneak(), intent.sprint()));
 		if (intent.look() != null) {
