@@ -52,7 +52,7 @@ public final class MinecraftMotor {
 			release(minecraft);
 			return null;
 		}
-		if (!holdLease()) return "control_preempted";
+		if (!holdControl()) return "control_preempted";
 		double yaw = Math.toRadians(player.getYRot());
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
@@ -86,15 +86,24 @@ public final class MinecraftMotor {
 		plane.release(minecraft, released);
 	}
 
-	/** Takes the lease on first use; false once a stronger holder has revoked it or refuses it. */
-	private boolean holdLease() {
-		if (lease == null) {
-			if (!(plane.acquire("navigation", Priority.FOREGROUND, CHANNELS) instanceof ControlArbiter.Acquisition.Granted granted)) {
-				return false;
-			}
-			lease = granted.lease();
+	/**
+	 * Takes the lease on first use and again after a revocation, once whoever revoked it has let go.
+	 * False while a holder of higher or equal priority has the channels: the route pauses, it does not fail.
+	 */
+	public boolean holdControl() {
+		if (lease != null) {
+			ControlArbiter.Status status = plane.status(lease);
+			if (status instanceof ControlArbiter.Status.Held) return true;
+			if (status instanceof ControlArbiter.Status.Revoked revoked
+				&& plane.status(revoked.by()) instanceof ControlArbiter.Status.Held) return false;
+			plane.release(null, lease);
+			lease = null;
 		}
-		return plane.status(lease) instanceof ControlArbiter.Status.Held;
+		if (!(plane.acquire("navigation", Priority.FOREGROUND, CHANNELS) instanceof ControlArbiter.Acquisition.Granted granted)) {
+			return false;
+		}
+		lease = granted.lease();
+		return true;
 	}
 
 	public BlockPos breaking() {

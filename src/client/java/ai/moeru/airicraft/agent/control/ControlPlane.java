@@ -106,7 +106,8 @@ public final class ControlPlane {
 		letGo(minecraft, frame.released());
 		if (frame.held(Channel.LOCOMOTION)) press(minecraft, frame.locomotion());
 		ChannelIntent.Look look = frame.look();
-		if (look != null && camera != null) camera.startLookAt(minecraft, new Vec3(look.x(), look.y(), look.z()), look.reason());
+		// Navigation aims lowest: a reflex, executor or tool that aimed this tick keeps the camera.
+		if (look != null && camera != null && !camera.aimedThisTick()) camera.startLookAt(minecraft, new Vec3(look.x(), look.y(), look.z()), look.reason());
 		int slot = frame.hotbarSlot();
 		if (slot >= 0 && minecraft.player != null && minecraft.player.getInventory().getSelectedSlot() != slot) {
 			minecraft.player.getInventory().setSelectedSlot(slot);

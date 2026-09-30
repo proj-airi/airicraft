@@ -10,6 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CameraControllerTest {
+	@Test void aDirectAimIsRememberedUntilTheNextCameraTick() {
+		var camera = new CameraController();
+		assertFalse(camera.aimedThisTick());
+		camera.noteDirectAim();
+		assertTrue(camera.aimedThisTick());
+		camera.tick(null);
+		assertFalse(camera.aimedThisTick());
+	}
+
 	@Test void externalCorrectionIsObservedEvenWithoutAnotherTargetRequest() {
 		var camera = new CameraController();
 		camera.startMotion(new CameraController.Rotation(0, 0), new CameraController.Rotation(90, 0), 0, "vision");

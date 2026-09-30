@@ -489,6 +489,25 @@ class NavigationTaskExecutorTest {
 	}
 
 	@Test
+	void sessionGatePauseStopsNavigationAndRestartsTheSameGoalOnResume() {
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
+		GoalSnapshot goal = new GoalSnapshot(GoalType.NAVIGATE_TO, null,
+			new GoalPosition(10, 64, 20, true), null, 20L, "planner_response");
+		WorldTaskRequest request = request("nav-task", goal);
+
+		executor.tick(multiplayer(), Optional.of(request));
+		assertEquals(1, facade.navigateCalls.size());
+
+		executor.tick(singleplayerLocal(), Optional.of(request));
+		assertEquals(1, facade.cancelCalls, "a paused task must not keep steering the player");
+		assertEquals(TaskExecutionState.PAUSED_BY_SESSION_GATE, executor.snapshot().state());
+
+		executor.tick(multiplayer(), Optional.of(request));
+		assertEquals(2, facade.navigateCalls.size(), "the goal restarts when actuation resumes");
+	}
+
+	@Test
 	void sessionGatePausesWithoutCancellingGoalState() {
 		FakeNavigationFacade facade = new FakeNavigationFacade();
 		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);

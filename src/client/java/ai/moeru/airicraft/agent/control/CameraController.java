@@ -20,6 +20,8 @@ public final class CameraController {
 	private CameraMotion activeMotion;
 	private RotationSpring spring;
 	private boolean directRequest;
+	/** Someone other than the control plane aimed this tick; navigation's look must not override it. */
+	private boolean aimedThisTick;
 	private LocalPlayer controlledPlayer;
 	private CompletableFuture<Void> alignment;
 
@@ -34,11 +36,22 @@ public final class CameraController {
 
 	/** Submit an aim target. Exact interactions use isLookingAt; mining uses blockHit. */
 	public Optional<Rotation> lookAt(Minecraft minecraft, Vec3 target) {
+		noteDirectAim();
 		return startLookAt(minecraft, target, defaultLerpTicks, "action");
+	}
+
+	void noteDirectAim() {
+		aimedThisTick = true;
+	}
+
+	/** Whether a reflex, executor or tool aimed since the last camera tick. Reset by {@link #tick}. */
+	public boolean aimedThisTick() {
+		return aimedThisTick;
 	}
 
 	public Optional<Rotation> faceDirection(LocalPlayer player, String direction) {
 		if (player == null) return Optional.empty();
+		noteDirectAim();
 		Optional<Rotation> rotation = directionRotation(direction);
 		rotation.ifPresent(value -> request(player, value, defaultLerpTicks, "vision", true));
 		return rotation;
@@ -123,6 +136,7 @@ public final class CameraController {
 	}
 
 	public void tick(Minecraft minecraft) {
+		aimedThisTick = false;
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null || !player.isAlive() || (controlledPlayer != null && controlledPlayer != player)) {
 			clear();
@@ -147,6 +161,7 @@ public final class CameraController {
 		spring = null;
 		controlledPlayer = null;
 		directRequest = false;
+		aimedThisTick = false;
 		if (alignment != null) {
 			var cancelled = alignment;
 			alignment = null;

@@ -28,6 +28,8 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 	private final WaterStallRecovery waterStallRecovery = new WaterStallRecovery();
 
 	private WorldTaskRequest appliedTask;
+	/** The task a session-gate pause stopped, so the same task resumes with its water recovery intact. */
+	private WorldTaskRequest pausedTask;
 	private String terminalEventTaskId;
 	private TaskExecutionState terminalEventState;
 	private TaskTerminationCause terminalEventCause;
@@ -73,10 +75,13 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 			if (waterRecoveryPenalty == null || sessionSnapshot.requiresRespawn()) {
 				clearWaterRecovery();
 			}
-			if (sessionSnapshot.requiresRespawn() && appliedTask != null) {
+			if (appliedTask != null) {
+				// A paused task must not keep steering the player; it restarts when actuation resumes.
 				facade.cancel();
+				if (!sessionSnapshot.requiresRespawn()) pausedTask = appliedTask;
 				appliedTask = null;
 			}
+			if (sessionSnapshot.requiresRespawn()) pausedTask = null;
 			clearTerminalEvent(activeTask.get());
 			snapshot = new TaskExecutionSnapshot(
 				TaskExecutionState.PAUSED_BY_SESSION_GATE,
@@ -93,7 +98,8 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 		boolean taskTargetChanged = !sameTaskTarget(activeTask.get(), appliedTask);
 		if (taskTargetChanged) {
 			navigationStall.clear();
-			clearWaterRecovery();
+			if (pausedTask == null || !sameTaskTarget(activeTask.get(), pausedTask)) clearWaterRecovery();
+			pausedTask = null;
 			if (appliedTask != null) {
 				facade.cancel();
 				appliedTask = null;
@@ -439,6 +445,7 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 		navigationStall.clear();
 		clearWaterRecovery();
 		appliedTask = null;
+		pausedTask = null;
 		terminalEventTaskId = null;
 		terminalEventState = null;
 		terminalEventCause = null;

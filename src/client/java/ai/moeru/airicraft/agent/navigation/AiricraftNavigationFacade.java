@@ -217,6 +217,8 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			return;
 		}
 		if (follower == null && !plan(minecraft, player, body)) return;
+		// A stronger holder has the player (a reflex, say): hold the route and its progress until it lets go.
+		if (!motor.holdControl()) return;
 
 		PathFollower.Tick next = follower.tick(body, liveTerrain(minecraft), plannedPolicy);
 		String actionFailure = motor.apply(minecraft, next.intent());
