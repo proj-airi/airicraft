@@ -1,6 +1,6 @@
 # Qwen blueprint experiment — 2026-09-30
 
-The interface is not yet reliably usable by the configured smaller model. This is a small exploratory test, not a benchmark. Compilation succeeded for two designs under one setting, but neither met its complete brief.
+The initial interface was not reliably usable by the configured smaller model. A reasoning-enabled follow-up with semantic rules is recorded below. This is a small exploratory test, not a benchmark. Compilation succeeded for two designs under one setting, but neither met its complete brief.
 
 ## Setup and resource use
 
@@ -37,3 +37,30 @@ Next interface work should reject unsupported authoring fields, distinguish raw 
 After freezing the trials, an example JS extension (`rules/empty-geometry.js`) flagged both empty door/window components in the lit-room output. That diagnostic was **not** fed back to the model and does not improve its recorded outcome. It demonstrates adding a rule without changing the engine.
 
 The two compiled final sources are preserved unchanged in `examples/` and exposed by named buttons in the offline editor. They are failure cases for inspection, not recommended house templates. Full responses, attempts, final drafts, lint results and post-hoc findings remain locally under ignored `run/blueprint-evidence/model-trial*`. Credentials are absent from the recorded transcripts.
+
+## Follow-up: semantic rules and reasoning enabled
+
+At the user's request, reasoning stayed enabled for **three fresh designs plus one focused repair task**. Settings: requested `reasoning_effort: low`, 32,768 completion tokens per request, at most 12 model turns and 5 accepted design submissions. Responses included nonempty reasoning and completed tool calls; none of these four runs exhausted the output allowance. No game was launched, no Airicraft configuration was changed, and no model-generated source was manually repaired.
+
+The library/rules now supply room dimensions and ignored-field metadata, roof/ceiling coverage, straight-stair clearance/landing checks, and empty-component advice. Prompts explain these extra diagnostics. Per-trial source hashes, the full system prompt and all attempts are recorded. These changes and the increased attempt budget mean this is **not a controlled comparison** of reasoning effort or of rules alone.
+
+| Task | Accepted design submissions | Final observed result |
+| --- | --- | --- |
+| Lit dwelling | 2 | Compiled 347 cells. Cleared entrance warning by lowering the floor flush with exterior ground; coverage passes. Lighting remains unverified because the lantern shape is unsupported by the offline fixture. |
+| Two-story house | 5 (including one overlap failure) | Compiled 923 cells. Correct roof coverage and exterior access. Cleared both lighting warnings by repositioning/adding lights. Staircase still fails clearance/landing advice; the model's added support blocks did not resolve it. |
+| Dark chamber + maintenance room | 3 | Compiled 561 cells. Added full ceilings after coverage findings; final bundle has zero findings. Source inspection confirms separate rooms, dark intent/no windows for the chamber, lit maintenance room and an aligned exterior stair. This is still offline layout evidence, not a mob-spawning test. |
+| Focused roof repair | 2 | Starter had exactly one finding: 15/35 interior columns uncovered. Qwen widened the roof from 5 to 9 blocks and added a full ceiling. Final bundle has zero findings. Independent comparison confirms the entire Room subtree, including entrance, window and lamp, is unchanged. |
+
+The focused repair is defined separately in `semantic-repair-tasks.json`: it requires compiling/linting a fixed defective starter before changing it, preserving room parameters and rerunning lint. The successful repair demonstrates using a concrete semantic diagnostic; it is one seeded case, not a general success rate. The final zero-findings state is bounded by the checks implemented. Notably, the two-story failure suggests more specific stair obstruction/landing evidence would help beyond the current combined warning.
+
+Run the fresh-design follow-up with:
+
+```sh
+BLUEPRINT_TRIAL_ID=new-semantic-run BLUEPRINT_REASONING=low \
+  BLUEPRINT_MODEL_TOKENS=32768 BLUEPRINT_MAX_DESIGNS=5 BLUEPRINT_MAX_TURNS=12 \
+  python3 prototypes/blueprint/model-trial.py
+```
+
+For the focused repair, additionally set `BLUEPRINT_TASKS_FILE=prototypes/blueprint/semantic-repair-tasks.json` and use a different trial ID. Runtime records are in `run/blueprint-evidence/model-trial-semantic-low-32k/` and `model-trial-semantic-roof-low-32k/`. The final sources are preserved under `examples/low-*.js` and `roof-repair-after.js`; `roof-repair-before.js` is the fixed starter. All appear as named buttons in the offline editor. Orange diagnostic markers identify uncovered columns without adding authored blocks.
+
+Semantic regression probes passed for full/holey/rotated/unknown/open roofs, correction of a narrow roof, empty components, ignored fields, corrected stair headroom and scoped suppression. The new Java metadata/default-rule wiring was not rebuilt or run in Minecraft in this follow-up; validation used the shared JS rules and offline adapter to respect the resource constraint.

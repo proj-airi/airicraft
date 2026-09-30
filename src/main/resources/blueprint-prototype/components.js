@@ -16,10 +16,10 @@ function Door({id,at=[0,0,0],material='oak_door',...p}) {
   ]});
 }
 // Local front is z=0. Each opening is a descendant of its host wall and intentionally replaces it.
-function Room({id,at=[0,0,0],rotate=0,interior=[9,3,7],wall='oak_planks',floor='stone_bricks',openings={},floorOpenings=[],guidance={}}) {
+function Room({id,at=[0,0,0],rotate=0,interior=[9,3,7],wall='oak_planks',floor='stone_bricks',openings={},floorOpenings=[],guidance={},...unsupported}) {
   const [iw,h,idp]=interior,w=iw+2,d=idp+2;
   const Wall=(id,at,size,rotate,children=[])=>Solid({id,at,size,rotate,material:wall,type:'Wall',children});
-  return Component({id,type:'Room',at,rotate,interior,guidance:{lighting:'expected',...guidance},anchors:{entrance:[Math.floor(w/2),1,0],above:[0,h+1,0]},children:[
+  return Component({id,type:'Room',at,rotate,interior,ignoredFields:Object.keys(unsupported),guidance:{lighting:'expected',...guidance},anchors:{entrance:[Math.floor(w/2),1,0],above:[0,h+1,0]},children:[
     Floor({id:'floor',size:[w,1,d],material:floor,children:floorOpenings}),
     Clearance({id:'interior',at:[1,1,1],size:[iw,h,idp]}),
     Wall('front',[0,1,0],[w,h,1],0,openings.front),

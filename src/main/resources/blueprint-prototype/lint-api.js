@@ -46,11 +46,36 @@ function runRule(snapshot,input,check) {
     }
     return {known:unknown===0&&samples.length>0,reason:unknown?'Incomplete captured geometry':samples.length?'Approximate artificial block-light only':'No walking surfaces identified',sampleCount:samples.length,minLevel:samples.length?Math.min(...samples.map(s=>s.level)):null,positions:samples.filter(s=>s.level<threshold).map(s=>s.position).slice(0,24),brightPositions:samples.filter(s=>s.level>0).map(s=>s.position).slice(0,24)};
   }
+  function stair(c) {
+    const steps=snapshot.cells.filter(b=>b.owner.startsWith(c.path+'.')&&b.state.includes('_stairs')).sort((a,b)=>a.position[1]-b.position[1]);
+    if(!steps.length)return {known:false,reason:'No stair blocks emitted'};
+    const first=steps[0],last=steps[steps.length-1],facing=/facing=(north|south|east|west)/.exec(first.state)?.[1];
+    const dir={north:[0,0,-1],south:[0,0,1],east:[1,0,0],west:[-1,0,0]}[facing];
+    if(!dir)return {known:false,reason:'Stair direction unavailable'};
+    // Only a straight flight is inferred. Custom/turning staircases need their own rule.
+    if(steps.some(s=>!/half=bottom/.test(s.state)||!s.state.includes('facing='+facing)))return {known:false,reason:'Only straight bottom-half flights are supported'};
+    const lateral=p=>dir[0]?p[2]:p[0],axis=p=>dir[0]?p[0]*dir[0]:p[2]*dir[2];
+    const lane=lateral(first.position),flight=steps.filter(s=>lateral(s.position)===lane);
+    if(flight.some(s=>axis(s.position)-axis(first.position)!==s.position[1]-first.position[1]))return {known:false,reason:'Nonuniform or turning staircase'};
+    const end=flight[flight.length-1].position,start=first.position;
+    const distance=axis(end)-axis(start)+2,n=Math.ceil(distance/.2),targetY=end[1]+1;let previous=null;
+    for(let i=0;i<=n;i++) {
+      const d=-1+distance*i/n,x=start[0]+.5+dir[0]*d,z=start[2]+.5+dir[2]*d;
+      const bs=boxes(x,z,start[1]-2,targetY+2);
+      if(!bs)return {known:false,reason:'Stair route contains unknown geometry or fluid'};
+      const heights=[...new Set(bs.filter(b=>x+.3>b[0]+.001&&x-.3<b[3]-.001&&z+.3>b[2]+.001&&z-.3<b[5]-.001&&b[4]<=targetY+.01).map(b=>b[4]))].sort((a,b)=>b-a);
+      const y=heights.find(y=>clearAt(x,y,z,bs)&&(previous===null?Math.abs(y-start[1])<.61:Math.abs(y-previous)<.601));
+      if(y===undefined)return {known:true,walkable:false,reason:'Missing support, excessive step, or blocked headroom along the flight',positions:[[Math.floor(x),Math.floor(previous??start[1]),Math.floor(z)]]};
+      previous=y;
+    }
+    return {known:true,walkable:Math.abs(previous-targetY)<.01,reason:'The flight must end on a supported landing at its top height',positions:[[end[0]+dir[0],targetY,end[2]+dir[2]]]};
+  }
   const ctx={revision:snapshot.revision,
     components:({type}={})=>components.filter(c=>!type||c.type===type),
+    position:(c,p)=>{const q=rotate(p,c.rotation);return c.origin.map((n,i)=>n+q[i]);},
     cells:c=>snapshot.cells.filter(b=>b.owner===c.path||b.owner.startsWith(c.path+'.')),
     block:p=>{const v=voxel(p);return v?{known:v[3],collisionBoxes:v[4],emission:v[5],estimatedBlockLight:v[6],fluid:v[7]}:{known:false};},
-    access:{entrance},lighting:{darkWalkingSurfaces:lighting},
+    access:{entrance,stair},lighting:{darkWalkingSurfaces:lighting},
     warn:f=>report({...f,level:'warning'}),
     info:f=>report({...f,level:'info'}),
     unverified:(c,reason)=>report({component:c.path,level:'unverified',message:reason}),

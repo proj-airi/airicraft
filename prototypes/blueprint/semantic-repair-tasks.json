@@ -1,0 +1,11 @@
+[
+  {
+    "id": "roof-repair",
+    "origin": [
+      0,
+      0,
+      0
+    ],
+    "prompt": "Repair the following dwelling. First compile this exact starter and run lint, then use the semantic findings to correct unintended roof coverage gaps. Preserve the Room interior dimensions and position, entrance, window and lighting. Keep the room covered; do not suppress rules or change intent. You can change the roof dimensions/position or composition. Run lint again after your repair. Starter:\nfunction design(input) {\n  return Assembly({id:'dwelling',children:[\n    Room({id:'room',at:[0,-1,0],interior:[7,3,5],openings:{front:[\n      Door({id:'entrance',at:[4,0,0],guidance:{access:'walk'}}),\n      Window({id:'window',at:[1,1,0],width:2,height:1})\n    ]},floorOpenings:[Solid({id:'lamp',at:[4,0,3],size:[1,1,1],material:'glowstone'})]}),\n    GableRoof({id:'roof',at:[0,3,0],width:5,depth:7})\n  ]});\n}"
+  }
+]

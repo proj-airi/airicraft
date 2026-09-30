@@ -25,6 +25,7 @@ function compile(tree,revision) {
     const at=add(origin,rot(vec(n.at||[0,0,0]),rotation));if(!Number.isInteger(n.rotate||0)||(n.rotate||0)%90)throw Error('rotation_must_be_quarter_turn');
     const r=((rotation+(n.rotate||0))%360+360)%360,allowed=[...inherited,...(n.replaces?(Array.isArray(n.replaces)?n.replaces:[n.replaces]):[])];
     const g={...guidance,...n.guidance},info={path:p,type:n.type||'Component',origin:at,rotation:r,guidance:g};
+    for(const k of ['interior','ignoredFields'])if(n[k])info[k]=n[k];
     if(n.anchors)info.anchors=Object.fromEntries(Object.entries(n.anchors).map(([k,v])=>[k,add(at,rot(vec(v),r))]));components.push(info);
     if(n.foundation)throw Error('offline_foundation_requires_a_terrain_fixture');
     if(n.volume){const size=vec(n.volume.size);if(size.some(v=>v<1)||size.reduce((a,b)=>a*b,1)>8192)throw Error('volume_limit');const s=state(n.volume.state,r);
@@ -66,7 +67,7 @@ function capture(draft){
   for(let i=0;i<queue.length;i++){const v=queue[i];if(v[6]<=1)continue;for(const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]){const k=add(v.slice(0,3),d).join(','),n=grid.get(k);if(n&&!opaque.has(k)&&n[6]<v[6]-1){n[6]=v[6]-1;queue.push(n);}}}
   return {revision:draft.revision,components:draft.components,cells:draft.cells,geometry,lightingMethod:'Offline approximate block-light flood fill; no skylight or engine validation',accessMethod:'Offline straight stairs/full-cube fixture; open wooden doors; flat ground top y=0; unknown shapes unverified'};
 }
-function defaults(){return ['entrance-access','room-lighting'].map(id=>({id,source:resource(id+'.js')}));}
+function defaults(){return ['entrance-access','room-lighting','room-coverage','stair-access','component-semantics'].map(id=>({id,source:resource(id+'.js')}));}
 function execute(a){
   if(a.op==='draft')return compile(evaluate(resource('components.js')+'\n'+a.source,'design(input)',{}),a.revision||1);
   if(a.op==='lint'){

@@ -48,6 +48,7 @@ public final class BlueprintPrototype {
         var guidance=inheritedGuidance.deepCopy();
         if(node.has("guidance"))node.getAsJsonObject("guidance").entrySet().forEach(e->guidance.add(e.getKey(),e.getValue().deepCopy()));
         info.put("guidance",guidance);
+        for(String key:List.of("interior","ignoredFields"))if(node.has(key))info.put(key,node.get(key).deepCopy());
         components.add(info);
         if(node.has("volume")) {
             JsonObject volume=node.getAsJsonObject("volume"); BlockPos size=vector(volume.get("size"));

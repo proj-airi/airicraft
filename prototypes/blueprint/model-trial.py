@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Exploratory isolated Qwen tool loop; credentials read only from Airicraft config, never logged.
 Uses the configured model/provider, not the embedded planner prompt or its scheduling loop.
-Fixed before running: 3 tasks, <=8 turns and <=3 design submissions per task; no manual source repair.
+Task file and budgets are fixed per run via environment; no manual source repair.
 """
-import json, os, re, sys, time, urllib.request, urllib.error
+import json, os, re, sys, time, hashlib, urllib.request, urllib.error
 from pathlib import Path
 from serve import ROOT
 from offline import Offline
@@ -12,6 +12,9 @@ HERE=Path(__file__).resolve().parent
 OUT=ROOT/'run/blueprint-evidence'/os.environ.get('BLUEPRINT_TRIAL_ID','model-trial')
 TOKEN_LIMIT=int(os.environ.get('BLUEPRINT_MODEL_TOKENS','4096'))
 REASONING=os.environ.get('BLUEPRINT_REASONING')
+MAX_DESIGNS=int(os.environ.get('BLUEPRINT_MAX_DESIGNS','3'))
+MAX_TURNS=int(os.environ.get('BLUEPRINT_MAX_TURNS','8'))
+assert 1<=MAX_DESIGNS<=10 and 1<=MAX_TURNS<=20
 OUT.mkdir(parents=True,exist_ok=True)
 config=(ROOT/'run/config/airicraft/agent.yml').read_text()
 def setting(name):
@@ -25,16 +28,21 @@ Each component has a unique sibling id, optional at:[x,y,z] relative to parent a
 Room guidance defaults to lighting=expected; set guidance lighting=dark for intentionally dark rooms. Tag exterior Door with guidance:{access:'walk'}. Guidance is inherited and overridable. Rules are advisory, but address unintentional findings. Lighting estimates are approximate block-light only; missing skylight is deliberate for night-time usability. Do not assert a whole-building route was proven by the local entrance check.
 You have the component library below; compose these constructors or write new JS functions. No Java, network, filesystem, async, or imports. Do not use unavailable fluent methods or fictional constructors.
 '''+(ROOT/'src/main/resources/blueprint-prototype/components.js').read_text()
-selected=sys.argv[1:] or [t['id'] for t in json.loads((HERE/'model-tasks.json').read_text())]
-for task in json.loads((HERE/'model-tasks.json').read_text()):
+SYSTEM=SYSTEM.replace('Maximum 3 design submissions and 8 model turns.',f'Maximum {MAX_DESIGNS} design submissions and {MAX_TURNS} model turns.')
+SYSTEM+='\nThe bundled rules also check room coverage, straight staircase headroom/landings, empty semantic components, and ignored constructor fields. Use returned coordinates and component paths to diagnose failures. Keep occupied rooms covered; do not change their intent to evade advice. Use actual constructor calls, not merely type labels.'
+resource_dir=ROOT/'src/main/resources/blueprint-prototype'
+resource_hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in resource_dir.glob('*.js')}
+TASKS=json.loads(Path(os.environ.get('BLUEPRINT_TASKS_FILE',str(HERE/'model-tasks.json'))).read_text())
+selected=sys.argv[1:] or [t['id'] for t in TASKS]
+for task in TASKS:
     if task['id'] not in selected:continue
     td=OUT/task['id'];td.mkdir(exist_ok=True)
     if (td/'transcript.json').exists():raise SystemExit('Refusing to overwrite an existing trial: '+str(td))
     origin=task['origin'];call=Offline().call
     messages=[{'role':'system','content':SYSTEM},{'role':'user','content':task['prompt']}]
-    log={'backend':'offline-flat-fixture','modelRequested':MODEL,'provider':BASE,'task':task,'reasoningEffort':REASONING,'sampling':'provider defaults; no temperature override','maxCompletionTokens':TOKEN_LIMIT,'transportTimeoutSeconds':240,'maxTurns':8,'maxDesigns':3,'calls':[],'outcome':'turn_limit'}
+    log={'backend':'offline-flat-fixture','modelRequested':MODEL,'provider':BASE,'task':task,'reasoningEffort':REASONING,'sampling':'provider defaults; no temperature override','maxCompletionTokens':TOKEN_LIMIT,'transportTimeoutSeconds':240,'maxTurns':MAX_TURNS,'maxDesigns':MAX_DESIGNS,'resourceHashes':resource_hashes,'systemPrompt':SYSTEM,'calls':[],'outcome':'turn_limit'}
     designs=0;last=None
-    for turn in range(8):
+    for turn in range(MAX_TURNS):
         payload={'model':MODEL,'messages':messages,'tools':TOOLS,'tool_choice':'auto','max_tokens':TOKEN_LIMIT,'stream':False}
         if REASONING:payload['reasoning_effort']=REASONING
         start=time.monotonic()
@@ -53,10 +61,11 @@ for task in json.loads((HERE/'model-tasks.json').read_text()):
                 args=json.loads(tc['function']['arguments']);name=tc['function']['name']
                 if name=='design':
                     designs+=1
-                    if designs>3:raise ValueError('Design submission limit reached; finish with your observed limitations.')
+                    if designs>MAX_DESIGNS:raise ValueError('Design submission limit reached; finish with your observed limitations.')
                     (td/f'attempt-{designs}.js').write_text(args['source'])
                     last=call({'op':'draft','source':args['source']})
                     (td/'draft.json').write_text(json.dumps(last,indent=2))
+                    (td/'final.js').write_text(args['source'])
                     value={'revision':last['revision'],'cellCount':last['cellCount'],'components':last['components'],'materials':last['materials']}
                 elif name=='lint':value=call({'op':'lint'})
                 elif name=='inspect':value=call({'op':'explain',**args})
@@ -70,5 +79,5 @@ for task in json.loads((HERE/'model-tasks.json').read_text()):
         # Freeze the final compiled draft and independently collect the final advisory result.
         log['finalLint']=call({'op':'lint','origin':origin});log['compiled']=True;log['cellCount']=last['cellCount']
     else:log['compiled']=False
-    log['designSubmissions']=designs;(td/'transcript.json').write_text(json.dumps(log,indent=2))
+    log['designRequests']=designs;log['acceptedDesignSubmissions']=min(designs,MAX_DESIGNS);log['designSubmissions']=designs;(td/'transcript.json').write_text(json.dumps(log,indent=2))
     print('FINAL',task['id'],{k:log.get(k) for k in ['outcome','compiled','cellCount','designSubmissions']},flush=True)

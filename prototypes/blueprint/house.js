@@ -7,7 +7,7 @@ function design(input) {
       left:[Window({id:'window',at:[2,1,0]})],right:[Window({id:'window',at:[2,1,0]})]
     }}),
     Room({id:'upper',at:[0,4,0],interior:[9,3,7],floor:'oak_planks',wall:'white_concrete',
-      floorOpenings:[Clearance({id:'stairwell',at:[7,0,3],size:[2,1,3]})],openings:{
+      floorOpenings:[Clearance({id:'stairwell',at:[7,0,2],size:[2,1,4]})],openings:{
         front:[Window({id:'window',at:[3,0,0],width:5,height:2})],
         back:[Window({id:'window',at:[3,0,0],width:5,height:2})],
         left:[Window({id:'window',at:[2,0,0]})],right:[Window({id:'window',at:[2,0,0]})]
