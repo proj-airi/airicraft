@@ -1,6 +1,6 @@
 # In-house navigation and a single control plane
 
-Status: accepted (2026-09-25); not yet implemented. Migration plan:
+Status: implemented (2026-09-30). Baritone is removed; deviations are listed in the plan. Migration plan:
 [docs/superpowers/specs/2026-09-25-in-house-navigation-and-control-plane.md](../superpowers/specs/2026-09-25-in-house-navigation-and-control-plane.md).
 
 ## Context

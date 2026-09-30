@@ -1,8 +1,10 @@
 # In-house Navigation and Unified Control Plane
 
-Status: accepted (2026-09-25), recorded as
-[ADR-0004](../../adr/0004-in-house-navigation-and-control-plane.md). Not yet
-implemented.
+Status: implemented (2026-09-30), recorded as
+[ADR-0004](../../adr/0004-in-house-navigation-and-control-plane.md). Baritone is
+removed and the in-house planner, motor and control plane are the only path. The phases
+below keep their original wording; each carries a status note, and
+[Deviations](#deviations-from-this-plan) lists where the result differs from the plan.
 
 ## Goal
 
@@ -275,39 +277,30 @@ Status (2026-09-25): done.
 
 ### Phase 1 — Control plane, with Baritone as a lease holder (M, Track A)
 
-Status (2026-09-30): in progress. Done:
+Status (2026-09-30): done, except as listed under Deviations.
 
-- `ControlArbiter`, `ControlLease`, `ControlFrame`, `Channel`, `Priority` and
-  `ChannelIntent` in `navigation-core` (package `ai.moeru.airicraft.control`), with unit
-  tests. Channels so far: locomotion, look and hotbar; primary and secondary join with the
-  click writers. An acquire at equal priority takes over, so a holder that never released
+- `ControlArbiter`, `ControlLease`, `ControlFrame`, `Channel` (locomotion, look, hotbar,
+  primary, secondary), `Priority` and `ChannelIntent` live in `navigation-core` (package
+  `ai.moeru.airicraft.control`) with unit tests. An acquire at equal priority takes over,
+  a stronger acquire revokes weaker holders synchronously, and a holder that never released
   cannot lock out its successor.
-- `ControlPlane` (adapter) applies one merged frame per client tick, right after the
-  navigation backend ticks. `release` clears channels in the calling tick and consumes the
-  release edge, so `cancel()` stays synchronous and the frame never clears keys over another
-  actuator's input.
-- `MinecraftMotor` (in-house backend) holds a `FOREGROUND` lease on locomotion and look and
-  submits intents. Its block break, place and use calls and its hotbar selection still go
-  straight to the interaction manager and inventory.
-- Live check (1 run per course, in-house backend, headless client): all 12 benchmark courses
-  passed, with no health lost and no stalls. `flat_walk` took 83 ticks over 22.0 blocks,
-  matching the 83 ticks and 21.97 blocks recorded before the change. Five runs per course
-  are still needed to compare against the baseline.
-
-- `MovementController` (used by the reflex and eight executors) keeps its API and stuck
-  detection but holds a locomotion lease under an owner name and priority: the reflex is
-  `REFLEX`, executors are `FOREGROUND`. `ControlPlane.shared()` is the one plane per client.
-  The plane owns the `autoJump` option: it saves the player's value once and restores it when
-  no holder wants the assist, which fixes interleaved controllers restoring the wrong value.
-- Live check of the reflex, before and after the change (one run each, evaluator
-  `survival-fixture` modes, no model): drowning starts and resolves after 96 ticks before and
-  92 after, with no health lost and the same final position; the flee and defend fixtures
-  raise the same reflex events within a few ticks, and health is unchanged. Zombie chases
-  differ by a few blocks between runs.
-
-Not started: the other direct key writers (`OwnedKeyPress`, `PlacementSneakController`,
-`PlayerItemUseController`), `Input` installation instead of key bindings, the hotbar and
-click channels, the Baritone lease holder and the guard test.
+- `ControlPlane.shared()` is the one plane per client, bound to the camera. It applies one
+  merged frame per client tick after the navigation facade ticks, owns the movement keys,
+  the use key, the selected hotbar slot, rotation and the `autoJump` option (saved once,
+  restored when no holder wants the assist), and consumes release edges so `cancel()` stays
+  synchronous.
+- `Actuator` wraps hotbar selection and every interaction-manager call (attack, interact,
+  use, start/continue/stop destroy) behind a tick-scoped lease. `MovementController` keeps
+  its API and stuck detection but holds a locomotion lease under an owner and priority: the
+  reflex is `REFLEX`, executors are `FOREGROUND`.
+- Every writer is migrated: movement executors, reflex, return-to-surface, underwater
+  harvest/escape, lure, placement sneak, item use, lighting, mining tool preparation.
+- `ActuationGuardTest` scans `src/client/java` and `src/main/java` for direct key-binding,
+  hotbar, packet, rotation, `autoJump` and interaction-manager writes outside
+  `agent/control` and fails on any. Its allowlist is empty.
+- Live checks: all benchmark courses pass (see the baseline doc); the reflex fixtures
+  (drowning, flee, defend) behave the same before and after the `MovementController` change;
+  `scripts/run-live-tool-smoke` exercises the tools that ride on the plane.
 
 - **Add the control plane.** Add `ControlArbiter` (core) and `ControlPlane`
   (adapter). Move all key-binding and `autoJump` writes into the plane.
@@ -372,7 +365,7 @@ Status (2026-09-25): done.
 
 ### Phase 3 — Motor and `NavigationService` behind a flag (L, converge)
 
-Status (2026-09-25): in progress; running behind the flag.
+Status (2026-09-30): done; the in-house backend is the only backend (see Phase 6).
 
 - Executors (walk/diagonal, bridge, ascend, descend/fall, swim, climb, pillar) and the
   `PathFollower` (revalidation, stall and off-path detection, skip-ahead, closing doors
@@ -427,6 +420,9 @@ Status (2026-09-25): in progress; running behind the flag.
 
 ### Phase 4 — Consumer migration (M, many small PRs)
 
+Status (2026-09-30): done. All consumers use `NavigationFacade` with per-request
+`NavigationOptions`; the release-barrier and pending-cancel code is deleted.
+
 Migrate the lowest-risk consumers first. Each PR deletes that consumer's
 release-barrier and pending-cancel code.
 
@@ -450,6 +446,10 @@ release-barrier and pending-cancel code.
 
 ### Phase 5 — Planner contract (M, kept separate from navigation changes)
 
+Status (2026-09-30): done. `configure_pathfind` takes the typed `PathfindSettings`
+schema, `inspect_pathfind` takes no arguments, and the planner prompt and survey are
+updated (the wake goldens changed only in their prefix hashes).
+
 - **Movement policy tool.** Replace Baritone setting names with the Airicraft
   movement policy, keeping both tool names. `configure_pathfind` takes a small
   typed schema: `allowBreak`, `allowPlace`, `maxFallHeight`, `waterCost`,
@@ -468,6 +468,10 @@ release-barrier and pending-cancel code.
 
 ### Phase 6 — Flip and remove in one change (S)
 
+Status (2026-09-30): done. Baritone, its jars, mixins, config key, build wiring and release
+barrier are gone; users should remove any Baritone jar from their mods folder. The gate
+results are in [navigation-baseline.md](../../navigation-baseline.md#migration-gate-in-house-against-baritone-2026-09-30).
+
 - **Merge criterion.** The parity gates below pass on the flip branch. There is
   no soak period and no fallback afterwards.
 - **Flip.** `AiricraftNavigationService` becomes the only backend. Delete the
@@ -482,6 +486,25 @@ release-barrier and pending-cancel code.
   logs and experiment records stay as written. Mark ADR-0004 implemented.
 - **Release note.** Airicraft no longer configures Baritone, so users should
   remove any Baritone jar from their mods folder.
+
+## Deviations from this plan
+
+Decided deliberately during implementation:
+
+- **Typed `NavigationService` outcomes are deferred.** `NavigationFacade` keeps string path
+  events (`AT_GOAL`, `CALC_FAILED`) and a synchronous `cancel()`. The executors treat
+  `AT_GOAL` as authoritative; typed outcomes can replace the strings without changing the
+  control plane.
+- **The dispatcher's stall watchdog stays.** It is a backstop independent of the path
+  follower's own stall detection.
+- **Baritone was never a lease holder.** Phase 1 was planned to run Baritone under a lease;
+  the control plane was instead finished after Baritone's removal, so that step was skipped.
+- **Click-channel bounds stay in the mixin.** Travel-bounds and preserved-area enforcement for
+  clicks is still the existing `ClientPlayerInteractionManagerMixin` backstop; `Actuator`
+  only serialises the calls behind a lease.
+- **The live Codex-driver session gate was not run.** It needs a model. Instead the
+  deterministic benchmark, the reflex fixtures and the live tool smoke ran, which cover
+  movement, reflex recovery and the tool executors, but not model-driven planning.
 
 ## Parity gates (proposed defaults)
 
