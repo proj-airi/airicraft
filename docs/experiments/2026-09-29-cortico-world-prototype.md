@@ -237,6 +237,32 @@ Anecdotal: one sample each, small model, short runs. Groundedness of what it sai
 - One invented tool call (`ac_speak_placeholder`, no arguments) got an `[unknown tool]` receipt and was harmless.
 - The heartbeat backs off (30 s, then 60 s) while nothing happens, so idle chatter also gets cheaper as it goes.
 
+### Speech-end storm test (`worlds.airi.speechEndTrigger`)
+
+Same setup as above (streamer orientation, 30 s heartbeat, one "walk to 17 82 5" message, `deepseek/deepseek-v4.1-flash`),
+150 s per run or until a $0.05 spend guard stopped it. `piggyback` (default) lets the "finished speaking" report ride
+along with the next wake; `debounce` and `flush` make it wake the persona.
+
+| trigger | run | minutes run | model requests/min | cost/min | lines spoken |
+|---|---|---|---|---|---|
+| `piggyback` | earlier day, same config | 2.5 | 6.8 | $0.003 | 6 |
+| `piggyback` | 1 | 2.5 | 13.2 | $0.016 | 9 |
+| `piggyback` | 2 | 1.6 (guard) | 20.5 | $0.031 | 9 |
+| `debounce` | 1 | 1.5 (guard) | 26.1 | $0.041 | 8 |
+| `flush` | 1 | 2.1 (guard) | 26.8 | $0.030 | 8 |
+| `flush` | 2 | 0.6 (guard) | 41.3 | $0.087 | 6 |
+
+- Waking on playback end raises the request rate to roughly twice the busy baseline (`flush` most, `debounce` in
+  between), so it does storm, but the effect is about as large as the run-to-run spread of the baseline itself
+  (7 to 20 requests/min with identical settings). Single samples; the guard cut four of six runs short.
+- The extra wakes did not turn into more talk (spoken lines per minute stayed in the same range). The persona spent
+  them on game work and memory writes: crafting, collecting logs, mining, `write_file`/`append_file`. With a streamer
+  orientation the persona chains its own jobs, and each finished job wakes it (`work.changed`), so autonomy, not the
+  speech report, is the main driver of the request rate.
+- Cache hits were 86 to 93%, which is why the cost stays small even at 40 requests a minute.
+- Recommendation for now: keep `piggyback`. If a persona should react to its own speech ending, put a cooldown on the
+  Cortico side rather than waking on every playback end.
+
 ## Measurements
 
 Dead-air ratio; wakes per minute; LLM tokens and cost per minute; tool calls per wake; latency from reflex event to
