@@ -114,11 +114,11 @@ def scenario_equip_item(arena: Arena) -> dict[str, Any]:
 
 
 def scenario_eat_food(arena: Arena) -> dict[str, Any]:
-    arena.reset()
+    arena.reset(difficulty="easy")  # peaceful refills hunger on its own, which would hide the effect
     arena.give({"minecraft:bread": 2})
     arena.set_hunger(8)
     receipt = arena.tool("eat_food", {"itemId": "minecraft:bread"})
-    ate = arena.wait(lambda: arena.state()["hunger"] > 8, 15)
+    ate = arena.wait(lambda: arena.state()["inventory"].get("minecraft:bread", 0) == 1 and arena.state()["hunger"] > 8, 20)
     after = arena.state()
     return outcome("eat_food", receipt["accepted"] and ate and after["inventory"].get("minecraft:bread", 0) == 1,
                    f"hunger {after['hunger']}, bread {after['inventory'].get('minecraft:bread', 0)}", receipt)
@@ -169,7 +169,7 @@ def scenario_craft_recipe(arena: Arena) -> dict[str, Any]:
     arena.reset()
     arena.give({"minecraft:oak_planks": 4})
     listing = arena.tool("check_craftables", {})
-    match = re.search(r'"recipeId"\s*:\s*"(minecraft:stick[^"]*)"', listing["text"]) or re.search(r'(minecraft:stick)\b', listing["text"])
+    match = re.search(r'\b(\w+_to_stick)\b', listing["text"])  # recipe ids read like oak_planks_x2_to_stick
     if not match:
         return outcome("craft_recipe", False, "check_craftables did not list a stick recipe", listing)
     receipt = arena.tool("craft_recipe", {"recipeId": match.group(1), "times": 1})
