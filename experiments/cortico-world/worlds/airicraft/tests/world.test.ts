@@ -9,7 +9,7 @@ import { AIRICRAFT_DEFAULTS } from '../src/config.ts';
 import { AiricraftWorld } from '../src/world.ts';
 import { BridgeClient } from '../src/bridge.ts';
 import { deliveryFor, eventText } from '../src/events.ts';
-import { tagsFor } from '../src/tools.ts';
+import { shapeReceipt, tagsFor } from '../src/tools.ts';
 import { FakeHost } from './helpers/fake-host.ts';
 import { startMockBridge, type MockBridge } from './mock-bridge.ts';
 
@@ -76,6 +76,16 @@ describe('delivery table', () => {
       payload: { workId: 'JOB:1', label: 'NAVIGATE_TO', state: 'SUCCEEDED', phase: 'COMPLETED', controls: ['inspect'], details: { request: { x: 1 } }, updatedTick: 5 },
     });
     expect(text).toBe('work.changed workId=JOB:1 label=NAVIGATE_TO state=SUCCEEDED phase=COMPLETED');
+  });
+
+  it('replaces the events list in observe and cuts long receipts, saying so', () => {
+    const observe = JSON.stringify({ tick: 5, current: { vitals: { food: 20 } }, events: Array.from({ length: 500 }, (_, i) => ({ seqNo: i })) });
+    const shaped = JSON.parse(shapeReceipt('observe', observe, 20_000));
+    expect(shaped.current).toEqual({ vitals: { food: 20 } });
+    expect(shaped.events).toMatchObject({ omitted: 500 });
+    expect(shapeReceipt('inspect_world', 'x'.repeat(50), 20)).toBe(`${'x'.repeat(20)}\n[receipt cut: 30 more characters were left out]`);
+    expect(shapeReceipt('inspect_world', 'short', 20)).toBe('short');
+    expect(shapeReceipt('observe', 'not json', 20)).toBe('not json');
   });
 
   it('classifies tools', () => {

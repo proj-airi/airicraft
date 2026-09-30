@@ -10,6 +10,11 @@ export interface AiricraftConfigSection {
   pollIntervalMs: number;
   /** Upper bound for one tool call through the bridge. */
   toolTimeoutMs: number;
+  /**
+   * Longest tool receipt handed to the persona, in characters. A longer receipt is cut and says how much was left
+   * out. `observe` also has its `events` list replaced by a note, because this World already delivers events.
+   */
+  maxReceiptChars: number;
   /** Prefix for tool names; Cortico requires names to be unique across Worlds. */
   toolPrefix: string;
   /**
@@ -24,6 +29,7 @@ export const AIRICRAFT_DEFAULTS: AiricraftConfigSection = {
   bridgeStateFile: '',
   pollIntervalMs: 300,
   toolTimeoutMs: 120_000,
+  maxReceiptChars: 20_000,
   toolPrefix: 'ac_',
   excludeTools: [
     'say',

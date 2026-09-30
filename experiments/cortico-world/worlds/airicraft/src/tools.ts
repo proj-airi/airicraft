@@ -17,6 +17,31 @@ export interface ToolOptions {
   prefix: string;
   exclude: readonly string[];
   timeoutMs: number;
+  maxReceiptChars: number;
+}
+
+/**
+ * Keeps receipts small enough for a persona's context and says so when it cuts. The mod's `observe` returns the
+ * whole recent event buffer on every call for an external caller (around 100 000 characters, most of a context), and
+ * those events already reach the persona as event frames, so that list is replaced by a note.
+ */
+export function shapeReceipt(name: string, text: string, maxChars: number): string {
+  let out = text;
+  if (name === 'observe') {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      if (Array.isArray(parsed.events)) {
+        parsed.events = { omitted: parsed.events.length, note: 'events are delivered to you as event frames; this list is left out' };
+        out = JSON.stringify(parsed);
+      }
+    } catch {
+      // Not JSON: fall through to the length cap.
+    }
+  }
+  if (out.length > maxChars) {
+    return `${out.slice(0, maxChars)}\n[receipt cut: ${out.length - maxChars} more characters were left out]`;
+  }
+  return out;
 }
 
 /** The mod reports tool failures as text starting with `TOOL_ERROR:`. */
@@ -43,7 +68,8 @@ async function call(opts: ToolOptions, name: string, args: Record<string, unknow
     const blobs: BlobInput[] | undefined = result.image
       ? [{ bytes: result.image.bytes, mime: result.image.mime, name: `${name}.png`, fallbackText: `[image from ${name}]` }]
       : undefined;
-    return { text: result.text, ...(blobs ? { blobs } : {}), ...(failed(result.text) ? { failed: true as const } : {}) };
+    const text = shapeReceipt(name, result.text, opts.maxReceiptChars);
+    return { text, ...(blobs ? { blobs } : {}), ...(failed(result.text) ? { failed: true as const } : {}) };
   } catch (error) {
     if (ctx.signal?.aborted) return { text: `[${name} abandoned by the host]`, failed: true };
     if (error instanceof BridgeUnreachable) return { text: `[${name} not run] the airicraft bridge is unreachable: ${error.message}`, failed: true };

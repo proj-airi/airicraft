@@ -89,6 +89,7 @@ export class AiricraftWorld implements World {
         prefix: this.opts.cfg.toolPrefix,
         exclude: this.opts.cfg.excludeTools,
         timeoutMs: this.opts.cfg.toolTimeoutMs,
+        maxReceiptChars: this.opts.cfg.maxReceiptChars,
       });
       this.host?.log.info('airicraft tools loaded', { count: this.loaded.length });
     } catch (error) {
