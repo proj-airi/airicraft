@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -40,7 +41,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade navigationFacade;
 	private final CameraController cameraController;
-	private final MovementController movementController = new MovementController();
+	private final MovementController movementController = new MovementController("entity_interaction", Priority.FOREGROUND);
 
 	private WorldTaskRequest appliedTask;
 	private boolean terminalEventEmitted;

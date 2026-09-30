@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.world.level.block.state.BlockState;
@@ -40,7 +41,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 
 	private final Supplier<Minecraft> clientSupplier;
 	private final BaritoneFacade baritoneFacade;
-	private final MovementController movementController = new MovementController();
+	private final MovementController movementController = new MovementController("return_to_surface", Priority.FOREGROUND);
 	private final CameraController cameraController;
 	private final OwnedKeyPress jumpKeyControl = new OwnedKeyPress();
 

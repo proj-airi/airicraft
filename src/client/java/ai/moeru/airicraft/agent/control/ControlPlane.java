@@ -19,14 +19,38 @@ import java.util.Set;
  *
  * <p>Release is immediate: {@link #release} clears the channels in the calling tick and consumes the
  * release edge, so the frame that follows does not clear them again over another actuator's input.
+ *
+ * <p>The plane also owns the client's auto-jump option while a holder wants the assist: it saves the
+ * player's setting once and restores it when locomotion is no longer leased with the assist on.
  * Client thread only.
  */
 public final class ControlPlane {
+	private static final ControlPlane SHARED = new ControlPlane();
+
 	private final ControlArbiter arbiter = new ControlArbiter();
-	private final CameraController camera;
+	private CameraController camera;
+	private Boolean savedAutoJump;
+
+	public ControlPlane() {
+		this(null);
+	}
 
 	public ControlPlane(CameraController camera) {
 		this.camera = camera;
+	}
+
+	/**
+	 * The plane of this client. There is one player, so there is one actuation boundary; holders
+	 * that are not handed a plane use this one. {@link #bind} attaches the camera it aims with.
+	 */
+	public static ControlPlane shared() {
+		return SHARED;
+	}
+
+	/** Sets the camera that look intents aim through. */
+	public ControlPlane bind(CameraController camera) {
+		this.camera = camera;
+		return this;
 	}
 
 	public ControlArbiter.Acquisition acquire(String owner, Priority priority, Set<Channel> channels) {
@@ -45,10 +69,14 @@ public final class ControlPlane {
 		arbiter.clear(lease, channel);
 	}
 
-	/** Ends the lease and lets go of its channels now. Safe to call twice or on a revoked lease. */
+	/**
+	 * Ends the lease and lets go of its channels now. Safe to call twice or on a revoked lease, which
+	 * clears nothing: the channels already belong to whoever revoked it. Without a client the release
+	 * edge is kept for the next frame.
+	 */
 	public void release(Minecraft minecraft, ControlLease lease) {
 		arbiter.release(lease);
-		letGo(minecraft, arbiter.takeReleased());
+		if (minecraft != null) letGo(minecraft, arbiter.takeReleased());
 	}
 
 	/** Writes this tick's merged frame. Runs once per client tick, after the actuators have submitted. */
@@ -57,15 +85,16 @@ public final class ControlPlane {
 		letGo(minecraft, frame.released());
 		if (frame.held(Channel.LOCOMOTION)) press(minecraft, frame.locomotion());
 		ChannelIntent.Look look = frame.look();
-		if (look != null) camera.startLookAt(minecraft, new Vec3(look.x(), look.y(), look.z()), look.reason());
+		if (look != null && camera != null) camera.startLookAt(minecraft, new Vec3(look.x(), look.y(), look.z()), look.reason());
 		int slot = frame.hotbarSlot();
 		if (slot >= 0 && minecraft.player != null && minecraft.player.getInventory().getSelectedSlot() != slot) {
 			minecraft.player.getInventory().setSelectedSlot(slot);
 		}
 	}
 
-	private static void press(Minecraft minecraft, ChannelIntent.Locomotion move) {
+	private void press(Minecraft minecraft, ChannelIntent.Locomotion move) {
 		Options options = minecraft.options;
+		autoJump(options, move.autoJump());
 		options.keyUp.setDown(move.forward());
 		options.keyDown.setDown(move.back());
 		options.keyLeft.setDown(move.left());
@@ -73,11 +102,25 @@ public final class ControlPlane {
 		options.keyJump.setDown(move.jump());
 		options.keyShift.setDown(move.sneak());
 		options.keySprint.setDown(move.sprint());
-		if (minecraft.player != null) minecraft.player.setSprinting(move.sprint());
+		if (minecraft.player != null) {
+			minecraft.player.setSprinting(move.sprint());
+			minecraft.player.setShiftKeyDown(move.sneak());
+		}
+	}
+
+	private void autoJump(Options options, boolean wanted) {
+		if (wanted) {
+			if (savedAutoJump == null) savedAutoJump = options.autoJump().get();
+			options.autoJump().set(true);
+		}
+		else if (savedAutoJump != null) {
+			options.autoJump().set(savedAutoJump);
+			savedAutoJump = null;
+		}
 	}
 
 	/** Channels whose lease ended. Look and hotbar have nothing to undo: the camera settles and the slot stays. */
-	private static void letGo(Minecraft minecraft, Set<Channel> released) {
+	private void letGo(Minecraft minecraft, Set<Channel> released) {
 		if (released.contains(Channel.LOCOMOTION)) press(minecraft, ChannelIntent.Locomotion.NONE);
 	}
 }

@@ -7,9 +7,12 @@ public sealed interface ChannelIntent {
 	/**
 	 * Movement keys, relative to the player's yaw. The adapter turns these into player input.
 	 * {@link #NONE} holds the channel with nothing pressed.
+	 *
+	 * @param autoJump whether the client's auto-jump assist is on while this intent holds locomotion;
+	 *                 the adapter restores the player's own setting when the lease ends
 	 */
 	record Locomotion(boolean forward, boolean back, boolean left, boolean right, boolean jump, boolean sneak,
-		boolean sprint) implements ChannelIntent {
+		boolean sprint, boolean autoJump) implements ChannelIntent {
 		public static final Locomotion NONE = new Locomotion(false, false, false, false, false, false, false);
 
 		public Locomotion {
@@ -19,13 +22,19 @@ public sealed interface ChannelIntent {
 			sprint = sprint && forward && !sneak;
 		}
 
+		public Locomotion(boolean forward, boolean back, boolean left, boolean right, boolean jump, boolean sneak,
+			boolean sprint) {
+			this(forward, back, left, right, jump, sneak, sprint, false);
+		}
+
 		@Override
 		public Channel channel() {
 			return Channel.LOCOMOTION;
 		}
 
+		/** Nothing pressed; the auto-jump assist does not count as a key. */
 		public boolean idle() {
-			return this.equals(NONE);
+			return !forward && !back && !left && !right && !jump && !sneak && !sprint;
 		}
 	}
 

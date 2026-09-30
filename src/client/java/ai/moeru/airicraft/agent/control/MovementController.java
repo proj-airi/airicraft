@@ -1,9 +1,26 @@
 package ai.moeru.airicraft.agent.control;
 
+import ai.moeru.airicraft.control.Channel;
+import ai.moeru.airicraft.control.ChannelIntent;
+import ai.moeru.airicraft.control.ControlArbiter;
+import ai.moeru.airicraft.control.ControlLease;
+import ai.moeru.airicraft.control.Priority;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Turns an executor's movement calls into locomotion intents on the {@link ControlPlane} and tracks
+ * whether the player is stuck. It writes no key bindings and no client options itself: the plane does,
+ * and only while this controller holds the locomotion lease.
+ *
+ * <p>Priority decides contention. A stronger holder (the reflex over a foreground executor) keeps the
+ * channel, and this controller's calls do nothing until it lets go. Equal priority takes over, as
+ * "last writer wins" did before leases.
+ */
 public final class MovementController {
 	private static final long STUCK_TICKS = 20L;
 	private static final double STUCK_DISTANCE_EPSILON = 0.15D;
@@ -15,7 +32,24 @@ public final class MovementController {
 	private boolean stuck;
 	private long movingSinceTick = -1L;
 	private Vec3 movementStartPos;
-	private Boolean previousAutoJumpValue;
+	private final ControlPlane plane;
+	private final String owner;
+	private final Priority priority;
+	private ControlLease lease;
+
+	public MovementController() {
+		this("movement", Priority.FOREGROUND);
+	}
+
+	public MovementController(String owner, Priority priority) {
+		this(ControlPlane.shared(), owner, priority);
+	}
+
+	public MovementController(ControlPlane plane, String owner, Priority priority) {
+		this.plane = Objects.requireNonNull(plane, "plane");
+		this.owner = Objects.requireNonNull(owner, "owner");
+		this.priority = Objects.requireNonNull(priority, "priority");
+	}
 
 	public void moveForward(Minecraft minecraft, boolean sprint, boolean jump, long tick) {
 		if (minecraft == null) {
@@ -34,22 +68,12 @@ public final class MovementController {
 			stuck = false;
 		}
 
+		boolean effectiveJump = shouldJump(player, jump);
+		if (!drive(new ChannelIntent.Locomotion(true, false, false, false, effectiveJump, false, sprint, true))) return;
 		movingForward = true;
 		sprinting = sprint;
-		boolean effectiveJump = shouldJump(player, jump);
 		jumping = effectiveJump;
 		descending = false;
-		enableAutoJump(minecraft);
-
-		minecraft.options.keyUp.setDown(true);
-		minecraft.options.keyDown.setDown(false);
-		minecraft.options.keyLeft.setDown(false);
-		minecraft.options.keyRight.setDown(false);
-		minecraft.options.keySprint.setDown(sprint);
-		minecraft.options.keyJump.setDown(effectiveJump);
-		minecraft.options.keyShift.setDown(false);
-		player.setSprinting(sprint);
-		player.setShiftKeyDown(false);
 
 		updateStuckState(player, tick);
 	}
@@ -104,21 +128,13 @@ public final class MovementController {
 
 		boolean effectiveForward = forward && !back;
 		boolean effectiveSprint = effectiveForward && sprint;
+		boolean effectiveDescend = descend && !jump;
+		if (!drive(new ChannelIntent.Locomotion(effectiveForward, back, left && !right, right && !left, jump,
+			effectiveDescend, effectiveSprint, true))) return;
 		movingForward = effectiveForward;
 		sprinting = effectiveSprint;
 		jumping = jump;
-		descending = descend && !jump;
-		enableAutoJump(minecraft);
-
-		minecraft.options.keyUp.setDown(effectiveForward);
-		minecraft.options.keyDown.setDown(back);
-		minecraft.options.keyLeft.setDown(left && !right);
-		minecraft.options.keyRight.setDown(right && !left);
-		minecraft.options.keySprint.setDown(effectiveSprint);
-		minecraft.options.keyJump.setDown(jump);
-		minecraft.options.keyShift.setDown(descending);
-		player.setSprinting(effectiveSprint);
-		player.setShiftKeyDown(descending);
+		descending = effectiveDescend;
 
 		updateStuckState(player, tick);
 	}
@@ -128,29 +144,11 @@ public final class MovementController {
 			return;
 		}
 
-		movingForward = false;
-		sprinting = false;
-		jumping = false;
-		descending = false;
-		stuck = false;
-		movingSinceTick = -1L;
-		movementStartPos = null;
-
-		if (minecraft == null) {
-			return;
-		}
-
-		minecraft.options.keyUp.setDown(false);
-		minecraft.options.keyDown.setDown(false);
-		minecraft.options.keyLeft.setDown(false);
-		minecraft.options.keyRight.setDown(false);
-		minecraft.options.keyJump.setDown(false);
-		minecraft.options.keyShift.setDown(false);
-		minecraft.options.keySprint.setDown(false);
-		restoreAutoJump(minecraft);
-		if (minecraft.player != null) {
-			minecraft.player.setSprinting(false);
-			minecraft.player.setShiftKeyDown(false);
+		forget();
+		if (lease != null) {
+			ControlLease released = lease;
+			lease = null;
+			plane.release(minecraft, released);
 		}
 	}
 
@@ -196,24 +194,33 @@ public final class MovementController {
 			|| descending
 			|| movingSinceTick >= 0L
 			|| movementStartPos != null
-			|| previousAutoJumpValue != null;
+			|| lease != null;
 	}
 
-	private void enableAutoJump(Minecraft minecraft) {
-		if (minecraft == null || minecraft.options == null) {
-			return;
+	/** Submits this tick's keys; false when a stronger holder keeps locomotion, so nothing moved. */
+	private boolean drive(ChannelIntent.Locomotion intent) {
+		if (lease != null && !(plane.status(lease) instanceof ControlArbiter.Status.Held)) {
+			// Revoked: acknowledge it, then contend again. An equal holder is taken over, a stronger one refuses.
+			plane.release(null, lease);
+			lease = null;
 		}
-		if (previousAutoJumpValue == null) {
-			previousAutoJumpValue = minecraft.options.autoJump().get();
+		if (lease == null) {
+			if (!(plane.acquire(owner, priority, Set.of(Channel.LOCOMOTION)) instanceof ControlArbiter.Acquisition.Granted granted)) {
+				forget();
+				return false;
+			}
+			lease = granted.lease();
 		}
-		minecraft.options.autoJump().set(true);
+		return plane.submit(lease, intent);
 	}
 
-	private void restoreAutoJump(Minecraft minecraft) {
-		if (minecraft == null || minecraft.options == null || previousAutoJumpValue == null) {
-			return;
-		}
-		minecraft.options.autoJump().set(previousAutoJumpValue);
-		previousAutoJumpValue = null;
+	private void forget() {
+		movingForward = false;
+		sprinting = false;
+		jumping = false;
+		descending = false;
+		stuck = false;
+		movingSinceTick = -1L;
+		movementStartPos = null;
 	}
 }

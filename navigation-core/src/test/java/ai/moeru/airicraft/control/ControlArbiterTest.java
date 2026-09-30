@@ -205,6 +205,15 @@ class ControlArbiterTest {
 	}
 
 	@Test
+	void autoJumpIsNotAKeyAndDefaultsOff() {
+		Locomotion assisted = new Locomotion(false, false, false, false, false, false, false, true);
+
+		assertTrue(assisted.idle());
+		assertFalse(FORWARD.autoJump());
+		assertTrue(assisted.autoJump());
+	}
+
+	@Test
 	void channelSetsAreCopiedSoALeaseCannotBeWidenedAfterward() {
 		Set<Channel> mutable = EnumSet.of(Channel.LOCOMOTION);
 		ControlLease lease = grant("nav", Priority.FOREGROUND, mutable);

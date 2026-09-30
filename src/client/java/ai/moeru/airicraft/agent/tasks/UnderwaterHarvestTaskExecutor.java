@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -78,7 +79,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.baritone = baritone;
 		this.camera = camera == null ? new CameraController() : camera;
-		this.movement = new MovementController();
+		this.movement = new MovementController("underwater_harvest", Priority.FOREGROUND);
 		this.underwaterEscape = new MinecraftUnderwaterEscapeController(baritone, movement, this.camera);
 	}
 

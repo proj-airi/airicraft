@@ -80,7 +80,7 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
-		this.controlPlane = new ControlPlane(cameraController);
+		this.controlPlane = ControlPlane.shared().bind(cameraController);
 		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(controlPlane);
 		this.baritoneFacade = navigationBackend(config);
 		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()),

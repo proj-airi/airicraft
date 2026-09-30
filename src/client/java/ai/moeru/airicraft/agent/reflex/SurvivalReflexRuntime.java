@@ -4,6 +4,7 @@ import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.tasks.MinecraftUnderwaterEscapeController;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeNavigator;
@@ -90,15 +91,15 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config) {
-		this(config, new MovementController(), new CameraController(), null);
+		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), null);
 	}
 
 	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone) {
-		this(config, new MovementController(), new CameraController(), baritone);
+		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), baritone);
 	}
 
 	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone, CameraController cameraController) {
-		this(config, new MovementController(), cameraController, baritone);
+		this(config, new MovementController("reflex", Priority.REFLEX), cameraController, baritone);
 	}
 
 	SurvivalReflexRuntime(
