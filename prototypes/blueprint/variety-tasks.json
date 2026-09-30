@@ -1,0 +1,26 @@
+[
+  {
+    "id":"bridge",
+    "origin":[0,0,0],
+    "prompt":"Design a small pedestrian bridge crossing a dry trench. Ground top is local y=0. Explicitly clear the trench at origin [0,-3,0], size [9,3,7]. Bridge travel is along X across x=0..8, with a continuous 3-block-wide deck in z=2..4 and walk surface at y=0, joining solid ground at both ends. Include guardrails along both long sides without blocking the entrance/exit or narrowing the 3-block path. Add visually meaningful supports; no water or redstone needed. Use named semantic assemblies for the bridge, deck, rails, supports and trench. Use actual block geometry and explicit replacement paths for deliberate overlaps. Prefer full cubes and straight stairs supported by the offline fixture. Run lint, address unintended findings and state remaining uncertainty. Do not suppress rules to hide mistakes.",
+    "reviewCriteria":["Trench remains open below the span except intentional supports","Three-wide deck continuous at ground level across the gap","Both ends accessible with two blocks of headroom","Long-side guardrails present without occupying the path","Semantic parts correspond to emitted geometry"]
+  },
+  {
+    "id":"watchtower",
+    "origin":[0,0,0],
+    "prompt":"Design a compact watchtower with a maximum 11x11 overall XZ footprint. Flat ground top is local y=0. Include a usable entrance, a ground-level base, and an observation platform with walk surface at least 7 blocks above ground. A continuous staircase route with any necessary landings must connect ground to the platform without jumping, ladders or flying; use separately named straight Staircase components for multiple flights. Provide guardrails on exposed platform edges, leaving the stair arrival unobstructed, and useful night lighting. The viewing platform may intentionally be open to the sky; label outdoor/open intent explicitly. Use meaningful semantic components, actual geometry, and inspect lint before finishing. Do not suppress accidental defects.",
+    "reviewCriteria":["Footprint at most 11x11","Observation walking surface at least y=7","Usable continuous staircase and landings from ground","Headroom at floor penetrations and arrivals","Exposed edges guarded without blocking access","Lighting and explicit open-sky intent"]
+  },
+  {
+    "id":"courtyard",
+    "origin":[0,0,0],
+    "prompt":"Design a small courtyard compound on flat ground (top y=0), within a 21x21 footprint. Include a central 5x5 or larger open-sky courtyard represented as a Room with guidance coverage='open', plus at least two distinct covered occupied Room wings. Provide doors/passages so a person can walk from outside into the courtyard and from there into both wings without jumping or passing through solid walls. Include night lighting and windows in occupied wings. The courtyard must remain open overhead while every wing interior is covered. Compose named semantic parts and run lint; repair unintended findings. Do not mark the occupied wings open or suppress rules to evade coverage/lighting advice.",
+    "reviewCriteria":["Central courtyard at least 5x5 and genuinely open overhead","At least two distinct covered occupied wings","Actual wall openings connect outside, court and both wings","Thresholds and intervening paths traversable","Wing windows and night lighting","No accidental component collisions or broad destructive overrides"]
+  },
+  {
+    "id":"warehouse",
+    "origin":[0,0,0],
+    "prompt":"Design a covered warehouse with usable Room interior [11,4,9] on flat ground whose top is y=0. Include an exterior entrance at least two blocks wide, two rows of storage shelving at least two blocks tall, a continuous central aisle at least two blocks wide from the entrance to a rear work area, and smaller accessible paths to the storage rows. Shelves can be simple planks: functional inventories are unnecessary. Keep walking paths and entrance headroom clear; light the occupied interior for night use and cover the entire interior. Name shelving, aisles, roof and work area semantically. Use actual geometry rather than labels alone, run lint and repair accidental findings. Do not suppress rules or change occupied lighting/coverage intent.",
+    "reviewCriteria":["Interior dimensions 11x4x9 preserved","Exterior opening at least two wide and walkable","Two storage rows at least two blocks tall","Central aisle at least two wide reaches rear work area","Side access to storage and sufficient headroom","Full coverage and usable artificial lighting","Semantic labels match emitted geometry"]
+  }
+]

@@ -118,7 +118,7 @@ BLUEPRINT_TRIAL_ID=my-trial BLUEPRINT_MODEL_TOKENS=16384 \
   python3 prototypes/blueprint/model-trial.py
 ```
 
-Sampling uses provider defaults, with 8 turns and 3 design submissions per task. The HTTP timeout is 240 seconds, deliberately different from the configured runtime. This is an interface usability probe, not a benchmark or proof of normal planner performance. See `model-report.md` for observed results and limitations. Set `BLUEPRINT_REASONING=none` to reproduce the separate non-reasoning arm; leave unset for provider defaults. The `examples/` sources are unchanged trial outputs, exposed by named UI buttons; the report distinguishes earlier failures from later reasoning-enabled repairs. `rules/empty-geometry.js` is a post-hoc example extension, not part of the original bundled model feedback.
+Sampling uses provider defaults, with 8 turns and 3 design submissions per task. The HTTP timeout defaults to 240 seconds; `BLUEPRINT_REQUEST_TIMEOUT` can set 1–600 seconds, independently of the configured runtime. This is an interface usability probe, not a benchmark or proof of normal planner performance. See `model-report.md` for observed results and limitations. Set `BLUEPRINT_REASONING=none` to reproduce the separate non-reasoning arm; leave unset for provider defaults. The `examples/` sources are unchanged trial outputs, exposed by named UI buttons; the report distinguishes earlier failures from later reasoning-enabled repairs. `rules/empty-geometry.js` is a post-hoc example extension, not part of the original bundled model feedback.
 
 ## Semantic common-sense rules
 
@@ -131,3 +131,20 @@ The default JS bundle now also includes:
 Rule inputs now expose a Room's declared `interior` dimensions, constructor `ignoredFields`, and `ctx.position(component, localPosition)` for transformed coordinates. These facts are separate from final voxel ownership, so a fully furnished interior or an overridden component cannot erase the original semantic expectation.
 
 `python3 prototypes/blueprint/check-semantics.py` checks complete/holey/rotated roofs, intentional open spaces, uncertain block shapes, scoped suppression, ignored fields, empty components, and blocked/repaired stair headroom. It also replays the saved Qwen failure cases. Coverage catches 18 uncovered upper-room columns in the earlier two-story trial; widening its roof clears that advice. The rule found an insufficient headroom opening in our hand-authored house too; the example's stairwell now starts one block earlier. This correction was tested offline only.
+
+## Variety trials and independent review
+
+See [variety-report.md](variety-report.md) for bridge, warehouse, courtyard and watchtower judgments. The editor exposes all four as `Qwen trial · variety-*` buttons. These are unchanged model outputs with known defects; the watchtower run was interrupted by a provider rate limit. No Minecraft process is needed.
+
+A fresh exploratory batch can use:
+
+```sh
+BLUEPRINT_TRIAL_ID=my-variety-trial \
+BLUEPRINT_TASKS_FILE=prototypes/blueprint/variety-tasks.json \
+BLUEPRINT_REASONING=low BLUEPRINT_MODEL_TOKENS=32768 \
+BLUEPRINT_REQUEST_TIMEOUT=480 BLUEPRINT_MAX_DESIGNS=5 BLUEPRINT_MAX_TURNS=12 \
+  python3 prototypes/blueprint/model-trial.py
+python3 prototypes/blueprint/review-variety.py run/blueprint-evidence/my-variety-trial
+```
+
+The review script is specific to these fixed briefs and applies separate post-hoc geometry probes. It is not a general structure linter or Minecraft movement simulation. The report documents its assumptions, rule blind spots, original failed attempts and retry policy.

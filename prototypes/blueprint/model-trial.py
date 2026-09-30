@@ -12,6 +12,8 @@ HERE=Path(__file__).resolve().parent
 OUT=ROOT/'run/blueprint-evidence'/os.environ.get('BLUEPRINT_TRIAL_ID','model-trial')
 TOKEN_LIMIT=int(os.environ.get('BLUEPRINT_MODEL_TOKENS','4096'))
 REASONING=os.environ.get('BLUEPRINT_REASONING')
+REQUEST_TIMEOUT=int(os.environ.get('BLUEPRINT_REQUEST_TIMEOUT','240'))
+assert 1<=REQUEST_TIMEOUT<=600
 MAX_DESIGNS=int(os.environ.get('BLUEPRINT_MAX_DESIGNS','3'))
 MAX_TURNS=int(os.environ.get('BLUEPRINT_MAX_TURNS','8'))
 assert 1<=MAX_DESIGNS<=10 and 1<=MAX_TURNS<=20
@@ -40,7 +42,7 @@ for task in TASKS:
     if (td/'transcript.json').exists():raise SystemExit('Refusing to overwrite an existing trial: '+str(td))
     origin=task['origin'];call=Offline().call
     messages=[{'role':'system','content':SYSTEM},{'role':'user','content':task['prompt']}]
-    log={'backend':'offline-flat-fixture','modelRequested':MODEL,'provider':BASE,'task':task,'reasoningEffort':REASONING,'sampling':'provider defaults; no temperature override','maxCompletionTokens':TOKEN_LIMIT,'transportTimeoutSeconds':240,'maxTurns':MAX_TURNS,'maxDesigns':MAX_DESIGNS,'resourceHashes':resource_hashes,'systemPrompt':SYSTEM,'calls':[],'outcome':'turn_limit'}
+    log={'backend':'offline-flat-fixture','modelRequested':MODEL,'provider':BASE,'task':task,'reasoningEffort':REASONING,'sampling':'provider defaults; no temperature override','maxCompletionTokens':TOKEN_LIMIT,'transportTimeoutSeconds':REQUEST_TIMEOUT,'maxTurns':MAX_TURNS,'maxDesigns':MAX_DESIGNS,'resourceHashes':resource_hashes,'systemPrompt':SYSTEM,'calls':[],'outcome':'turn_limit'}
     designs=0;last=None
     for turn in range(MAX_TURNS):
         payload={'model':MODEL,'messages':messages,'tools':TOOLS,'tool_choice':'auto','max_tokens':TOKEN_LIMIT,'stream':False}
@@ -48,14 +50,14 @@ for task in TASKS:
         start=time.monotonic()
         try:
             request=urllib.request.Request(BASE+'/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+KEY,'Content-Type':'application/json'})
-            with urllib.request.urlopen(request,timeout=240) as response: result=json.load(response)
+            with urllib.request.urlopen(request,timeout=REQUEST_TIMEOUT) as response: result=json.load(response)
         except Exception as e:
-            log['outcome']='provider_error';log['error']=str(e);break
+            log['outcome']='provider_error';log['error']=str(e);log['errorSeconds']=round(time.monotonic()-start,2);break
         msg=result['choices'][0]['message'];messages.append({k:v for k,v in msg.items() if k in ['role','content','tool_calls','reasoning_content']})
         entry={'finishReason':result['choices'][0].get('finish_reason'),'turn':turn+1,'seconds':round(time.monotonic()-start,2),'modelReturned':result.get('model'),'usage':result.get('usage'),'message':msg,'results':[]};log['calls'].append(entry)
         (td/'transcript.json').write_text(json.dumps(log,indent=2))
         if not msg.get('tool_calls'):
-            log['outcome']='output_limit' if result['choices'][0].get('finish_reason')=='length' else 'model_finished';break
+            log['outcome']='output_limit' if result['choices'][0].get('finish_reason')=='length' else ('model_finished' if (msg.get('content') or '').strip() else 'empty_response');break
         for tc in msg['tool_calls']:
             try:
                 args=json.loads(tc['function']['arguments']);name=tc['function']['name']
