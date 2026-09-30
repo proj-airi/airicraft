@@ -37,7 +37,7 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 
 	private final Supplier<Minecraft> clientSupplier;
 	private final SmeltingProcessManager processManager;
-	private final NavigationFacade baritoneFacade;
+	private final NavigationFacade navigationFacade;
 	private final PlacementSneakController placementSneakController = new PlacementSneakController();
 
 	private WorldTaskRequest appliedTask;
@@ -54,14 +54,14 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, processManager, null);
 	}
 
-	public SmeltingTaskExecutor(SmeltingProcessManager processManager, NavigationFacade baritoneFacade) {
-		this(Minecraft::getInstance, processManager, baritoneFacade);
+	public SmeltingTaskExecutor(SmeltingProcessManager processManager, NavigationFacade navigationFacade) {
+		this(Minecraft::getInstance, processManager, navigationFacade);
 	}
 
-	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, NavigationFacade baritoneFacade) {
+	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, NavigationFacade navigationFacade) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.processManager = Objects.requireNonNull(processManager, "processManager");
-		this.baritoneFacade = baritoneFacade;
+		this.navigationFacade = navigationFacade;
 	}
 
 	@Override
@@ -272,11 +272,11 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private StationReadiness navigateOrFail(WorldTaskRequest request, BlockPos stationPos) {
-		if (baritoneFacade == null || !baritoneFacade.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			return StationReadiness.failed(TaskFailure.of(TaskFailureCode.UNKNOWN, "station_out_of_range"));
 		}
 		if (!navigationStarted) {
-			baritoneFacade.startNavigateNear(new GoalPosition(stationPos.getX(), stationPos.getY(), stationPos.getZ(), false), 3);
+			navigationFacade.startNavigateNear(new GoalPosition(stationPos.getX(), stationPos.getY(), stationPos.getZ(), false), 3);
 			navigationStarted = true;
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "navigating_to_furnace");
@@ -678,8 +678,8 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void cancelNavigationIfStarted() {
-		if (navigationStarted && baritoneFacade != null && baritoneFacade.isLoaded()) {
-			baritoneFacade.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 	}

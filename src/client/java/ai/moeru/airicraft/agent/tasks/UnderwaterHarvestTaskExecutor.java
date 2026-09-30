@@ -34,7 +34,7 @@ import java.util.function.Supplier;
 
 /**
  * Harvests exact loaded source blocks inside a fixed local boundary. It owns
- * underwater approach and breathing; Baritone is used only to reach a safe
+ * underwater approach and breathing; navigation is used only to reach a safe
  * nearby position while the player is still breathing.
  */
 public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
@@ -44,7 +44,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private static final int PICKUP_TIMEOUT_TICKS = 80;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final NavigationFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final CameraController camera;
 	private final MovementController movement;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
@@ -67,20 +67,20 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private BlockPos groundingTarget;
 	private int groundingTicks;
 
-	public UnderwaterHarvestTaskExecutor(NavigationFacade baritone, CameraController camera) {
-		this(Minecraft::getInstance, baritone, camera);
+	public UnderwaterHarvestTaskExecutor(NavigationFacade navigationFacade, CameraController camera) {
+		this(Minecraft::getInstance, navigationFacade, camera);
 	}
 
 	UnderwaterHarvestTaskExecutor(
 		Supplier<Minecraft> clientSupplier,
-		NavigationFacade baritone,
+		NavigationFacade navigationFacade,
 		CameraController camera
 	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.camera = camera == null ? new CameraController() : camera;
 		this.movement = new MovementController("underwater_harvest", Priority.FOREGROUND);
-		this.underwaterEscape = new MinecraftUnderwaterEscapeController(baritone, movement, this.camera);
+		this.underwaterEscape = new MinecraftUnderwaterEscapeController(navigationFacade, movement, this.camera);
 	}
 
 	@Override
@@ -227,7 +227,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 		run.clearApproach();
 		cancelNavigation();
-		NavigationRelease.release(baritone);
+		NavigationRelease.release(navigationFacade);
 		clearApproachAssist();
 		if (tickGroundingForBreak(request, minecraft, player, target, tick)) {
 			return Optional.empty();
@@ -317,12 +317,12 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			clearApproachAssist();
 		}
 		UnderwaterHarvestPolicy.PositioningMode positioningMode = UnderwaterHarvestPolicy.positioningMode(target.environment());
-		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.BARITONE) {
-			if (!navigationStarted) NavigationRelease.release(baritone);
+		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.NAVIGATION) {
+			if (!navigationStarted) NavigationRelease.release(navigationFacade);
 		}
 		else {
 			cancelNavigation();
-			NavigationRelease.release(baritone);
+			NavigationRelease.release(navigationFacade);
 		}
 		UnderwaterHarvestPolicy.ApproachUpdate progress = run.observeApproach(Math.sqrt(distanceSquared));
 		if (progress.decision() == UnderwaterHarvestPolicy.ApproachDecision.EXCLUDE_TARGET) {
@@ -344,19 +344,19 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		HarvestTarget target
 	) {
 		movement.stop(minecraft);
-		if (baritone == null || !baritone.isLoaded()) {
-			return excludeTarget(request, minecraft, target, "baritone_unavailable");
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
+			return excludeTarget(request, minecraft, target, "navigation_unavailable");
 		}
 		if (!navigationStarted) {
-			baritone.startNavigateNear(goalPosition(target.pos()), NAVIGATION_RADIUS_BLOCKS);
+			navigationFacade.startNavigateNear(goalPosition(target.pos()), NAVIGATION_RADIUS_BLOCKS);
 			navigationStarted = true;
 		}
-		Optional<String> event = baritone.pollPathEvent();
+		Optional<String> event = navigationFacade.pollPathEvent();
 		if (event.isPresent() && ("CALC_FAILED".equalsIgnoreCase(event.get())
 			|| "CANCELLED".equalsIgnoreCase(event.get()) || "CANCELED".equalsIgnoreCase(event.get()))) {
-			return excludeTarget(request, minecraft, target, "baritone_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
+			return excludeTarget(request, minecraft, target, "navigation_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
 		}
-		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_dry_target_with_baritone targetPos=" + compactPos(target.pos())
+		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_dry_target_with_navigation targetPos=" + compactPos(target.pos())
 			+ " approachTicks=" + run.approachProgress().activeTicks());
 		return Optional.empty();
 	}
@@ -442,15 +442,15 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	static <T> T routeApproachEffect(
 		UnderwaterHarvestPolicy.SourceEnvironment environment,
-		Supplier<T> baritoneEffect,
+		Supplier<T> navigationEffect,
 		Supplier<T> directEffect
 	) {
 		Objects.requireNonNull(environment, "environment");
-		Objects.requireNonNull(baritoneEffect, "baritoneEffect");
+		Objects.requireNonNull(navigationEffect, "navigationEffect");
 		Objects.requireNonNull(directEffect, "directEffect");
 		return UnderwaterHarvestPolicy.positioningMode(environment)
-			== UnderwaterHarvestPolicy.PositioningMode.BARITONE
-			? baritoneEffect.get()
+			== UnderwaterHarvestPolicy.PositioningMode.NAVIGATION
+			? navigationEffect.get()
 			: directEffect.get();
 	}
 
@@ -494,8 +494,8 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (UnderwaterHarvestPolicy.recoveryComplete(
 			mayResume,
 			escape.navigation().phase() == UnderwaterEscapeNavigator.Phase.REACHED,
-			escape.navigation().ownsBaritone(),
-			NavigationRelease.idle(baritone)
+			escape.navigation().ownsNavigation(),
+			NavigationRelease.idle(navigationFacade)
 		)) {
 			underwaterEscape.reset(minecraft);
 			movement.stop(minecraft);
@@ -727,7 +727,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		cancelNavigation();
 		clearBreak(minecraft);
 		movement.stop(minecraft);
-		NavigationRelease.release(baritone);
+		NavigationRelease.release(navigationFacade);
 		underwaterEscape.reset(minecraft);
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		GoalMineSpec spec = request.goal() == null ? null : request.goal().mineSpec();
@@ -787,8 +787,8 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void cancelNavigation() {
-		if (navigationStarted && baritone != null && baritone.isLoaded()) {
-			baritone.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 	}

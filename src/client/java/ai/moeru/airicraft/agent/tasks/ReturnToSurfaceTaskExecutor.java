@@ -40,7 +40,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private static final double TARGET_FORWARD_HORIZONTAL_DISTANCE_SQUARED = 4.0D;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final NavigationFacade baritoneFacade;
+	private final NavigationFacade navigationFacade;
 	private final MovementController movementController = new MovementController("return_to_surface", Priority.FOREGROUND);
 	private final CameraController cameraController;
 	private final OwnedKeyPress jumpKeyControl = new OwnedKeyPress();
@@ -59,21 +59,21 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	private int towerSupportUnavailableTicks;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public ReturnToSurfaceTaskExecutor(NavigationFacade baritoneFacade) {
-		this(Minecraft::getInstance, baritoneFacade);
+	public ReturnToSurfaceTaskExecutor(NavigationFacade navigationFacade) {
+		this(Minecraft::getInstance, navigationFacade);
 	}
 
-	ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade) {
-		this(clientSupplier, baritoneFacade, new CameraController());
+	ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade) {
+		this(clientSupplier, navigationFacade, new CameraController());
 	}
 
-	public ReturnToSurfaceTaskExecutor(NavigationFacade baritoneFacade, CameraController cameraController) {
-		this(Minecraft::getInstance, baritoneFacade, cameraController);
+	public ReturnToSurfaceTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
+		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
-	private ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade, CameraController cameraController) {
+	private ReturnToSurfaceTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
-		this.baritoneFacade = baritoneFacade;
+		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
 	}
 
@@ -132,16 +132,16 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 				? tickTowering(request, minecraft, player, args)
 				: fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "surface_target_unavailable"));
 		}
-		if (baritoneFacade == null || !baritoneFacade.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			return args.useTowering()
 				? tickTowering(request, minecraft, player, args)
-					: fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "baritone_unavailable"));
+					: fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "navigation_unavailable"));
 		}
 		if (!navigationStarted) {
-			baritoneFacade.startNavigateNear(args.targetPosition(), NAVIGATION_RADIUS_BLOCKS);
+			navigationFacade.startNavigateNear(args.targetPosition(), NAVIGATION_RADIUS_BLOCKS);
 			navigationStarted = true;
 		}
-		Optional<String> pathEvent = baritoneFacade.pollPathEvent();
+		Optional<String> pathEvent = navigationFacade.pollPathEvent();
 		if (pathEvent.isPresent()) {
 			String event = pathEvent.get();
 			if ("AT_GOAL".equalsIgnoreCase(event)) {
@@ -249,15 +249,15 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 
 	private boolean canRefineSurfaceNavigation() {
 		return !exactSurfaceNavigationStarted
-			&& baritoneFacade != null
-			&& baritoneFacade.isLoaded();
+			&& navigationFacade != null
+			&& navigationFacade.isLoaded();
 	}
 
 	private Optional<TaskTerminalEvent> startExactSurfaceNavigation(
 		WorldTaskRequest request,
 		GoalPosition targetPosition
 	) {
-		baritoneFacade.startNavigate(new GoalPosition(targetPosition.x(), targetPosition.y(), targetPosition.z(), true));
+		navigationFacade.startNavigate(new GoalPosition(targetPosition.x(), targetPosition.y(), targetPosition.z(), true));
 		navigationStarted = true;
 		exactSurfaceNavigationStarted = true;
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "navigating_exact_surface_target");
@@ -654,8 +654,8 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void cancelNavigationIfStarted() {
-		if (navigationStarted && baritoneFacade != null && baritoneFacade.isLoaded()) {
-			baritoneFacade.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 		exactSurfaceNavigationStarted = false;

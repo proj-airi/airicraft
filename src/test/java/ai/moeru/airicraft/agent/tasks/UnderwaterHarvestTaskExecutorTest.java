@@ -140,15 +140,15 @@ class UnderwaterHarvestTaskExecutorTest {
 	}
 
 	@Test
-	void approachEffectRoutesDryOnlyToBaritoneAndWaterOnlyToDirectMovement() {
-		AtomicInteger baritoneCalls = new AtomicInteger();
+	void approachEffectRoutesDryOnlyToNavigationAndWaterOnlyToDirectMovement() {
+		AtomicInteger navigationCalls = new AtomicInteger();
 		AtomicInteger directCalls = new AtomicInteger();
 
 		String dry = UnderwaterHarvestTaskExecutor.routeApproachEffect(
 			UnderwaterHarvestPolicy.SourceEnvironment.DRY,
 			() -> {
-				baritoneCalls.incrementAndGet();
-				return "baritone";
+				navigationCalls.incrementAndGet();
+				return "navigationFacade";
 			},
 			() -> {
 				directCalls.incrementAndGet();
@@ -158,8 +158,8 @@ class UnderwaterHarvestTaskExecutorTest {
 		String adjacent = UnderwaterHarvestTaskExecutor.routeApproachEffect(
 			UnderwaterHarvestPolicy.SourceEnvironment.WATER_ADJACENT,
 			() -> {
-				baritoneCalls.incrementAndGet();
-				return "baritone";
+				navigationCalls.incrementAndGet();
+				return "navigationFacade";
 			},
 			() -> {
 				directCalls.incrementAndGet();
@@ -169,8 +169,8 @@ class UnderwaterHarvestTaskExecutorTest {
 		String contained = UnderwaterHarvestTaskExecutor.routeApproachEffect(
 			UnderwaterHarvestPolicy.SourceEnvironment.FLUID_CONTAINED,
 			() -> {
-				baritoneCalls.incrementAndGet();
-				return "baritone";
+				navigationCalls.incrementAndGet();
+				return "navigationFacade";
 			},
 			() -> {
 				directCalls.incrementAndGet();
@@ -178,10 +178,10 @@ class UnderwaterHarvestTaskExecutorTest {
 			}
 		);
 
-		assertEquals("baritone", dry);
+		assertEquals("navigationFacade", dry);
 		assertEquals("direct", adjacent);
 		assertEquals("direct", contained);
-		assertEquals(1, baritoneCalls.get());
+		assertEquals(1, navigationCalls.get());
 		assertEquals(2, directCalls.get());
 	}
 

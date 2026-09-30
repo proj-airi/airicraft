@@ -211,7 +211,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		double distance = minecraft.player.distanceTo(target);
 		if (distance <= 10.0D && !movementController.snapshot().stuck()) {
 			cameraController.lookAt(minecraft, targetAimPoint(target));
-			cancelBaritoneChase();
+			cancelNavigationChase();
 			movementController.moveForward(minecraft, true, false, tick);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " direct_chase");
 			return Optional.empty();
@@ -231,7 +231,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 			else {
 				chaseGoalRefreshTicks++;
 			}
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " baritone_chase");
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " navigation_chase");
 			return Optional.empty();
 		}
 		movementController.moveForward(minecraft, true, false, tick);
@@ -533,14 +533,14 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 
 	private void stopApproach(Minecraft minecraft) {
 		movementController.stop(minecraft);
-		cancelBaritoneChase();
+		cancelNavigationChase();
 	}
 
 	private void cancelApproach() {
 		stopApproach(clientSupplier.get());
 	}
 
-	private void cancelBaritoneChase() {
+	private void cancelNavigationChase() {
 		if (chaseGoal != null && navigationFacade != null && navigationFacade.isLoaded()) {
 			navigationFacade.cancel();
 		}

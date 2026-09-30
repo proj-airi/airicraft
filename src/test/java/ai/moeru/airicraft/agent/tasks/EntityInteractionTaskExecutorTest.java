@@ -45,7 +45,7 @@ class EntityInteractionTaskExecutorTest {
 	}
 
 	@Test
-	void refreshesBaritoneChaseGoalWhenTargetMovedEnoughOrRefreshIntervalElapsed() {
+	void refreshesNavigationChaseGoalWhenTargetMovedEnoughOrRefreshIntervalElapsed() {
 		GoalPosition current = new GoalPosition(10, 64, 20, false);
 
 		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(null, current, 0));

@@ -10,7 +10,7 @@ every course and run, this script:
 3. waits for the task/terminal_diagnostics debug-timeline entry, and
 4. records the outcome, the navigation metrics and health lost.
 
-The report is written as JSON. Run it once per navigation backend with a distinct
+The report is written as JSON. Run it once per build under test with a distinct
 --label and compare the summaries.
 """
 
@@ -201,11 +201,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
             "maxHealthLost": max(run["healthLost"] for run in runs),
             "stalls": sum(1 for run in runs if run.get("navigation", {}).get("stalled")),
         }
-        # In-house planner evidence: shadow plans on the Baritone backend, real plans on the in-house one.
-        shadows = [run["planner"]["shadow"] for run in runs if isinstance(run.get("planner", {}).get("shadow"), dict)]
-        if shadows:
-            summary[course]["shadowFound"] = sum(1 for shadow in shadows if shadow.get("outcome") == "found")
-            summary[course]["shadowOutcomes"] = sorted({str(shadow.get("outcome")) for shadow in shadows})
+        # Planner evidence: search time and plan count.
         search_millis = [run["planner"]["maxSearchMillis"] for run in runs if "maxSearchMillis" in run.get("planner", {})]
         if search_millis:
             summary[course]["maxSearchMillis"] = max(search_millis)
@@ -230,7 +226,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--runs", type=int, default=3, help="Runs per course (default 3).")
     parser.add_argument("--timeout-seconds", type=float, default=None,
                         help=f"Per-run timeout (default {DEFAULT_TIMEOUT_SECONDS:.0f}s; far_xz 600s).")
-    parser.add_argument("--label", default="baritone", help="Backend label stored in the report.")
+    parser.add_argument("--label", default="airicraft", help="Label stored in the report, such as the build under test.")
     parser.add_argument("--bridge-state", type=Path, default=None, help="Bridge state file.")
     parser.add_argument("--output", type=Path, default=None,
                         help="Report path (default run/navigation-baseline/<label>-<utc>.json).")

@@ -14,7 +14,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** System 1 owns acquisition. Baritone receives only an observed work position. */
+/** System 1 owns acquisition. Navigation receives only an observed work position. */
 public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	private final NavigationFacade navigation;
 	private final Environment environment;

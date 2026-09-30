@@ -16,7 +16,7 @@ suppressAutoPauseOnFocusLost: true
 blockInteractionDelayTicks: 2
 
 # Spring response time in client ticks (approximate settling time, not a deadline).
-# Use 0 for the default spring. All automated turns are smoothed, including Baritone.
+# Use 0 for the default spring. All automated turns are smoothed.
 cameraLerpDefaultTicks: 0
 
 # Read-only realtime debug dashboard. Each Airicraft client owns one dashboard.

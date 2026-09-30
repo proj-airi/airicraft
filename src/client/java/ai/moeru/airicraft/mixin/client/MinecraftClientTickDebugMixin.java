@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 @Mixin(Minecraft.class)
 public abstract class MinecraftClientTickDebugMixin {
 	@Shadow protected abstract void openChatScreen(String text);
-	// Gate the call itself so Fabric/Baritone tick callbacks cannot run ahead of the pause.
+	// Gate the call itself so Fabric tick callbacks cannot run ahead of the pause.
 	// Render-loop tasks remain available for bridge reads, stepping and frame capture.
 	@WrapWithCondition(method = "runTick", at = @At(
 		value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;tick()V"

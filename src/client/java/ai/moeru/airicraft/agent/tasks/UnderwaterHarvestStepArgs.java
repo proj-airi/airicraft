@@ -5,7 +5,7 @@ import ai.moeru.airicraft.agent.goals.GoalPosition;
 import java.util.Objects;
 
 /**
- * Immutable context captured when a Baritone mining task hands ownership to
+ * Immutable context captured when a navigation mining task hands ownership to
  * the local underwater harvester.
  */
 public record UnderwaterHarvestStepArgs(GoalPosition searchOrigin) {

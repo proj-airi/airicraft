@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  * The in-house navigation backend behind the {@link NavigationFacade} interface, so existing consumers
  * can run on it before they move to a typed navigation service. It plans in segments through loaded
- * terrain, follows with {@link PathFollower}, and reports Baritone-style path events: {@code AT_GOAL}
+ * terrain, follows with {@link PathFollower}, and reports path events: {@code AT_GOAL}
  * on arrival and {@code CALC_FAILED} when no route remains. Cancellation is synchronous and emits no
  * event. Client thread only; {@link #tick} runs once per client tick.
  */

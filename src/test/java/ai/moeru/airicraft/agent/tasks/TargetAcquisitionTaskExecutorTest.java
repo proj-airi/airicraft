@@ -455,7 +455,7 @@ class TargetAcquisitionTaskExecutorTest {
 		assertEquals(0, f.env.rejections);
 	}
 
-	@Test void noObservedTargetsFailsWithoutStartingBaritoneMiningOrExploration() {
+	@Test void noObservedTargetsFailsWithoutStartingNavigationMiningOrExploration() {
 		Fixture f = new Fixture();
 		f.env.sources = List.of();
 		f.tick(1);

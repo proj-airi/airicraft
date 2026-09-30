@@ -11,12 +11,7 @@ on:
       courses:
         description: Space-separated course ids; empty runs every course
         default: ""
-      backend:
-        description: Navigation backend
-        type: choice
-        options: [airicraft, baritone]
-        default: airicraft
-  # Pushes that change the benchmark or the in-house backend measure the in-house backend.
+  # Pushes that change the benchmark or the navigation code run the benchmark.
   push:
     paths:
       - .github/workflows/navigation-baseline.yml
@@ -52,9 +47,8 @@ jobs:
         env:
           RUNS: ${{ inputs.runs || '5' }}
           COURSES: ${{ inputs.courses || '' }}
-          BACKEND: ${{ inputs.backend || 'airicraft' }}
         run: |
-          args=(--runs "$RUNS" --backend "$BACKEND")
+          args=(--runs "$RUNS")
           for course in $COURSES; do args+=(--course "$course"); done
           xvfb-run -a -s "-screen 0 1280x720x24" python3 scripts/run-navigation-baseline "${args[@]}"
       - name: print report

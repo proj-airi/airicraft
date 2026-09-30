@@ -12,30 +12,30 @@ import java.util.Set;
 
 /**
  * Effect shell for one underwater escape search generation.
- * It owns only Baritone goals that it starts and never issues unverified vertical movement.
+ * It owns only navigation goals that it starts and never issues unverified vertical movement.
  */
 public final class UnderwaterEscapeNavigator {
-	private final NavigationFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final WaypointDriver waypointDriver;
 	private final Config config;
 	private final Set<UnderwaterEscapeSearch.Position> failedTargets = new LinkedHashSet<>();
-	private final Set<UnderwaterEscapeSearch.Position> baritoneAttemptedTargets = new LinkedHashSet<>();
+	private final Set<UnderwaterEscapeSearch.Position> navigationAttemptedTargets = new LinkedHashSet<>();
 
 	private UnderwaterEscapeSearch.Candidate currentCandidate;
 	private Phase phase = Phase.IDLE;
-	private boolean ownsBaritone;
+	private boolean ownsNavigation;
 	private long phaseStartedTick = -1L;
 	private long lastProgressTick = -1L;
 	private double progressCheckpointDistance = Double.POSITIVE_INFINITY;
 	private int waypointIndex;
 	private String lastTransition = "idle";
 
-	public UnderwaterEscapeNavigator(NavigationFacade baritone, WaypointDriver waypointDriver) {
-		this(baritone, waypointDriver, Config.defaults());
+	public UnderwaterEscapeNavigator(NavigationFacade navigationFacade, WaypointDriver waypointDriver) {
+		this(navigationFacade, waypointDriver, Config.defaults());
 	}
 
-	public UnderwaterEscapeNavigator(NavigationFacade baritone, WaypointDriver waypointDriver, Config config) {
-		this.baritone = baritone;
+	public UnderwaterEscapeNavigator(NavigationFacade navigationFacade, WaypointDriver waypointDriver, Config config) {
+		this.navigationFacade = navigationFacade;
 		this.waypointDriver = Objects.requireNonNull(waypointDriver, "waypointDriver");
 		this.config = Objects.requireNonNull(config, "config");
 	}
@@ -62,7 +62,7 @@ public final class UnderwaterEscapeNavigator {
 			return snapshot();
 		}
 		return switch (phase) {
-			case BARITONE_EXACT -> tickBaritone(candidates, observation);
+			case NAVIGATION_EXACT -> tickNavigation(candidates, observation);
 			case WAYPOINT_FALLBACK -> tickWaypoints(candidates, observation);
 			case IDLE, EXHAUSTED -> {
 				startNextCandidate(candidates, observation, "candidate_selected");
@@ -82,11 +82,11 @@ public final class UnderwaterEscapeNavigator {
 	}
 
 	private void resetNavigation(boolean clearFailedTargets) {
-		cancelOwnedBaritone();
+		cancelOwnedNavigation();
 		waypointDriver.stop();
 		if (clearFailedTargets) {
 			failedTargets.clear();
-			baritoneAttemptedTargets.clear();
+			navigationAttemptedTargets.clear();
 		}
 		currentCandidate = null;
 		phase = Phase.IDLE;
@@ -105,28 +105,28 @@ public final class UnderwaterEscapeNavigator {
 			&& waypointIndex < currentCandidate.route().size()
 			? currentCandidate.route().get(waypointIndex)
 			: null;
-		return new Snapshot(phase, target, waypoint, failedTargets, ownsBaritone, lastTransition);
+		return new Snapshot(phase, target, waypoint, failedTargets, ownsNavigation, lastTransition);
 	}
 
-	private Snapshot tickBaritone(
+	private Snapshot tickNavigation(
 		List<UnderwaterEscapeSearch.Candidate> candidates,
 		Observation observation
 	) {
 		updateProgress(observation, currentCandidate.target());
-		Optional<String> pathEvent = baritone == null ? Optional.empty() : baritone.pollPathEvent();
+		Optional<String> pathEvent = navigationFacade == null ? Optional.empty() : navigationFacade.pollPathEvent();
 		if (pathEvent.filter(UnderwaterEscapeNavigator::isFailedPathEvent).isPresent()) {
 			beginRelease(
 				candidates,
 				observation,
 				AfterRelease.START_WAYPOINT,
-				"baritone_" + normalizeEvent(pathEvent.orElseThrow())
+				"navigation_" + normalizeEvent(pathEvent.orElseThrow())
 			);
 		}
-		else if (observation.tick() - phaseStartedTick >= config.baritoneDeadlineTicks()) {
-			beginRelease(candidates, observation, AfterRelease.START_WAYPOINT, "baritone_deadline");
+		else if (observation.tick() - phaseStartedTick >= config.navigationDeadlineTicks()) {
+			beginRelease(candidates, observation, AfterRelease.START_WAYPOINT, "navigation_deadline");
 		}
 		else if (observation.tick() - lastProgressTick >= config.progressWindowTicks()) {
-			beginRelease(candidates, observation, AfterRelease.START_WAYPOINT, "baritone_no_progress");
+			beginRelease(candidates, observation, AfterRelease.START_WAYPOINT, "navigation_no_progress");
 		}
 		return snapshot();
 	}
@@ -179,28 +179,28 @@ public final class UnderwaterEscapeNavigator {
 		String reason
 	) {
 		initializeProgress(observation, currentCandidate.target());
-		if (baritone != null && baritone.isLoaded()) {
-			NavigationRelease.release(baritone);
-			if (baritoneAttemptedTargets.contains(currentCandidate.target())) {
-				startWaypointFallback(candidates, observation, "baritone_already_attempted");
+		if (navigationFacade != null && navigationFacade.isLoaded()) {
+			NavigationRelease.release(navigationFacade);
+			if (navigationAttemptedTargets.contains(currentCandidate.target())) {
+				startWaypointFallback(candidates, observation, "navigation_already_attempted");
 				return;
 			}
 			try {
 				UnderwaterEscapeSearch.Position target = currentCandidate.target();
-				baritoneAttemptedTargets.add(target);
-				baritone.startNavigate(new GoalPosition(target.x(), target.y(), target.z(), true));
-				ownsBaritone = true;
-				phase = Phase.BARITONE_EXACT;
+				navigationAttemptedTargets.add(target);
+				navigationFacade.startNavigate(new GoalPosition(target.x(), target.y(), target.z(), true));
+				ownsNavigation = true;
+				phase = Phase.NAVIGATION_EXACT;
 				lastTransition = reason;
 				return;
 			}
 			catch (RuntimeException ignored) {
-				ownsBaritone = false;
-				startWaypointFallback(candidates, observation, "baritone_start_failed");
+				ownsNavigation = false;
+				startWaypointFallback(candidates, observation, "navigation_start_failed");
 				return;
 			}
 		}
-		startWaypointFallback(candidates, observation, "baritone_unavailable");
+		startWaypointFallback(candidates, observation, "navigation_unavailable");
 	}
 
 	private void startWaypointFallback(
@@ -208,15 +208,15 @@ public final class UnderwaterEscapeNavigator {
 		Observation observation,
 		String reason
 	) {
-		ownsBaritone = false;
+		ownsNavigation = false;
 		waypointDriver.stop();
 		int currentCellIndex = currentRouteCellIndex(currentCandidate.route(), observation);
 		if (currentCellIndex < 0
 			|| distance(observation, currentCandidate.route().get(currentCellIndex)) > config.routeJoinToleranceBlocks()) {
-			// Baritone may have made useful progress outside the origin-anchored
+			// Navigation may have made useful progress outside the origin-anchored
 			// route before failing. Ask the controller to verify and search again
 			// from the current cell; keep both target provenance sets so the exact
-			// target is not handed back to Baritone a second time.
+			// target is not handed back to navigation a second time.
 			currentCandidate = null;
 			phase = Phase.RESEARCH_REQUIRED;
 			lastTransition = reason + "_route_research_required";
@@ -237,7 +237,7 @@ public final class UnderwaterEscapeNavigator {
 		Observation observation,
 		String reason
 	) {
-		cancelOwnedBaritone();
+		cancelOwnedNavigation();
 		waypointDriver.stop();
 		failedTargets.add(currentCandidate.target());
 		currentCandidate = null;
@@ -258,7 +258,7 @@ public final class UnderwaterEscapeNavigator {
 		String reason
 	) {
 		// Cancellation is synchronous: the goal we own is released when this returns.
-		cancelOwnedBaritone();
+		cancelOwnedNavigation();
 		switch (next) {
 			case COMPLETE -> {
 				phase = Phase.REACHED;
@@ -272,11 +272,11 @@ public final class UnderwaterEscapeNavigator {
 		}
 	}
 
-	private void cancelOwnedBaritone() {
-		if (ownsBaritone && baritone != null && baritone.isLoaded()) {
-			baritone.cancel();
+	private void cancelOwnedNavigation() {
+		if (ownsNavigation && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
-		ownsBaritone = false;
+		ownsNavigation = false;
 	}
 
 	private void initializeProgress(Observation observation, UnderwaterEscapeSearch.Position target) {
@@ -337,7 +337,7 @@ public final class UnderwaterEscapeNavigator {
 
 	public enum Phase {
 		IDLE,
-		BARITONE_EXACT,
+		NAVIGATION_EXACT,
 		WAYPOINT_FALLBACK,
 		RESEARCH_REQUIRED,
 		REACHED,
@@ -354,7 +354,7 @@ public final class UnderwaterEscapeNavigator {
 	}
 
 	public record Config(
-		long baritoneDeadlineTicks,
+		long navigationDeadlineTicks,
 		long waypointDeadlineTicks,
 		long progressWindowTicks,
 		double minimumProgressBlocks,
@@ -362,7 +362,7 @@ public final class UnderwaterEscapeNavigator {
 		double routeJoinToleranceBlocks
 	) {
 		public Config {
-			if (baritoneDeadlineTicks < 1L || waypointDeadlineTicks < 1L || progressWindowTicks < 1L) {
+			if (navigationDeadlineTicks < 1L || waypointDeadlineTicks < 1L || progressWindowTicks < 1L) {
 				throw new IllegalArgumentException("deadlines and progress window must be positive");
 			}
 			if (minimumProgressBlocks <= 0.0D || waypointToleranceBlocks <= 0.0D || routeJoinToleranceBlocks <= 0.0D) {
@@ -380,7 +380,7 @@ public final class UnderwaterEscapeNavigator {
 		UnderwaterEscapeSearch.Position target,
 		UnderwaterEscapeSearch.Position waypoint,
 		Set<UnderwaterEscapeSearch.Position> failedTargets,
-		boolean ownsBaritone,
+		boolean ownsNavigation,
 		String lastTransition
 	) {
 		public Snapshot {

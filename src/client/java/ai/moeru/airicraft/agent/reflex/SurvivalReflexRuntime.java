@@ -45,7 +45,7 @@ public final class SurvivalReflexRuntime {
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
 	private final CameraController cameraController;
-	private final NavigationFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
 	private final Map<String, ObservedThreat> observedThreats = new LinkedHashMap<>();
 	private final List<SurvivalReflexEvent> pendingEvents = new ArrayList<>();
@@ -94,12 +94,12 @@ public final class SurvivalReflexRuntime {
 		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), null);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade baritone) {
-		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), baritone);
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade navigationFacade) {
+		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), navigationFacade);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade baritone, CameraController cameraController) {
-		this(config, new MovementController("reflex", Priority.REFLEX), cameraController, baritone);
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade navigationFacade, CameraController cameraController) {
+		this(config, new MovementController("reflex", Priority.REFLEX), cameraController, navigationFacade);
 	}
 
 	SurvivalReflexRuntime(
@@ -114,14 +114,14 @@ public final class SurvivalReflexRuntime {
 		AgentConfig.ReflexConfig config,
 		MovementController movementController,
 		CameraController cameraController,
-		NavigationFacade baritone
+		NavigationFacade navigationFacade
 	) {
 		this.config = Objects.requireNonNullElseGet(config, AgentConfig.ReflexConfig::defaults);
 		this.movementController = Objects.requireNonNull(movementController, "movementController");
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.underwaterEscape = new MinecraftUnderwaterEscapeController(
-			baritone,
+			navigationFacade,
 			this.movementController,
 			this.cameraController
 		);
@@ -571,7 +571,7 @@ public final class SurvivalReflexRuntime {
 		if (snapshot.action() != SurvivalReflexAction.DEFEND) {
 			changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, tick);
 		}
-		boolean usePositioning = shouldReposition(threats.size()) && baritone != null && baritone.isLoaded();
+		boolean usePositioning = shouldReposition(threats.size()) && navigationFacade != null && navigationFacade.isLoaded();
 		updateCreeperEscape(threats);
 		if (tickCombatEating(minecraft, player, threats, tick, combatEating, usePositioning)) return;
 		if (threats.stream().noneMatch(threat ->
@@ -769,7 +769,7 @@ public final class SurvivalReflexRuntime {
 		ResolvedThreat approach = threats.isEmpty() ? null : closestVisibleThreat(threats);
 		if (!shouldReposition(threats.size())) {
 			if (fuseProgress == null && approach != null && approach.distance() > MELEE_ATTACK_DISTANCE
-				&& baritone != null && baritone.isLoaded()) {
+				&& navigationFacade != null && navigationFacade.isLoaded()) {
 				updateCombatNavigation(goal(approach.entity().blockPosition()), tick);
 			}
 			else {
@@ -853,7 +853,7 @@ public final class SurvivalReflexRuntime {
 			movementController.stop(minecraft);
 			return;
 		}
-		if (baritone != null && baritone.isLoaded()) {
+		if (navigationFacade != null && navigationFacade.isLoaded()) {
 			movementController.stop(minecraft);
 			updateCombatNavigation(goal(threat.entity().blockPosition()), tick);
 		}
@@ -882,7 +882,7 @@ public final class SurvivalReflexRuntime {
 
 	private void reposition(Minecraft minecraft, List<ResolvedThreat> threats, long tick,
 		boolean shielding, boolean retreatForFood) {
-		if (baritone == null || !baritone.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			stopCombatNavigation();
 			movementController.stop(minecraft);
 			return;
@@ -950,16 +950,16 @@ public final class SurvivalReflexRuntime {
 
 	void updateCombatNavigation(GoalPosition target, long tick) {
 		if (combatTarget == null || tick - combatRouteTick >= 20L
-			&& (!target.equals(combatTarget) || !baritone.processActive())) {
-			baritone.startNavigateNear(target, 2);
+			&& (!target.equals(combatTarget) || !navigationFacade.processActive())) {
+			navigationFacade.startNavigateNear(target, 2);
 			combatTarget = target;
 			combatRouteTick = tick;
 		}
 	}
 
 	private void stopCombatNavigation() {
-		if (combatTarget != null && baritone != null) {
-			baritone.cancel();
+		if (combatTarget != null && navigationFacade != null) {
+			navigationFacade.cancel();
 		}
 		combatTarget = null;
 	}

@@ -162,7 +162,7 @@ public final class BehaviorTreeRuntime {
 			&& taskExecutionSnapshot.state() == TaskExecutionState.RUNNING
 			&& "EntityInteraction".equals(taskExecutionSnapshot.processName())
 			&& ("direct_chase".equals(taskExecutionSnapshot.lastPathEvent())
-				|| "baritone_chase".equals(taskExecutionSnapshot.lastPathEvent()));
+				|| "navigation_chase".equals(taskExecutionSnapshot.lastPathEvent()));
 	}
 
 	static boolean shouldLookAtFollowTarget(GoalSnapshot activeGoal, FollowState followState) {

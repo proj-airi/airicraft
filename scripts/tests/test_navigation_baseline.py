@@ -194,23 +194,20 @@ class SummaryTest(unittest.TestCase):
         self.assertIsNone(summary["b"]["medianElapsedTicks"])
         self.assertIn("b", baseline.format_summary(summary))
 
-    def test_summary_reports_shadow_plans_and_search_time(self) -> None:
+    def test_summary_reports_plan_count_and_search_time(self) -> None:
         results = [
             {"course": "a", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
-             "planner": {"backend": "baritone", "shadow": {"outcome": "found"}}},
+             "planner": {"backend": "airicraft", "plans": 1, "maxSearchMillis": 4.0}},
             {"course": "a", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
-             "planner": {"backend": "baritone", "shadow": {"outcome": "partial"}}},
-            {"course": "b", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {},
-             "planner": {"backend": "airicraft", "plans": 2, "maxSearchMillis": 12.5}},
+             "planner": {"backend": "airicraft", "plans": 3, "maxSearchMillis": 12.5}},
+            {"course": "b", "outcome": "completed", "passed": True, "healthLost": 0.0, "navigation": {}},
         ]
 
         summary = baseline.summarize(results)
 
-        self.assertEqual(1, summary["a"]["shadowFound"])
-        self.assertEqual(["found", "partial"], summary["a"]["shadowOutcomes"])
-        self.assertEqual(12.5, summary["b"]["maxSearchMillis"])
-        self.assertEqual(2, summary["b"]["plans"])
-        self.assertNotIn("shadowFound", summary["b"])
+        self.assertEqual(12.5, summary["a"]["maxSearchMillis"])
+        self.assertEqual(3, summary["a"]["plans"])
+        self.assertNotIn("maxSearchMillis", summary["b"], "a run with no planner evidence reports none")
 
 
 if __name__ == "__main__":

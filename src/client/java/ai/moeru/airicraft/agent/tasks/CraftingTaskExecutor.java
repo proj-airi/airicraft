@@ -41,7 +41,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private static final double TABLE_INTERACTION_RANGE_SQUARED = 20.25D;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final NavigationFacade baritoneFacade;
+	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
 	private final WorldTaskExecutor portableTablePlacementExecutor;
 
@@ -65,39 +65,39 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public CraftingTaskExecutor(NavigationFacade baritoneFacade) {
-		this(Minecraft::getInstance, baritoneFacade, new CameraController());
+	public CraftingTaskExecutor(NavigationFacade navigationFacade) {
+		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
-	public CraftingTaskExecutor(NavigationFacade baritoneFacade, CameraController cameraController) {
-		this(Minecraft::getInstance, baritoneFacade, cameraController);
+	public CraftingTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
+		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
 	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier) {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade) {
-		this(clientSupplier, baritoneFacade, new CameraController());
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade) {
+		this(clientSupplier, navigationFacade, new CameraController());
 	}
 
-	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade baritoneFacade, CameraController cameraController) {
+	CraftingTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this(
 			clientSupplier,
-			baritoneFacade,
+			navigationFacade,
 			cameraController,
-			new BlockInteractionTaskExecutor(clientSupplier, cameraController, 0, baritoneFacade)
+			new BlockInteractionTaskExecutor(clientSupplier, cameraController, 0, navigationFacade)
 		);
 	}
 
 	CraftingTaskExecutor(
 		Supplier<Minecraft> clientSupplier,
-		NavigationFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		CameraController cameraController,
 		WorldTaskExecutor portableTablePlacementExecutor
 	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
-		this.baritoneFacade = baritoneFacade;
+		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
 		this.portableTablePlacementExecutor = Objects.requireNonNull(portableTablePlacementExecutor, "portableTablePlacementExecutor");
 	}
@@ -305,20 +305,20 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 				waitTicks = 0;
 				return WorkbenchReadiness.notReadyState();
 			}
-			if (tableTarget.standPosition() == null || baritoneFacade == null || !baritoneFacade.isLoaded()) {
+			if (tableTarget.standPosition() == null || navigationFacade == null || !navigationFacade.isLoaded()) {
 				return fallBackToPortableCraftingTable(request, player);
 			}
 			if (!navigationStarted) {
-				baritoneFacade.startNavigate(tableTarget.standPosition());
+				navigationFacade.startNavigate(tableTarget.standPosition());
 				navigationStarted = true;
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_table_navigation_started");
 				return WorkbenchReadiness.notReadyState();
 			}
-			Optional<String> pathEvent = baritoneFacade.pollPathEvent();
+			Optional<String> pathEvent = navigationFacade.pollPathEvent();
 			int elapsedNavigationTicks = waitTicks + 1;
 			TableNavigationOutcome navigationOutcome = tableNavigationOutcome(
 				pathEvent,
-				baritoneFacade.navigationGoalReached(tableTarget.standPosition()),
+				navigationFacade.navigationGoalReached(tableTarget.standPosition()),
 				withinInteractionRange(player, tableTarget.tablePos()),
 				elapsedNavigationTicks
 			);
@@ -1043,8 +1043,8 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void cancelNavigationIfStarted() {
-		if (navigationStarted && baritoneFacade != null && baritoneFacade.isLoaded()) {
-			baritoneFacade.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 	}

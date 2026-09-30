@@ -365,10 +365,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		NavigationFacade baritoneFacade
+		NavigationFacade navigationFacade
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
-			smeltingProcessManager, cameraController, baritoneFacade, new MiningOpportunityPolicyState(), new MiningOpportunityJournal());
+			smeltingProcessManager, cameraController, navigationFacade, new MiningOpportunityPolicyState(), new MiningOpportunityJournal());
 	}
 
 	public EmbodiedAgentRuntime(
@@ -379,11 +379,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		NavigationFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
-			smeltingProcessManager, cameraController, baritoneFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
+			smeltingProcessManager, cameraController, navigationFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
 	}
 
 	private final Clock clock;
@@ -396,12 +396,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		NavigationFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability, smeltingProcessManager,
-			cameraController, baritoneFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
+			cameraController, navigationFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
 	}
 
 	EmbodiedAgentRuntime(
@@ -412,7 +412,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		NavigationFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal,
 		java.util.function.Function<AgentConfig.LlmConfig, ai.moeru.airicraft.agent.llm.LlmBackend> backendFactory,
@@ -423,7 +423,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.miningOpportunityPolicy = Objects.requireNonNull(miningOpportunityPolicy, "miningOpportunityPolicy");
 		this.miningOpportunityJournal = Objects.requireNonNull(miningOpportunityJournal, "miningOpportunityJournal");
 		this.codexDriverActive = Boolean.getBoolean("airicraft.codexDriver");
-		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), baritoneFacade, cameraController);
+		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), navigationFacade, cameraController);
 		this.worldTaskExecutor = Objects.requireNonNull(worldTaskExecutor, "worldTaskExecutor");
 		this.observability = new FlightRecordingObservability(Objects.requireNonNull(observability, "observability"), llmFlightRecorder);
 		this.smeltingProcessManager = Objects.requireNonNull(smeltingProcessManager, "smeltingProcessManager");

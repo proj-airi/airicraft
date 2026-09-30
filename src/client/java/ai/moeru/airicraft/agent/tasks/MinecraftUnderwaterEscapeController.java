@@ -24,7 +24,7 @@ import java.util.Objects;
 public final class MinecraftUnderwaterEscapeController {
 	private final MovementController movement;
 	private final CameraController camera;
-	private final NavigationFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final UnderwaterEscapeNavigator navigator;
 	private Minecraft activeClient;
 
@@ -34,14 +34,14 @@ public final class MinecraftUnderwaterEscapeController {
 	private UnderwaterEscapeSearch.SearchStatus searchStatus = UnderwaterEscapeSearch.SearchStatus.SEARCHING;
 
 	public MinecraftUnderwaterEscapeController(
-		NavigationFacade baritone,
+		NavigationFacade navigationFacade,
 		MovementController movement,
 		CameraController camera
 	) {
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.movement = Objects.requireNonNull(movement, "movement");
 		this.camera = Objects.requireNonNull(camera, "camera");
-		this.navigator = new UnderwaterEscapeNavigator(baritone, new UnderwaterEscapeNavigator.WaypointDriver() {
+		this.navigator = new UnderwaterEscapeNavigator(navigationFacade, new UnderwaterEscapeNavigator.WaypointDriver() {
 			@Override
 			public void moveToward(UnderwaterEscapeSearch.Position waypoint, long tick) {
 				Minecraft minecraft = activeClient;
@@ -112,7 +112,7 @@ public final class MinecraftUnderwaterEscapeController {
 			)
 		);
 		if (navigation.phase() == UnderwaterEscapeNavigator.Phase.RESEARCH_REQUIRED) {
-			// Baritone left the player in a connected cell outside every route
+			// Navigation left the player in a connected cell outside every route
 			// computed from the old origin. Re-anchor the bounded search here;
 			// navigator.restartSearch() deliberately retains attempted/failed targets.
 			begin(minecraft, requestedMode, remainingAirTicks);
@@ -142,7 +142,7 @@ public final class MinecraftUnderwaterEscapeController {
 		int remainingAirTicks
 	) {
 		navigator.restartSearch();
-		NavigationRelease.release(baritone);
+		NavigationRelease.release(navigationFacade);
 		mode = Objects.requireNonNull(requestedMode, "requestedMode");
 		LocalPlayer player = minecraft.player;
 		UnderwaterEscapeSearch.Position start = new UnderwaterEscapeSearch.Position(
@@ -212,7 +212,7 @@ public final class MinecraftUnderwaterEscapeController {
 
 	private void restartSearch(Minecraft minecraft) {
 		navigator.restartSearch();
-		NavigationRelease.release(baritone);
+		NavigationRelease.release(navigationFacade);
 		movement.stop(minecraft);
 		mode = null;
 		searchSession = null;

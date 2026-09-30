@@ -183,7 +183,7 @@ class BlockInteractionTaskExecutorTest {
 	}
 
 	@Test
-	void reachedNavigationEventsRetryInteractionWhenBaritoneConfirmsGoal() {
+	void reachedNavigationEventsRetryInteractionWhenNavigationConfirmsGoal() {
 		for (String event : List.of("AT_GOAL", "CANCELED", "cancelled")) {
 			assertEquals(
 				BlockInteractionTaskExecutor.BlockInteractionNavigationOutcome.RETRY_INTERACTION,
@@ -193,7 +193,7 @@ class BlockInteractionTaskExecutorTest {
 	}
 
 	@Test
-	void reachedNavigationRequiresBaritoneGoalConfirmation() {
+	void reachedNavigationRequiresNavigationGoalConfirmation() {
 		assertEquals(
 			BlockInteractionTaskExecutor.BlockInteractionNavigationOutcome.FAILED,
 			BlockInteractionTaskExecutor.blockInteractionNavigationOutcome(Optional.of("CANCELED"), 12, false)

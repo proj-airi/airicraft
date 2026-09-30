@@ -40,7 +40,7 @@ class DispatchingWorldTaskExecutorTest {
 		}
 	}
 
-	@Test void miningHasItsOwnExecutorAndDoesNotReachTheBaritoneMiningProcess() {
+	@Test void miningHasItsOwnExecutorAndDoesNotReachTheNavigationMiningProcess() {
 		var navigation = new RecordingExecutor();
 		var acquisition = new RecordingExecutor();
 		var underwater = new RecordingExecutor();
@@ -211,10 +211,10 @@ class DispatchingWorldTaskExecutorTest {
 		private final RecordingExecutor blockInteraction = new RecordingExecutor();
 		private final RecordingExecutor blockBreak = new RecordingExecutor();
 
-		private DispatchingWorldTaskExecutor dispatcher(NavigationFacade baritone) {
+		private DispatchingWorldTaskExecutor dispatcher(NavigationFacade navigationFacade) {
 			return new DispatchingWorldTaskExecutor(new DispatchingWorldTaskExecutor.ExecutorSet(
 				mining, crafting, dropItems, entity, smelting, surface, blockInteraction, blockBreak
-			), baritone);
+			), navigationFacade);
 		}
 
 		private RecordingExecutor executor(Route route) {

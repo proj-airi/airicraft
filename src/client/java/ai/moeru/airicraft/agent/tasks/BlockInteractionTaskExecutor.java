@@ -64,7 +64,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	private final CameraController cameraController;
 	private final MovementController movementController = new MovementController("block_interaction", Priority.FOREGROUND);
 	private final int targetDelayTicks;
-	private final NavigationFacade baritoneFacade;
+	private final NavigationFacade navigationFacade;
 
 	private WorldTaskRequest appliedTask;
 	private boolean terminalEventEmitted;
@@ -93,16 +93,16 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, new CameraController(), targetDelayTicks, null);
 	}
 
-	public BlockInteractionTaskExecutor(int targetDelayTicks, NavigationFacade baritoneFacade) {
-		this(Minecraft::getInstance, new CameraController(), targetDelayTicks, baritoneFacade);
+	public BlockInteractionTaskExecutor(int targetDelayTicks, NavigationFacade navigationFacade) {
+		this(Minecraft::getInstance, new CameraController(), targetDelayTicks, navigationFacade);
 	}
 
 	public BlockInteractionTaskExecutor(int targetDelayTicks, CameraController cameraController) {
 		this(Minecraft::getInstance, cameraController, targetDelayTicks, null);
 	}
 
-	public BlockInteractionTaskExecutor(int targetDelayTicks, CameraController cameraController, NavigationFacade baritoneFacade) {
-		this(Minecraft::getInstance, cameraController, targetDelayTicks, baritoneFacade);
+	public BlockInteractionTaskExecutor(int targetDelayTicks, CameraController cameraController, NavigationFacade navigationFacade) {
+		this(Minecraft::getInstance, cameraController, targetDelayTicks, navigationFacade);
 	}
 
 	BlockInteractionTaskExecutor(Supplier<Minecraft> clientSupplier) {
@@ -117,11 +117,11 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, cameraController, targetDelayTicks, null);
 	}
 
-	BlockInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController, int targetDelayTicks, NavigationFacade baritoneFacade) {
+	BlockInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController, int targetDelayTicks, NavigationFacade navigationFacade) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
 		this.targetDelayTicks = Math.max(0, targetDelayTicks);
-		this.baritoneFacade = baritoneFacade;
+		this.navigationFacade = navigationFacade;
 	}
 
 	@Override
@@ -582,7 +582,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (startOrContinueDirectApproach(tick, minecraft, player, request, target, hitTarget.hitVec(), approachReason)) {
 			return Optional.empty();
 		}
-		if (baritoneFacade == null || !baritoneFacade.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, approachReason.detail()));
 		}
 		if (!navigationStarted || navigationTargetIndex != targetIndex || !target.equals(navigationTarget)) {
@@ -599,7 +599,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 				if (request.type() == WorldTaskType.PLACE_BLOCK) {
 					attemptedPlacementStandPositions.add(blockPos(navigationGoal));
 				}
-				baritoneFacade.startNavigate(navigationGoal);
+				navigationFacade.startNavigate(navigationGoal);
 			}
 			else if (request.type() == WorldTaskType.PLACE_BLOCK) {
 				return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, approachReason.detail()
@@ -607,7 +607,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			}
 			else {
 				navigationGoal = new GoalPosition(target.getX(), target.getY(), target.getZ(), false);
-				baritoneFacade.startNavigateNear(navigationGoal, INTERACTION_NAVIGATION_RADIUS_BLOCKS);
+				navigationFacade.startNavigateNear(navigationGoal, INTERACTION_NAVIGATION_RADIUS_BLOCKS);
 			}
 			navigationStarted = true;
 			navigationTargetIndex = targetIndex;
@@ -618,7 +618,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 				+ " navigationMode=" + (standGoal.isPresent() ? "stand_position" : "near_target"));
 			return Optional.empty();
 		}
-		Optional<String> pathEvent = baritoneFacade.pollPathEvent();
+		Optional<String> pathEvent = navigationFacade.pollPathEvent();
 		BlockInteractionNavigationOutcome outcome = blockInteractionNavigationOutcome(
 			pathEvent,
 			tick - navigationStartTick,
@@ -676,12 +676,12 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (startOrContinueDirectApproach(tick, minecraft, player, request, target, Vec3.atCenterOf(target), approachReason)) {
 			return Optional.empty();
 		}
-		if (baritoneFacade == null || !baritoneFacade.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, approachReason.detail()));
 		}
 		if (!navigationStarted || navigationTargetIndex != targetIndex || !target.equals(navigationTarget)) {
 			navigationGoal = new GoalPosition(target.getX(), target.getY(), target.getZ(), false);
-			baritoneFacade.startNavigateNear(navigationGoal, INTERACTION_NAVIGATION_RADIUS_BLOCKS);
+			navigationFacade.startNavigateNear(navigationGoal, INTERACTION_NAVIGATION_RADIUS_BLOCKS);
 			navigationStarted = true;
 			navigationTargetIndex = targetIndex;
 			navigationTarget = target;
@@ -692,7 +692,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 				+ " navigationMode=near_target");
 			return Optional.empty();
 		}
-		Optional<String> pathEvent = baritoneFacade.pollPathEvent();
+		Optional<String> pathEvent = navigationFacade.pollPathEvent();
 		BlockInteractionNavigationOutcome outcome = blockInteractionNavigationOutcome(
 			pathEvent,
 			tick - navigationStartTick,
@@ -752,8 +752,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			directApproachTarget = target;
 			directApproachStartTick = tick;
 		}
-		if (navigationStarted && baritoneFacade != null && baritoneFacade.isLoaded()) {
-			baritoneFacade.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 		navigationTargetIndex = -1;
@@ -813,14 +813,14 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private boolean navigationGoalReached(Optional<String> pathEvent) {
-		if (baritoneFacade == null || navigationGoal == null || pathEvent.isEmpty()) {
+		if (navigationFacade == null || navigationGoal == null || pathEvent.isEmpty()) {
 			return false;
 		}
 		String normalized = pathEvent.get().trim().toUpperCase(Locale.ROOT);
 		if (!"AT_GOAL".equals(normalized) && !"CANCELED".equals(normalized) && !"CANCELLED".equals(normalized)) {
 			return false;
 		}
-		return baritoneFacade.navigationGoalReached(navigationGoal);
+		return navigationFacade.navigationGoalReached(navigationGoal);
 	}
 
 	private static Optional<GoalPosition> interactionStandPosition(
@@ -891,7 +891,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	static List<BlockPos> placementStandCandidates(BlockPos target, BlockPos support) {
-		// TODO: Replace this conservative fixed-offset stance list with Baritone's placement process
+		// TODO: Replace this conservative fixed-offset stance list with a navigation-core placement move
 		// once that integration can preserve Airicraft's no-break and target-verification semantics.
 		Set<BlockPos> candidates = new LinkedHashSet<>();
 		for (Direction direction : List.of(Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST)) {
@@ -1521,8 +1521,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void clearNavigation() {
-		if (navigationStarted && baritoneFacade != null && baritoneFacade.isLoaded()) {
-			baritoneFacade.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
 		navigationTargetIndex = -1;

@@ -35,7 +35,7 @@ class AiricraftConfigLoaderTest {
 
 	@Test
 	void anObsoleteNavigationBackendKeyIsIgnored() {
-		Map<String, Object> obsolete = Map.of("navigation", Map.of("backend", "baritone"));
+		Map<String, Object> obsolete = Map.of("navigation", Map.of("backend", "navigationFacade"));
 
 		assertEquals(AiricraftConfig.defaults(), AiricraftConfigLoader.fromMap(obsolete, AiricraftConfig.defaults()));
 		assertEquals(AiricraftConfig.defaults(), AiricraftConfigLoader.fromMapStrict(obsolete, AiricraftConfig.defaults()));

@@ -30,7 +30,7 @@ class WaterStallRecoveryTest {
 	}
 
 	@Test
-	void stationaryWaterDoesNotTriggerWhileBaritoneHasNoActivePath() {
+	void stationaryWaterDoesNotTriggerWhileNavigationHasNoActivePath() {
 		WaterStallRecovery recovery = new WaterStallRecovery();
 		WaterStallRecovery.Sample sample = new WaterStallRecovery.Sample(true, 0.0D, 62.0D, 0.0D);
 
