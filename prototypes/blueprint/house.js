@@ -12,6 +12,7 @@ function design(input) {
         back:[Window({id:'window',at:[3,0,0],width:5,height:2})],
         left:[Window({id:'window',at:[2,0,0]})],right:[Window({id:'window',at:[2,0,0]})]
       }}),
+    Staircase({id:'entranceSteps',at:[5,0,-1],rise:1,width:1,material:'stone_brick_stairs'}),
     Staircase({id:'stairs',at:[7,1,2],rise:4,replaces:['village.house.ground.interior','village.house.upper.floor.stairwell']}),
     GableRoof({id:'roof',at:[-1,8,-1],width:13,depth:11}),
     Solid({id:'landingLight',at:[1,4,1],size:[1,1,1],material:'glowstone',replaces:'village.house.upper.floor'})
