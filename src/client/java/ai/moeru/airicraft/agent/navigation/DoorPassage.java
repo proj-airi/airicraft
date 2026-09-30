@@ -1,4 +1,4 @@
-package ai.moeru.airicraft.agent.baritone;
+package ai.moeru.airicraft.agent.navigation;
 
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;

@@ -1,8 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
-import baritone.api.BaritoneAPI;
-import baritone.api.Settings;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.Animal;
@@ -17,14 +15,12 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor.Environment {
 	private final List<UUID> identities = new ArrayList<>();
-	private final Map<Settings.Setting<Boolean>, Boolean> savedSettings = new LinkedHashMap<>();
 	private LureEntitiesStepArgs args;
 	private static Minecraft client() { return Minecraft.getInstance(); }
 
@@ -79,8 +75,7 @@ final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor
 		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
 			ItemStack stack = player.containerMenu.getSlot(slot).getItem();
 			if (stack.isEmpty() || !BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(args.itemId())) continue;
-			// Slot 0 belongs to Baritone's best-pick housekeeping. Keep the lure in another slot.
-			if (slot > InventoryMenu.USE_ROW_SLOT_START) player.getInventory().setSelectedSlot(slot - InventoryMenu.USE_ROW_SLOT_START);
+			if (slot >= InventoryMenu.USE_ROW_SLOT_START) player.getInventory().setSelectedSlot(slot - InventoryMenu.USE_ROW_SLOT_START);
 			else {
 				minecraft.gameMode.handleInventoryMouseClick(player.containerMenu.containerId, slot, 8, ClickType.SWAP, player);
 				player.getInventory().setSelectedSlot(8);
@@ -104,22 +99,5 @@ final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor
 		candidates.sort(Comparator.comparingDouble((GoalPosition p) -> followers.stream().filter(f -> !f.inside())
 			.mapToDouble(f -> new Vec3(p.x()+0.5,p.y(),p.z()+0.5).distanceToSqr(f.position())).min().orElse(0)).reversed());
 		return List.copyOf(candidates);
-	}
-
-	@Override public void beginTravel() {
-		ai.moeru.airicraft.agent.navigation.NavigationPolicies.setWalkOnly(true);
-		if (!savedSettings.isEmpty()) return;
-		var settings = BaritoneAPI.getSettings();
-		for (var setting : List.of(settings.allowBreak, settings.allowPlace, settings.allowSprint, settings.allowParkour,
-			settings.allowInventory, settings.allowWaterBucketFall)) {
-			savedSettings.put(setting, setting.value);
-			setting.value = false;
-		}
-	}
-
-	@Override public void release() {
-		ai.moeru.airicraft.agent.navigation.NavigationPolicies.setWalkOnly(false);
-		savedSettings.forEach((setting, value) -> setting.value = value);
-		savedSettings.clear();
 	}
 }

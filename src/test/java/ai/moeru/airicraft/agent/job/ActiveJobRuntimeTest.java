@@ -153,7 +153,7 @@ class ActiveJobRuntimeTest {
 				request.goal(),
 				TaskExecutionState.CANCELLED,
 				"Task cancelled",
-				TaskTerminationCause.BARITONE_CANCELLED
+				TaskTerminationCause.NAVIGATION_CANCELLED
 			),
 			Optional.of(request)
 		);

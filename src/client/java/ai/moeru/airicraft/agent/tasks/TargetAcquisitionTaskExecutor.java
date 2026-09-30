@@ -148,7 +148,7 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 			return finish(false, "missing_required_harvest_tool itemIds=" + spec.requiredToolItemIds(), TaskFailureCode.MISSING_ITEM);
 		if (activeTicks > 2400) return goalMet ? finish(true, "opportunity_budget_exhausted")
 			: finish(false, "acquisition_budget_exhausted itemCount=" + count);
-		if (!BaritoneReleaseBarrier.released(navigation) && !navigationOwned) {
+		if (!NavigationRelease.idle(navigation) && !navigationOwned) {
 			if (phaseTicks > 100) return finish(false, "acquisition_release_timeout");
 			setSnapshot(TaskExecutionState.RUNNING, "waiting_for_navigation_release");
 			return Optional.empty();
@@ -365,10 +365,7 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> finishRelease() {
-		if (!BaritoneReleaseBarrier.releaseAndDrain(navigation)) {
-			setSnapshot(TaskExecutionState.RUNNING, "releasing_acquisition_navigation");
-			return Optional.empty();
-		}
+		NavigationRelease.release(navigation);
 		setSnapshot(terminal.terminalState(), terminal.message());
 		if (emitted) return Optional.empty();
 		emitted = true;

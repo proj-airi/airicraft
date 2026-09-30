@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import org.junit.jupiter.api.Test;
 
@@ -57,14 +58,13 @@ class UnderwaterEscapeNavigatorTest {
 		List<UnderwaterEscapeSearch.Candidate> candidates = List.of(candidate(0, 2));
 
 		navigator.tick(candidates, observation(0, 0, false));
-		UnderwaterEscapeNavigator.Snapshot waiting = navigator.tick(candidates, observation(0, 40, false));
-		baritone.acknowledgeCancellation();
-		UnderwaterEscapeNavigator.Snapshot snapshot = navigator.tick(candidates, observation(0, 41, false));
+		UnderwaterEscapeNavigator.Snapshot snapshot = navigator.tick(candidates, observation(0, 40, false));
 
-		assertEquals(UnderwaterEscapeNavigator.Phase.WAITING_FOR_BARITONE_RELEASE, waiting.phase());
-		assertEquals(UnderwaterEscapeNavigator.Phase.WAYPOINT_FALLBACK, snapshot.phase());
+		assertEquals(UnderwaterEscapeNavigator.Phase.WAYPOINT_FALLBACK, snapshot.phase(), "release is synchronous, so no waiting tick");
 		assertEquals("baritone_no_progress", snapshot.lastTransition());
 		assertEquals(1, baritone.navigateCalls.size());
+		assertEquals(1, baritone.cancelCalls);
+		assertFalse(snapshot.ownsBaritone());
 	}
 
 	@Test
@@ -266,11 +266,8 @@ class UnderwaterEscapeNavigatorTest {
 		List<UnderwaterEscapeSearch.Candidate> candidates = List.of(candidate(0, 1));
 
 		navigator.tick(candidates, observation(0, 0, false));
-		UnderwaterEscapeNavigator.Snapshot waiting = navigator.tick(candidates, observation(1, 1, true));
-		baritone.acknowledgeCancellation();
-		UnderwaterEscapeNavigator.Snapshot reached = navigator.tick(candidates, observation(1, 2, true));
+		UnderwaterEscapeNavigator.Snapshot reached = navigator.tick(candidates, observation(1, 1, true));
 
-		assertEquals(UnderwaterEscapeNavigator.Phase.WAITING_FOR_BARITONE_RELEASE, waiting.phase());
 		assertEquals(UnderwaterEscapeNavigator.Phase.REACHED, reached.phase());
 		assertEquals(1, baritone.cancelCalls);
 		assertFalse(reached.ownsBaritone());
@@ -346,8 +343,6 @@ class UnderwaterEscapeNavigatorTest {
 		private final ArrayDeque<String> pathEvents = new ArrayDeque<>();
 		private boolean loaded = true;
 		private boolean active;
-		private boolean cancellationPending;
-		private long cancellationAcknowledgement;
 		private int cancelCalls;
 
 		@Override
@@ -356,33 +351,17 @@ class UnderwaterEscapeNavigatorTest {
 		}
 
 		@Override
-		public void applySettings() {
-		}
-
-		@Override
-		public double walkOnWaterPenalty() {
-			return 0;
-		}
-
-		@Override
-		public void setWalkOnWaterPenalty(double value) {
-		}
-
-		@Override
 		public void startFollow(String playerName) {
 		}
 
 		@Override
-		public void startNavigate(GoalPosition position) {
-			if (cancellationPending) {
-				throw new IllegalStateException("release pending");
-			}
+		public void startNavigate(GoalPosition position, NavigationOptions options) {
 			navigateCalls.add(position);
 			active = true;
 		}
 
 		@Override
-		public void startNavigateNear(GoalPosition position, int radiusBlocks) {
+		public void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions options) {
 		}
 
 		@Override
@@ -391,23 +370,11 @@ class UnderwaterEscapeNavigatorTest {
 		}
 
 		@Override
-		public boolean cancel() {
-			if (active && !cancellationPending) {
+		public void cancel() {
+			if (active) {
 				cancelCalls++;
 				active = false;
-				cancellationPending = true;
 			}
-			return cancellationPending;
-		}
-
-		@Override
-		public boolean cancellationPending() {
-			return cancellationPending;
-		}
-
-		@Override
-		public long cancellationAcknowledgement() {
-			return cancellationAcknowledgement;
 		}
 
 		@Override
@@ -432,13 +399,6 @@ class UnderwaterEscapeNavigatorTest {
 		@Override
 		public boolean navigationGoalReached(GoalPosition position) {
 			return false;
-		}
-
-		private void acknowledgeCancellation() {
-			if (cancellationPending) {
-				cancellationPending = false;
-				cancellationAcknowledgement++;
-			}
 		}
 	}
 }

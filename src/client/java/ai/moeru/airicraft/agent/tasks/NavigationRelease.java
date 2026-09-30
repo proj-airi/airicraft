@@ -3,27 +3,20 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 
 /**
- * Shared ownership boundary for transitions between Baritone users.
- * Internal cancellation events are drained by the facade and a new owner may
- * start only after both process ownership and cancellation provenance clear.
+ * Handoff between owners of navigation. Cancellation is synchronous, so a new owner may start in the
+ * same tick that the previous one is released; there is nothing to wait for.
  */
-final class BaritoneReleaseBarrier {
-	private BaritoneReleaseBarrier() {
+final class NavigationRelease {
+	private NavigationRelease() {
 	}
 
-	static boolean releaseAndDrain(NavigationFacade baritone) {
-		if (baritone == null || !baritone.isLoaded()) {
-			return true;
-		}
-		if (baritone.processActive() && !baritone.cancellationPending()) {
-			baritone.cancel();
-		}
-		return released(baritone);
+	/** Whether no request controls movement, or navigation is unavailable. */
+	static boolean idle(NavigationFacade navigation) {
+		return navigation == null || !navigation.isLoaded() || !navigation.processActive();
 	}
 
-	static boolean released(NavigationFacade baritone) {
-		return baritone == null
-			|| !baritone.isLoaded()
-			|| (!baritone.processActive() && !baritone.cancellationPending());
+	/** Ends the current request, if any. Movement is released when this returns. */
+	static void release(NavigationFacade navigation) {
+		if (!idle(navigation)) navigation.cancel();
 	}
 }

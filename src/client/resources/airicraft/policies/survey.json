@@ -19,7 +19,7 @@
       },
       "includeOres": {
         "type": "boolean",
-        "description": "Include ore blocks among landmarks. Default false; mining is handled by Baritone."
+        "description": "Include ore blocks among landmarks. Default false; mining is handled by target acquisition."
       }
     },
     "required": [],

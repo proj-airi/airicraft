@@ -4,42 +4,33 @@ import ai.moeru.airicraft.agent.goals.GoalPosition;
 
 import java.util.Optional;
 
+/**
+ * What navigation consumers use to move the player. Requests carry their own {@link NavigationOptions};
+ * nothing outlives a request. Cancellation is synchronous: control is released in the calling tick and no
+ * event follows it. Path events are {@code AT_GOAL} on arrival and {@code CALC_FAILED} when no route remains.
+ */
 public interface NavigationFacade {
 	boolean isLoaded();
 
-	void applySettings();
-
-	double walkOnWaterPenalty();
-
-	void setWalkOnWaterPenalty(double value);
-
 	void startFollow(String playerName);
 
-	void startNavigate(GoalPosition position);
+	default void startNavigate(GoalPosition position) {
+		startNavigate(position, NavigationOptions.DEFAULT);
+	}
 
-	void startNavigateNear(GoalPosition position, int radiusBlocks);
+	void startNavigate(GoalPosition position, NavigationOptions options);
 
-	/** Whether one of the agent-owned Baritone processes still controls pathing. */
+	default void startNavigateNear(GoalPosition position, int radiusBlocks) {
+		startNavigateNear(position, radiusBlocks, NavigationOptions.DEFAULT);
+	}
+
+	void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions options);
+
+	/** Whether a navigation or follow request still controls movement. */
 	boolean processActive();
 
-	/**
-	 * Requests cancellation of the current operation.
-	 *
-	 * @return {@code true} when Baritone queued an internal {@code CANCELED}
-	 * acknowledgement immediately (including one already pending); {@code false}
-	 * when an unsafe movement may finish later without emitting that event
-	 */
-	boolean cancel();
-
-	/** True while an internally requested cancellation still awaits its event. */
-	default boolean cancellationPending() {
-		return false;
-	}
-
-	/** Monotonic acknowledgement for internally requested cancellation events. */
-	default long cancellationAcknowledgement() {
-		return 0L;
-	}
+	/** Ends the current request now. Idempotent. */
+	void cancel();
 
 	Optional<String> activeProcessName();
 

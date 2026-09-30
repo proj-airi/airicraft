@@ -33,7 +33,7 @@ public final class NavigationDebugService {
 	/** Snapshots the terrain and starts the search. Client thread. */
 	public static Planning start(Minecraft minecraft, int x, int y, int z, boolean exactY) {
 		if (minecraft.player == null || minecraft.level == null) throw new BridgeUnavailableException("world_not_loaded", "No world is loaded");
-		MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, MovementPolicy.defaults().waterPenalty());
+		MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, NavigationOptions.DEFAULT);
 		if (policy == null) throw new BridgeUnavailableException("travel_policy_unavailable", "The travel policy could not be loaded");
 		var player = minecraft.player;
 		GridPos start = new BodyState(player.getX(), player.getY(), player.getZ(), 0, true, false, false, false, 0).feet();

@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,7 +26,7 @@ class DispatchingWorldTaskExecutorTest {
 		for (var request : List.of(
 			WorldTaskRequest.direct("follow", new GoalSnapshot(GoalType.FOLLOW_PLAYER,"Alex",null,null,1L,"test")),
 			WorldTaskRequest.craftRecipe("craft", "job", new CraftRecipeStepArgs("minecraft:stick",1)))) {
-			var facade = new RecordingBaritone();
+			var facade = new RecordingNavigation();
 			var dispatcher = new Fixture().dispatcher(facade);
 			dispatcher.tick(snapshot(), Optional.of(request));
 			facade.progress = new NavigationFacade.NavigationProgress(0,64,0,true,null,0);
@@ -147,23 +149,19 @@ class DispatchingWorldTaskExecutorTest {
 	}
 
 	@Test
-	void typeChangeUsesReleaseBarrierEvenWhenVariantsShareExecutor() {
+	void typeChangeReleasesNavigationInTheSameTickEvenWhenVariantsShareExecutor() {
 		Fixture fixture = new Fixture();
-		RecordingBaritone baritone = new RecordingBaritone();
-		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(baritone);
+		RecordingNavigation navigation = new RecordingNavigation();
+		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(navigation);
 		WorldTaskRequest mine = WorldTaskRequest.collectMine("mine", "job", miningGoal());
 
 		dispatcher.tick(snapshot(), Optional.of(WorldTaskRequest.direct("nav", navigationGoal())));
-		baritone.active = true;
-		assertTrue(dispatcher.tick(snapshot(), Optional.of(mine)).isEmpty());
-		assertEquals("waiting_for_previous_baritone_release", dispatcher.snapshot().lastPathEvent());
-		assertEquals(List.of("NAVIGATE", "inactive"), types(fixture.mining.calls));
-
-		baritone.cancellationPending = false;
+		navigation.active = true;
 		dispatcher.tick(snapshot(), Optional.of(mine));
 
 		assertEquals(WorldTaskType.MINE, fixture.mining.lastTask.orElseThrow().type());
-		assertEquals(1, baritone.cancelCalls);
+		assertEquals(1, navigation.cancelCalls);
+		assertFalse(navigation.active, "no wait: the previous owner is released before the next one runs");
 	}
 
 	@Test
@@ -275,30 +273,23 @@ class DispatchingWorldTaskExecutorTest {
 		@Override public void shutdown() { shutdownCalls++; }
 	}
 
-	private static final class RecordingBaritone implements NavigationFacade {
+	private static final class RecordingNavigation implements NavigationFacade {
 		private NavigationFacade.NavigationProgress progress;
 		@Override public Optional<NavigationFacade.NavigationProgress> navigationProgress() { return Optional.ofNullable(progress); }
 		private boolean active;
-		private boolean cancellationPending;
 		private int cancelCalls;
 
 		@Override public boolean isLoaded() { return true; }
-		@Override public void applySettings() { }
-		@Override public double walkOnWaterPenalty() { return 0.0D; }
-		@Override public void setWalkOnWaterPenalty(double value) { }
 		@Override public void startFollow(String playerName) { }
-		@Override public void startNavigate(GoalPosition position) { }
-		@Override public void startNavigateNear(GoalPosition position, int radiusBlocks) { }
+		@Override public void startNavigate(GoalPosition position, NavigationOptions options) { }
+		@Override public void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions options) { }
 		@Override public boolean processActive() { return active; }
-		@Override public boolean cancel() {
-			if (active && !cancellationPending) {
+		@Override public void cancel() {
+			if (active) {
 				cancelCalls++;
 				active = false;
-				cancellationPending = true;
 			}
-			return cancellationPending;
 		}
-		@Override public boolean cancellationPending() { return cancellationPending; }
 		@Override public Optional<String> activeProcessName() { return Optional.empty(); }
 		@Override public Optional<Double> estimatedTicksToGoal() { return Optional.empty(); }
 		@Override public Optional<String> pollPathEvent() { return Optional.empty(); }

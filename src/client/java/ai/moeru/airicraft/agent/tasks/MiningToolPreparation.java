@@ -26,11 +26,22 @@ public final class MiningToolPreparation {
 	}
 
 	public static Result ensureSelectedForClearance(Minecraft minecraft, LocalPlayer player, List<BlockState> targets) {
-		return ensureSelected(minecraft, player, targets, List.of(), false);
+		return ensureSelectedForClearance(minecraft, player, targets, true);
+	}
+
+	/** Tool choice for clearing a path; {@code allowInventory} false limits the choice to the hotbar. */
+	public static Result ensureSelectedForClearance(Minecraft minecraft, LocalPlayer player, List<BlockState> targets,
+		boolean allowInventory) {
+		return ensureSelected(minecraft, player, targets, List.of(), false, allowInventory);
 	}
 
 	private static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets,
 		List<String> requiredToolItemIds, boolean requireDrops) {
+		return ensureSelected(minecraft, player, targets, requiredToolItemIds, requireDrops, true);
+	}
+
+	private static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets,
+		List<String> requiredToolItemIds, boolean requireDrops, boolean allowInventory) {
 		if (player.containerMenu != player.inventoryMenu
 			|| !player.containerMenu.getCarried().isEmpty() || player.isUsingItem()) {
 			return Result.failed("inventory_unavailable_for_tool_selection");
@@ -38,8 +49,9 @@ public final class MiningToolPreparation {
 		Set<String> required = requiredToolItemIds == null ? Set.of() : Set.copyOf(requiredToolItemIds);
 		var inventory = player.getInventory();
 		int selectedSlot = inventory.getSelectedSlot();
-		java.util.function.IntFunction<MiningToolSelection.Score> scores =
-			slot -> score(inventory.getItem(slot), targets, required);
+		java.util.function.IntFunction<MiningToolSelection.Score> scores = slot -> !allowInventory && slot >= 9
+			? new MiningToolSelection.Score(false, 0.0F)
+			: score(inventory.getItem(slot), targets, required);
 		int sourceSlot = requireDrops ? MiningToolSelection.preferredSlot(selectedSlot, scores)
 			: MiningToolSelection.preferredClearanceSlot(selectedSlot, scores);
 		if (sourceSlot < 0) {

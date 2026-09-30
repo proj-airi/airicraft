@@ -70,7 +70,7 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 		activeTicks++;
 		phaseTicks++;
 		if (activeTicks > 2400 || phaseTicks > 240) return finish(session, false, "crop_tending_timeout");
-		if (phase != Phase.PLANT && phase != Phase.PLANTING && !navigationOwned && !BaritoneReleaseBarrier.released(navigation)) {
+		if (phase != Phase.PLANT && phase != Phase.PLANTING && !navigationOwned && !NavigationRelease.idle(navigation)) {
 			setSnapshot(TaskExecutionState.RUNNING, "waiting_for_navigation_release");
 			return Optional.empty();
 		}
@@ -116,13 +116,13 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 				if (navigation.navigationGoalReached(work)) {
 					release(session);
 				}
-				else if (BaritoneReleaseBarrier.released(navigation) || navigationOwned) {
+				else if (NavigationRelease.idle(navigation) || navigationOwned) {
 					if (!navigate(work)) return finish(session, false, "crop_pickup_approach_failed");
 				}
 			}
 		}
 		else if (phase == Phase.PLANT || phase == Phase.PLANTING) {
-			if (!BaritoneReleaseBarrier.released(navigation) && navigationOwned) {
+			if (!NavigationRelease.idle(navigation) && navigationOwned) {
 				release(session);
 			}
 			else if (phase == Phase.PLANT && environment.state(target(), args) != Cell.EMPTY_FARMLAND) {
@@ -186,7 +186,7 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> finishRelease(SessionSnapshot session) {
 		release(session);
-		if (!BaritoneReleaseBarrier.releaseAndDrain(navigation)) return Optional.empty();
+		NavigationRelease.release(navigation);
 		setSnapshot(terminal.terminalState(), terminal.message());
 		if (emitted) return Optional.empty();
 		emitted = true;

@@ -1,6 +1,5 @@
 package ai.moeru.airicraft.agent.navigation;
 
-import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.navigation.BodyState;
@@ -60,13 +59,12 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	private double bestRemaining = Double.POSITIVE_INFINITY;
 	private String lastReplanReason;
 	private String failure;
-	private double waterPenalty = MovementPolicy.defaults().waterPenalty();
+	private NavigationOptions options = NavigationOptions.DEFAULT;
 	private long ticks;
 	private MinecraftCellClassifier liveClassifier;
 	private Object liveWorld;
 	private final List<Map<String, Object>> plans = new ArrayList<>();
 	private double pendingCaptureMillis;
-	private long cancellations;
 
 	public AiricraftNavigationFacade(ControlPlane plane) {
 		this(new MinecraftMotor(plane), NavigationPlanner.shared());
@@ -83,39 +81,25 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	}
 
 	@Override
-	public void applySettings() {
-	}
-
-	@Override
-	public double walkOnWaterPenalty() {
-		return waterPenalty;
-	}
-
-	@Override
-	public void setWalkOnWaterPenalty(double value) {
-		waterPenalty = value;
-	}
-
-	@Override
 	public void startFollow(String playerName) {
 		if (playerName == null || playerName.isBlank()) return;
-		begin(Mode.FOLLOW, null, null, false);
+		begin(Mode.FOLLOW, null, null, false, NavigationOptions.DEFAULT);
 		followName = playerName;
 	}
 
 	@Override
-	public void startNavigate(GoalPosition position) {
+	public void startNavigate(GoalPosition position, NavigationOptions requestOptions) {
 		if (position == null) return;
 		GridPos cell = new GridPos(position.x(), position.y(), position.z());
 		Goal target = position.exactY() ? new Goal.Block(cell.x(), cell.y(), cell.z()) : new Goal.XZ(cell.x(), cell.z());
-		begin(Mode.NAVIGATE, target, cell, position.exactY());
+		begin(Mode.NAVIGATE, target, cell, position.exactY(), requestOptions);
 	}
 
 	@Override
-	public void startNavigateNear(GoalPosition position, int radiusBlocks) {
+	public void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions requestOptions) {
 		if (position == null) return;
 		GridPos cell = new GridPos(position.x(), position.y(), position.z());
-		begin(Mode.NAVIGATE, new Goal.Near(cell.x(), cell.y(), cell.z(), Math.max(1, radiusBlocks)), cell, true);
+		begin(Mode.NAVIGATE, new Goal.Near(cell.x(), cell.y(), cell.z(), Math.max(1, radiusBlocks)), cell, true, requestOptions);
 	}
 
 	@Override
@@ -123,23 +107,13 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		return mode != Mode.IDLE;
 	}
 
-	/**
-	 * Stops in the same call: keys are released now and no {@code CANCELED} event follows, so the
-	 * cancellation is acknowledged at once.
-	 */
+	/** Stops in the same call: keys are released now and no {@code CANCELED} event follows. */
 	@Override
-	public boolean cancel() {
+	public void cancel() {
 		stop();
 		events.clear();
-		cancellations++;
 		Minecraft minecraft = Minecraft.getInstance();
 		if (minecraft != null && minecraft.isSameThread()) motor.release(minecraft);
-		return false;
-	}
-
-	@Override
-	public long cancellationAcknowledgement() {
-		return cancellations;
 	}
 
 	@Override
@@ -275,7 +249,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 				return false;
 			}
 			supportWait = 0;
-			MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, waterPenalty);
+			MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, options);
 			if (policy == null) {
 				finish("CALC_FAILED", "travel_policy_unavailable");
 				motor.release(minecraft);
@@ -404,8 +378,9 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			player.isInWater(), player.onClimbable(), player.horizontalCollision, ticks);
 	}
 
-	private void begin(Mode next, Goal target, GridPos cell, boolean hasY) {
+	private void begin(Mode next, Goal target, GridPos cell, boolean hasY, NavigationOptions requestOptions) {
 		stop();
+		options = requestOptions == null ? NavigationOptions.DEFAULT : requestOptions;
 		events.clear();
 		plans.clear();
 		replans = 0;

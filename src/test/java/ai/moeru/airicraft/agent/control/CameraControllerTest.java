@@ -128,19 +128,6 @@ class CameraControllerTest {
 	}
 
 	@Test
-	void directLookOwnsCameraUntilSettledButBaritoneCanRetargetItsOwnMotion() {
-		CameraController controller = new CameraController();
-		var start = new CameraController.Rotation(0, 0);
-		var target = new CameraController.Rotation(90, 0);
-		controller.startMotion(start, target, 0, "baritone");
-		assertTrue(controller.acceptsBaritoneTarget());
-		controller.startMotion(start, target, 0, "player_look_at");
-		assertTrue(!controller.acceptsBaritoneTarget());
-		for (int i = 0; i < 40; i++) controller.tickMotion();
-		assertTrue(controller.acceptsBaritoneTarget());
-	}
-
-	@Test
 	void clearingCancelsCaptureWaitAndReleasesOwnership() {
 		CameraController controller = new CameraController();
 		controller.startMotion(new CameraController.Rotation(0, 0),
@@ -150,7 +137,7 @@ class CameraControllerTest {
 		controller.clear();
 		assertTrue(pending.isCompletedExceptionally());
 		assertTrue(!controller.capturePending());
-		assertTrue(controller.acceptsBaritoneTarget());
+		assertTrue(controller.activeReason().isEmpty());
 	}
 
 	@Test

@@ -106,7 +106,8 @@ public final class MinecraftMotor {
 		}
 		if (!pos.equals(breaking)) {
 			stopBreaking(minecraft);
-			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, player, List.of(state));
+			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, player, List.of(state),
+				PathfindSettings.current().allowInventoryToolSwap());
 			if (!tool.ok()) return tool.message();
 			Direction side = facing(player.getEyePosition(), pos);
 			breakingForNavigation = true;
@@ -161,7 +162,8 @@ public final class MinecraftMotor {
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
-		for (int slot = 0; slot < 36; slot++) {
+		boolean allowInventory = PathfindSettings.current().allowInventoryToolSwap();
+		for (int slot = 0; slot < (allowInventory ? 36 : 9); slot++) {
 			ItemStack stack = inventory.getItem(slot);
 			if (!NavigationPolicies.isThrowaway(stack)) continue;
 			int selected = inventory.getSelectedSlot();

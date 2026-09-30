@@ -101,13 +101,11 @@ public final class UnderwaterHarvestPolicy {
 		boolean airMarginReached,
 		boolean escapeTargetReached,
 		boolean escapeOwnsBaritone,
-		boolean waitingForBaritoneRelease,
 		boolean baritoneReleased
 	) {
 		return airMarginReached
 			&& escapeTargetReached
 			&& !escapeOwnsBaritone
-			&& !waitingForBaritoneRelease
 			&& baritoneReleased;
 	}
 

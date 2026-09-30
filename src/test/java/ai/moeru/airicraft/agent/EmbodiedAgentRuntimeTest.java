@@ -1531,7 +1531,7 @@ class EmbodiedAgentRuntimeTest {
 			request.goal(),
 			TaskExecutionState.CANCELLED,
 			"Task cancelled",
-			TaskTerminationCause.BARITONE_CANCELLED
+			TaskTerminationCause.NAVIGATION_CANCELLED
 		));
 
 		runtime.onClientTick(null);

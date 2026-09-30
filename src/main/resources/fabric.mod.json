@@ -38,7 +38,6 @@
 		"minecraft": "~1.21.8",
 		"java": ">=21",
 		"fabric-api": "*",
-		"cloth-config": ">=19.0.147",
-		"baritone": ">=1.15.0"
+		"cloth-config": ">=19.0.147"
 	}
 }

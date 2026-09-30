@@ -1,6 +1,8 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
+import ai.moeru.airicraft.agent.navigation.PathfindSettings;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -14,8 +16,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/** Follow and navigate through Baritone. Mining is owned by {@link TargetAcquisitionTaskExecutor}. */
-public final class BaritoneTaskExecutor implements WorldTaskExecutor {
+/** Follow and navigate through the in-house pathfinder. Mining is owned by {@link TargetAcquisitionTaskExecutor}. */
+public final class NavigationTaskExecutor implements WorldTaskExecutor {
 	private static final double MIN_RECOVERY_WATER_PENALTY = 12.0D;
 	private static final double RECOVERY_WATER_PENALTY_MULTIPLIER = 4.0D;
 	private static final double MAX_RECOVERY_WATER_PENALTY = 48.0D;
@@ -26,30 +28,25 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private final WaterStallRecovery waterStallRecovery = new WaterStallRecovery();
 
 	private WorldTaskRequest appliedTask;
-	private NavigationEnd pendingNavigationEnd;
-	private record NavigationEnd(String taskId, String event, long tick) {}
 	private String terminalEventTaskId;
 	private TaskExecutionState terminalEventState;
 	private TaskTerminationCause terminalEventCause;
-	private String pendingInternalCancelTaskId;
-	private long pendingInternalCancelAcknowledgement = -1L;
-	private GoalSnapshot pendingWaterReplanGoal;
-	private Double temporaryWaterPenaltyBase;
+	/** Water penalty for the replan after a water stall; null plans with the configured cost. */
+	private Double waterRecoveryPenalty;
 	private NavigationRunMetrics metrics;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public BaritoneTaskExecutor(NavigationFacade facade) {
+	public NavigationTaskExecutor(NavigationFacade facade) {
 		this(Minecraft::getInstance, facade);
 	}
 
-	BaritoneTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade facade) {
+	NavigationTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade facade) {
 		this(facade, () -> waterProgressSample(clientSupplier.get()));
 	}
 
-	BaritoneTaskExecutor(NavigationFacade facade, WaterProgressObserver waterProgressObserver) {
+	NavigationTaskExecutor(NavigationFacade facade, WaterProgressObserver waterProgressObserver) {
 		this.facade = Objects.requireNonNull(facade, "facade");
 		this.waterProgressObserver = Objects.requireNonNull(waterProgressObserver, "waterProgressObserver");
-		this.facade.applySettings();
 	}
 
 	@Override
@@ -65,7 +62,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 
 		if (activeTask.isEmpty()) {
 			if (appliedTask != null) {
-				requestInternalCancellation(appliedTask.taskId());
+				facade.cancel();
 			}
 			reset();
 			return Optional.empty();
@@ -73,11 +70,11 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 
 		if (!sessionSnapshot.companionActuationAllowed()) {
 			navigationStall.clear();
-			if (pendingWaterReplanGoal == null || sessionSnapshot.requiresRespawn()) {
+			if (waterRecoveryPenalty == null || sessionSnapshot.requiresRespawn()) {
 				clearWaterRecovery();
 			}
 			if (sessionSnapshot.requiresRespawn() && appliedTask != null) {
-				requestInternalCancellation(appliedTask.taskId());
+				facade.cancel();
 				appliedTask = null;
 			}
 			clearTerminalEvent(activeTask.get());
@@ -98,25 +95,11 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			navigationStall.clear();
 			clearWaterRecovery();
 			if (appliedTask != null) {
-				requestInternalCancellation(appliedTask.taskId());
+				facade.cancel();
 				appliedTask = null;
-			}
-			if (!BaritoneReleaseBarrier.releaseAndDrain(facade)) {
-				clearTerminalEvent(activeTask.get());
-				snapshot = new TaskExecutionSnapshot(
-					TaskExecutionState.RUNNING,
-					activeTask.get().taskId(),
-					activeTask.get().goal(),
-					"Baritone",
-					"waiting_for_baritone_release",
-					null,
-					null
-				);
-				return Optional.empty();
 			}
 			clearTerminalEvent(activeTask.get());
 			facade.pollPathEvent();
-			clearInternalCancellation();
 			metrics = new NavigationRunMetrics(sessionSnapshot.tickCount());
 			try {
 				applyGoal(activeTask.get().goal());
@@ -131,12 +114,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		if (Objects.equals(appliedTask.taskId(), terminalEventTaskId)
 			&& "PATH_STUCK".equals(snapshot.lastPathEvent())) return Optional.empty();
 		if (metrics != null) metrics.observe(sessionSnapshot.tickCount(), waterProgressObserver.observe().orElse(null));
-		clearAcknowledgedInternalCancellation();
 		Optional<String> pathEvent = facade.pollPathEvent();
-		if (isSuppressedInternalCancel(pathEvent)) {
-			pathEvent = Optional.empty();
-		}
-		pathEvent = observeNavigationEnd(pathEvent, appliedTask, sessionSnapshot.tickCount());
 		if (continueFollow(pathEvent, appliedTask)) {
 			return Optional.empty();
 		}
@@ -147,18 +125,17 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			if (sample == null) navigationStall.clear();
 			else if (facade.navigationProgress().map(progress -> navigationStall.observe(sessionSnapshot.tickCount(), progress))
 				.orElseGet(() -> navigationStall.observe(sessionSnapshot.tickCount(), sample.x(), sample.y(), sample.z()))) {
-				requestInternalCancellation(appliedTask.taskId());
-				pendingNavigationEnd = null;
+				facade.cancel();
 				pathEvent = Optional.of("PATH_STUCK");
 				terminalOutcome = Optional.of(new TerminalOutcome(TaskExecutionState.FAILED, null, TaskFailureCode.TRANSIENT));
 			}
 		}
 		else navigationStall.clear();
-		Optional<String> effectivePathEvent = pendingNavigationEnd == null ? pathEvent : Optional.of("observing_navigation_end");
+		Optional<String> effectivePathEvent = pathEvent;
 		if (terminalOutcome.isPresent()) {
 			clearWaterRecovery();
 		}
-		else if (pathEvent.isEmpty() && pendingNavigationEnd == null) {
+		else if (pathEvent.isEmpty()) {
 			try {
 				effectivePathEvent = waterRecoveryEvent(sessionSnapshot.tickCount(), appliedTask);
 			}
@@ -215,33 +192,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		return diagnostics;
 	}
 
-	/** Observe a just-ended path briefly; this never issues movement or retries. */
-	private Optional<String> observeNavigationEnd(Optional<String> event, WorldTaskRequest request, long tick) {
-		if (request.goal().type() != GoalType.NAVIGATE_TO
-			|| pendingNavigationEnd != null && !pendingNavigationEnd.taskId().equals(request.taskId())) pendingNavigationEnd = null;
-		if (request.goal().type() != GoalType.NAVIGATE_TO) return event;
-		if (pendingNavigationEnd == null && event.filter(e -> Set.of("AT_GOAL", "CANCELED", "CANCELLED").contains(e.trim().toUpperCase(Locale.ROOT))).isPresent()
-			&& !navigateGoalReached(request)) pendingNavigationEnd = new NavigationEnd(request.taskId(), event.get(), tick);
-		if (pendingNavigationEnd == null) return event;
-		if (!navigateGoalReached(request) && tick - pendingNavigationEnd.tick() < 10) return Optional.empty();
-		String ended = pendingNavigationEnd.event();
-		pendingNavigationEnd = null;
-		return Optional.of(ended);
-	}
-
 	private Optional<String> waterRecoveryEvent(long tick, WorldTaskRequest request) {
-		if (pendingWaterReplanGoal != null) {
-			if (!BaritoneReleaseBarrier.releaseAndDrain(facade)) {
-				return Optional.of("WATER_STALL_RELEASING");
-			}
-			GoalSnapshot goal = pendingWaterReplanGoal;
-			pendingWaterReplanGoal = null;
-			facade.pollPathEvent();
-			clearInternalCancellation();
-			applyGoal(goal);
-			countReplan();
-			return Optional.of("WATER_STALL_REPLAN");
-		}
 		WaterStallRecovery.Decision decision = waterStallRecovery.observe(
 			tick,
 			waterProgressObserver.observe().orElse(null),
@@ -251,29 +202,18 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 		if (decision == WaterStallRecovery.Decision.RESTORE) {
-			restoreTemporaryWaterPenalty();
+			waterRecoveryPenalty = null;
 			return Optional.of("WATER_STALL_RECOVERED");
 		}
 
-		double currentPenalty = facade.walkOnWaterPenalty();
-		if (temporaryWaterPenaltyBase == null) {
-			temporaryWaterPenaltyBase = currentPenalty;
-		}
-		double recoveryPenalty = Math.min(
+		double base = waterRecoveryPenalty != null ? waterRecoveryPenalty : PathfindSettings.current().waterCost();
+		waterRecoveryPenalty = Math.min(
 			MAX_RECOVERY_WATER_PENALTY,
-			Math.max(MIN_RECOVERY_WATER_PENALTY, currentPenalty * RECOVERY_WATER_PENALTY_MULTIPLIER)
+			Math.max(MIN_RECOVERY_WATER_PENALTY, base * RECOVERY_WATER_PENALTY_MULTIPLIER)
 		);
-		facade.setWalkOnWaterPenalty(recoveryPenalty);
-		pendingWaterReplanGoal = request.goal();
-		requestInternalCancellation(request.taskId());
-		if (!BaritoneReleaseBarrier.released(facade)) {
-			return Optional.of("WATER_STALL_RELEASING");
-		}
-		GoalSnapshot goal = pendingWaterReplanGoal;
-		pendingWaterReplanGoal = null;
+		facade.cancel();
 		facade.pollPathEvent();
-		clearInternalCancellation();
-		applyGoal(goal);
+		applyGoal(request.goal());
 		countReplan();
 		return Optional.of("WATER_STALL_REPLAN");
 	}
@@ -284,17 +224,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 
 	private void clearWaterRecovery() {
 		waterStallRecovery.clear();
-		pendingWaterReplanGoal = null;
-		restoreTemporaryWaterPenalty();
-	}
-
-	private void restoreTemporaryWaterPenalty() {
-		if (temporaryWaterPenaltyBase == null) {
-			return;
-		}
-		double baseline = temporaryWaterPenaltyBase;
-		facade.setWalkOnWaterPenalty(baseline);
-		temporaryWaterPenaltyBase = null;
+		waterRecoveryPenalty = null;
 	}
 
 	private static Optional<WaterStallRecovery.Sample> waterProgressSample(Minecraft minecraft) {
@@ -313,7 +243,8 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	private void applyGoal(GoalSnapshot goal) {
 		switch (goal.type()) {
 			case FOLLOW_PLAYER -> facade.startFollow(goal.targetPlayer());
-			case NAVIGATE_TO -> facade.startNavigate(goal.position());
+			case NAVIGATE_TO -> facade.startNavigate(goal.position(), waterRecoveryPenalty == null
+				? NavigationOptions.DEFAULT : NavigationOptions.DEFAULT.withWaterPenalty(waterRecoveryPenalty));
 			case MINE_BLOCKS -> throw new IllegalStateException("mine_goal_owned_by_target_acquisition");
 		}
 	}
@@ -343,7 +274,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> failUnavailable(WorldTaskRequest request) {
-		String message = "baritone_unavailable";
+		String message = "navigation_unavailable";
 		snapshot = new TaskExecutionSnapshot(
 			TaskExecutionState.FAILED,
 			request.taskId(),
@@ -385,7 +316,7 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 				: new TerminalOutcome(TaskExecutionState.FAILED, TaskTerminationCause.CALCULATION_FAILED, TaskFailureCode.TRANSIENT));
 			case "CANCELLED", "CANCELED" -> Optional.of(new TerminalOutcome(
 				cancelledStateFor(activeTask == null ? null : activeTask.goal()),
-				TaskTerminationCause.BARITONE_CANCELLED,
+				TaskTerminationCause.NAVIGATION_CANCELLED,
 				TaskFailureCode.NONE
 			));
 			default -> Optional.empty();
@@ -445,44 +376,6 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 		return state == TaskExecutionState.COMPLETED
 			|| state == TaskExecutionState.FAILED
 			|| state == TaskExecutionState.CANCELLED;
-	}
-
-	private boolean isSuppressedInternalCancel(Optional<String> pathEvent) {
-		if (pathEvent.isEmpty() || pendingInternalCancelTaskId == null) {
-			return false;
-		}
-		String normalized = pathEvent.get().trim().toUpperCase(Locale.ROOT);
-		if (!isCancelledPathEvent(normalized)) {
-			return false;
-		}
-		pendingInternalCancelTaskId = null;
-		pendingInternalCancelAcknowledgement = -1L;
-		return true;
-	}
-
-	private void requestInternalCancellation(String taskId) {
-		long acknowledgementBeforeRequest = facade.cancellationAcknowledgement();
-		facade.cancel();
-		pendingInternalCancelTaskId = taskId;
-		pendingInternalCancelAcknowledgement = acknowledgementBeforeRequest;
-	}
-
-	private void clearAcknowledgedInternalCancellation() {
-		if (pendingInternalCancelTaskId != null
-			&& pendingInternalCancelAcknowledgement >= 0L
-			&& facade.cancellationAcknowledgement() > pendingInternalCancelAcknowledgement) {
-			pendingInternalCancelTaskId = null;
-			pendingInternalCancelAcknowledgement = -1L;
-		}
-	}
-
-	private void clearInternalCancellation() {
-		pendingInternalCancelTaskId = null;
-		pendingInternalCancelAcknowledgement = -1L;
-	}
-
-	private static boolean isCancelledPathEvent(String normalizedPathEvent) {
-		return "CANCELLED".equals(normalizedPathEvent) || "CANCELED".equals(normalizedPathEvent);
 	}
 
 	private static boolean sameTaskTarget(WorldTaskRequest left, WorldTaskRequest right) {
@@ -545,14 +438,11 @@ public final class BaritoneTaskExecutor implements WorldTaskExecutor {
 
 	private void reset() {
 		navigationStall.clear();
-		pendingNavigationEnd = null;
 		clearWaterRecovery();
 		appliedTask = null;
 		terminalEventTaskId = null;
 		terminalEventState = null;
 		terminalEventCause = null;
-		pendingInternalCancelTaskId = null;
-		pendingInternalCancelAcknowledgement = -1L;
 		metrics = null;
 		snapshot = TaskExecutionSnapshot.idle();
 	}

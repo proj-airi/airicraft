@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.*;
 import ai.moeru.airicraft.agent.session.*;
 import org.junit.jupiter.api.Test;
@@ -579,14 +580,11 @@ class TargetAcquisitionTaskExecutorTest {
 		boolean goalReached;
 		List<GoalPosition> goals = new ArrayList<>();
 		public boolean isLoaded() { return true; }
-		public void applySettings() {}
-		public double walkOnWaterPenalty() { return 1; }
-		public void setWalkOnWaterPenalty(double v) {}
 		public void startFollow(String s) { fail("unexpected follow"); }
-		public void startNavigate(GoalPosition p) { goals.add(p); active = true; }
-		public void startNavigateNear(GoalPosition p, int r) { fail("requires an exact work position"); }
+		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); active = true; }
+		public void startNavigateNear(GoalPosition p, int r, NavigationOptions o) { fail("requires an exact work position"); }
 		public boolean processActive() { return active; }
-		public boolean cancel() { active = false; return true; }
+		public void cancel() { active = false; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }
 		public Optional<Double> estimatedTicksToGoal() { return Optional.empty(); }
 		public Optional<String> pollPathEvent() { return Optional.empty(); }

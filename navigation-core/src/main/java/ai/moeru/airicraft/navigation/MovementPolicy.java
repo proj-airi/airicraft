@@ -59,6 +59,16 @@ public record MovementPolicy(
 			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
 	}
 
+	public MovementPolicy withPlacing(boolean allow) {
+		return new MovementPolicy(allowBreak, allow, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+	}
+
+	public MovementPolicy withMaxSafeFall(int blocks) {
+		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, blocks, maxWaterFall, placeableBlocks,
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+	}
+
 	public MovementPolicy withPlaceableBlocks(int count) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, Math.max(0, count),
 			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);

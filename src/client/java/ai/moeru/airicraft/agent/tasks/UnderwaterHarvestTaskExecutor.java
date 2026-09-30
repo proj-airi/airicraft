@@ -227,9 +227,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 		run.clearApproach();
 		cancelNavigation();
-		if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_break_after_baritone_release")) {
-			return Optional.empty();
-		}
+		NavigationRelease.release(baritone);
 		clearApproachAssist();
 		if (tickGroundingForBreak(request, minecraft, player, target, tick)) {
 			return Optional.empty();
@@ -320,16 +318,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 		UnderwaterHarvestPolicy.PositioningMode positioningMode = UnderwaterHarvestPolicy.positioningMode(target.environment());
 		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.BARITONE) {
-			if (!navigationStarted
-				&& !awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_dry_baritone")) {
-				return Optional.empty();
-			}
+			if (!navigationStarted) NavigationRelease.release(baritone);
 		}
 		else {
 			cancelNavigation();
-			if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_underwater_approach")) {
-				return Optional.empty();
-			}
+			NavigationRelease.release(baritone);
 		}
 		UnderwaterHarvestPolicy.ApproachUpdate progress = run.observeApproach(Math.sqrt(distanceSquared));
 		if (progress.decision() == UnderwaterHarvestPolicy.ApproachDecision.EXCLUDE_TARGET) {
@@ -502,8 +495,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			mayResume,
 			escape.navigation().phase() == UnderwaterEscapeNavigator.Phase.REACHED,
 			escape.navigation().ownsBaritone(),
-			escape.waitingForBaritoneRelease(),
-			BaritoneReleaseBarrier.released(baritone)
+			NavigationRelease.idle(baritone)
 		)) {
 			underwaterEscape.reset(minecraft);
 			movement.stop(minecraft);
@@ -735,10 +727,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		cancelNavigation();
 		clearBreak(minecraft);
 		movement.stop(minecraft);
-		if (!BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_completion_baritone_release");
-			return Optional.empty();
-		}
+		NavigationRelease.release(baritone);
 		underwaterEscape.reset(minecraft);
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		GoalMineSpec spec = request.goal() == null ? null : request.goal().mineSpec();
@@ -802,24 +791,6 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			baritone.cancel();
 		}
 		navigationStarted = false;
-	}
-
-	private boolean awaitBaritoneRelease(
-		WorldTaskRequest request,
-		Minecraft minecraft,
-		HarvestTarget target,
-		String event
-	) {
-		if (BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
-			return true;
-		}
-		movement.stop(minecraft);
-		snapshot = snapshot(
-			TaskExecutionState.RUNNING,
-			request,
-			event + " targetPos=" + compactPos(target.pos())
-		);
-		return false;
 	}
 
 	private void releaseControls() {

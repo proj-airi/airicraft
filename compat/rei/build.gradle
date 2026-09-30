@@ -111,10 +111,6 @@ tasks.register("syncReiCompatMods", Sync) {
 	from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	from(tasks.named("remapJar").flatMap { it.archiveFile })
 	from(configurations.reiCompatMods)
-	from(rootProject.layout.projectDirectory.files(
-		"libs/baritone-unoptimized-fabric-1.15.0.jar",
-		"libs/nether-pathfinder-1.4.1.jar"
-	))
 }
 
 tasks.register("syncReiCompatLibraries", Sync) {
@@ -135,10 +131,6 @@ tasks.register("runClientReiCompat", net.fabricmc.loom.task.prod.ClientProductio
 	mods.from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(configurations.reiCompatMods)
-	mods.from(rootProject.layout.projectDirectory.files(
-		"libs/baritone-unoptimized-fabric-1.15.0.jar",
-		"libs/nether-pathfinder-1.4.1.jar"
-	))
 	classpath.from(configurations.reiCompatLibraries)
 	runDir = sharedDevRunDir.asFile
 	javaLauncher = javaToolchains.launcherFor {

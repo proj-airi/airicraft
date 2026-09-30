@@ -56,16 +56,6 @@ public final class CameraController {
 		return rotation;
 	}
 
-	/** Baritone supplies targets only; this controller owns rotation writes. */
-	public void lookFromBaritone(LocalPlayer player, float yaw, float pitch) {
-		if (acceptsBaritoneTarget()) request(player, new Rotation(yaw, pitch), defaultLerpTicks, "baritone", false);
-	}
-
-	boolean acceptsBaritoneTarget() {
-		return !directRequest && alignment == null
-			&& (activeMotion == null || "baritone".equals(activeMotion.reason()));
-	}
-
 	private void request(LocalPlayer player, Rotation target, int ticks, String reason, boolean direct) {
 		if (controlledPlayer != player) {
 			clear();
@@ -125,24 +115,6 @@ public final class CameraController {
 	}
 
 	public boolean capturePending() { return alignment != null; }
-
-	/** Hold path input while turning on the ground; preserve airborne/swimming control. */
-	public boolean allowsBaritoneInput(LocalPlayer player, baritone.api.utils.input.Input input) {
-		if (activeMotion == null || input == baritone.api.utils.input.Input.SNEAK) return true;
-		if (!"baritone".equals(activeMotion.reason())) return false;
-		return switch (input) {
-			case CLICK_LEFT -> {
-				var intended = raycast(player, Vec3.directionFromRotation(activeMotion.target().pitch(), activeMotion.target().yaw()));
-				yield intended.getType() == HitResult.Type.BLOCK
-					&& blockHit(raycast(player, player.getViewVector(1.0F)), intended.getBlockPos()).isPresent();
-			}
-			case CLICK_RIGHT -> aligned(new Rotation(player.getYRot(), player.getXRot()), activeMotion.target(), 0.5F);
-			case MOVE_FORWARD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, JUMP, SPRINT ->
-				!player.onGround() || player.isInWater()
-					|| Math.abs(Mth.wrapDegrees(activeMotion.target().yaw() - player.getYRot())) < 10.0F;
-			case SNEAK -> true;
-		};
-	}
 
 	public CompletableFuture<Void> whenAligned() {
 		if (activeMotion == null) return CompletableFuture.completedFuture(null);

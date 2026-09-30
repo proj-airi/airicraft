@@ -29,8 +29,6 @@ public final class UnderwaterEscapeNavigator {
 	private double progressCheckpointDistance = Double.POSITIVE_INFINITY;
 	private int waypointIndex;
 	private String lastTransition = "idle";
-	private AfterRelease afterRelease;
-	private String afterReleaseReason;
 
 	public UnderwaterEscapeNavigator(NavigationFacade baritone, WaypointDriver waypointDriver) {
 		this(baritone, waypointDriver, Config.defaults());
@@ -65,7 +63,6 @@ public final class UnderwaterEscapeNavigator {
 		}
 		return switch (phase) {
 			case BARITONE_EXACT -> tickBaritone(candidates, observation);
-			case WAITING_FOR_BARITONE_RELEASE -> tickBaritoneRelease(candidates, observation);
 			case WAYPOINT_FALLBACK -> tickWaypoints(candidates, observation);
 			case IDLE, EXHAUSTED -> {
 				startNextCandidate(candidates, observation, "candidate_selected");
@@ -97,8 +94,6 @@ public final class UnderwaterEscapeNavigator {
 		lastProgressTick = -1L;
 		progressCheckpointDistance = Double.POSITIVE_INFINITY;
 		waypointIndex = 0;
-		afterRelease = null;
-		afterReleaseReason = null;
 		lastTransition = "reset";
 	}
 
@@ -132,38 +127,6 @@ public final class UnderwaterEscapeNavigator {
 		}
 		else if (observation.tick() - lastProgressTick >= config.progressWindowTicks()) {
 			beginRelease(candidates, observation, AfterRelease.START_WAYPOINT, "baritone_no_progress");
-		}
-		return snapshot();
-	}
-
-	private Snapshot tickBaritoneRelease(
-		List<UnderwaterEscapeSearch.Candidate> candidates,
-		Observation observation
-	) {
-		if (!BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
-			lastTransition = "waiting_for_baritone_release";
-			return snapshot();
-		}
-		ownsBaritone = false;
-		AfterRelease next = afterRelease;
-		String reason = afterReleaseReason;
-		afterRelease = null;
-		afterReleaseReason = null;
-		if (next == AfterRelease.COMPLETE) {
-			waypointDriver.stop();
-			phase = Phase.REACHED;
-			lastTransition = reason;
-		}
-		else if (next == AfterRelease.EXHAUST) {
-			waypointDriver.stop();
-			phase = Phase.EXHAUSTED;
-			lastTransition = reason;
-		}
-		else if (next == AfterRelease.START_WAYPOINT) {
-			startWaypointFallback(candidates, observation, reason);
-		}
-		else {
-			startExactOrWaypoints(candidates, observation, reason);
 		}
 		return snapshot();
 	}
@@ -217,13 +180,7 @@ public final class UnderwaterEscapeNavigator {
 	) {
 		initializeProgress(observation, currentCandidate.target());
 		if (baritone != null && baritone.isLoaded()) {
-			if (!BaritoneReleaseBarrier.released(baritone)) {
-				phase = Phase.WAITING_FOR_BARITONE_RELEASE;
-				afterRelease = AfterRelease.START_EXACT;
-				afterReleaseReason = reason;
-				lastTransition = "waiting_for_baritone_release";
-				return;
-			}
+			NavigationRelease.release(baritone);
 			if (baritoneAttemptedTargets.contains(currentCandidate.target())) {
 				startWaypointFallback(candidates, observation, "baritone_already_attempted");
 				return;
@@ -300,43 +257,18 @@ public final class UnderwaterEscapeNavigator {
 		AfterRelease next,
 		String reason
 	) {
-		if (!ownsBaritone && BaritoneReleaseBarrier.released(baritone)) {
-			if (next == AfterRelease.COMPLETE) {
+		// Cancellation is synchronous: the goal we own is released when this returns.
+		cancelOwnedBaritone();
+		switch (next) {
+			case COMPLETE -> {
 				phase = Phase.REACHED;
 				lastTransition = reason;
 			}
-			else if (next == AfterRelease.EXHAUST) {
+			case EXHAUST -> {
 				phase = Phase.EXHAUSTED;
 				lastTransition = reason;
 			}
-			else if (next == AfterRelease.START_WAYPOINT) {
-				startWaypointFallback(candidates, Objects.requireNonNull(observation, "observation"), reason);
-			}
-			else {
-				startExactOrWaypoints(candidates, Objects.requireNonNull(observation, "observation"), reason);
-			}
-			return;
-		}
-		if (ownsBaritone && baritone != null && baritone.isLoaded()) {
-			baritone.cancel();
-		}
-		phase = Phase.WAITING_FOR_BARITONE_RELEASE;
-		afterRelease = next;
-		afterReleaseReason = reason;
-		lastTransition = "waiting_for_baritone_release";
-		if (BaritoneReleaseBarrier.released(baritone)) {
-			ownsBaritone = false;
-			if (next == AfterRelease.COMPLETE) {
-				phase = Phase.REACHED;
-				lastTransition = reason;
-			}
-			else if (next == AfterRelease.EXHAUST) {
-				phase = Phase.EXHAUSTED;
-				lastTransition = reason;
-			}
-			else if (next == AfterRelease.START_WAYPOINT) {
-				startWaypointFallback(candidates, Objects.requireNonNull(observation, "observation"), reason);
-			}
+			case START_WAYPOINT -> startWaypointFallback(candidates, Objects.requireNonNull(observation, "observation"), reason);
 		}
 	}
 
@@ -406,7 +338,6 @@ public final class UnderwaterEscapeNavigator {
 	public enum Phase {
 		IDLE,
 		BARITONE_EXACT,
-		WAITING_FOR_BARITONE_RELEASE,
 		WAYPOINT_FALLBACK,
 		RESEARCH_REQUIRED,
 		REACHED,
@@ -414,7 +345,6 @@ public final class UnderwaterEscapeNavigator {
 	}
 
 	private enum AfterRelease {
-		START_EXACT,
 		START_WAYPOINT,
 		COMPLETE,
 		EXHAUST
