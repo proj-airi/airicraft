@@ -15,6 +15,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 
 /** Applies world-camera effects to the block model path used by Fabric Indigo. */
+@SuppressWarnings({"UnstableApiUsage"})
 @Mixin(AbstractTerrainRenderContext.class)
 public abstract class IndigoTerrainRenderContextMixin {
 	@Shadow @Final protected BlockRenderInfo blockInfo;
@@ -28,10 +29,7 @@ public abstract class IndigoTerrainRenderContextMixin {
 	)
 	private VertexConsumer airicraft$worldCameraEffects(VertexConsumer consumer) {
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
-		if (service == null) {
-			return consumer;
-		}
-		if (blockInfo.blockState.getBlock() instanceof LeavesBlock && service.fadeLeavesActive()) {
+        if (blockInfo.blockState.getBlock() instanceof LeavesBlock && service.fadeLeavesActive()) {
 			consumer = new AlphaVertexConsumer(consumer, 0.4f);
 		}
 		if (service.tintContains(blockInfo.blockPos)) {

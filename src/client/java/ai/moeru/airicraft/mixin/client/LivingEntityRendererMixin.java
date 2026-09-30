@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.client.renderer.entity.state.PlayerRenderState;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.ModifyArg;
 import net.minecraft.util.ARGB;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,14 +21,13 @@ import org.spongepowered.asm.mixin.injection.At;
  */
 @Mixin(LivingEntityRenderer.class)
 public abstract class LivingEntityRendererMixin {
-	private static final ThreadLocal<Boolean> AIRICRAFT$SHOULDER_PLAYER = ThreadLocal.withInitial(() -> false);
-
-	private static boolean airicraft$isShoulderPlayer(LivingEntityRenderState state) {
+	@Unique
+    private static boolean airicraft$isShoulderPlayer(LivingEntityRenderState state) {
 		if (!(state instanceof PlayerRenderState)) {
 			return false;
 		}
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
-		return service != null && service.shoulderActive() && service.playerTranslucent();
+		return service.shoulderActive() && service.playerTranslucent();
 	}
 
 	@ModifyReturnValue(method = "getRenderType", at = @At("RETURN"))
@@ -36,7 +36,6 @@ public abstract class LivingEntityRendererMixin {
 		@Local(argsOnly = true) LivingEntityRenderState state
 	) {
 		boolean shoulder = airicraft$isShoulderPlayer(state);
-		AIRICRAFT$SHOULDER_PLAYER.set(shoulder);
 		if (!shoulder || original == null) {
 			return original;
 		}
@@ -46,18 +45,17 @@ public abstract class LivingEntityRendererMixin {
 		return RenderType.entityTranslucent(self.getTextureLocation(state));
 	}
 	@ModifyArg(
-		method = "render",
+		method = "render(Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
 		at = @At(
 			value = "INVOKE",
 			target = "Lnet/minecraft/client/model/EntityModel;renderToBuffer(Lcom/mojang/blaze3d/vertex/PoseStack;Lcom/mojang/blaze3d/vertex/VertexConsumer;III)V"
 		),
 		index = 4
 	)
-	private int airicraft$halvePlayerAlpha(int color) {
-		if (!AIRICRAFT$SHOULDER_PLAYER.get()) {
+	private int airicraft$halvePlayerAlpha(int color, @Local(argsOnly = true) LivingEntityRenderState state) {
+		if (!airicraft$isShoulderPlayer(state)) {
 			return color;
 		}
-		AIRICRAFT$SHOULDER_PLAYER.set(false);
 		return ARGB.color(ARGB.alpha(color) / 2, color);
 	}
 }

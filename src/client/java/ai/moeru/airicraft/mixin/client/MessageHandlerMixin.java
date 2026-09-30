@@ -25,9 +25,9 @@ public class MessageHandlerMixin {
 		}
 
 		String content = message.signedContent();
-		if (content == null || content.isBlank()) {
+		if (content.isBlank()) {
 			Component fallback = message.decoratedContent();
-			content = fallback == null ? "" : fallback.getString();
+			content = fallback.getString();
 		}
 
 		if (content.isBlank()) {

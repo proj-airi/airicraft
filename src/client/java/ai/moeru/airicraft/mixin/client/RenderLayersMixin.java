@@ -24,7 +24,7 @@ public abstract class RenderLayersMixin {
 			return original;
 		}
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
-		if (service != null && service.fadeLeavesActive()) {
+		if (service.fadeLeavesActive()) {
 			return ChunkSectionLayer.TRANSLUCENT;
 		}
 		return original;

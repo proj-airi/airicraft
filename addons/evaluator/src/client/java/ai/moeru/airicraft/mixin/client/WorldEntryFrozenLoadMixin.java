@@ -11,13 +11,15 @@ import net.minecraft.world.level.storage.LevelSummary;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(WorldSelectionList.WorldListEntry.class)
 public class WorldEntryFrozenLoadMixin {
-	private static final FrozenWorldLoadService AIRICRAFT_FROZEN_WORLDS = FrozenWorldLoadService.createDefault();
+	@Unique
+    private static final FrozenWorldLoadService AIRICRAFT_FROZEN_WORLDS = FrozenWorldLoadService.createDefault();
 
 	@Shadow
 	@Final
@@ -55,7 +57,8 @@ public class WorldEntryFrozenLoadMixin {
 		}
 	}
 
-	private void showRestoreFailureToast(RuntimeException exception) {
+	@Unique
+    private void showRestoreFailureToast(RuntimeException exception) {
 		String message = exception.getMessage();
 		if (message == null || message.isBlank()) {
 			message = "Failed to restore disposable world copy";

@@ -14,6 +14,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Camera.class)
 public abstract class CameraMixin {
 	@Shadow private boolean initialized;
+	@Shadow private BlockGetter level;
+	@Shadow private Entity entity;
 	@Shadow private boolean detached;
 	@Shadow private float partialTickTime;
 
@@ -22,11 +24,11 @@ public abstract class CameraMixin {
 
 	@Inject(method = "setup", at = @At("HEAD"), cancellable = true)
 	private void airicraft$applyWorldCameraPose(
-		BlockGetter area,
-		Entity focusedEntity,
-		boolean thirdPerson,
-		boolean inverseView,
-		float tickDelta,
+		BlockGetter level,
+		Entity entity,
+		boolean detached,
+		boolean thirdPersonReverse,
+		float partialTick,
 		CallbackInfo ci
 	) {
 		WorldCameraService service = AiricraftClient.runtimeController().worldCameraService();
@@ -34,9 +36,11 @@ public abstract class CameraMixin {
 		if (pose == null) {
 			return;
 		}
-		initialized = true;
-		detached = true;
-		partialTickTime = tickDelta;
+		this.initialized = true;
+		this.level = level;
+		this.entity = entity;
+		this.detached = true;
+		this.partialTickTime = partialTick;
 		setPosition(pose.x(), pose.y(), pose.z());
 		setRotation(pose.yaw(), pose.pitch());
 		service.onWorldFrame(net.minecraft.client.Minecraft.getInstance());

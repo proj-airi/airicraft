@@ -13,13 +13,15 @@ import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(SelectWorldScreen.class)
 public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
-	private static final EvaluationWorldFixtureService AIRICRAFT_FIXTURES = EvaluationWorldFixtureService.createDefault();
+	@Unique
+    private static final EvaluationWorldFixtureService AIRICRAFT_FIXTURES = EvaluationWorldFixtureService.createDefault();
 
 	@Shadow
 	protected EditBox searchBox;
@@ -27,8 +29,10 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 	@Shadow
 	private WorldSelectionList list;
 
-	private Button airicraft$evalCopiesToggleButton;
-	private Button airicraft$cleanupEvalCopiesButton;
+	@Unique
+    private Button airicraft$evalCopiesToggleButton;
+	@Unique
+    private Button airicraft$cleanupEvalCopiesButton;
 
 	protected SelectWorldScreenEvaluationControlsMixin(Component title) {
 		super(title);
@@ -64,7 +68,8 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 		airicraft$updateEvaluationControls();
 	}
 
-	private void airicraft$cleanupEvalCopies() {
+	@Unique
+    private void airicraft$cleanupEvalCopies() {
 		try {
 			EvaluationWorldFixtureService.CleanupResult result = AIRICRAFT_FIXTURES.cleanupDisposableWorlds();
 			airicraft$updateEvaluationControls();
@@ -77,7 +82,8 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 		}
 	}
 
-	private void airicraft$updateEvaluationControls() {
+	@Unique
+    private void airicraft$updateEvaluationControls() {
 		if (airicraft$evalCopiesToggleButton != null) {
 			airicraft$evalCopiesToggleButton.setMessage(airicraft$toggleMessage());
 		}
@@ -92,7 +98,8 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 		}
 	}
 
-	private void airicraft$reloadWorldList() {
+	@Unique
+    private void airicraft$reloadWorldList() {
 		if (list != null) {
 			list.reloadWorldList();
 		}
@@ -101,11 +108,13 @@ public abstract class SelectWorldScreenEvaluationControlsMixin extends Screen {
 		}
 	}
 
-	private Component airicraft$toggleMessage() {
+	@Unique
+    private Component airicraft$toggleMessage() {
 		return Component.literal(EvaluationWorldListUiState.showEvaluationCopies() ? "Eval: On" : "Eval: Off");
 	}
 
-	private void airicraft$showToast(String title, String message) {
+	@Unique
+    private void airicraft$showToast(String title, String message) {
 		if (minecraft == null) {
 			return;
 		}
