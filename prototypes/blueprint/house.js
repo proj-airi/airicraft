@@ -3,7 +3,7 @@ function design(input) {
   const base = input.terrain ? input.terrain.maxSurface + 1 : 0;
   const house = Assembly({id:'house',at:[0,base,0],children:[
     Room({id:'ground',interior:[9,3,7],openings:{
-      front:[Door({id:'entrance',at:[5,0,0]}),Window({id:'window',at:[1,1,0],width:3,height:2})],
+      front:[Door({id:'entrance',at:[5,0,0],guidance:{access:'walk'}}),Window({id:'window',at:[1,1,0],width:3,height:2})],
       left:[Window({id:'window',at:[2,1,0]})],right:[Window({id:'window',at:[2,1,0]})]
     }}),
     Room({id:'upper',at:[0,4,0],interior:[9,3,7],floor:'oak_planks',wall:'white_concrete',

@@ -2,7 +2,17 @@
 
 Throwaway experiment on `codex/blueprint-prototype`. The question is whether composing named semantic objects, retaining block provenance, and separating draft from realization makes building easier.
 
-## Run
+## Run without Minecraft (current experiment)
+
+```sh
+BLUEPRINT_OFFLINE=1 python3 prototypes/blueprint/serve.py
+```
+
+Open http://127.0.0.1:8788. Requires Python 3 and Node; no Gradle, game process, rendering or world mutation. Compile, component inspection, provenance and JavaScript linting work offline. World controls are disabled. Each evaluation runs in a short-lived Node worker with a 96 MiB heap cap, one-second JS timeout and eight-second process timeout. The prototype VM is for locally authored/generated experiment code, not a hardened multi-tenant sandbox.
+
+The offline compiler is a temporary adapter reproducing the Java component traversal. It does **not** validate against Minecraft's block registry/default states. Geometry uses a small explicit full-cube/straight-stair/open-wooden-door fixture; other shapes are unknown. Ground is solid below local y=0. Terrain sampling/foundations are currently live-only. The bundled component library and rule sources are shared across both backends. A saved live house matched all 1,007 cell positions, material IDs and ownership histories offline; that does not establish full engine equivalence.
+
+## Run with Minecraft
 
 With JDK 25 on `JAVA_HOME`:
 
@@ -71,6 +81,41 @@ Driven through `scripts/codex-driver`, with `codexDriverActive: true`, normal op
 
 Runtime evidence (ignored local files) is under `run/blueprint-evidence/`: draft JSON, exact state verification, provenance responses, probe results, before/after and interior screenshots. The first normal-world sample was water; its screenshot and material observations informed choosing a dry sand footprint. This experiment establishes height-based foundations on that site, not general terrain suitability or access planning.
 
-The editor runs at `http://127.0.0.1:8788`; the active world is `Blueprint-Terrain`. `Blueprint-Superflat` retains the earlier house. The live processes are intentionally left running for inspection. Restart commands are above.
+The terrain and superflat worlds retain these earlier builds. Minecraft was subsequently stopped at the user's request to reduce MacBook load; the editor now runs offline. Restart commands are above.
 
 **Verdict:** semantic composition and block provenance work together in live Minecraft. Explicit owned air is useful for both openings and inspection. Terrain should stay distinguishable from authored blocks. Next design work should address attachment/constraint resolution, terrain suitability (including fluids/vegetation), access to elevated entrances, and durable identity/provenance before treating this as production construction tooling.
+
+
+## Extensible advisory rules
+
+Rules are ordinary JavaScript defining `function check(ctx)`. `lint` uses bundled `entrance-access` and `room-lighting` rules unless given `rules:[{id,source}]`; the UI has a custom-rule editor. Rules receive a detached draft/site snapshot, run independently, and cannot block commits. Results pin the draft revision and contain per-rule status, component paths, coordinates and evidence. Click a finding to select its component and highlight its coordinates.
+
+```js
+function check(ctx) {
+  for (const room of ctx.components({type:'Room'})) {
+    const windows = ctx.components({type:'Window'})
+      .filter(w => w.path.startsWith(room.path + '.'));
+    if (!windows.length) ctx.warn({component:room.path,
+      positions:[room.origin], message:'No windows here; is that intentional?'});
+  }
+}
+```
+
+Available queries: `components({type})`, `cells(component)`, `block([x,y,z])`, `access.entrance(component)`, `lighting.darkWalkingSurfaces(component, threshold)`. Emit `warn`, `info`, or `unverified(component, reason)`. No package imports or host/network calls. Rules have stable IDs, at most 12 per request and 48 findings per rule; one rule failure does not cancel the others. Live execution uses the existing bounded Graal query runtime; offline uses bounded workers.
+
+Component `guidance` merges over parent guidance. `Room` explicitly defaults its lighting guidance to `expected`; use `guidance:{lighting:'dark'}` on a mob chamber, while maintenance rooms keep `expected`. `minLight` changes the advisory threshold (default 8). Tag walk-in exterior doors with `guidance:{access:'walk'}`. Suppress chosen rules on a component/subtree with `disabledRules:['rule-id']` and `suppressionReason:'intentional design'`; suppressed findings remain inspectable in results. A semantic parent component can carry custom guidance for custom rules.
+
+Entrance advice checks a short straight approach with a 0.6×1.8 body and <=0.6 step, assuming wooden doors can open. It does not prove circulation between rooms or floors. Lighting is an approximate artificial-light flood fill, omitting skylight, external boundary light and partial-block occlusion; it is not a mob-spawning guarantee. Unsupported/incomplete geometry is reported as unverified where queried. These are style helpers, not validity constraints or automatic fixes.
+
+Run the lightweight probes with `python3 prototypes/blueprint/check-offline.py`. They cover absent/fixed steps, dark/illuminated rooms, intentional darkness, scoped suppression, timeout/host-access failure isolation, unchanged drafts and component provenance. Results are saved under ignored `run/blueprint-evidence/rule-probes/`. Java integration compiled before switching offline; the new lint operations have not been exercised inside Minecraft.
+
+## Model experiment
+
+`model-tasks.json` fixes three exploratory tasks. `model-trial.py` calls the configured provider/model remotely and uses local offline `design`, `lint`, and `inspect` tools. It does not invoke the embedded planner prompt/scheduler or place blocks. Credentials are read from the existing config and never logged. Full model responses, compiler diagnostics and generated sources stay under ignored `run/blueprint-evidence/`; existing trial directories are never overwritten. No manual source repair is performed.
+
+```sh
+BLUEPRINT_TRIAL_ID=my-trial BLUEPRINT_MODEL_TOKENS=16384 \
+  python3 prototypes/blueprint/model-trial.py
+```
+
+Sampling uses provider defaults, with 8 turns and 3 design submissions per task. The HTTP timeout is 240 seconds, deliberately different from the configured runtime. This is an interface usability probe, not a benchmark or proof of normal planner performance. See `model-report.md` for observed results and limitations. Set `BLUEPRINT_REASONING=none` to reproduce the separate non-reasoning arm; leave unset for provider defaults. The `examples/` sources are unchanged failed trial outputs, exposed by named UI buttons. `rules/empty-geometry.js` is a post-hoc example extension, not part of the original bundled model feedback.

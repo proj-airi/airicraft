@@ -7,7 +7,12 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 CLI = ROOT / 'wrapper/build/install/airicraft/bin/airicraft'
 LOCK = threading.Lock()
+OFFLINE = os.environ.get('BLUEPRINT_OFFLINE') == '1'
+if OFFLINE:
+    from offline import Offline
+    offline = Offline()
 def call(args):
+    if OFFLINE: return offline.call(args)
     env = dict(os.environ)
     env.setdefault('JAVA_HOME','/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home')
     run = subprocess.run([str(CLI),'agent','tools','call','--name','blueprint_prototype','--arguments',json.dumps(args),'--verbose'],cwd=ROOT,env=env,text=True,capture_output=True,timeout=130)
@@ -25,6 +30,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
     def do_GET(self):
         path=self.path.split('?')[0]
+        if path=='/examples':
+            examples=[{'id':p.stem,'source':p.read_text()} for p in sorted((HERE/'examples').glob('*.js'))]
+            self.send(200,examples);return
+        if path=='/mode':self.send(200,{'offline':OFFLINE});return
         files={'/':'index.html','/house.js':'house.js'}
         if path in files:self.send(200,(HERE/files[path]).read_bytes(),'text/html' if path=='/' else 'text/plain')
         else:self.send(404,{'error':'not found'})

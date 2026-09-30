@@ -19,9 +19,9 @@ public final class BlueprintPrototype {
     public final JsonObject tree;
     public BlueprintPrototype(JsonObject tree, Map<String,Integer> surface) {
         this.tree = tree.deepCopy(); this.surface = surface;
-        visit(tree,"",BlockPos.ORIGIN,0,List.of(),0);
+        visit(tree,"",BlockPos.ORIGIN,0,List.of(),new JsonObject(),0);
     }
-    private void visit(JsonObject node,String parent,BlockPos origin,int rotation,List<String> inherited,int depth) {
+    private void visit(JsonObject node,String parent,BlockPos origin,int rotation,List<String> inherited,JsonObject inheritedGuidance,int depth) {
         if(depth>24 || components.size()>512) throw new IllegalArgumentException("component_limit");
         String id=node.get("id").getAsString();
         if(!id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("invalid_component_id: "+id);
@@ -45,6 +45,9 @@ public final class BlueprintPrototype {
             node.getAsJsonObject("anchors").entrySet().forEach(e->anchors.put(e.getKey(),xyz(at.add(rotate(vector(e.getValue()),rot)))));
             info.put("anchors",anchors);
         }
+        var guidance=inheritedGuidance.deepCopy();
+        if(node.has("guidance"))node.getAsJsonObject("guidance").entrySet().forEach(e->guidance.add(e.getKey(),e.getValue().deepCopy()));
+        info.put("guidance",guidance);
         components.add(info);
         if(node.has("volume")) {
             JsonObject volume=node.getAsJsonObject("volume"); BlockPos size=vector(volume.get("size"));
@@ -63,7 +66,7 @@ public final class BlueprintPrototype {
                 for(int y=ground+1;y<at.getY();y++) put(new BlockPos(at.getX()+x,y,at.getZ()+z),state,path,allowed);
             }
         }
-        if(node.has("children")) for(JsonElement child:node.getAsJsonArray("children")) visit(child.getAsJsonObject(),path,at,rot,allowed,depth+1);
+        if(node.has("children")) for(JsonElement child:node.getAsJsonArray("children")) visit(child.getAsJsonObject(),path,at,rot,allowed,guidance,depth+1);
     }
     private void put(BlockPos p,BlockState state,String path,List<String> allowed) {
         if(Math.abs(p.getX())>128||Math.abs(p.getY())>128||Math.abs(p.getZ())>128||cells.size()>=8192) throw new IllegalArgumentException("blueprint_bounds_limit");

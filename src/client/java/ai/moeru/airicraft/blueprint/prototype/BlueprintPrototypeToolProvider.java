@@ -37,8 +37,9 @@ public final class BlueprintPrototypeToolProvider implements PlannerToolProvider
     @Override public boolean handles(String name){return "blueprint_prototype".equals(name);}
     @Override public boolean isReadTool(String name){return false;}
     @Override public List<Map<String,Object>> openAiTools(){return List.of(toolForProvider("blueprint_prototype",
-        "THROWAWAY semantic blueprint. op=draft runs JS function design(input) using Component, Assembly, Solid, Clearance, Room, Door, Window, Floor, Staircase, GableRoof, Foundation constructors; no world effects. get returns tree/cells. explain uses position (local by default; world=true uses last commit). sample captures 16x16 terrain at origin, passed to next design as input.terrain. commit requires revision and origin, writes direct blocks only in creative Blueprint-* scratch worlds. prepare sets scratch world creative; view teleports camera to position with yaw/pitch; verify compares committed states. Drafts and provenance are in memory.",
-        propertiesForProvider(propForProvider("op",stringForProvider("draft|get|explain|sample|commit|prepare|view|verify|save")),
+        "THROWAWAY semantic blueprint. op=draft runs JS function design(input) using Component, Assembly, Solid, Clearance, Room, Door, Window, Floor, Staircase, GableRoof, Foundation constructors; no world effects. get returns tree/cells. explain uses position (local by default; world=true uses last commit). sample captures 16x16 terrain at origin, passed to next design as input.terrain. commit requires revision and origin, writes direct blocks only in creative Blueprint-* scratch worlds. prepare sets scratch world creative; view teleports camera to position with yaw/pitch; verify compares committed states. lint runs optional rules [{id,source}] defining check(ctx), or bundled advisory rules. rule_docs returns authoring and rule APIs. Lint never blocks commit. Drafts and provenance are in memory.",
+        propertiesForProvider(propForProvider("op",stringForProvider("draft|get|explain|sample|commit|prepare|view|verify|save|lint|rule_docs")),
+          propForProvider("rules",Map.of("type","array","items",Map.of("type","object"))),
           propForProvider("source",stringForProvider("JavaScript defining design(input).")),
           propForProvider("position",Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3)),
           propForProvider("origin",Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3)),
@@ -53,6 +54,14 @@ public final class BlueprintPrototypeToolProvider implements PlannerToolProvider
         },client::execute).thenCompose(server->{
             String worldKey=server.getSavePath(WorldSavePath.ROOT).toString();
             String op=a.get("op").getAsString();
+            if(op.equals("rule_docs"))return CompletableFuture.completedFuture(JSON.toJson(Map.of("components",library(),"ruleApi",BlueprintLint.resource("lint-api.js"),"defaultRules",BlueprintLint.defaults())));
+            if(op.equals("lint")) {
+                requireDraft();var fixed=draft;int fixedRevision=revision;
+                var dimension=client.world.getRegistryKey();
+                BlockPos origin=BlueprintPrototype.vector(a,"origin",terrainOrigin!=null?terrainOrigin:(committedOrigin!=null?committedOrigin:client.player.getBlockPos()));
+                var rules=a.has("rules")?a.getAsJsonArray("rules").deepCopy():BlueprintLint.defaults();
+                return server.submit(()->BlueprintLint.capture(fixed,fixedRevision,server.getWorld(dimension),origin)).thenCompose(snapshot->BlueprintLint.run(snapshot,rules));
+            }
             if(op.equals("draft")) {
                 JsonObject input=new JsonObject();if(terrain!=null)input.add("terrain",terrain.deepCopy());
                 return GraalPolicyInvocation.query(library()+"\n"+a.get("source").getAsString()+"\nfunction query(world,input){return design(input);}",new JsonObject(),input)
