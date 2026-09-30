@@ -90,7 +90,7 @@ if (judge) {
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, temperature: 0, max_tokens: 200, messages: [
+      body: JSON.stringify({ model, temperature: 0, max_tokens: 1200, messages: [
         { role: 'system', content: 'You check whether a streamer character\'s spoken line is supported by the facts it had. Reply with JSON only: {"verdict":"supported"|"partly"|"unsupported"|"no-factual-claim","reason":"short"}. Opinions, greetings and offers are "no-factual-claim". Claims about the world, position, inventory, time or actions must be in the facts.' },
         { role: 'user', content: `FACTS (last two minutes):\n${facts || '(none)'}\n\nLINE: ${said}` },
       ] }),
