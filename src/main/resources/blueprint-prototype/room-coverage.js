@@ -1,6 +1,7 @@
 // A covered Room expects a solid cover above every column of its declared interior.
 // Floors/ceilings/roofs can all provide cover; a roof's bounding box alone is insufficient.
 function check(ctx) {
+  ctx.track();
   const columns=new Map();
   const roots=ctx.components().filter(c=>!c.path.includes('.'));
   for(const root of roots)for(const cell of ctx.cells(root)) {
@@ -9,6 +10,7 @@ function check(ctx) {
   }
   for(const room of ctx.components({type:'Room'})) {
     if(room.guidance.coverage==='open')continue;
+    ctx.checked(room);
     const size=room.interior;
     if(!Array.isArray(size)||size.length!==3||size.some(n=>!Number.isInteger(n)||n<1||n>128)){ctx.unverified(room,'Room interior dimensions are unavailable');continue;}
     let missing=[],unknown=[];

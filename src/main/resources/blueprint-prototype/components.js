@@ -42,3 +42,16 @@ function Staircase({id,at=[0,0,0],rise=4,width=2,material='oak_stairs',rotate=0,
 function Foundation({id,at=[0,0,0],size,terrain,material='cobblestone'}) {
   return Component({id,at,type:'Foundation',foundation:{size,material}});
 }
+// Semantic relationships remain plain data consumed by replaceable advisory rules.
+function Entrance({width=1,height=2,guidance={},...p}) {
+  return Clearance({...p,type:'Entrance',size:[width,height,1],guidance:{...guidance,access:'walk'}});
+}
+// Endpoints are feet coordinates (block-centered X/Z), in this component's local frame.
+// Bounds delimit the region in which the author intends a walking connection.
+function WalkRoute({from,to,bounds,width=.6,guidance={},...p}) {
+  return Component({...p,type:'WalkRoute',guidance:{...guidance,route:{from,to,bounds,width}}});
+}
+// surface is an exact component path; edge is in that surface's local frame.
+function Guardrail({surface,edge,height=1,guidance={},...p}) {
+  return Assembly({...p,type:'Guardrail',guidance:{...guidance,guardrail:{surface,edge,height}}});
+}

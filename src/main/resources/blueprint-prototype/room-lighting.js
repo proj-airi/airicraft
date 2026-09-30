@@ -1,7 +1,9 @@
 function check(ctx) {
+  ctx.track();
   for(const room of ctx.components({type:'Room'})) {
     const intent=room.guidance.lighting;
     if(!['expected','dark'].includes(intent))continue;
+    ctx.checked(room);
     const result=ctx.lighting.darkWalkingSurfaces(room,room.guidance.minLight??8);
     if(!result.known){ctx.unverified(room,result.reason);continue;}
     const positions=intent==='dark'?result.brightPositions:result.positions;

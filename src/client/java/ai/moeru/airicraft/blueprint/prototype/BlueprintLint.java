@@ -22,7 +22,7 @@ public final class BlueprintLint {
     }
     public static JsonArray defaults() {
         var rules=new JsonArray();
-        for(String id:List.of("entrance-access","room-lighting","room-coverage","stair-access","component-semantics")) {var r=new JsonObject();r.addProperty("id",id);r.addProperty("source",resource(id+".js"));rules.add(r);}return rules;
+        for(String id:List.of("entrance-access","room-lighting","room-coverage","stair-access","component-semantics","connected-route","guardrail-protection")) {var r=new JsonObject();r.addProperty("id",id);r.addProperty("source",resource(id+".js"));rules.add(r);}return rules;
     }
     public static JsonObject capture(BlueprintPrototype draft,int revision,ServerWorld world,BlockPos origin) {
         if(draft.cells.isEmpty())throw new IllegalArgumentException("empty_blueprint");

@@ -26,17 +26,22 @@ $('explain').onclick=run(async()=>{const v=await api({op:'explain',position:['qx
 $('clear').onclick=()=>{selected='';tree();draw()};for(const id of ['mode','layer','air'])$(id).onchange=draw;
 async function lint(rules) {
   const result=await api({op:'lint',origin:origin(),...(rules?{rules}: {})});
-  const panel=$('findings');panel.replaceChildren();let count=0;
+  const panel=$('findings');panel.replaceChildren();let count=0,notApplicable=0,unreported=0,failed=0;
   for(const rule of result.rules) {
     const title=document.createElement('p');title.textContent=rule.id+' · '+rule.status;panel.append(title);
-    if(rule.status==='error'){title.textContent+=': '+rule.message;continue;}
+    if(rule.status==='error'){failed++;title.textContent+=': '+rule.message;continue;}
+    const a=rule.result.applicability;
+    if(a?.status==='not-applicable'){title.textContent=rule.id+' · no applicable subjects';notApplicable++;}
+    else if(a?.status==='checked')title.textContent=rule.id+' · '+a.checked+' checked · '+rule.result.findings.length+' findings';
+    else {title.textContent=rule.id+' · applicability not reported';unreported++;}
+    if(rule.result.assessments?.length){const b=document.createElement('button');b.textContent='Inspect checks · '+rule.id;b.onclick=()=>{$('detail').textContent=JSON.stringify(rule.result.assessments,null,2)};panel.append(b);}
     for(const f of rule.result.findings) {
       count++;const b=document.createElement('button');b.style.textAlign='left';b.textContent=f.level+' · '+f.component+' · '+f.message;
       b.onclick=()=>{selected=f.component;$('air').checked=true;findingPositions=new Set(f.positions.map(p=>p.join(',')));$('detail').textContent=JSON.stringify({rule:rule.id,revision:result.revision,...f},null,2);tree();draw();};panel.append(b);
     }
     if(rule.result.suppressed.length){const p=document.createElement('small');p.textContent=rule.result.suppressed.length+' findings suppressed by component guidance';panel.append(p);}
   }
-  $('status').textContent=`Advisory lint · revision ${result.revision} · ${count} findings. Rules never block compilation.`;
+  $('status').textContent=`Advisory lint · revision ${result.revision} · ${count} findings · ${notApplicable} rules with no applicable subjects${unreported?` · ${unreported} unreported`:""}${failed?` · ${failed} rules failed (incomplete)`:""}. Advisory only.`;
   $('detail').textContent=JSON.stringify({lighting:result.lightingMethod,access:result.accessMethod},null,2);
 }
 $('lint').onclick=run(()=>lint());$('customLint').onclick=run(()=>lint([{id:$('ruleId').value,source:$('ruleSource').value}]));
@@ -50,6 +55,6 @@ cells.sort((a,b)=>{const [x,y,z]=a.position,[u,v,w]=b.position;return (x*Math.si
 for(const c of cells){const [x,y,z]=c.position,base=color(c),active=!selected||c.owner===selected||c.owner.startsWith(selected+'.');ctx.globalAlpha=active?(findingPositions.has(c.position.join(','))?.8:c.state.includes(':air')?.28:1):.13;const poly=points=>{ctx.beginPath();points.forEach((p,i)=>{const [sx,sy]=screen(p);i?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy)});ctx.closePath();ctx.fill();ctx.stroke();};ctx.strokeStyle='#102027';ctx.lineWidth=.5;ctx.fillStyle=base;
 if(slice)poly([[x,y,z],[x+1,y,z],[x+1,y,z+1],[x,y,z+1]]);else{poly([[x,y,z+1],[x+1,y,z+1],[x+1,y+1,z+1],[x,y+1,z+1]]);poly([[x+1,y,z],[x+1,y,z+1],[x+1,y+1,z+1],[x+1,y+1,z]]);poly([[x,y+1,z],[x+1,y+1,z],[x+1,y+1,z+1],[x,y+1,z+1]])}const [sx,sy]=screen([x+.5,y+(slice?0:1),z+.5]);hits.push({x:sx,y:sy,c,r:scale*.7});}ctx.globalAlpha=1;}
 let start=null,moved=false;canvas.onpointerdown=e=>{start=e.clientX;moved=false;canvas.setPointerCapture(e.pointerId)};canvas.onpointermove=e=>{if(start!==null&&$('mode').value==='iso'){const dx=e.clientX-start;if(Math.abs(dx)>2){moved=true;angle+=dx*.01;start=e.clientX;draw()}}};canvas.onpointerup=e=>{start=null;if(moved)return;const r=canvas.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;const h=hits.slice().reverse().find(h=>Math.hypot(h.x-x,h.y-y)<h.r);if(h){$('detail').textContent=JSON.stringify(h.c,null,2);['qx','qy','qz'].forEach((id,i)=>$(id).value=h.c.position[i]);selected=h.c.owner;tree();draw()}};window.onresize=draw;load();
-fetch('/examples').then(r=>r.json()).then(examples=>{for(const e of examples){const b=document.createElement('button');b.textContent='Qwen trial · '+e.id;b.onclick=run(async()=>{$('source').value=e.source;update(await api({op:'draft',source:e.source}));await lint();});$('modelExamples').append(b);}});
+fetch('/examples').then(r=>r.json()).then(examples=>{for(const e of examples){const b=document.createElement('button');b.textContent=(e.id.startsWith('advice-')?'Advice demo · ':'Qwen trial · ')+e.id;b.onclick=run(async()=>{$('source').value=e.source;update(await api({op:'draft',source:e.source}));await lint();});$('modelExamples').append(b);}});
 fetch('/mode').then(r=>r.json()).then(m=>{if(m.offline){document.querySelector('.badge').textContent='OFFLINE · FLAT FIXTURE';$('tagline').textContent='Semantic objects → inspectable blocks → advisory rules';$('modeNote').textContent='Offline geometry estimates; flat ground top y=0. No Minecraft registry validation or world changes.';for(const id of ['sample','commit','verify','world','ox','oy','oz'])$(id).disabled=true;$('status').textContent='Offline blueprint experiment. Flat ground top y=0. No Minecraft process or world changes.';}});
 </script></body></html>

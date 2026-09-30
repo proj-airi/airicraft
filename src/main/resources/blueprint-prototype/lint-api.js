@@ -70,15 +70,103 @@ function runRule(snapshot,input,check) {
     }
     return {known:true,walkable:Math.abs(previous-targetY)<.01,reason:'The flight must end on a supported landing at its top height',positions:[[end[0]+dir[0],targetY,end[2]+dir[2]]]};
   }
+  const owned=new Map(snapshot.cells.map(c=>[c.position.join(','),c]));
+  const position=(c,p)=>{const q=rotate(p,c.rotation);return c.origin.map((n,i)=>n+q[i]);};
+  // Collision witnesses include ownership; unknown cells affect only this body/support volume.
+  function standing(p,width=.6) {
+    const [x,y,z]=p,h=width/2,eps=.001,blockers=[],unknown=[];let support=false;
+    for(let bx=Math.floor(x-h+eps);bx<=Math.floor(x+h-eps);bx++)
+    for(let bz=Math.floor(z-h+eps);bz<=Math.floor(z+h-eps);bz++)
+    for(let by=Math.floor(y-eps);by<=Math.floor(y+1.8-eps);by++) {
+      const at=[bx,by,bz],v=voxel(at),cell=owned.get(at.join(','));
+      if(!v||!v[3]||v[7]){unknown.push(at);continue;}
+      for(const b of v[4]) {
+        const q=[bx+b[0],by+b[1],bz+b[2],bx+b[3],by+b[4],bz+b[5]];
+        if(x+h<=q[0]+eps||x-h>=q[3]-eps||z+h<=q[2]+eps||z-h>=q[5]-eps)continue;
+        if(y+1.8>q[1]+eps&&y<q[4]-eps)blockers.push({position:at,owner:cell?.owner||null,state:cell?.state||null});
+        if(Math.abs(y-q[4])<eps&&x>=q[0]&&x<=q[3]&&z>=q[2]&&z<=q[5])support=true;
+      }
+    }
+    return {clear:!blockers.length&&support&&!unknown.length,possible:!blockers.length&&(support||unknown.length>0),blockers,unknown,support};
+  }
+  function connected(c) {
+    const r=c.guidance.route,valid=p=>Array.isArray(p)&&p.length===3&&p.every(n=>Number.isInteger(n)&&Math.abs(n)<=128);
+    if(!r||!valid(r.from)||!valid(r.to)||!Array.isArray(r.bounds)||r.bounds.length!==2||!r.bounds.every(valid)||r.bounds[0].some((v,i)=>v>r.bounds[1][i])||!Number.isFinite(r.width)||r.width<.6||r.width>4)
+      return {known:false,reason:'Route requires integer local from/to feet coordinates, ordered bounds and width 0.6..4'};
+    const corners=r.bounds.map(p=>position(c,p)),lo=corners[0].map((v,i)=>Math.min(v,corners[1][i])),hi=corners[0].map((v,i)=>Math.max(v,corners[1][i]));
+    // Coordinates denote centers of transformed voxels, even under quarter turns.
+    const point=p=>{const q=position(c,p);return [q[0]+.5,q[1],q[2]+.5];};
+    const start=point(r.from),goal=point(r.to),inside=p=>p.every((v,i)=>v>=lo[i]+(i===1?0:.5)&&v<=hi[i]+(i===1?0:.5));
+    if(!inside(start)||!inside(goal))return {known:false,reason:'Route endpoints are outside its declared search bounds'};
+    const cache=new Map(),key=p=>p.join(','),sample=p=>{const k=key(p);if(!cache.has(k))cache.set(k,standing(p,r.width));return cache.get(k);};
+    const endpoints=[start,goal].map(sample),evidence={method:'Bounded half-block walking graph; 0.5-step maximum, 1.8 headroom; no jumping',bounds:[lo,hi],width:r.width};
+    for(let i=0;i<2;i++)if(!endpoints[i].possible)return {known:true,walkable:false,reason:'Route endpoint has blocked headroom or lacks support',positions:[(i?goal:start).map(Math.floor)],evidence:{...evidence,blockers:endpoints[i].blockers}};
+    const frontier=new Map();
+    function note(p,blockers) {
+      const distance=p.reduce((n,v,i)=>n+Math.abs(v-goal[i]),0);
+      for(const b of blockers){const k=b.position.join(','),old=frontier.get(k);if((!old&&frontier.size<1024)||(old&&distance<old.distance))frontier.set(k,{...b,distance});}
+    }
+    function search(optimistic) {
+      if(!(optimistic?endpoints[0].possible:endpoints[0].clear)||!(optimistic?endpoints[1].possible:endpoints[1].clear))return {found:false};
+      const queue=[start],parents=new Map([[key(start),null]]);let visits=0;
+      for(let i=0;i<queue.length;i++) {
+        const p=queue[i];if(++visits>16000)return {limit:true};
+        if(key(p)===key(goal)) {const route=[];let k=key(p);while(k!==null){route.push(k.split(',').map(Number));k=parents.get(k);}return {found:true,route:route.reverse(),visits};}
+        for(const [dx,dz] of [[.5,0],[-.5,0],[0,.5],[0,-.5]])for(const dy of [0,.5,-.5]) {
+          const n=[p[0]+dx,p[1]+dy,p[2]+dz],k=key(n);if(!inside(n)||parents.has(k))continue;
+          const v=sample(n);if(!(optimistic?v.possible:v.clear)){if(!optimistic)note(n,v.blockers);continue;}
+          // Check a midpoint at the higher standing level: conservatively sweep the body.
+          const mid=[(p[0]+n[0])/2,Math.max(p[1],n[1]),(p[2]+n[2])/2],m=sample(mid);
+          if(m.blockers.length||(!optimistic&&m.unknown.length)){if(!optimistic)note(mid,m.blockers);continue;}
+          parents.set(k,key(p));queue.push(n);
+        }
+      }return {found:false,visits};
+    }
+    const sure=search(false);
+    if(sure.found)return {known:true,walkable:true,reason:'Connected route found within declared bounds',evidence:{...evidence,route:sure.route,visited:sure.visits}};
+    if(sure.limit)return {known:false,reason:'Route search reached its 16000-state budget'};
+    const maybe=search(true);
+    if(maybe.found||maybe.limit)return {known:false,reason:'Unknown collision geometry or search budget prevents proving this connection'};
+    return {known:true,walkable:false,reason:'No walking connection within the declared bounds; check steps, headroom and landings',positions:[r.from,r.to].map(p=>position(c,p)),evidence:{...evidence,blockers:[...frontier.values()].sort((a,b)=>a.distance-b.distance).slice(0,12).map(({distance,...b})=>b),visited:sure.visits}};
+  }
+  function protection(c) {
+    const r=c.guidance.guardrail,s=byPath.get(r?.surface);
+    if(!s||!['minX','maxX','minZ','maxZ'].includes(r?.edge)||!Number.isFinite(r.height)||r.height<.5||r.height>3)return {known:false,reason:'Guardrail requires an existing surface path, minX/maxX/minZ/maxZ edge, and height 0.5..3'};
+    const cells=snapshot.cells.filter(b=>(b.owner===s.path||b.owner.startsWith(s.path+'.'))&&!b.state.startsWith('minecraft:air'));
+    if(!cells.length)return {known:false,reason:'Protected surface has no final geometry'};
+    const local=p=>rotate(p.map((n,i)=>n-s.origin[i]),(360-s.rotation)%360),points=cells.map(b=>local(b.position));
+    const axis=r.edge.endsWith('X')?0:2,other=axis===0?2:0,sign=r.edge.startsWith('min')?-1:1;
+    const boundary=(sign<0?Math.min:Math.max)(...points.map(p=>p[axis]));
+    const edge=cells.filter((b,i)=>points[i][axis]===boundary),columns=new Map();
+    for(const b of edge){const p=local(b.position),k=p[other],old=columns.get(k);if(!old||old.position[1]<b.position[1])columns.set(k,b);}
+    let missing=[],uncertain=[];
+    for(const b of columns.values()) {
+      const v=voxel(b.position);
+      if(!v?.[3]||!v[4].some(q=>q[0]===0&&q[2]===0&&q[3]===1&&q[5]===1&&q[4]===1)){uncertain.push(b.position);continue;}
+      const d=[0,0,0];d[axis]=sign;const worldDir=rotate(d,s.rotation),base=b.position.map((n,i)=>n+worldDir[i]);base[1]++;
+      // Conservative full-width barriers; fences/partial shapes remain explicitly unverified.
+      let absent=false,unknownShape=false;
+      for(let y=0;y<r.height;y+=.5){const p=[base[0],base[1]+y,base[2]],v=voxel(p),height=p[1]-Math.floor(p[1]);
+        if(!v?.[3]||v[7]){unknownShape=true;continue;}
+        if(!v[4].length){absent=true;continue;}
+        if(!v[4].some(q=>q[0]===0&&q[2]===0&&q[3]===1&&q[5]===1&&q[1]<=height&&q[4]>=Math.min(1,height+.5)))unknownShape=true;
+      }
+      if(absent)missing.push(base);else if(unknownShape)uncertain.push(base);
+    }
+    return {known:true,positions:missing,unknown:uncertain,evidence:{surface:s.path,edge:r.edge,checkedColumns:columns.size,height:r.height},reason:'Guardrail must rise above the protected walking surface'};
+  }
+
+  const checked=new Set(),assessments=[];let tracked=false;
   const ctx={revision:snapshot.revision,
     components:({type}={})=>components.filter(c=>!type||c.type===type),
     position:(c,p)=>{const q=rotate(p,c.rotation);return c.origin.map((n,i)=>n+q[i]);},
     cells:c=>snapshot.cells.filter(b=>b.owner===c.path||b.owner.startsWith(c.path+'.')),
     block:p=>{const v=voxel(p);return v?{known:v[3],collisionBoxes:v[4],emission:v[5],estimatedBlockLight:v[6],fluid:v[7]}:{known:false};},
-    access:{entrance,stair},lighting:{darkWalkingSurfaces:lighting},
+    track:()=>{tracked=true;}, checked:(c,result)=>{tracked=true;checked.add(c.path);if(result)assessments.push({component:c.path,...result});},
+    access:{entrance,stair,connected}, protection,lighting:{darkWalkingSurfaces:lighting},
     warn:f=>report({...f,level:'warning'}),
     info:f=>report({...f,level:'info'}),
     unverified:(c,reason)=>report({component:c.path,level:'unverified',message:reason}),
   };
-  check(ctx);return {findings,suppressed};
+  check(ctx);return {findings,suppressed,assessments,applicability:{status:tracked?(checked.size?'checked':'not-applicable'):'unreported',checked:tracked?checked.size:null}};
 }

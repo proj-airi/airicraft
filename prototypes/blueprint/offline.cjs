@@ -67,7 +67,7 @@ function capture(draft){
   for(let i=0;i<queue.length;i++){const v=queue[i];if(v[6]<=1)continue;for(const d of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]){const k=add(v.slice(0,3),d).join(','),n=grid.get(k);if(n&&!opaque.has(k)&&n[6]<v[6]-1){n[6]=v[6]-1;queue.push(n);}}}
   return {revision:draft.revision,components:draft.components,cells:draft.cells,geometry,lightingMethod:'Offline approximate block-light flood fill; no skylight or engine validation',accessMethod:'Offline straight stairs/full-cube fixture; open wooden doors; flat ground top y=0; unknown shapes unverified'};
 }
-function defaults(){return ['entrance-access','room-lighting','room-coverage','stair-access','component-semantics'].map(id=>({id,source:resource(id+'.js')}));}
+function defaults(){return ['entrance-access','room-lighting','room-coverage','stair-access','component-semantics','connected-route','guardrail-protection'].map(id=>({id,source:resource(id+'.js')}));}
 function execute(a){
   if(a.op==='draft')return compile(evaluate(resource('components.js')+'\n'+a.source,'design(input)',{}),a.revision||1);
   if(a.op==='lint'){

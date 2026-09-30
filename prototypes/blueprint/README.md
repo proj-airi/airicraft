@@ -148,3 +148,31 @@ python3 prototypes/blueprint/review-variety.py run/blueprint-evidence/my-variety
 ```
 
 The review script is specific to these fixed briefs and applies separate post-hoc geometry probes. It is not a general structure linter or Minecraft movement simulation. The report documents its assumptions, rule blind spots, original failed attempts and retry policy.
+
+## Entrances, connected routes, and protected edges
+
+`Entrance` creates an open entrance (Clearance geometry) with walk-access intent, so an archway gets the same local advice as a Door. Existing geometry can instead declare `guidance:{role:'entrance',access:'walk'}`. The check still covers only a short approach; declare a `WalkRoute` to check the whole intended connection.
+
+```js
+Assembly({id:'site',children:[
+  Solid({id:'deck',at:[0,0,0],size:[9,1,3],material:'oak_planks'}),
+  Guardrail({id:'northRail',surface:'site.deck',edge:'minZ',children:[
+    Solid({id:'blocks',at:[0,1,-1],size:[9,1,1],material:'oak_planks'})
+  ]}),
+  WalkRoute({id:'crossing',from:[-2,0,1],to:[10,0,1],
+    bounds:[[-3,0,-2],[11,3,4]],width:.6})
+])
+```
+
+These are semantic component declarations, not execution instructions. `WalkRoute` emits no blocks. `Guardrail` relates its children to an exact surface component path. All advice remains ordinary replaceable JavaScript (`connected-route.js`, `guardrail-protection.js`), with scoped suppression and no commit gate.
+
+- Route endpoints are integer **feet** coordinates in the route component's local frame; X/Z refer to voxel centers. A cube at y=0 has walking surface y=1. Bounds are inclusive local coordinates and rotate with the component. Width defaults to 0.6 blocks, with 1.8-block body height.
+- The route helper searches a half-block grid with at most 0.5-block steps, four horizontal directions and a midpoint collision sweep. It checks support/headroom, including straight stair shapes, within explicit bounds. It does not simulate Minecraft movement, jumping, diagonals, dynamic doors or arbitrary partial-block navigation. Narrow paths can be missed by the sampled graph. A negative result is a bounded advisory finding, never a global impossibility claim.
+- A successful route includes its witness in `result.assessments`; an unsuccessful one includes endpoint positions and nearby blocker coordinates/owners. Frontier blockers are examples, not a minimal causal cut. Unknown shapes are considered only in the body/support volume. A second optimistic search distinguishes possible routes through unknown geometry from failures established despite uncertainty. Each search is capped at 16,000 visited states; budget exhaustion is unverified. Capture limits still apply, and search bounds extending beyond captured geometry can remain unverified.
+- Guardrails use a surface's final cells, transformed into its local frame. `edge` is `minX`, `maxX`, `minZ` or `maxZ`; `height` defaults to one block above the edge's walking surface. Current advice certifies full-width cube barriers along an extreme edge. Fences, bars, irregular/interior boundaries and partial collision shapes are not certified; this is not a general fall-safety solver.
+- Every bundled rule reports applicability: checked subject count or **no applicable subjects**. Older custom rules remain compatible and show **applicability not reported** unless they call `ctx.track()` and `ctx.checked(component)`. A checked subject may still produce unverified findings; zero findings does not certify an entire structure.
+- Custom rules can use `ctx.access.connected(component)`, `ctx.protection(component)` and `ctx.checked(component, assessment)` to expose their own results. The component guidance uses the same `route` and `guardrail` data that these constructors emit.
+
+The editor includes `Advice demo · advice-bridge-before` (unchanged Qwen geometry plus explicit review relationships) and `advice-bridge-after` (human repair). The former reports a failed connection and two flush-rail warnings; adding approach stairs and raising rails clears all three. The repaired bridge **retains its y=1 deck**, so it still does not meet the original brief's requested y=0 datum. These examples demonstrate the selected advice, not full brief compliance. Original `variety-*` trial sources remain unchanged.
+
+Run `python3 prototypes/blueprint/check-relations.py` for route/step repair, rotation, width, blocked endpoints and provenance, local uncertainty, guardrail repair, semantic entrances, applicability, suppression and saved Qwen warehouse/courtyard/watchtower replay. The replay adds explicit route declarations without changing geometry. Shared JS is registered for both offline and live lint, but this iteration is validated only in the offline worker/editor; Minecraft and Java builds remain off.
