@@ -54,11 +54,11 @@ Ranged approaches and creeper retreats use a fresh local anchor. Shield
 defense remains active. This spacing is a preference, not a guarantee against hits.
 
 The client adapter builds at most 128 connected feet cells within six horizontal
-blocks and three vertical blocks, using Baritone's actual cardinal traverse/ascend/
-descend costs. It rejects unloaded terrain, edits, hazards, fluids, drops greater
+blocks and three vertical blocks, using the navigation core's cardinal traverse, ascend and
+descend moves under a no-edits policy. It rejects unloaded terrain, edits, hazards, fluids, drops greater
 than three blocks, and movements outside travel bounds. Search considers at most eight
 steps over 24 game ticks with a beam width of 24. It replans every six ticks or upon
-arrival and freshly checks the next movement before steering toward a collision-checked sub-block waypoint. Baritone movement states execute
+arrival and freshly checks the next movement before steering toward a collision-checked sub-block waypoint. The navigation core's move executors run
 ascents and descents while local steering retains combat aim. Committed terrain
 moves finish before replanning and time out after 60 ticks; no block placement or
 towering is implemented. Movement can face a safe sprint orbit near a witch, with

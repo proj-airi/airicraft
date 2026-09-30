@@ -118,8 +118,9 @@ repository's automatic `GITHUB_TOKEN` without extra secrets.
 
 Each release contains the main `airicraft` jar and the optional
 `airicraft-journeymap-compat` and `airicraft-rei-compat` jars. Install the main jar
-in a Fabric 1.21.8 client's `mods` directory with Fabric API and Baritone 1.15.0
-or newer; add a compatibility jar only with its corresponding mod. Sources,
+in a Fabric 1.21.8 client's `mods` directory with Fabric API; add a compatibility
+jar only with its corresponding mod. Airicraft no longer uses Baritone, so remove any
+Baritone jar from the mods folder. Sources,
 development jars, and the wrapper CLI are excluded from release assets.
 
 The main jar bundles SnakeYAML and the OpenTelemetry API, SDK, OTLP exporter,
