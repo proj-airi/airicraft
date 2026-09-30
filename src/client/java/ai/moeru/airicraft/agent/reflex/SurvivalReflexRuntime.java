@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.reflex;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public final class SurvivalReflexRuntime {
+	private final Actuator actuator = new Actuator("reflex", Priority.REFLEX);
 	static final int BREATHABLE_STABLE_TICKS = 12;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 	private static final double MELEE_ATTACK_DISTANCE = 3.0D;
@@ -777,14 +779,14 @@ public final class SurvivalReflexRuntime {
 			}
 		}
 		cameraController.lookAt(minecraft, new Vec3(shieldGuard.facing().x, player.getEyeY(), shieldGuard.facing().z));
-		minecraft.options.keyUse.setDown(true);
+		actuator.holdUse();
 		if (!shieldUseOwned) pendingEvents.add(new SurvivalReflexEvent("reflex.shield_raised", mapOfNullable(
 			"sourceUuid", shieldGuard.source(), "incomingProjectile", Double.isFinite(earliest),
 			"creeperFuseProgress", fuseProgress,
 			"shieldDamage", player.getOffhandItem().getDamageValue(), "health", player.getHealth(), "tick", tick)));
 		shieldUseOwned = true;
 		if (!player.isUsingItem() || player.getUsedItemHand() != InteractionHand.OFF_HAND)
-			minecraft.gameMode.useItem(player, InteractionHand.OFF_HAND);
+			actuator.useItem(minecraft, player, InteractionHand.OFF_HAND);
 		return true;
 	}
 
@@ -837,7 +839,7 @@ public final class SurvivalReflexRuntime {
 		if (!shieldUseOwned) return;
 		shieldUseOwned = false;
 		if (minecraft == null) return;
-		minecraft.options.keyUse.setDown(false);
+		actuator.releaseUse(minecraft);
 		if (minecraft.player != null) pendingEvents.add(new SurvivalReflexEvent("reflex.shield_lowered", mapOfNullable(
 			"shieldDamage", minecraft.player.getOffhandItem().getDamageValue(), "health", minecraft.player.getHealth(),
 			"wasBlocking", minecraft.player.isBlocking())));
@@ -1068,7 +1070,7 @@ public final class SurvivalReflexRuntime {
 		player.connection.send(new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Rot(
 			player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
 		boolean sprintHit = player.isSprinting();
-		minecraft.gameMode.attack(player, threat.entity());
+		actuator.attack(minecraft, player, threat.entity());
 		player.swing(InteractionHand.MAIN_HAND);
 		pendingEvents.add(new SurvivalReflexEvent("reflex.close_quarter_attack", mapOfNullable(
 			"threatUuid", threat.observed().uuid(),
@@ -1081,14 +1083,14 @@ public final class SurvivalReflexRuntime {
 		)));
 	}
 
-	private static void equipBestCombatItem(Minecraft minecraft, LocalPlayer player) {
+	private void equipBestCombatItem(Minecraft minecraft, LocalPlayer player) {
 		List<String> itemIds = new ArrayList<>();
 		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
 			itemIds.add(BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(slot).getItem()).toString());
 		int bestSlot = bestCombatInventorySlot(itemIds);
 		if (bestSlot < 0) return;
 		if (bestSlot < 9) {
-			player.getInventory().setSelectedSlot(bestSlot);
+			actuator.selectHotbar(minecraft, bestSlot);
 			return;
 		}
 		if (minecraft.gameMode == null) return;

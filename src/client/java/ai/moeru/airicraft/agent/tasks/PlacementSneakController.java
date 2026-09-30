@@ -1,29 +1,32 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 
 final class PlacementSneakController {
+	private final MovementController movement = new MovementController("placement_sneak", Priority.FOREGROUND);
 	private boolean ownsSneakKey;
 
 	Preparation prepare(Minecraft minecraft, LocalPlayer player) {
 		Preparation preparation = preparation(ownsSneakKey, minecraft.options.keyShift.isDown(), player.isShiftKeyDown());
 		if (preparation == Preparation.PRESS_AND_WAIT) {
-			minecraft.options.keyShift.setDown(true);
+			movement.hold(minecraft, false, true);
 			ownsSneakKey = true;
 		}
 		return preparation;
 	}
 
 	void release(Minecraft minecraft) {
-		if (ownsSneakKey && minecraft != null) {
-			minecraft.options.keyShift.setDown(false);
+		if (ownsSneakKey) {
+			movement.stop(minecraft);
 		}
 		ownsSneakKey = false;
 	}
 
 	static Preparation preparation(boolean ownsSneakKey, boolean sneakKeyPressed, boolean playerSneaking) {
-		// Navigation release can clear keys after placement first presses them.
+		// Another locomotion owner can take the channel after placement first holds sneak.
 		if (ownsSneakKey && !sneakKeyPressed) {
 			return Preparation.PRESS_AND_WAIT;
 		}

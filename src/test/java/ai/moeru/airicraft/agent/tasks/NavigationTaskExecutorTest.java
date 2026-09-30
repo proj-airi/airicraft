@@ -283,15 +283,16 @@ class NavigationTaskExecutorTest {
 	}
 
 	@Test
-	void pathGoalEventCannotClaimArrivalWithoutPhysicalConfirmation() {
+	void arrivalIsAuthoritativeEvenWhenMomentumCarriedTheBodyOutOfTheGoalCell() {
 		var facade = new FakeNavigationFacade();
+		facade.navigationGoalReached = false; // the body has drifted a cell past the goal by the time the event is read
 		var executor = new NavigationTaskExecutor(facade);
 		var goal = new GoalSnapshot(GoalType.NAVIGATE_TO, null, new GoalPosition(318,-10,280,true),null,20L,"planner_tool");
-		executor.tick(multiplayer(),Optional.of(request("falling",goal)));
+		executor.tick(multiplayer(),Optional.of(request("overshoot",goal)));
 		facade.pathEvents.add("AT_GOAL");
-		var event=executor.tick(multiplayerAt(20),Optional.of(request("falling",goal))).orElseThrow();
-		assertEquals(TaskExecutionState.FAILED,event.terminalState());
-		assertEquals("navigation_arrival_unconfirmed",event.message());
+		var event=executor.tick(multiplayerAt(20),Optional.of(request("overshoot",goal))).orElseThrow();
+		assertEquals(TaskExecutionState.COMPLETED,event.terminalState());
+		assertEquals(TaskTerminationCause.GOAL_REACHED,event.terminationCause());
 	}
 
 	@Test

@@ -214,6 +214,43 @@ class ControlArbiterTest {
 	}
 
 	@Test
+	void holdingUseIsStickyAndClearsWhenTheLeaseEnds() {
+		ControlLease eating = grant("eat", Priority.FOREGROUND, Set.of(Channel.SECONDARY));
+		assertFalse(arbiter.frame().useHeld(), "holding the channel is not holding the key");
+
+		arbiter.submit(eating, new ChannelIntent.HoldUse());
+		assertTrue(arbiter.frame().useHeld());
+		assertTrue(arbiter.frame().useHeld(), "sticky, like a held key");
+
+		arbiter.release(eating);
+		ControlFrame after = arbiter.frame();
+		assertFalse(after.useHeld());
+		assertEquals(Set.of(Channel.SECONDARY), after.released(), "the release edge tells the adapter to let go of the key");
+	}
+
+	@Test
+	void theReflexTakesTheUseKeyFromAnEatingHolder() {
+		ControlLease eating = grant("eat", Priority.BACKGROUND, Set.of(Channel.SECONDARY));
+		arbiter.submit(eating, new ChannelIntent.HoldUse());
+
+		ControlLease reflex = grant("reflex", Priority.REFLEX, Set.of(Channel.SECONDARY));
+
+		assertInstanceOf(ControlArbiter.Status.Revoked.class, arbiter.status(eating));
+		assertFalse(arbiter.frame().useHeld(), "the new holder starts with no hold");
+		assertTrue(arbiter.submit(reflex, new ChannelIntent.HoldUse()));
+		assertTrue(arbiter.frame().useHeld());
+	}
+
+	@Test
+	void primaryAndSecondaryAreLeasedIndependently() {
+		ControlLease attack = grant("attack", Priority.FOREGROUND, Set.of(Channel.PRIMARY));
+		ControlLease use = grant("use", Priority.FOREGROUND, Set.of(Channel.SECONDARY));
+
+		assertSame(ControlArbiter.Status.HELD, arbiter.status(attack));
+		assertSame(ControlArbiter.Status.HELD, arbiter.status(use));
+	}
+
+	@Test
 	void channelSetsAreCopiedSoALeaseCannotBeWidenedAfterward() {
 		Set<Channel> mutable = EnumSet.of(Channel.LOCOMOTION);
 		ControlLease lease = grant("nav", Priority.FOREGROUND, mutable);

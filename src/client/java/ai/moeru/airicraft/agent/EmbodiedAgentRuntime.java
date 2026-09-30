@@ -5645,21 +5645,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		);
 	}
 
-	private void setForwardKeyPressed(boolean pressed) {
-		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft == null || minecraft.options == null) {
-			throw new IllegalStateException("Minecraft client input is not initialized");
-		}
-		minecraft.options.keyUp.setDown(pressed);
-	}
-
-	private boolean isForwardKeyPressed() {
-		Minecraft minecraft = Minecraft.getInstance();
-		return minecraft != null
-			&& minecraft.options != null
-			&& minecraft.options.keyUp.isDown();
-	}
-
 	private float resolveEffectiveHealthBefore(float observedHealthBefore, float healthAfter) {
 		return effectiveHealthBefore(lastKnownPlayerHealth, observedHealthBefore, healthAfter);
 	}

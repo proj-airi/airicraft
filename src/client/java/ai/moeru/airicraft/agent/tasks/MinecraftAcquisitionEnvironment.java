@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.AcquisitionConstraints;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
@@ -30,6 +32,7 @@ import static ai.moeru.airicraft.agent.tasks.TargetAcquisitionTaskExecutor.*;
 
 /** Samples loaded client facts and performs exact interactions on the client tick. */
 final class MinecraftAcquisitionEnvironment implements Environment {
+	private final Actuator actuator = new Actuator("target_acquisition", Priority.FOREGROUND);
 	private final CameraController cameraController;
 	MinecraftAcquisitionEnvironment(CameraController cameraController) { this.cameraController = cameraController; }
 	private BlockPos breaking;
@@ -300,18 +303,18 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 		hit = cursorHit.get();
 		if (!pos.equals(breaking)) {
 			cancelBreaking();
-			var result = MiningToolPreparation.ensureSelected(minecraft, minecraft.player,
+			var result = MiningToolPreparation.ensureSelected(minecraft, actuator, minecraft.player,
 				List.of(minecraft.level.getBlockState(pos)), pos.equals(block(target.position())) ? spec.requiredToolItemIds() : List.of());
 			if (!result.ok()) return new ToolFailure(result.message());
-			if (!minecraft.gameMode.startDestroyBlock(pos, hit.getDirection())) return BreakStatus.FAILED;
+			if (!actuator.startDestroy(minecraft, pos, hit.getDirection())) return BreakStatus.FAILED;
 			breaking = pos;
 		}
-		minecraft.gameMode.continueDestroyBlock(pos, hit.getDirection());
+		actuator.continueDestroy(minecraft, pos, hit.getDirection());
 		minecraft.player.swing(InteractionHand.MAIN_HAND);
 		return targetPresent(target) ? BreakStatus.BREAKING : BreakStatus.BROKEN;
 	}
 	@Override public void cancelBreaking() {
-		if (breaking != null && client().gameMode != null) client().gameMode.stopDestroyBlock();
+		if (breaking != null && client().gameMode != null) actuator.stopDestroy(client());
 		breaking = null;
 	}
 	private static String id(BlockState state) { return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString(); }

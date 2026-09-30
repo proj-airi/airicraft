@@ -175,8 +175,7 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 			terminalOutcome.get().state(),
 			"PATH_STUCK".equals(snapshot.lastPathEvent())
 				? "navigation_stuck: moved less than 0.75 blocks for 100 active ticks (5 seconds)"
-				: terminalOutcome.get().failureCode() == TaskFailureCode.ENVIRONMENT_CHANGED
-				? "navigation_arrival_unconfirmed" : messageFor(terminalOutcome.get().state()),
+				: messageFor(terminalOutcome.get().state()),
 			terminalOutcome.get().cause(),
 			terminalOutcome.get().failureCode(),
 			terminalDiagnostics("PATH_STUCK".equals(snapshot.lastPathEvent()))
@@ -308,9 +307,9 @@ public final class NavigationTaskExecutor implements WorldTaskExecutor {
 		}
 		String normalized = pathEvent.get().trim().toUpperCase(Locale.ROOT);
 		return switch (normalized) {
-			case "AT_GOAL" -> Optional.of(activeTask != null && activeTask.goal().type() == GoalType.NAVIGATE_TO && !navigateGoalReached(activeTask)
-				? new TerminalOutcome(TaskExecutionState.FAILED, null, TaskFailureCode.ENVIRONMENT_CHANGED)
-				: new TerminalOutcome(TaskExecutionState.COMPLETED, TaskTerminationCause.GOAL_REACHED, TaskFailureCode.NONE));
+			// The backend decided arrival with the predicate it planned against. Re-checking the body a tick
+			// later would fail a correct arrival whenever momentum carries the player out of the goal cell.
+			case "AT_GOAL" -> Optional.of(new TerminalOutcome(TaskExecutionState.COMPLETED, TaskTerminationCause.GOAL_REACHED, TaskFailureCode.NONE));
 			case "CALC_FAILED" -> Optional.of(navigateGoalReached(activeTask)
 				? new TerminalOutcome(TaskExecutionState.COMPLETED, TaskTerminationCause.GOAL_REACHED, TaskFailureCode.NONE)
 				: new TerminalOutcome(TaskExecutionState.FAILED, TaskTerminationCause.CALCULATION_FAILED, TaskFailureCode.TRANSIENT));

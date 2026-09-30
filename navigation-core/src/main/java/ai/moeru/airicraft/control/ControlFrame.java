@@ -40,6 +40,11 @@ public record ControlFrame(Map<Channel, String> owners, Map<Channel, ChannelInte
 		return held(Channel.LOOK) && intents.get(Channel.LOOK) instanceof ChannelIntent.Look look ? look : null;
 	}
 
+	/** Whether the use key is held this tick. */
+	public boolean useHeld() {
+		return held(Channel.SECONDARY) && intents.get(Channel.SECONDARY) instanceof ChannelIntent.HoldUse;
+	}
+
 	/** The slot to select, or -1 for no request. */
 	public int hotbarSlot() {
 		return held(Channel.HOTBAR) && intents.get(Channel.HOTBAR) instanceof ChannelIntent.Hotbar hotbar ? hotbar.slot() : -1;

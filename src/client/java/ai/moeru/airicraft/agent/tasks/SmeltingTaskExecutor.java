@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
@@ -13,7 +15,6 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.AbstractFurnaceMenu;
 import net.minecraft.world.inventory.InventoryMenu;
@@ -33,6 +34,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class SmeltingTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("smelting", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 
 	private final Supplier<Minecraft> clientSupplier;
@@ -262,7 +264,7 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 			return navigateOrFail(request, stationPos);
 		}
 		BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(stationPos), Direction.UP, stationPos, false);
-		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+		InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, hitResult);
 		if (result.consumesAction()) {
 			player.swing(InteractionHand.MAIN_HAND);
 			openedStationForTask = true;
@@ -540,7 +542,7 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		);
 		InteractionResult result;
 		try {
-			result = minecraft.gameMode.useItemOn(player, hand, hitResult);
+			result = actuator.useItemOn(minecraft, player, hand, hitResult);
 			if (result.consumesAction()) {
 				player.swing(hand);
 			}
@@ -551,14 +553,14 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		return new PlacementAttempt(result.consumesAction(), result.consumesAction() ? "accepted" : "interact_" + result);
 	}
 
-	private static InteractionHand selectFurnacePlacementHand(Minecraft minecraft, LocalPlayer player) {
+	private InteractionHand selectFurnacePlacementHand(Minecraft minecraft, LocalPlayer player) {
 		if (player.getOffhandItem().is(Items.FURNACE)) {
 			return InteractionHand.OFF_HAND;
 		}
 		return selectHotbarItem(minecraft, player, Items.FURNACE) ? InteractionHand.MAIN_HAND : null;
 	}
 
-	private static boolean selectHotbarItem(Minecraft minecraft, LocalPlayer player, Item item) {
+	private boolean selectHotbarItem(Minecraft minecraft, LocalPlayer player, Item item) {
 		AbstractContainerMenu menu = player.containerMenu;
 		int sourceSlot = findInventorySlot(menu, item);
 		if (sourceSlot < 0) {
@@ -575,11 +577,8 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		return !selected.isEmpty() && selected.is(item);
 	}
 
-	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
-		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (minecraft.getConnection() != null) {
-			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
-		}
+	private void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
+		actuator.selectHotbarAndSync(minecraft, hotbarSlot);
 	}
 
 	private static int findInventorySlot(AbstractContainerMenu menu, Item item) {

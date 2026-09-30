@@ -10,6 +10,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -28,6 +30,8 @@ public final class ControlPlane {
 	private static final ControlPlane SHARED = new ControlPlane();
 
 	private final ControlArbiter arbiter = new ControlArbiter();
+	/** Leases that end with the current tick unless kept: one-shot actions do not have to remember to release. */
+	private final List<ControlLease> tickLeases = new ArrayList<>();
 	private CameraController camera;
 	private Boolean savedAutoJump;
 
@@ -57,6 +61,22 @@ public final class ControlPlane {
 		return arbiter.acquire(owner, priority, channels);
 	}
 
+	/**
+	 * A lease that ends when the current tick's frame is applied, for actions that finish within the tick.
+	 *
+	 * @return the lease, or null when a stronger holder has one of the channels
+	 */
+	public ControlLease acquireForTick(String owner, Priority priority, Set<Channel> channels) {
+		if (!(arbiter.acquire(owner, priority, channels) instanceof ControlArbiter.Acquisition.Granted granted)) return null;
+		tickLeases.add(granted.lease());
+		return granted.lease();
+	}
+
+	/** Makes a tick-scoped lease last until it is released, as a held key needs. */
+	public void keep(ControlLease lease) {
+		tickLeases.remove(lease);
+	}
+
 	public ControlArbiter.Status status(ControlLease lease) {
 		return arbiter.status(lease);
 	}
@@ -75,6 +95,7 @@ public final class ControlPlane {
 	 * edge is kept for the next frame.
 	 */
 	public void release(Minecraft minecraft, ControlLease lease) {
+		tickLeases.remove(lease);
 		arbiter.release(lease);
 		if (minecraft != null) letGo(minecraft, arbiter.takeReleased());
 	}
@@ -90,6 +111,11 @@ public final class ControlPlane {
 		if (slot >= 0 && minecraft.player != null && minecraft.player.getInventory().getSelectedSlot() != slot) {
 			minecraft.player.getInventory().setSelectedSlot(slot);
 		}
+		if (frame.useHeld()) minecraft.options.keyUse.setDown(true);
+		// One-shot actions are over: drop their leases without side effects.
+		for (ControlLease lease : tickLeases) arbiter.release(lease);
+		tickLeases.clear();
+		arbiter.takeReleased();
 	}
 
 	private void press(Minecraft minecraft, ChannelIntent.Locomotion move) {
@@ -122,5 +148,6 @@ public final class ControlPlane {
 	/** Channels whose lease ended. Look and hotbar have nothing to undo: the camera settles and the slot stays. */
 	private void letGo(Minecraft minecraft, Set<Channel> released) {
 		if (released.contains(Channel.LOCOMOTION)) press(minecraft, ChannelIntent.Locomotion.NONE);
+		if (released.contains(Channel.SECONDARY)) minecraft.options.keyUse.setDown(false);
 	}
 }

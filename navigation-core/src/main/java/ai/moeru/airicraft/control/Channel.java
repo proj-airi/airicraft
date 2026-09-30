@@ -10,5 +10,9 @@ public enum Channel {
 	/** Where the camera points. */
 	LOOK,
 	/** The selected hotbar slot. */
-	HOTBAR
+	HOTBAR,
+	/** Attacking and breaking blocks. */
+	PRIMARY,
+	/** Using items and blocks, including holding the use key to eat or block. */
+	SECONDARY
 }

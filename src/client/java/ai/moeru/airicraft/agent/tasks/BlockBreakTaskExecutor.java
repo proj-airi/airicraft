@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -18,6 +20,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("block_break", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final int TARGET_TIMEOUT_TICKS = 200;
 
@@ -117,11 +120,11 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		long tick = sessionSnapshot == null ? 0L : sessionSnapshot.tickCount();
 		if (!breakingActive) {
 			MiningToolPreparation.Result toolSelection =
-				MiningToolPreparation.ensureSelected(minecraft, player, List.of(state));
+				MiningToolPreparation.ensureSelected(minecraft, actuator, player, List.of(state));
 			if (!toolSelection.ok()) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_ITEM, toolSelection.message()));
 			}
-			boolean accepted = minecraft.gameMode.startDestroyBlock(pos, hit.get().getDirection());
+			boolean accepted = actuator.startDestroy(minecraft, pos, hit.get().getDirection());
 			if (!accepted) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "break_start_failed targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 			}
@@ -130,10 +133,10 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 			targetStartTick = tick;
 		}
 		if (tick - targetStartTick > TARGET_TIMEOUT_TICKS) {
-			minecraft.gameMode.stopDestroyBlock();
+			actuator.stopDestroy(minecraft);
 			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_timeout targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 		}
-		minecraft.gameMode.continueDestroyBlock(pos, hit.get().getDirection());
+		actuator.continueDestroy(minecraft, pos, hit.get().getDirection());
 		player.swing(InteractionHand.MAIN_HAND);
 		BlockState after = minecraft.level.hasChunkAt(pos) ? minecraft.level.getBlockState(pos) : state;
 		if (satisfied(after)) {
@@ -225,7 +228,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		if (breakingActive) {
 			Minecraft minecraft = clientSupplier.get();
 			if (minecraft != null && minecraft.gameMode != null) {
-				minecraft.gameMode.stopDestroyBlock();
+				actuator.stopDestroy(minecraft);
 			}
 		}
 		appliedTask = null;

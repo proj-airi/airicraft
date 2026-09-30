@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import net.minecraft.world.level.block.Blocks;
@@ -25,6 +27,7 @@ import java.util.stream.StreamSupport;
 import static ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor.Cell;
 
 final class MinecraftCropTendingEnvironment implements CropTendingTaskExecutor.Environment {
+	private final Actuator actuator = new Actuator("crop_tending", Priority.FOREGROUND);
 	private final CameraController camera;
 	MinecraftCropTendingEnvironment(CameraController camera) { this.camera = camera; }
 	private Minecraft client() { return Minecraft.getInstance(); }
@@ -102,7 +105,7 @@ final class MinecraftCropTendingEnvironment implements CropTendingTaskExecutor.E
 		camera.lookAt(minecraft, cropAim(pos));
 		var cursorHit = camera.blockHit(minecraft, pos);
 		if (cursorHit.isEmpty()) return false;
-		minecraft.gameMode.startDestroyBlock(pos, cursorHit.get().getDirection());
+		actuator.startDestroy(minecraft, pos, cursorHit.get().getDirection());
 		minecraft.player.swing(InteractionHand.MAIN_HAND);
 		return state(crop, args) == Cell.EMPTY_FARMLAND;
 	}

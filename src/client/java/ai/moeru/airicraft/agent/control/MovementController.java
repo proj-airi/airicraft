@@ -78,6 +78,17 @@ public final class MovementController {
 		updateStuckState(player, tick);
 	}
 
+	/**
+	 * Holds jump and/or sneak with nothing else pressed, as towering and placing need. It is not walking, so
+	 * it does not feed stuck detection. {@link #stop} lets go.
+	 */
+	public void hold(Minecraft minecraft, boolean jump, boolean sneak) {
+		if (minecraft == null || minecraft.player == null) {
+			return;
+		}
+		drive(new ChannelIntent.Locomotion(false, false, false, false, jump, sneak, false, false));
+	}
+
 	public void swimUp(Minecraft minecraft, boolean forward, boolean sprint, long tick) {
 		swimUp(minecraft, forward, sprint, false, false, false, tick);
 	}

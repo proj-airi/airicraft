@@ -46,6 +46,14 @@ public sealed interface ChannelIntent {
 		}
 	}
 
+	/** Holds the use key, as when eating or raising a shield. Sticky until the lease ends. */
+	record HoldUse() implements ChannelIntent {
+		@Override
+		public Channel channel() {
+			return Channel.SECONDARY;
+		}
+	}
+
 	/** A hotbar slot, 0 to 8. */
 	record Hotbar(int slot) implements ChannelIntent {
 		public Hotbar {

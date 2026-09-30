@@ -77,7 +77,7 @@ public final class WorldPlacePreservation {
 	public static boolean blocksPathBreaking(BlockPos pos) {
 		Minecraft minecraft = Minecraft.getInstance();
 		return minecraft.level != null && contains(minecraft.level, pos)
-			&& ai.moeru.airicraft.agent.navigation.MinecraftMotor.breakingForNavigation();
+			&& ai.moeru.airicraft.agent.control.Actuator.breakingForNavigation();
 	}
 
 	record Snapshot(Object world, List<PlaceMemory.PreservedArea> areas, boolean unavailable) {

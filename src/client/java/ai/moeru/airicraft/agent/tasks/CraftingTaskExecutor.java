@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
@@ -34,6 +36,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class CraftingTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("crafting", Priority.FOREGROUND);
 	private static final int WAIT_TIMEOUT_TICKS = 20;
 	static final int TABLE_NAVIGATION_TIMEOUT_TICKS = 200;
 	private static final int TABLE_SEARCH_RADIUS = 16;
@@ -930,7 +933,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		Vec3 hitVec = Vec3.atCenterOf(pos);
 		cameraController.lookAt(minecraft, hitVec);
 		BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, false);
-		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult);
+		InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, hitResult);
 		if (result.consumesAction()) {
 			player.swing(InteractionHand.MAIN_HAND);
 			openedWorkbenchForTask = true;

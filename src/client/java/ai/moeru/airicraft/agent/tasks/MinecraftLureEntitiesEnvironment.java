@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
@@ -20,6 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 
 final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor.Environment {
+	private final Actuator actuator = new Actuator("lure", Priority.FOREGROUND);
 	private final List<UUID> identities = new ArrayList<>();
 	private LureEntitiesStepArgs args;
 	private static Minecraft client() { return Minecraft.getInstance(); }
@@ -75,10 +78,10 @@ final class MinecraftLureEntitiesEnvironment implements LureEntitiesTaskExecutor
 		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
 			ItemStack stack = player.containerMenu.getSlot(slot).getItem();
 			if (stack.isEmpty() || !BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(args.itemId())) continue;
-			if (slot >= InventoryMenu.USE_ROW_SLOT_START) player.getInventory().setSelectedSlot(slot - InventoryMenu.USE_ROW_SLOT_START);
+			if (slot >= InventoryMenu.USE_ROW_SLOT_START) actuator.selectHotbar(minecraft, slot - InventoryMenu.USE_ROW_SLOT_START);
 			else {
 				minecraft.gameMode.handleInventoryMouseClick(player.containerMenu.containerId, slot, 8, ClickType.SWAP, player);
-				player.getInventory().setSelectedSlot(8);
+				actuator.selectHotbar(minecraft, 8);
 			}
 			return null;
 		}

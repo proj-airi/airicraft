@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
@@ -12,7 +13,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -38,6 +38,7 @@ import java.util.function.Supplier;
  * nearby position while the player is still breathing.
  */
 public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("underwater_harvest", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final int NAVIGATION_RADIUS_BLOCKS = 2;
 	private static final int BREAK_TIMEOUT_TICKS = 200;
@@ -237,7 +238,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		var cursorHit = camera.blockHit(minecraft, target.pos());
 		if (cursorHit.isEmpty()) return Optional.empty();
 		if (breakingTarget == null) {
-			if (!minecraft.gameMode.startDestroyBlock(target.pos(), cursorHit.get().getDirection())) {
+			if (!actuator.startDestroy(minecraft, target.pos(), cursorHit.get().getDirection())) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "break_start_failed targetPos=" + compactPos(target.pos())));
 			}
 			breakingTarget = target.pos();
@@ -247,7 +248,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (tick - breakStartedTick > BREAK_TIMEOUT_TICKS) {
 			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_timeout targetPos=" + compactPos(target.pos())));
 		}
-		minecraft.gameMode.continueDestroyBlock(target.pos(), cursorHit.get().getDirection());
+		actuator.continueDestroy(minecraft, target.pos(), cursorHit.get().getDirection());
 		player.swing(InteractionHand.MAIN_HAND);
 		if (!spec.blockIds().contains(blockId(minecraft.level.getBlockState(target.pos())))) {
 			harvestedBlocks++;
@@ -659,7 +660,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		return total;
 	}
 
-	private static boolean selectRequiredTool(Minecraft minecraft, LocalPlayer player, List<String> requiredToolItemIds) {
+	private boolean selectRequiredTool(Minecraft minecraft, LocalPlayer player, List<String> requiredToolItemIds) {
 		if (requiredToolItemIds == null || requiredToolItemIds.isEmpty()) {
 			return true;
 		}
@@ -713,14 +714,11 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			&& requiredItemIds.contains(itemId(stack));
 	}
 
-	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
+	private void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
 		if (player.getInventory().getSelectedSlot() == hotbarSlot) {
 			return;
 		}
-		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (minecraft.getConnection() != null) {
-			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
-		}
+		actuator.selectHotbarAndSync(minecraft, hotbarSlot);
 	}
 
 	private Optional<TaskTerminalEvent> tickCompletion(WorldTaskRequest request, Minecraft minecraft) {
@@ -769,7 +767,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private void clearBreak(Minecraft minecraft) {
 		if (breakingTarget != null && minecraft != null && minecraft.gameMode != null) {
-			minecraft.gameMode.stopDestroyBlock();
+			actuator.stopDestroy(minecraft);
 		}
 		breakingTarget = null;
 		breakStartedTick = -1L;

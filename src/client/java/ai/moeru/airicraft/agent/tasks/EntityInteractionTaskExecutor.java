@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("entity_interaction", Priority.FOREGROUND);
 	private static final int TARGET_OUT_OF_RANGE_GRACE_TICKS = 20;
 	private static final int BUSY_STATE_TIMEOUT_TICKS = 100;
 	private static final int CHASE_GOAL_REFRESH_TICKS = 10;
@@ -226,7 +228,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		cancelNavigationChase();
 		// Chase navigation may select tools or building blocks. Restore the hand
 		// chosen for this attack before evaluating its cooldown or sending a hit.
-		player.getInventory().setSelectedSlot(attackHotbarSlot);
+		actuator.selectHotbar(minecraft, attackHotbarSlot);
 		if (player.getAttackStrengthScale(0.0F) < ATTACK_READY_THRESHOLD) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "attack_cooldown");
 			return Optional.empty();
@@ -234,7 +236,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 		if (!landedAttack) inventoryBeforeAttack = new InventoryItemCounter().count(player.getInventory());
 		attackedTarget = target;
-		minecraft.gameMode.attack(player, target);
+		actuator.attack(minecraft, player, target);
 		player.swing(InteractionHand.MAIN_HAND);
 		landedAttack = true;
 		if (interaction(request).attackMode() == EntityAttackMode.HIT_ONCE) {
@@ -326,7 +328,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		if (hand == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "required_item_missing"));
 		}
-		InteractionResult result = minecraft.gameMode.interact(player, target, hand);
+		InteractionResult result = actuator.interact(minecraft, player, target, hand);
 		if (!result.consumesAction()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "interaction_failed"));
 		}
@@ -383,7 +385,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range"));
 	}
 
-	private static InteractionHand resolveInteractionHand(Minecraft minecraft, LocalPlayer player, String itemId) {
+	private InteractionHand resolveInteractionHand(Minecraft minecraft, LocalPlayer player, String itemId) {
 		if (itemId == null || itemId.isBlank()) {
 			return InteractionHand.MAIN_HAND;
 		}
@@ -399,11 +401,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		int hotbarIndex = player.getInventory().getSelectedSlot();
 		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
-			player.getInventory().setSelectedSlot(sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
+			actuator.selectHotbar(minecraft, sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
 			return InteractionHand.MAIN_HAND;
 		}
 		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, hotbarIndex, ClickType.SWAP, player);
-		player.getInventory().setSelectedSlot(hotbarIndex);
+		actuator.selectHotbar(minecraft, hotbarIndex);
 		ItemStack selected = player.getInventory().getSelectedItem();
 		if (selected.isEmpty()) {
 			return null;
