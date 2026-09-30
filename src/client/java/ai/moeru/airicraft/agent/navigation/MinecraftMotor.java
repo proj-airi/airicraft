@@ -1,13 +1,17 @@
 package ai.moeru.airicraft.agent.navigation;
 
-import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.tasks.MiningToolPreparation;
+import ai.moeru.airicraft.control.Channel;
+import ai.moeru.airicraft.control.ChannelIntent;
+import ai.moeru.airicraft.control.ControlArbiter;
+import ai.moeru.airicraft.control.ControlLease;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.MotorIntent;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.Options;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.inventory.ClickType;
@@ -19,23 +23,25 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
+import java.util.Set;
 
 /**
- * Applies motor intents to the client: movement keys relative to the current yaw, the shared
- * camera, and block breaking, placing and use through the interaction manager.
+ * Applies motor intents to the client: movement and look go through a foreground lease on the
+ * control plane, block breaking, placing and use through the interaction manager.
  */
 public final class MinecraftMotor {
 	/** Key threshold for eight-way movement: a component beyond cos(67.5 degrees) presses its key. */
 	private static final double KEY_THRESHOLD = 0.38;
 	/** True while this motor calls the interaction manager to break, so edit vetoes can tell path breaking apart. */
 	private static boolean breakingForNavigation;
-	private final CameraController camera;
-	private boolean holding;
+	private static final Set<Channel> CHANNELS = Set.of(Channel.LOCOMOTION, Channel.LOOK);
+	private final ControlPlane plane;
+	private ControlLease lease;
 	private BlockPos breaking;
 	private Direction breakingSide;
 
-	public MinecraftMotor(CameraController camera) {
-		this.camera = camera;
+	public MinecraftMotor(ControlPlane plane) {
+		this.plane = plane;
 	}
 
 	/** Applies one tick of intent; returns why an action could not be done, or null. */
@@ -45,23 +51,17 @@ public final class MinecraftMotor {
 			release(minecraft);
 			return null;
 		}
-		holding = true;
+		if (!holdLease()) return "control_preempted";
 		double yaw = Math.toRadians(player.getYRot());
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
-		boolean forwardKey = forward > KEY_THRESHOLD, backKey = forward < -KEY_THRESHOLD;
-		boolean sprint = intent.sprint() && forwardKey && !intent.sneak();
-		Options options = minecraft.options;
-		options.keyUp.setDown(forwardKey);
-		options.keyDown.setDown(backKey);
-		options.keyLeft.setDown(left > KEY_THRESHOLD);
-		options.keyRight.setDown(left < -KEY_THRESHOLD);
-		options.keyJump.setDown(intent.jump());
-		options.keyShift.setDown(intent.sneak());
-		options.keySprint.setDown(sprint);
-		player.setSprinting(sprint);
+		plane.submit(lease, new ChannelIntent.Locomotion(forward > KEY_THRESHOLD, forward < -KEY_THRESHOLD,
+			left > KEY_THRESHOLD, left < -KEY_THRESHOLD, intent.jump(), intent.sneak(), intent.sprint()));
 		if (intent.look() != null) {
-			camera.startLookAt(minecraft, new Vec3(intent.look().x(), intent.look().y(), intent.look().z()), "navigation");
+			plane.submit(lease, new ChannelIntent.Look(intent.look().x(), intent.look().y(), intent.look().z(), "navigation"));
+		}
+		else {
+			plane.clear(lease, Channel.LOOK);
 		}
 
 		MotorIntent.Action action = intent.action();
@@ -74,20 +74,24 @@ public final class MinecraftMotor {
 		};
 	}
 
-	/** Lets go of every key this motor pressed. Idempotent. */
+	/** Lets go of every key this motor pressed, in this call. Idempotent. */
 	public void release(Minecraft minecraft) {
-		if (!holding) return;
-		holding = false;
+		if (lease == null) return;
+		ControlLease released = lease;
+		lease = null;
 		stopBreaking(minecraft);
-		Options options = minecraft.options;
-		options.keyUp.setDown(false);
-		options.keyDown.setDown(false);
-		options.keyLeft.setDown(false);
-		options.keyRight.setDown(false);
-		options.keyJump.setDown(false);
-		options.keyShift.setDown(false);
-		options.keySprint.setDown(false);
-		if (minecraft.player != null) minecraft.player.setSprinting(false);
+		plane.release(minecraft, released);
+	}
+
+	/** Takes the lease on first use; false once a stronger holder has revoked it or refuses it. */
+	private boolean holdLease() {
+		if (lease == null) {
+			if (!(plane.acquire("navigation", Priority.FOREGROUND, CHANNELS) instanceof ControlArbiter.Acquisition.Granted granted)) {
+				return false;
+			}
+			lease = granted.lease();
+		}
+		return plane.status(lease) instanceof ControlArbiter.Status.Held;
 	}
 
 	public BlockPos breaking() {

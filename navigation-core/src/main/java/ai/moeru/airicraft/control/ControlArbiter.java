@@ -85,8 +85,24 @@ public final class ControlArbiter {
 		return true;
 	}
 
+	/** Forgets what {@code lease} wants from one channel and keeps the lease, so the channel stays held but idle. */
+	public void clear(ControlLease lease, Channel channel) {
+		if (holders.get(channel) == lease) intents.remove(channel);
+	}
+
 	public Optional<ControlLease> holder(Channel channel) {
 		return Optional.ofNullable(holders.get(channel));
+	}
+
+	/**
+	 * Channels released since the last frame or call, forgotten once returned. A caller that clears
+	 * them at once, as {@code cancel()} must, calls this so the next frame does not clear them again
+	 * over other writers' input.
+	 */
+	public Set<Channel> takeReleased() {
+		Set<Channel> taken = released.isEmpty() ? Set.of() : EnumSet.copyOf(released);
+		released.clear();
+		return taken;
 	}
 
 	/** Merges the held channels into this tick's frame and forgets which channels were just released. */

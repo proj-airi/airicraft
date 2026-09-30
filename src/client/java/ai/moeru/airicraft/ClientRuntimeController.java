@@ -11,6 +11,7 @@ import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
 import ai.moeru.airicraft.agent.baritone.LiveBaritoneFacade;
 import ai.moeru.airicraft.agent.character.CharacterCardLoader;
 import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.idle.IdleIdeasConfig;
 import ai.moeru.airicraft.agent.idle.IdleIdeasLoader;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
@@ -60,6 +61,7 @@ public final class ClientRuntimeController {
 	/** The backend consumers of the current runtime use; chosen by navigation.backend at start and reload. */
 	private volatile BaritoneFacade baritoneFacade;
 	private final CameraController cameraController;
+	private final ControlPlane controlPlane;
 	private volatile EmbodiedAgentRuntime agentRuntime;
 	private final ModBridgeServer bridgeServer;
 	private final DashboardObservationStore dashboardObservationStore;
@@ -78,7 +80,8 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
-		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(cameraController);
+		this.controlPlane = new ControlPlane(cameraController);
+		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(controlPlane);
 		this.baritoneFacade = navigationBackend(config);
 		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()),
 			AttentionRuleSource.load(), ai.moeru.airicraft.agent.perception.SalienceRuleSource.load());
@@ -237,6 +240,7 @@ public final class ClientRuntimeController {
 			airicraftBackend.releaseIfIdle(minecraft);
 			currentAgentRuntime().onClientTick(minecraft);
 			airicraftBackend.tick(minecraft);
+			controlPlane.tick(minecraft);
 		}
 		cameraController.tick(minecraft);
 		highlightManager.tick();

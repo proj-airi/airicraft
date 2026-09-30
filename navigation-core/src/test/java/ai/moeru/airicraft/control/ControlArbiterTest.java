@@ -219,6 +219,41 @@ class ControlArbiterTest {
 		assertThrows(IllegalArgumentException.class, () -> new Hotbar(-1));
 	}
 
+	@Test
+	void clearingAnIntentKeepsTheLeaseAndTheChannel() {
+		ControlLease lease = grant("nav", Priority.FOREGROUND, MOVE);
+		arbiter.submit(lease, new ChannelIntent.Look(1, 2, 3, "nav"));
+
+		arbiter.clear(lease, Channel.LOOK);
+		ControlFrame frame = arbiter.frame();
+
+		assertNull(frame.look());
+		assertEquals("nav", frame.owner(Channel.LOOK), "still ours; only the request is gone");
+		assertSame(ControlArbiter.Status.HELD, arbiter.status(lease));
+	}
+
+	@Test
+	void aRevokedHolderCannotClearTheNewHoldersIntent() {
+		ControlLease old = grant("old", Priority.FOREGROUND, MOVE);
+		ControlLease next = grant("next", Priority.FOREGROUND, MOVE);
+		arbiter.submit(next, FORWARD);
+
+		arbiter.clear(old, Channel.LOCOMOTION);
+
+		assertEquals(FORWARD, arbiter.frame().locomotion());
+	}
+
+	@Test
+	void takingTheReleasedChannelsConsumesTheEdgeSoTheFrameDoesNotClearThemAgain() {
+		ControlLease lease = grant("nav", Priority.FOREGROUND, MOVE);
+		arbiter.release(lease);
+
+		assertEquals(Set.of(Channel.LOCOMOTION, Channel.LOOK), arbiter.takeReleased());
+		assertTrue(arbiter.takeReleased().isEmpty());
+		assertTrue(arbiter.frame().released().isEmpty());
+		assertNull(arbiter.frame().locomotion());
+	}
+
 	private ControlLease grant(String owner, Priority priority, Set<Channel> channels) {
 		return assertInstanceOf(Acquisition.Granted.class, arbiter.acquire(owner, priority, channels)).lease();
 	}

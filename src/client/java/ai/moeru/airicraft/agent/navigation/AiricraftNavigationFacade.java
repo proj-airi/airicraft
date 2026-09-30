@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.navigation;
 
 import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
-import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.navigation.BodyState;
 import ai.moeru.airicraft.navigation.Goal;
@@ -68,8 +68,8 @@ public final class AiricraftNavigationFacade implements BaritoneFacade {
 	private double pendingCaptureMillis;
 	private long cancellations;
 
-	public AiricraftNavigationFacade(CameraController camera) {
-		this(new MinecraftMotor(camera), NavigationPlanner.shared());
+	public AiricraftNavigationFacade(ControlPlane plane) {
+		this(new MinecraftMotor(plane), NavigationPlanner.shared());
 	}
 
 	AiricraftNavigationFacade(MinecraftMotor motor, NavigationPlanner planner) {
