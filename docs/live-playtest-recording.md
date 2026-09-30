@@ -4,7 +4,7 @@ For normal user bug reports, use [Report this moment](diagnostic-reports.md). Th
 
 The live client keeps a rolling observation history for diagnosing playtest failures. Its clock is **completed integrated-server ticks**: 12,000 ticks is ten minutes at 20 TPS. Tick-debug pause freezes capture and retention; a step advances the window by one server tick. Rendering and reading the history remain available while paused.
 
-Tick-debug also gates the client tick call, including agent decisions, Baritone and hand actions. A pause/step waits for its completed server boundary, permits one client tick, then captures and freezes both sides. Rendering and scheduled bridge commands continue. This was verified against an active Husk reflex; server-only pause previously let attack attempts and decision clocks advance outside the frozen recording.
+Tick-debug also gates the client tick call, including agent decisions, navigation and hand actions. A pause/step waits for its completed server boundary, permits one client tick, then captures and freezes both sides. Rendering and scheduled bridge commands continue. This was verified against an active Husk reflex; server-only pause previously let attack attempts and decision clocks advance outside the frozen recording.
 
 This extends the Runtime Observatory's observation store. It does not require the evaluator, a recording profile, or a second Minecraft client. It is an observation replay, not a Recorder Play or a deterministic simulation checkpoint. Evaluation recordings retain their existing artifact contract.
 

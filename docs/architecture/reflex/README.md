@@ -2,6 +2,9 @@
 
 The policy text below reflects the 2026-09-10 combat-first change. The diagrams and [`workspace.dsl`](workspace.dsl) retain the earlier flee-policy snapshot; their ownership boundaries still apply, but their mob detection and action choices are historical.
 
+> The diagrams draw navigation as an external system. It is now the in-house navigation core inside the mod; the
+> boxes were renamed but not restyled or re-rendered, so read "External" as "a separate component".
+
 ## Reading the subsystem
 
 The reflex is an in-process safety layer owned by `EmbodiedAgentRuntime`. It runs before normal jobs and action graphs on every client tick. It does not ask the planner what to do while immediate danger is active: it detects the supported danger, takes actuator ownership, selects a hard-coded survival action, and only returns decision-making to the planner after the danger resolves.

@@ -9,6 +9,7 @@
 - The build is a multi-project Gradle build with:
   - root project: Fabric mod
   - `wrapper/`: standalone Java CLI for agent-driven control
+  - `navigation-core/`: pure Java library (no Minecraft dependency) nested into the mod jar: terrain view, movement policy, move catalog, A* search, motor executors, path follower, and the control arbiter
 
 ## Build And Run
 
@@ -39,7 +40,8 @@
   - Passed worker directories are deleted. Failed, review, stalled, and interrupted directories remain under `run/evaluator-workers/`.
   - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
-- Navigation baseline: run `scripts/navigation-baseline` against `scripts/codex-driver-evaluator` in a disposable world. It builds deterministic courses and drives `navigate_to` without a model. See `docs/navigation-baseline.md`.
+- Navigation baseline: `xvfb-run -a python3 scripts/run-navigation-baseline --runs 5` launches an evaluator client, loads a scenario world, builds deterministic courses and drives `navigate_to` without a model (or run `scripts/navigation-baseline` by hand against `scripts/codex-driver-evaluator` in a disposable world). See `docs/navigation-baseline.md`.
+- Navigation is in-house: there is no Baritone dependency. Users with a Baritone jar in their mods folder should remove it.
 - Perception baseline: `scripts/perception-baseline` against the same client walks the evaluator's `notice_walk` course without a model and checks honest noticing (exposed vein noticed, sealed ore never, garbage dropped) and sensor cost. See `docs/perception.md`.
 - Arthas CLI live-debug:
   - Cold-start path: `scripts/arthas kickstart` starts `runClient`, waits for the bridge, joins the first saved world, opens LAN, and attaches Arthas for later probes. It is cold-only and fails fast if a client is already running.
@@ -71,6 +73,16 @@
 - The CLI reads the selected state file, calls the localhost bridge, and deletes stale state if the bridge is unreachable.
 
 ## Key Mod-Side Files
+
+- `navigation-core/src/main/java/ai/moeru/airicraft/navigation/`
+  - pure pathfinding and movement: `MovementPolicy` (per-request), `Moves`, `PathSearch`, `MoveExecutors`, `PathFollower`
+- `navigation-core/src/main/java/ai/moeru/airicraft/control/`
+  - `ControlArbiter`, `ControlLease`, `ControlFrame`, `Channel`, `Priority`, `ChannelIntent`: who controls the player, by priority (`REFLEX` over `FOREGROUND` over `BACKGROUND`); a stronger acquire revokes a weaker holder in the same call
+- `src/client/java/ai/moeru/airicraft/agent/navigation/`
+  - `AiricraftNavigationFacade` implements `NavigationFacade` (the interface every consumer uses; cancellation is synchronous and emits no event); `NavigationPlanner` (off-thread search), `MinecraftMotor`, `NavigationPolicies`, `NavigationOptions` (per-request walk-only and water penalty), `PathfindSettings` (the planner-tunable policy behind `configure_pathfind` and `inspect_pathfind`)
+- `src/client/java/ai/moeru/airicraft/agent/control/`
+  - `ControlPlane` (the one shared instance applies one merged frame per client tick after the navigation facade ticks), `MovementController` (locomotion lease holder with stuck detection), `Actuator` (hotbar, attack, break and use calls behind a tick-scoped lease; `holdUse` holds the use key), `CameraController`
+  - `ActuationGuardTest` fails on any key, slot, rotation, auto-jump or interaction-manager write outside this package. Do not add an allowlist entry; take a lease instead.
 
 - `src/client/java/ai/moeru/airicraft/agent/events/EventCatalog.java`
   - declared event types, producers, routing profiles, and observe visibility

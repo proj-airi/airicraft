@@ -164,14 +164,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str]) -> int:
-    args = parse_args(argv)
-    label = args.label
-    output_dir = args.output_dir.resolve()
+def run_against_client(
+    output_dir: Path,
+    world_archive: Path,
+    launch_timeout_seconds: float,
+    driver_command: Callable[[Path], list[str]],
+) -> subprocess.CompletedProcess:
+    """Launch an evaluator client, join the scenario world, run a driver against it, stop the client.
+
+    driver_command receives the bridge state file and returns the driver's command line. The client log and
+    the game directory live under output_dir.
+    """
+    output_dir = output_dir.resolve()
     game_dir = output_dir / "game"
     bridge_state = game_dir / "bridge-state.json"
     output_dir.mkdir(parents=True, exist_ok=True)
-    prepare_game_dir(game_dir, args.world_archive.resolve())
+    prepare_game_dir(game_dir, world_archive.resolve())
     bridge_state.unlink(missing_ok=True)
 
     environment = dict(os.environ)
@@ -186,7 +194,7 @@ def main(argv: list[str]) -> int:
         call = None
         try:
             call = wait_for("the bridge", lambda: baseline.http_bridge(baseline.read_bridge(bridge_state)),
-                            args.launch_timeout_seconds, process)
+                            launch_timeout_seconds, process)
             wait_for("the title screen", lambda: call("GET", "/v1/status", None).get("canJoinWorldOrServer"),
                      600.0, process)
             world_id = wait_for("the world list", lambda: find_world_id(call("GET", "/v1/worlds", None), WORLD_NAME),
@@ -195,15 +203,24 @@ def main(argv: list[str]) -> int:
             call("POST", "/v1/worlds/join", {"worldId": world_id})
             wait_for("the world to load", lambda: call("GET", "/v1/status", None).get("worldLoaded"), 600.0, process)
             time.sleep(10)
-            command = [sys.executable, str(REPO_ROOT / "scripts" / "navigation-baseline"),
-                       "--label", label, "--runs", str(args.runs),
-                       "--bridge-state", str(bridge_state), "--output", str(output_dir / f"{label}.json")]
-            for course in args.courses or []:
-                command += ["--course", course]
-            result = subprocess.run(command, cwd=REPO_ROOT, env=environment)
+            return subprocess.run(driver_command(bridge_state), cwd=REPO_ROOT, env=environment)
         finally:
             stop_client(process, call)
 
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    output_dir = args.output_dir.resolve()
+
+    def driver_command(bridge_state: Path) -> list[str]:
+        command = [sys.executable, str(REPO_ROOT / "scripts" / "navigation-baseline"),
+                   "--label", args.label, "--runs", str(args.runs),
+                   "--bridge-state", str(bridge_state), "--output", str(output_dir / f"{args.label}.json")]
+        for course in args.courses or []:
+            command += ["--course", course]
+        return command
+
+    result = run_against_client(output_dir, args.world_archive, args.launch_timeout_seconds, driver_command)
     if result.returncode not in (0, 1):
         return result.returncode
     return result.returncode if args.require_pass else 0
