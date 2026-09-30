@@ -7,14 +7,15 @@ import ai.moeru.airicraft.agent.AgentConfigLoader;
 import ai.moeru.airicraft.agent.attention.AttentionRuleSource;
 import ai.moeru.airicraft.rules.RuleModule;
 import ai.moeru.airicraft.agent.EmbodiedAgentRuntime;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
-import ai.moeru.airicraft.agent.baritone.LiveBaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.PathfindSettings;
 import ai.moeru.airicraft.agent.character.CharacterCardLoader;
 import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.idle.IdleIdeasConfig;
 import ai.moeru.airicraft.agent.idle.IdleIdeasLoader;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
-import ai.moeru.airicraft.agent.tasks.BaritoneTaskExecutor;
+import ai.moeru.airicraft.agent.tasks.NavigationTaskExecutor;
 import ai.moeru.airicraft.agent.tasks.BlockBreakTaskExecutor;
 import ai.moeru.airicraft.agent.tasks.BlockInteractionTaskExecutor;
 import ai.moeru.airicraft.agent.tasks.UnderwaterHarvestTaskExecutor;
@@ -54,12 +55,9 @@ public final class ClientRuntimeController {
 	private final FirstPersonScreenshotService screenshotService = new FirstPersonScreenshotService();
 	private final WorldCameraService worldCameraService = new WorldCameraService(screenshotService);
 	private final ClientTickDebugRuntime clientTickDebugRuntime = new ClientTickDebugRuntime(screenshotService);
-	private final BaritoneFacade baritoneBackend = new ai.moeru.airicraft.agent.navigation.ShadowedBaritoneFacade(
-		new LiveBaritoneFacade(), ai.moeru.airicraft.agent.navigation.NavigationPlanner.shared());
-	private final ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade airicraftBackend;
-	/** The backend consumers of the current runtime use; chosen by navigation.backend at start and reload. */
-	private volatile BaritoneFacade baritoneFacade;
+	private final ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade navigationFacade;
 	private final CameraController cameraController;
+	private final ControlPlane controlPlane;
 	private volatile EmbodiedAgentRuntime agentRuntime;
 	private final ModBridgeServer bridgeServer;
 	private final DashboardObservationStore dashboardObservationStore;
@@ -78,8 +76,8 @@ public final class ClientRuntimeController {
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
 		this.cameraController = new CameraController(config.cameraLerpDefaultTicks());
-		this.airicraftBackend = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(cameraController);
-		this.baritoneFacade = navigationBackend(config);
+		this.controlPlane = ControlPlane.shared().bind(cameraController);
+		this.navigationFacade = new ai.moeru.airicraft.agent.navigation.AiricraftNavigationFacade(controlPlane);
 		this.agentRuntime = createRuntime(config, AgentConfigLoader.load().withCharacter(CharacterCardLoader.load()),
 			AttentionRuleSource.load(), ai.moeru.airicraft.agent.perception.SalienceRuleSource.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
@@ -234,9 +232,10 @@ public final class ClientRuntimeController {
 	public void onClientTick(Minecraft minecraft) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(minecraft);
 		if (!automaticPlaytest.freezing()) {
-			airicraftBackend.releaseIfIdle(minecraft);
+			navigationFacade.releaseIfIdle(minecraft);
 			currentAgentRuntime().onClientTick(minecraft);
-			airicraftBackend.tick(minecraft);
+			navigationFacade.tick(minecraft);
+			controlPlane.tick(minecraft);
 		}
 		cameraController.tick(minecraft);
 		highlightManager.tick();
@@ -428,11 +427,7 @@ public final class ClientRuntimeController {
 		cameraController.clear();
 		cameraController.updateDefaultLerpTicks(nextConfig.cameraLerpDefaultTicks());
 		EmbodiedAgentRuntime previousRuntime = currentAgentRuntime();
-		BaritoneFacade nextFacade = navigationBackend(nextConfig);
-		if (nextFacade != baritoneFacade) {
-			baritoneFacade.cancel();
-			baritoneFacade = nextFacade;
-		}
+		navigationFacade.cancel();
 		EmbodiedAgentRuntime nextRuntime = createRuntime(nextConfig, nextAgentConfig, nextAttentionRules, nextSalienceRules);
 		nextRuntime.updateIdleIdeasConfig(nextIdleIdeasConfig);
 		Minecraft minecraft = Minecraft.getInstance();
@@ -472,54 +467,44 @@ public final class ClientRuntimeController {
 		return agentRuntime;
 	}
 
-	/** The active navigation backend and its latest plan diagnostics. Client thread. */
+	/** The navigation state and its latest plan diagnostics. Client thread. */
 	public Map<String, Object> navigationState() {
 		Map<String, Object> state = new LinkedHashMap<>();
-		state.put("backend", baritoneFacade == airicraftBackend ? "airicraft" : "baritone");
-		state.put("active", baritoneFacade.processActive());
-		baritoneFacade.activeProcessName().ifPresent(name -> state.put("process", name));
-		baritoneFacade.estimatedTicksToGoal().ifPresent(ticks -> state.put("estimatedTicksToGoal", Math.round(ticks)));
-		state.put("diagnostics", baritoneFacade.navigationDiagnostics());
+		state.put("backend", "airicraft");
+		state.put("active", navigationFacade.processActive());
+		navigationFacade.activeProcessName().ifPresent(name -> state.put("process", name));
+		navigationFacade.estimatedTicksToGoal().ifPresent(ticks -> state.put("estimatedTicksToGoal", Math.round(ticks)));
+		state.put("diagnostics", navigationFacade.navigationDiagnostics());
 		return state;
-	}
-
-	private BaritoneFacade navigationBackend(AiricraftConfig airicraftConfig) {
-		String override = System.getProperty("airicraft.navigation.backend", "").trim();
-		if (!override.isEmpty() && !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_BARITONE)
-			&& !override.equalsIgnoreCase(AiricraftConfig.NAVIGATION_AIRICRAFT)) {
-			Airicraft.LOGGER.warn("Ignoring airicraft.navigation.backend={}: expected baritone or airicraft", override);
-		}
-		boolean airicraft = AiricraftConfig.NAVIGATION_AIRICRAFT.equals(airicraftConfig.effectiveNavigationBackend());
-		Airicraft.LOGGER.info("Airicraft navigation backend: {}", airicraft ? "airicraft" : "baritone");
-		return airicraft ? airicraftBackend : baritoneBackend;
 	}
 
 	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig, RuleModule attentionRules,
 		RuleModule salienceRules) {
+		PathfindSettings.reset();
 		var miningOpportunityPolicy = new ai.moeru.airicraft.agent.tasks.MiningOpportunityPolicyState();
 		var miningOpportunityJournal = new ai.moeru.airicraft.agent.tasks.MiningOpportunityJournal();
 		SmeltingProcessManager smeltingProcessManager = new SmeltingProcessManager();
-		BaritoneTaskExecutor baritoneTaskExecutor = new BaritoneTaskExecutor(baritoneFacade);
+		NavigationTaskExecutor navigationTaskExecutor = new NavigationTaskExecutor(navigationFacade);
 		UnderwaterHarvestTaskExecutor underwaterHarvestTaskExecutor = new UnderwaterHarvestTaskExecutor(
-			baritoneFacade,
+			navigationFacade,
 			cameraController
 		);
 		WorldTaskExecutor worldTaskExecutor = new DispatchingWorldTaskExecutor(new DispatchingWorldTaskExecutor.ExecutorSet(
-			baritoneTaskExecutor,
-			new CraftingTaskExecutor(baritoneFacade, cameraController),
-			new DropItemsTaskExecutor(baritoneFacade, cameraController),
-			new EntityInteractionTaskExecutor(baritoneFacade, cameraController),
-			new SmeltingTaskExecutor(smeltingProcessManager, baritoneFacade),
-			new ReturnToSurfaceTaskExecutor(baritoneFacade, cameraController),
-			new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, baritoneFacade),
+			navigationTaskExecutor,
+			new CraftingTaskExecutor(navigationFacade, cameraController),
+			new DropItemsTaskExecutor(navigationFacade, cameraController),
+			new EntityInteractionTaskExecutor(navigationFacade, cameraController),
+			new SmeltingTaskExecutor(smeltingProcessManager, navigationFacade),
+			new ReturnToSurfaceTaskExecutor(navigationFacade, cameraController),
+			new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade),
 			new BlockBreakTaskExecutor(cameraController),
-			new TargetAcquisitionTaskExecutor(baritoneFacade, cameraController, miningOpportunityPolicy, miningOpportunityJournal),
+			new TargetAcquisitionTaskExecutor(navigationFacade, cameraController, miningOpportunityPolicy, miningOpportunityJournal),
 			underwaterHarvestTaskExecutor,
-			new ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor(baritoneFacade, cameraController,
-				new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, baritoneFacade)),
-			new ai.moeru.airicraft.agent.tasks.LureEntitiesTaskExecutor(baritoneFacade)
+			new ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor(navigationFacade, cameraController,
+				new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade)),
+			new ai.moeru.airicraft.agent.tasks.LureEntitiesTaskExecutor(navigationFacade)
 		),
-			baritoneFacade
+			navigationFacade
 		);
 		EmbodiedAgentRuntime runtime = new EmbodiedAgentRuntime(
 			airicraftConfig,
@@ -529,7 +514,7 @@ public final class ClientRuntimeController {
 			AgentObservability.create(agentConfig.observability()),
 			smeltingProcessManager,
 			cameraController,
-			baritoneFacade,
+			navigationFacade,
 			miningOpportunityPolicy,
 			miningOpportunityJournal
 		);

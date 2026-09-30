@@ -153,7 +153,7 @@ class ActiveJobRuntimeTest {
 				request.goal(),
 				TaskExecutionState.CANCELLED,
 				"Task cancelled",
-				TaskTerminationCause.BARITONE_CANCELLED
+				TaskTerminationCause.NAVIGATION_CANCELLED
 			),
 			Optional.of(request)
 		);
@@ -210,7 +210,7 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
-	void mineBlocksIgnoresInventoryIncreaseAndRestartsAfterEarlyBaritoneCompletion() {
+	void mineBlocksIgnoresInventoryIncreaseAndRestartsAfterEarlyNavigationCompletion() {
 		ActiveJobRuntime runtime = runtime();
 		runtime.applyPlannerResponse(
 			new DialogueResponse(
@@ -245,7 +245,7 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
-	void mineBlocksRestartsAfterPartialBreakCountAndEarlyBaritoneCompletion() {
+	void mineBlocksRestartsAfterPartialBreakCountAndEarlyNavigationCompletion() {
 		ActiveJobRuntime runtime = runtime();
 		runtime.applyPlannerResponse(
 			new DialogueResponse(
@@ -305,7 +305,7 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
-	void ensureBlocksInInventoryProjectsBaritoneMineTaskLifecycle() {
+	void ensureBlocksInInventoryProjectsNavigationMineTaskLifecycle() {
 		ActiveJobRuntime runtime = runtime();
 		GoalMineSpec mineSpec = new GoalMineSpec(
 			List.of("minecraft:seagrass"),
@@ -329,7 +329,7 @@ class ActiveJobRuntimeTest {
 		assertEquals(mineSpec, request.goal().mineSpec());
 
 		runtime.tick(
-			new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(), "Baritone", "resource_not_found_nearby", null, null),
+			new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(), "Navigation", "resource_not_found_nearby", null, null),
 			evidence(Map.of("minecraft:seagrass", 0), 2L),
 			true,
 			false,

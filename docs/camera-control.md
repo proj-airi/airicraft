@@ -2,7 +2,7 @@
 
 `ClientRuntimeController` owns the production `CameraController` and ticks it once
 at the end of each client tick. Task executors, social looking, survival reflexes,
-vision capture, the player bridge, and Baritone submit targets to that instance.
+vision capture, the player bridge, and navigation submit targets to that instance.
 Only the controller writes player yaw and pitch. Minecraft still owns manual
 mouse input, server corrections, and interpolation of previous/current angles.
 
@@ -12,22 +12,17 @@ Retargeting retains angular velocity. A motion finishes only when both angle
 error and angular velocity are small. Previous rotation fields are not rewritten,
 so Minecraft can interpolate between ticks when rendering.
 
-An explicit Airicraft target takes precedence over Baritone until settled.
-Baritone can continuously retarget its own motion. The LookBehavior mixin consumes
-`updateTarget` before Baritone stores a target, leaving its independent player,
-movement-event, and elytra rotation writers inactive. Baritone input waits for
-horizontal alignment before grounded travel and for aim before clicking. Sneak
-remains available; airborne and swimming navigation do not wait for horizontal
-alignment. Combat and item delivery submit direct aim only when they own steering.
+Navigation submits look targets through the control plane's look channel, and an
+explicit Airicraft target takes precedence until it settles. Navigation can
+continuously retarget its own motion. Combat and item delivery submit direct aim
+only when they own steering.
 Combat waypoint steering converts world directions to keys using the current
 player yaw, rather than assuming that the requested aim has already been reached.
 
 Block placement retains precise alignment. Mining starts as soon as a fresh
 raycast along the current view hits the requested block's outline within reach,
 using the actual hit face. It does not wait for spring convergence. Block-breaking
-aim points use outline-shape centers, including thin leaf litter. Baritone left
-click likewise requires its current and requested rays to hit the same block;
-right click retains its precise alignment gate. Entity
+aim points use outline-shape centers, including thin leaf litter. Entity
 interactions wait until the current viewing ray intersects the target's bounds.
 Targeted vision waits for the spring to settle before scheduling a screenshot;
 competing targeted captures fail as busy. World leave, reload, player replacement,
@@ -43,7 +38,7 @@ frequency), rather than snapping. `player look-at` always reports `scheduled`.
 Unit coverage includes convergence, shortest yaw arc, integration across time
 steps, retargeting momentum, repeated targets, ownership, and cancellation.
 
-A real client loaded both mixins and completed a short eastward Baritone route
+With the former Baritone backend, a real client completed a short eastward route
 and its near-180° return. The return trace showed successive yaw values of
 −82.846, −43.568, 9.887, 46.862, 68.091, 79.241, and 84.799 degrees; forward input
 remained off until the next tick. A targeted eastward screenshot completed.
@@ -73,8 +68,8 @@ bridge remained responsive. Local evidence is under
 The full Gradle build passed. Camera tests cover off-center hits, rejection of
 misses/other blocks, thin outlines, and a spring trajectory that intersects the
 target before settling. The live replay validates explicit block breaking;
-acquisition, crop harvesting, underwater harvesting, and Baritone left-click
-timing have not each received a separate live speed comparison.
+acquisition, crop harvesting, and underwater harvesting have not each received a
+separate live speed comparison.
 
 ### Combat controller wiring, 2026-09-20
 

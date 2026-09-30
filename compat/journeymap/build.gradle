@@ -140,10 +140,6 @@ tasks.register("syncJourneyMapCompatMods", Sync) {
 	if (reiCompatProject != null) {
 		from(reiCompatProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	}
-	from(rootProject.layout.projectDirectory.files(
-		"libs/baritone-unoptimized-fabric-1.15.0.jar",
-		"libs/nether-pathfinder-1.4.1.jar"
-	))
 }
 
 tasks.register("syncJourneyMapCompatLibraries", Sync) {
@@ -167,10 +163,6 @@ tasks.register("runClientJourneyMapCompat", net.fabricmc.loom.task.prod.ClientPr
 	if (reiCompatProject != null) {
 		mods.from(reiCompatProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	}
-	mods.from(rootProject.layout.projectDirectory.files(
-		"libs/baritone-unoptimized-fabric-1.15.0.jar",
-		"libs/nether-pathfinder-1.4.1.jar"
-	))
 	classpath.from(configurations.journeyMapCompatLibraries)
 	runDir = sharedDevRunDir.asFile
 	javaLauncher = javaToolchains.launcherFor {

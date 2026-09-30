@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.AcquisitionConstraints;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
@@ -14,9 +14,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** System 1 owns acquisition. Baritone receives only an observed work position. */
+/** System 1 owns acquisition. Navigation receives only an observed work position. */
 public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
-	private final BaritoneFacade navigation;
+	private final NavigationFacade navigation;
 	private final Environment environment;
 	private final MiningOpportunityPolicyState opportunityPolicy;
 	private final MiningOpportunityJournal opportunityJournal;
@@ -45,29 +45,29 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	private String lastRejection;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public TargetAcquisitionTaskExecutor(BaritoneFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController) {
+	public TargetAcquisitionTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController) {
 		this(navigation, cameraController, new MiningOpportunityPolicyState());
 	}
 
-	public TargetAcquisitionTaskExecutor(BaritoneFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController,
+	public TargetAcquisitionTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController,
 		MiningOpportunityPolicyState opportunityPolicy) {
 		this(navigation, cameraController, opportunityPolicy, new MiningOpportunityJournal());
 	}
 
-	public TargetAcquisitionTaskExecutor(BaritoneFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController,
+	public TargetAcquisitionTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController cameraController,
 		MiningOpportunityPolicyState opportunityPolicy, MiningOpportunityJournal opportunityJournal) {
 		this(navigation, new MinecraftAcquisitionEnvironment(cameraController), opportunityPolicy, opportunityJournal);
 	}
 
-	TargetAcquisitionTaskExecutor(BaritoneFacade navigation, Environment environment) {
+	TargetAcquisitionTaskExecutor(NavigationFacade navigation, Environment environment) {
 		this(navigation, environment, new MiningOpportunityPolicyState());
 	}
 
-	TargetAcquisitionTaskExecutor(BaritoneFacade navigation, Environment environment, MiningOpportunityPolicyState opportunityPolicy) {
+	TargetAcquisitionTaskExecutor(NavigationFacade navigation, Environment environment, MiningOpportunityPolicyState opportunityPolicy) {
 		this(navigation, environment, opportunityPolicy, new MiningOpportunityJournal());
 	}
 
-	TargetAcquisitionTaskExecutor(BaritoneFacade navigation, Environment environment, MiningOpportunityPolicyState opportunityPolicy,
+	TargetAcquisitionTaskExecutor(NavigationFacade navigation, Environment environment, MiningOpportunityPolicyState opportunityPolicy,
 		MiningOpportunityJournal opportunityJournal) {
 		this.navigation = Objects.requireNonNull(navigation);
 		this.environment = Objects.requireNonNull(environment);
@@ -148,7 +148,7 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 			return finish(false, "missing_required_harvest_tool itemIds=" + spec.requiredToolItemIds(), TaskFailureCode.MISSING_ITEM);
 		if (activeTicks > 2400) return goalMet ? finish(true, "opportunity_budget_exhausted")
 			: finish(false, "acquisition_budget_exhausted itemCount=" + count);
-		if (!BaritoneReleaseBarrier.released(navigation) && !navigationOwned) {
+		if (!NavigationRelease.idle(navigation) && !navigationOwned) {
 			if (phaseTicks > 100) return finish(false, "acquisition_release_timeout");
 			setSnapshot(TaskExecutionState.RUNNING, "waiting_for_navigation_release");
 			return Optional.empty();
@@ -365,10 +365,7 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> finishRelease() {
-		if (!BaritoneReleaseBarrier.releaseAndDrain(navigation)) {
-			setSnapshot(TaskExecutionState.RUNNING, "releasing_acquisition_navigation");
-			return Optional.empty();
-		}
+		NavigationRelease.release(navigation);
 		setSnapshot(terminal.terminalState(), terminal.message());
 		if (emitted) return Optional.empty();
 		emitted = true;

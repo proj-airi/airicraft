@@ -5,7 +5,7 @@ workspace "Airicraft Survival Reflex" "Current architecture of the survival-refl
         !impliedRelationships false
 
         minecraft = softwareSystem "Minecraft Client" "Provides the live player, world, entity, damage, and interaction APIs in which Airicraft runs." "External"
-        baritone = softwareSystem "Baritone" "Provides exact-goal navigation for bounded underwater escape candidates." "External"
+        navigation = softwareSystem "Navigation" "Provides exact-goal navigation for bounded underwater escape candidates." "External"
         llmProvider = softwareSystem "Planner LLM Provider" "Returns the planner decision made after a reflex resolves." "External"
 
         airicraft = softwareSystem "Airicraft" "A Fabric client mod that perceives, plans, and safely acts in Minecraft." {
@@ -73,12 +73,12 @@ workspace "Airicraft Survival Reflex" "Current architecture of the survival-refl
 
         minecraft -> airicraft "Supplies client ticks and live world observations to" "Fabric/Mixin callbacks"
         airicraft -> minecraft "Controls the local player through" "Minecraft client API"
-        airicraft -> baritone "Delegates selected escape navigation to" "In-process API"
+        airicraft -> navigation "Delegates selected escape navigation to" "In-process API"
         airicraft -> llmProvider "Requests post-reflex planning decisions from" "Configured planner backend"
 
         minecraft -> airicraft.fabric "Supplies client ticks and live world observations to" "Fabric/Mixin callbacks"
         airicraft.fabric -> minecraft "Reads world state and controls the local player through" "Minecraft client API"
-        airicraft.fabric -> baritone "Delegates selected escape navigation to" "In-process API"
+        airicraft.fabric -> navigation "Delegates selected escape navigation to" "In-process API"
         airicraft.fabric -> llmProvider "Requests post-reflex planning decisions from" "Configured planner backend"
 
         minecraft -> airicraft.fabric.ingress "Emits client ticks, damage sources, and health changes to" "Fabric/Mixin callbacks"
@@ -89,7 +89,7 @@ workspace "Airicraft Survival Reflex" "Current architecture of the survival-refl
         airicraft.fabric.coordinator -> airicraft.fabric.normalWork "Releases actuators and pauses, resumes, replaces, or cancels interrupted work in" "In-process call"
         airicraft.fabric.reflex -> airicraft.fabric.effectors "Commands the selected survival action through" "In-process call"
         airicraft.fabric.effectors -> minecraft "Applies movement, view, attack, and interaction effects to" "Minecraft client API"
-        airicraft.fabric.effectors -> baritone "Starts, polls, and releases exact escape navigation through" "In-process API"
+        airicraft.fabric.effectors -> navigation "Starts, polls, and releases exact escape navigation through" "In-process API"
         airicraft.fabric.coordinator -> airicraft.fabric.eventPipeline "Appends reflex lifecycle events to" "In-process call"
         airicraft.fabric.eventPipeline -> airicraft.fabric.planner "Creates a consolidated trigger after reflex resolution for" "Semantic event"
         airicraft.fabric.coordinator -> airicraft.fabric.planner "Updates safety epoch, hold identity, and active-reflex context in" "In-process call"
@@ -101,7 +101,7 @@ workspace "Airicraft Survival Reflex" "Current architecture of the survival-refl
     }
 
     views {
-        systemContext airicraft "reflex-context" "Where the reflex subsystem sits relative to Minecraft, Baritone, and the planner provider." {
+        systemContext airicraft "reflex-context" "Where the reflex subsystem sits relative to Minecraft, Navigation, and the planner provider." {
             include *?
             autoLayout lr
         }
@@ -123,7 +123,7 @@ workspace "Airicraft Survival Reflex" "Current architecture of the survival-refl
             airicraft.fabric.reflex -> airicraft.fabric.coordinator "Enters ACTIVE, allocates safety epoch/hold, and requests normal actuator release"
             airicraft.fabric.coordinator -> airicraft.fabric.normalWork "Releases current effects and records PAUSED_BY_REFLEX"
             airicraft.fabric.reflex -> airicraft.fabric.effectors "Selects SWIM_TO_AIR for interrupted work or REACH_SAFE_LAND when idle"
-            airicraft.fabric.effectors -> baritone "Tries exact navigation to a bounded breathable/safe-standing candidate"
+            airicraft.fabric.effectors -> navigation "Tries exact navigation to a bounded breathable/safe-standing candidate"
             airicraft.fabric.effectors -> minecraft "Falls back to route waypoints or swim-up movement and view control"
             airicraft.fabric.reflex -> minecraft "Rechecks air recovery and verified safe-standing state for 12 stable ticks"
             airicraft.fabric.reflex -> airicraft.fabric.coordinator "Resolves to IDLE or AWAITING_PLANNER and emits the lifecycle event"

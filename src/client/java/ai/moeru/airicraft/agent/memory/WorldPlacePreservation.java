@@ -1,8 +1,6 @@
 package ai.moeru.airicraft.agent.memory;
 
 import ai.moeru.airicraft.Airicraft;
-import baritone.api.BaritoneAPI;
-import baritone.api.utils.input.Input;
 import net.minecraft.client.Minecraft;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
@@ -10,7 +8,7 @@ import net.minecraft.core.BlockPos;
 import java.io.IOException;
 import java.util.List;
 
-/** Client-thread publication, immutable reads on Baritone's path calculation thread. */
+/** Client-thread publication, immutable reads on the navigation planner thread. */
 public final class WorldPlacePreservation {
 	private static volatile Snapshot current = new Snapshot(null, List.of(), false);
 	private static long revision = -1;
@@ -79,8 +77,7 @@ public final class WorldPlacePreservation {
 	public static boolean blocksPathBreaking(BlockPos pos) {
 		Minecraft minecraft = Minecraft.getInstance();
 		return minecraft.level != null && contains(minecraft.level, pos)
-			&& (ai.moeru.airicraft.agent.navigation.MinecraftMotor.breakingForNavigation()
-				|| BaritoneAPI.getProvider().getPrimaryBaritone().getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT));
+			&& ai.moeru.airicraft.agent.control.Actuator.breakingForNavigation();
 	}
 
 	record Snapshot(Object world, List<PlaceMemory.PreservedArea> areas, boolean unavailable) {

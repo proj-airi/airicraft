@@ -10,6 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CameraControllerTest {
+	@Test void aDirectAimIsRememberedUntilTheNextCameraTick() {
+		var camera = new CameraController();
+		assertFalse(camera.aimedThisTick());
+		camera.noteDirectAim();
+		assertTrue(camera.aimedThisTick());
+		camera.tick(null);
+		assertFalse(camera.aimedThisTick());
+	}
+
 	@Test void externalCorrectionIsObservedEvenWithoutAnotherTargetRequest() {
 		var camera = new CameraController();
 		camera.startMotion(new CameraController.Rotation(0, 0), new CameraController.Rotation(90, 0), 0, "vision");
@@ -25,12 +34,12 @@ class CameraControllerTest {
 		var reference = new CameraController();
 		var start = new CameraController.Rotation(350, 0);
 		var target = new CameraController.Rotation(80, 0);
-		camera.startMotion(start, target, 0, "baritone");
-		reference.startMotion(start, target, 0, "baritone");
+		camera.startMotion(start, target, 0, "navigationFacade");
+		reference.startMotion(start, target, 0, "navigationFacade");
 		var actual = camera.tickMotion().orElseThrow();
 		reference.tickMotion();
 		var wrapped = new CameraController.Rotation(actual.yaw() - 360, actual.pitch());
-		camera.startMotion(wrapped, target, 0, "baritone");
+		camera.startMotion(wrapped, target, 0, "navigationFacade");
 		var next = camera.tickMotion(wrapped).orElseThrow();
 		var expected = reference.tickMotion().orElseThrow();
 		assertEquals(expected.yaw() - 360, next.yaw(), .001);
@@ -39,11 +48,11 @@ class CameraControllerTest {
 
 	@Test void retargetAfterExternalRotationStartsFromActualView() {
 		var camera = new CameraController();
-		camera.startMotion(new CameraController.Rotation(0, 0), new CameraController.Rotation(90, 30), 0, "baritone");
+		camera.startMotion(new CameraController.Rotation(0, 0), new CameraController.Rotation(90, 30), 0, "navigationFacade");
 		camera.tickMotion();
 		var actual = new CameraController.Rotation(90, -20);
 		var target = new CameraController.Rotation(100, -10);
-		camera.startMotion(actual, target, 0, "baritone");
+		camera.startMotion(actual, target, 0, "navigationFacade");
 		var next = camera.tickMotion().orElseThrow();
 		assertTrue(next.yaw() > 90 && next.yaw() < 100, "Must not jump back to the old spring yaw");
 		assertTrue(next.pitch() > -20 && next.pitch() < -10);
@@ -72,7 +81,7 @@ class CameraControllerTest {
 		var controller = new CameraController();
 		var eye = new Vec3(0.5, 0.5, 0);
 		var pos = new net.minecraft.core.BlockPos(0, 0, 3);
-		controller.startMotion(new CameraController.Rotation(-70, 0), new CameraController.Rotation(0, 0), 0, "baritone");
+		controller.startMotion(new CameraController.Rotation(-70, 0), new CameraController.Rotation(0, 0), 0, "navigationFacade");
 		boolean hitBeforeSettled = false;
 		for (int i = 0; i < 30 && controller.activeReason().isPresent(); i++) {
 			var rotation = controller.tickMotion().orElseThrow();
@@ -128,19 +137,6 @@ class CameraControllerTest {
 	}
 
 	@Test
-	void directLookOwnsCameraUntilSettledButBaritoneCanRetargetItsOwnMotion() {
-		CameraController controller = new CameraController();
-		var start = new CameraController.Rotation(0, 0);
-		var target = new CameraController.Rotation(90, 0);
-		controller.startMotion(start, target, 0, "baritone");
-		assertTrue(controller.acceptsBaritoneTarget());
-		controller.startMotion(start, target, 0, "player_look_at");
-		assertTrue(!controller.acceptsBaritoneTarget());
-		for (int i = 0; i < 40; i++) controller.tickMotion();
-		assertTrue(controller.acceptsBaritoneTarget());
-	}
-
-	@Test
 	void clearingCancelsCaptureWaitAndReleasesOwnership() {
 		CameraController controller = new CameraController();
 		controller.startMotion(new CameraController.Rotation(0, 0),
@@ -150,7 +146,7 @@ class CameraControllerTest {
 		controller.clear();
 		assertTrue(pending.isCompletedExceptionally());
 		assertTrue(!controller.capturePending());
-		assertTrue(controller.acceptsBaritoneTarget());
+		assertTrue(controller.activeReason().isEmpty());
 	}
 
 	@Test

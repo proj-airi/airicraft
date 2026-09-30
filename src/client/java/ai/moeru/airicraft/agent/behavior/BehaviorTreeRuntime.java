@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.behavior;
 
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.chat.ChatService;
 import ai.moeru.airicraft.agent.debug.AgentDebugRecorder;
 import ai.moeru.airicraft.agent.follow.FollowState;
@@ -24,7 +25,7 @@ public final class BehaviorTreeRuntime {
 	private static final double FOLLOW_STOP_DISTANCE = 4.0D;
 
 	private final CameraController cameraController;
-	private final MovementController movementController = new MovementController();
+	private final MovementController movementController = new MovementController("behavior_tree", Priority.FOREGROUND);
 
 	private BehaviorTreeSnapshot snapshot = BehaviorTreeSnapshot.idle();
 
@@ -161,7 +162,7 @@ public final class BehaviorTreeRuntime {
 			&& taskExecutionSnapshot.state() == TaskExecutionState.RUNNING
 			&& "EntityInteraction".equals(taskExecutionSnapshot.processName())
 			&& ("direct_chase".equals(taskExecutionSnapshot.lastPathEvent())
-				|| "baritone_chase".equals(taskExecutionSnapshot.lastPathEvent()));
+				|| "navigation_chase".equals(taskExecutionSnapshot.lastPathEvent()));
 	}
 
 	static boolean shouldLookAtFollowTarget(GoalSnapshot activeGoal, FollowState followState) {

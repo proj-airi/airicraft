@@ -9,7 +9,7 @@ final class NavigationStallWatchdog {
 	private double supportedY = Double.NaN;
 	private final java.util.Map<String, Float> breakingProgressByTarget = new java.util.HashMap<>();
 
-	boolean observe(long tick, ai.moeru.airicraft.agent.baritone.BaritoneFacade.NavigationProgress sample) {
+	boolean observe(long tick, ai.moeru.airicraft.agent.navigation.NavigationFacade.NavigationProgress sample) {
 		if (Double.isNaN(supportedY) || sample.supported()) supportedY = sample.y();
 		boolean stalled = observe(tick, sample.x(), supportedY, sample.z());
 		// Brief interruptions and target switching must not count the same partial

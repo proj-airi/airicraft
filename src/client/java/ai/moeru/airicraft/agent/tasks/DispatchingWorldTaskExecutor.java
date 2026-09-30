@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 
 import java.util.LinkedHashSet;
@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private final ExecutorSet executors;
-	private final BaritoneFacade sharedBaritone;
+	private final NavigationFacade navigation;
 	private WorldTaskExecutor activeExecutor;
 	private WorldTaskType activeType;
 	private NavigationStallWatchdog navigationStall;
@@ -19,9 +19,9 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private String stalledTaskId;
 	private TaskExecutionSnapshot transitionSnapshot = TaskExecutionSnapshot.idle();
 
-	public DispatchingWorldTaskExecutor(ExecutorSet executors, BaritoneFacade sharedBaritone) {
+	public DispatchingWorldTaskExecutor(ExecutorSet executors, NavigationFacade navigation) {
 		this.executors = Objects.requireNonNull(executors, "executors");
-		this.sharedBaritone = sharedBaritone;
+		this.navigation = navigation;
 	}
 
 	@Override
@@ -42,20 +42,9 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			stalledTaskId = null;
 		}
 		WorldTaskExecutor requestedExecutor = executors.executorFor(request);
-		if (sharedBaritone != null && activeType != request.type()) {
+		if (navigation != null && activeType != request.type()) {
 			deactivate(sessionSnapshot);
-			if (!BaritoneReleaseBarrier.releaseAndDrain(sharedBaritone)) {
-				transitionSnapshot = new TaskExecutionSnapshot(
-					TaskExecutionState.RUNNING,
-					request.taskId(),
-					request.goal(),
-					"WorldTaskDispatcher",
-					"waiting_for_previous_baritone_release",
-					null,
-					null
-				);
-				return Optional.empty();
-			}
+			NavigationRelease.release(navigation);
 		}
 		else if (activeExecutor != null && activeExecutor != requestedExecutor) {
 			deactivate(sessionSnapshot);
@@ -65,12 +54,12 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		activeType = request.type();
 		transitionSnapshot = TaskExecutionSnapshot.idle();
 		var result = activeExecutor.tick(sessionSnapshot, activeTask);
-		var progress = sharedBaritone == null || !sessionSnapshot.companionActuationAllowed()
-			? Optional.<BaritoneFacade.NavigationProgress>empty() : sharedBaritone.navigationProgress();
+		var progress = navigation == null || !sessionSnapshot.companionActuationAllowed()
+			? Optional.<NavigationFacade.NavigationProgress>empty() : navigation.navigationProgress();
 		if (result.isPresent() || progress.isEmpty()) navigationStall.clear();
 		else if (navigationStall.observe(sessionSnapshot.tickCount(), progress.orElseThrow())) {
 			deactivate(sessionSnapshot);
-			sharedBaritone.cancel();
+			navigation.cancel();
 			stalledTaskId = request.taskId();
 			transitionSnapshot = new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(),
 				"WorldTaskDispatcher", "PATH_STUCK", null, null);
@@ -135,7 +124,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	}
 
 	public record ExecutorSet(
-		WorldTaskExecutor baritone,
+		WorldTaskExecutor navigation,
 		WorldTaskExecutor crafting,
 		WorldTaskExecutor dropItems,
 		WorldTaskExecutor entityInteraction,
@@ -148,24 +137,24 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		WorldTaskExecutor cropTending,
 		WorldTaskExecutor lureEntities
 	) {
-		public ExecutorSet(WorldTaskExecutor baritone, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
 			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending) {
-			this(baritone, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
 				blockBreak, acquisition, underwaterHarvest, cropTending, entityInteraction);
 		}
 
-		public ExecutorSet(WorldTaskExecutor baritone, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition, WorldTaskExecutor underwaterHarvest) {
-			this(baritone, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction, blockBreak, acquisition, underwaterHarvest, blockInteraction);
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction, blockBreak, acquisition, underwaterHarvest, blockInteraction);
 		}
 
-		public ExecutorSet(WorldTaskExecutor baritone, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak) {
-			this(baritone, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction, blockBreak, baritone, baritone);
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction, blockBreak, navigation, navigation);
 		}
 
 		public ExecutorSet {
@@ -173,7 +162,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			Objects.requireNonNull(lureEntities, "lureEntities");
 			Objects.requireNonNull(acquisition, "acquisition");
 			Objects.requireNonNull(underwaterHarvest, "underwaterHarvest");
-			Objects.requireNonNull(baritone, "baritone");
+			Objects.requireNonNull(navigation, "navigation");
 			Objects.requireNonNull(crafting, "crafting");
 			Objects.requireNonNull(dropItems, "dropItems");
 			Objects.requireNonNull(entityInteraction, "entityInteraction");
@@ -185,7 +174,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 
 		WorldTaskExecutor executorFor(WorldTaskRequest request) {
 			return switch (request.type()) {
-				case FOLLOW, NAVIGATE -> baritone;
+				case FOLLOW, NAVIGATE -> navigation;
 				case MINE -> acquisition;
 				case UNDERWATER_HARVEST -> underwaterHarvest;
 				case CRAFT_RECIPE -> crafting;
@@ -202,7 +191,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 
 		List<WorldTaskExecutor> all() {
 			return List.copyOf(new LinkedHashSet<>(List.of(
-				baritone,
+				navigation,
 				crafting,
 				dropItems,
 				entityInteraction,

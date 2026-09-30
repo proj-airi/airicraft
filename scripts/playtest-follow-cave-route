@@ -72,7 +72,7 @@ def follow():
     if math.dist(position(), route[0]) > 2:
         raise ValueError('Player moved from map origin; remap')
     print(command(['agent', 'tools', 'call', '--name', 'configure_pathfind', '--arguments',
-        json.dumps({'settings': {'allowBreak': False, 'allowPlace': False, 'allowInventory': False, 'allowWaterBucketFall': False}})]), flush=True)
+        json.dumps({'allowBreak': False, 'allowPlace': False, 'allowInventoryToolSwap': False})]), flush=True)
     index = 0
     for number, target in enumerate(waypoints, 1):
         end_index = route.index(target, index + 1)

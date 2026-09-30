@@ -1,7 +1,7 @@
 package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.tasks.EntityAttackMode;
-import ai.moeru.airicraft.agent.baritone.BaritonePathfindSettings;
+import ai.moeru.airicraft.agent.navigation.PathfindSettings;
 import ai.moeru.airicraft.agent.tasks.ResourceGatheringCatalog;
 import ai.moeru.airicraft.agent.tasks.ReturnToSurfaceStepArgs;
 import ai.moeru.airicraft.agent.tasks.SmeltingFuelMode;
@@ -323,9 +323,7 @@ public final class PlannerToolCatalog {
 				prop("removeRuleIds", stringArray("Rule ids to remove.")),
 				prop("upserts", array("Policy rule upserts.", policyUpsertSchema()))
 			), List.of()), PlannerToolCatalog::validatePolicyArguments),
-		builtInTool(CONFIGURE_PATHFIND, false, tool(CONFIGURE_PATHFIND, "Atomically update runtime Baritone pathfinding settings. Use this only when the current route needs a deliberate capability or risk trade-off; settings reset to Airicraft defaults on client restart.", properties(
-				prop("settings", BaritonePathfindSettings.plannerSettingsSchema())
-			), List.of("settings")), PlannerToolCatalog::validateConfigurePathfindArguments),
+		builtInTool(CONFIGURE_PATHFIND, false, tool(CONFIGURE_PATHFIND, "Atomically update the movement policy navigation uses, such as whether paths may break or place blocks or how far they may fall. Provide at least one setting; all are validated together. Use this only when the current route needs a deliberate capability or risk trade-off; settings reset to defaults on reload. Read current values with inspect_pathfind.", new LinkedHashMap<>(PathfindSettings.plannerProperties()), List.of()), PlannerToolCatalog::validateConfigurePathfindArguments),
 		builtInTool(CONFIGURE_REFLEX, false, tool(CONFIGURE_REFLEX, "Read or replace System 1 automatic survival policy. Call with {} to read; provide all four settings to replace. Defaults: combatEnabled=true, drowningEnabled=true, maxThreatDistance=16, requireLineOfSight=true. Engagement is limited to known aggressive or visible hostile mobs, with melee engagement additionally limited to 6 blocks. Nearby threat awareness extends to maxThreatDistance, including remembered hidden flankers, for terrain-aware swarm kiting and circling; awareness alone does not trigger distant/hidden pursuit. Disabling combat also disables automatic shield/melee actions; manual gameplay tools remain available. Policy lasts until agent reload/recreation, including across death. Allowed during a reflex; stops disabled reflex actuation next tick but does not resume an interrupted job: wait for the survival update and use continue to resume the plan or clear_queue to replace it. Use deliberately when automatic behavior conflicts with your task, and restore settings when that tactic ends.", properties(
 			prop("combatEnabled", bool("Enable automatic combat, including melee defense and shield blocking.")),
 			prop("drowningEnabled", bool("Enable automatic drowning recovery.")),
@@ -1010,9 +1008,8 @@ public final class PlannerToolCatalog {
 	}
 
 	private static void validateConfigurePathfindArguments(JsonObject arguments) {
-		if (arguments == null || !arguments.has("settings") || !arguments.get("settings").isJsonObject()
-			|| arguments.getAsJsonObject("settings").isEmpty()) {
-			throw new JsonParseException("settings must be a non-empty object");
+		if (arguments == null || arguments.isEmpty()) {
+			throw new JsonParseException("provide at least one pathfind setting");
 		}
 	}
 

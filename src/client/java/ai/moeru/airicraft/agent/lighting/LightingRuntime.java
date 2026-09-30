@@ -1,5 +1,7 @@
 package ai.moeru.airicraft.agent.lighting;
 
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.tasks.WorldTaskType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
@@ -7,7 +9,6 @@ import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.Items;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
@@ -26,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 
 public final class LightingRuntime {
+	private final Actuator actuator = new Actuator("lighting", Priority.BACKGROUND);
 	private static final long ATTEMPT_INTERVAL_TICKS = 10L;
 	private static final long CONFIRMATION_TIMEOUT_TICKS = 20L;
 	private static final double MAX_REACH_SQUARED = 4.5D * 4.5D;
@@ -281,9 +283,9 @@ public final class LightingRuntime {
 		return player.getInventory().countItem(Items.TORCH);
 	}
 
-	private static InteractionResult placeWithTorch(Minecraft minecraft, LocalPlayer player, BlockHitResult hit) {
+	private InteractionResult placeWithTorch(Minecraft minecraft, LocalPlayer player, BlockHitResult hit) {
 		if (player.getOffhandItem().is(Items.TORCH)) {
-			InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.OFF_HAND, hit);
+			InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.OFF_HAND, hit);
 			if (result.consumesAction()) player.swing(InteractionHand.OFF_HAND);
 			return result;
 		}
@@ -291,19 +293,20 @@ public final class LightingRuntime {
 		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
 			if (!menu.getSlot(slot).getItem().is(Items.TORCH)) continue;
 			int previousSlot = player.getInventory().getSelectedSlot();
+			// A stronger actor holds the hotbar this tick: skip before any inventory swap can be stranded.
+			if (!actuator.selectHotbar(minecraft, previousSlot)) return InteractionResult.PASS;
 			boolean swap = slot < InventoryMenu.USE_ROW_SLOT_START;
 			int torchSlot = swap ? previousSlot : slot - InventoryMenu.USE_ROW_SLOT_START;
 			if (swap) minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slot, torchSlot, ClickType.SWAP, player);
-			player.getInventory().setSelectedSlot(torchSlot);
+			actuator.selectHotbar(minecraft, torchSlot);
 			try {
-				InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hit);
+				InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, hit);
 				if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 				return result;
 			}
 			finally {
 				if (swap) minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slot, torchSlot, ClickType.SWAP, player);
-				player.getInventory().setSelectedSlot(previousSlot);
-				player.connection.send(new ServerboundSetCarriedItemPacket(previousSlot));
+				actuator.selectHotbarAndSync(minecraft, previousSlot);
 			}
 		}
 		return InteractionResult.PASS;

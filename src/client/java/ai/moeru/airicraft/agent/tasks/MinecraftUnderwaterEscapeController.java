@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,7 +24,7 @@ import java.util.Objects;
 public final class MinecraftUnderwaterEscapeController {
 	private final MovementController movement;
 	private final CameraController camera;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final UnderwaterEscapeNavigator navigator;
 	private Minecraft activeClient;
 
@@ -32,17 +32,16 @@ public final class MinecraftUnderwaterEscapeController {
 	private UnderwaterEscapeSearch.SearchSession searchSession;
 	private List<UnderwaterEscapeSearch.Candidate> candidates = List.of();
 	private UnderwaterEscapeSearch.SearchStatus searchStatus = UnderwaterEscapeSearch.SearchStatus.SEARCHING;
-	private boolean waitingForBaritoneRelease;
 
 	public MinecraftUnderwaterEscapeController(
-		BaritoneFacade baritone,
+		NavigationFacade navigationFacade,
 		MovementController movement,
 		CameraController camera
 	) {
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.movement = Objects.requireNonNull(movement, "movement");
 		this.camera = Objects.requireNonNull(camera, "camera");
-		this.navigator = new UnderwaterEscapeNavigator(baritone, new UnderwaterEscapeNavigator.WaypointDriver() {
+		this.navigator = new UnderwaterEscapeNavigator(navigationFacade, new UnderwaterEscapeNavigator.WaypointDriver() {
 			@Override
 			public void moveToward(UnderwaterEscapeSearch.Position waypoint, long tick) {
 				Minecraft minecraft = activeClient;
@@ -102,13 +101,6 @@ public final class MinecraftUnderwaterEscapeController {
 			candidates = update.candidates();
 			searchStatus = update.status();
 		}
-		if (waitingForBaritoneRelease) {
-			waitingForBaritoneRelease = !BaritoneReleaseBarrier.releaseAndDrain(baritone);
-			if (waitingForBaritoneRelease) {
-				movement.stop(minecraft);
-				return snapshot();
-			}
-		}
 		UnderwaterEscapeNavigator.Snapshot navigation = navigator.tick(
 			candidates,
 			new UnderwaterEscapeNavigator.Observation(
@@ -120,14 +112,14 @@ public final class MinecraftUnderwaterEscapeController {
 			)
 		);
 		if (navigation.phase() == UnderwaterEscapeNavigator.Phase.RESEARCH_REQUIRED) {
-			// Baritone left the player in a connected cell outside every route
+			// Navigation left the player in a connected cell outside every route
 			// computed from the old origin. Re-anchor the bounded search here;
 			// navigator.restartSearch() deliberately retains attempted/failed targets.
 			begin(minecraft, requestedMode, remainingAirTicks);
 			movement.stop(minecraft);
 			return snapshot();
 		}
-		return new Snapshot(searchStatus, candidates.size(), navigation, false);
+		return new Snapshot(searchStatus, candidates.size(), navigation);
 	}
 
 	public void reset(Minecraft minecraft) {
@@ -138,11 +130,10 @@ public final class MinecraftUnderwaterEscapeController {
 		searchSession = null;
 		candidates = List.of();
 		searchStatus = UnderwaterEscapeSearch.SearchStatus.SEARCHING;
-		waitingForBaritoneRelease = false;
 	}
 
 	public Snapshot snapshot() {
-		return new Snapshot(searchStatus, candidates.size(), navigator.snapshot(), waitingForBaritoneRelease);
+		return new Snapshot(searchStatus, candidates.size(), navigator.snapshot());
 	}
 
 	private void begin(
@@ -151,7 +142,7 @@ public final class MinecraftUnderwaterEscapeController {
 		int remainingAirTicks
 	) {
 		navigator.restartSearch();
-		waitingForBaritoneRelease = true;
+		NavigationRelease.release(navigationFacade);
 		mode = Objects.requireNonNull(requestedMode, "requestedMode");
 		LocalPlayer player = minecraft.player;
 		UnderwaterEscapeSearch.Position start = new UnderwaterEscapeSearch.Position(
@@ -221,12 +212,12 @@ public final class MinecraftUnderwaterEscapeController {
 
 	private void restartSearch(Minecraft minecraft) {
 		navigator.restartSearch();
+		NavigationRelease.release(navigationFacade);
 		movement.stop(minecraft);
 		mode = null;
 		searchSession = null;
 		candidates = List.of();
 		searchStatus = UnderwaterEscapeSearch.SearchStatus.SEARCHING;
-		waitingForBaritoneRelease = true;
 	}
 
 	private static final class LiveCellView implements UnderwaterEscapeSearch.CellView {
@@ -260,8 +251,7 @@ public final class MinecraftUnderwaterEscapeController {
 	public record Snapshot(
 		UnderwaterEscapeSearch.SearchStatus searchStatus,
 		int candidateCount,
-		UnderwaterEscapeNavigator.Snapshot navigation,
-		boolean waitingForBaritoneRelease
+		UnderwaterEscapeNavigator.Snapshot navigation
 	) {
 		public Snapshot {
 			Objects.requireNonNull(searchStatus, "searchStatus");

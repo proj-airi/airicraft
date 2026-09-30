@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Drive planner tools without a model and check their effect on the world.
+
+Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner dormant) and
+join a disposable singleplayer world while standing on open ground. Each scenario builds a scratch
+arena through POST /v1/evaluation/tool-fixture, gives the player what the tool needs, calls the
+tool through the external-driver route, and judges it by what changed in the world (inventory,
+blocks, entities), not by the tool's own report. These paths go through the control plane's
+actuator: hotbar selection, the use-key hold, placing, breaking, attacking and walk-only travel.
+
+The report is written as JSON. The exit code is 0 only when every scenario passed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import importlib.machinery
+import importlib.util
+import json
+import re
+import sys
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+FIXTURE_ROUTE = "/v1/evaluation/tool-fixture"
+TOOLS_ROUTE = "/v1/agent/tools"
+DEFAULT_TIMEOUT_SECONDS = 30.0
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_baseline():
+    loader = importlib.machinery.SourceFileLoader("airicraft_navigation_baseline", str(REPO_ROOT / "scripts" / "navigation-baseline"))
+    spec = importlib.util.spec_from_loader("airicraft_navigation_baseline", loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["airicraft_navigation_baseline"] = module
+    loader.exec_module(module)
+    return module
+
+
+baseline = load_baseline()
+BridgeCall = Callable[[str, str, Any], Any]
+
+
+class Arena:
+    """One fixture arena and the helpers scenarios share."""
+
+    def __init__(self, call: BridgeCall) -> None:
+        self.call = call
+        self.center: dict[str, int] = {}
+
+    def fixture(self, **body: Any) -> dict[str, Any]:
+        return self.call("POST", FIXTURE_ROUTE, body)
+
+    def reset(self, difficulty: str = "peaceful") -> None:
+        reply = self.fixture(action="arena", difficulty=difficulty)
+        self.center = reply["center"]
+        time.sleep(1.0)
+
+    def at(self, dx: int, dy: int, dz: int) -> dict[str, int]:
+        return {"x": self.center["x"] + dx, "y": self.center["y"] + dy, "z": self.center["z"] + dz}
+
+    def give(self, items: dict[str, int]) -> None:
+        """Give items on the server, then wait until the client's own inventory shows them: tools read the client."""
+        self.fixture(action="give", items=items)
+        names = [item.split(":", 1)[-1] for item in items]  # the tool answers in prose with bare ids: "iron_sword"
+        if not self.wait(lambda: all(name in self.tool("inspect_inventory", {})["text"] for name in names), 15):
+            raise RuntimeError(f"the client never saw {sorted(items)}")
+
+    def set_hunger(self, hunger: int) -> None:
+        """Set hunger on the server and wait for the client's food data to follow (it is not exposed to tools)."""
+        self.fixture(action="hunger", hunger=hunger)
+        time.sleep(3.0)
+
+    def state(self, query: list[dict[str, int]] | None = None, entities: list[str] | None = None) -> dict[str, Any]:
+        return self.fixture(action="state", query=query or [], entities=entities or [])
+
+    def block(self, pos: dict[str, int]) -> str:
+        return self.state([pos])["blocks"][0]["block"]
+
+    def inspect_around(self, pos: dict[str, int], radius: int = 3) -> None:
+        """Tools require targets to have been observed by a world read first."""
+        self.tool("inspect_world", {"mode": "inspect_area", "scope": "box", "detail": "blocks",
+                                     "x1": pos["x"] - radius, "y1": pos["y"] - 1, "z1": pos["z"] - radius,
+                                     "x2": pos["x"] + radius, "y2": pos["y"] + 2, "z2": pos["z"] + radius})
+
+    def tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return baseline.tool_receipt(self.call("POST", TOOLS_ROUTE, {"name": name, "arguments": arguments}))
+
+    def wait(self, condition: Callable[[], bool], timeout: float = DEFAULT_TIMEOUT_SECONDS, poll: float = 0.4) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if condition():
+                return True
+            time.sleep(poll)
+        return condition()
+
+
+def outcome(name: str, passed: bool, detail: str, receipt: dict[str, Any] | None = None) -> dict[str, Any]:
+    result = {"scenario": name, "passed": passed, "detail": detail}
+    if receipt is not None:
+        result["toolResult"] = receipt.get("text", "")[:400]
+    return result
+
+
+def scenario_equip_item(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:wooden_pickaxe": 1, "minecraft:iron_sword": 1})
+    receipt = arena.tool("equip_item", {"itemId": "minecraft:iron_sword"})
+    arena.wait(lambda: arena.state()["heldItem"] == "minecraft:iron_sword", 10)
+    held = arena.state()["heldItem"]
+    return outcome("equip_item", receipt["accepted"] and held == "minecraft:iron_sword", f"held {held}", receipt)
+
+
+def scenario_eat_food(arena: Arena) -> dict[str, Any]:
+    arena.reset(difficulty="easy")  # peaceful refills hunger on its own, which would hide the effect
+    arena.give({"minecraft:bread": 2})
+    arena.set_hunger(8)
+    receipt = arena.tool("eat_food", {"itemId": "minecraft:bread"})
+    ate = arena.wait(lambda: arena.state()["inventory"].get("minecraft:bread", 0) == 1 and arena.state()["hunger"] > 8, 20)
+    after = arena.state()
+    return outcome("eat_food", receipt["accepted"] and ate and after["inventory"].get("minecraft:bread", 0) == 1,
+                   f"hunger {after['hunger']}, bread {after['inventory'].get('minecraft:bread', 0)}", receipt)
+
+
+def scenario_place_block(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:cobblestone": 8})
+    target = arena.at(2, 0, 0)
+    arena.inspect_around(target)
+    receipt = arena.tool("place_block", {"itemId": "minecraft:cobblestone", **target, "facePreference": "down"})
+    placed = arena.wait(lambda: arena.block(target) == "minecraft:cobblestone", 20)
+    return outcome("place_block", placed, f"block at target: {arena.block(target)}", receipt)
+
+
+def scenario_break_blocks(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    lower, upper = arena.at(2, 0, 0), arena.at(2, 1, 0)
+    arena.fixture(action="set_blocks", blocks=[{**lower, "block": "minecraft:dirt"}, {**upper, "block": "minecraft:dirt"}])
+    arena.give({"minecraft:iron_shovel": 1})
+    arena.inspect_around(lower)
+    receipt = arena.tool("break_blocks", {"targets": [{**lower, "expectedBlockIds": ["minecraft:dirt"]},
+                                                         {**upper, "expectedBlockIds": ["minecraft:dirt"]}]})
+    both = arena.wait(lambda: arena.block(lower) == "minecraft:air" and arena.block(upper) == "minecraft:air", 30)
+    return outcome("break_blocks", both, f"lower {arena.block(lower)}, upper {arena.block(upper)}", receipt)
+
+
+def scenario_attack_entity(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:iron_sword": 1})
+    cow =arena.fixture(action="spawn", type="minecraft:cow", **{k: v for k, v in arena.at(4, 0, 0).items()})
+    uuid = cow["uuid"]
+    receipt = arena.tool("attack_entity", {"uuid": uuid, "entityTypeId": "minecraft:cow", "mode": "kill"})
+    dead = arena.wait(lambda: not arena.state(entities=[uuid])["entities"][0]["alive"], 40)
+    return outcome("attack_entity", receipt["accepted"] and dead, "cow killed" if dead else "cow still alive", receipt)
+
+
+def scenario_drop_items(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:dirt": 5})
+    receipt = arena.tool("drop_items", {"itemId": "minecraft:dirt", "quantity": 3})
+    dropped = arena.wait(lambda: sum(d["count"] for d in arena.state()["drops"] if d["item"] == "minecraft:dirt") >= 3, 15)
+    left = arena.state()["inventory"].get("minecraft:dirt", 0)
+    return outcome("drop_items", receipt["accepted"] and dropped and left == 2, f"dropped {dropped}, inventory dirt {left}", receipt)
+
+
+def scenario_craft_recipe(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:oak_planks": 4})
+    listing = arena.tool("check_craftables", {})
+    match = re.search(r'\b(\w+_to_stick)\b', listing["text"])  # recipe ids read like oak_planks_x2_to_stick
+    if not match:
+        return outcome("craft_recipe", False, "check_craftables did not list a stick recipe", listing)
+    receipt = arena.tool("craft_recipe", {"recipeId": match.group(1), "times": 1})
+    made = arena.wait(lambda: arena.state()["inventory"].get("minecraft:stick", 0) >= 4, 20)
+    return outcome("craft_recipe", receipt["accepted"] and made,
+                   f"sticks {arena.state()['inventory'].get('minecraft:stick', 0)}", receipt)
+
+
+def scenario_use_block(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    lever, backing = arena.at(2, 0, 0), arena.at(2, 0, 1)
+    arena.fixture(action="set_blocks", blocks=[{**backing, "block": "minecraft:stone"}, {**lever, "block": "minecraft:lever"}])
+    arena.inspect_around(lever)
+
+    def powered() -> bool:
+        entry = arena.state([lever])["blocks"][0]
+        return "powered=true" in entry.get("state", "")
+
+    before = powered()
+    receipt = arena.tool("use_block", {**lever})
+    toggled = arena.wait(powered, 20)
+    return outcome("use_block", receipt["accepted"] and not before and toggled,
+                   f"lever powered before {before}, after {powered()}", receipt)
+
+
+def scenario_lure_entities(arena: Arena) -> dict[str, Any]:
+    arena.reset()
+    arena.give({"minecraft:wheat": 4})
+    cows = [arena.fixture(action="spawn", type="minecraft:cow", **arena.at(-4, 0, dz)) for dz in (-1, 1)]
+    tokens = [cow["uuid"].replace("-", "")[:8] for cow in cows]
+    low, high = arena.at(5, 0, -1), arena.at(7, 1, 1)
+    receipt = arena.tool("lure_entities", {"uuids": tokens, "itemId": "minecraft:wheat",
+                                           "x1": low["x"], "y1": low["y"], "z1": low["z"],
+                                           "x2": high["x"], "y2": high["y"], "z2": high["z"]})
+    ids = [cow["uuid"] for cow in cows]
+
+    def inside() -> bool:
+        entities = arena.state(entities=ids)["entities"]
+        return all(e.get("alive") and low["x"] <= e["position"]["x"] <= high["x"] + 1 and low["z"] <= e["position"]["z"] <= high["z"] + 1
+                   for e in entities)
+
+    arrived = arena.wait(inside, 90)
+    return outcome("lure_entities", receipt["accepted"] and arrived, "both cows in the box" if arrived else "cows did not arrive", receipt)
+
+
+SCENARIOS: dict[str, Callable[[Arena], dict[str, Any]]] = {
+    "equip_item": scenario_equip_item,
+    "eat_food": scenario_eat_food,
+    "place_block": scenario_place_block,
+    "break_blocks": scenario_break_blocks,
+    "attack_entity": scenario_attack_entity,
+    "drop_items": scenario_drop_items,
+    "craft_recipe": scenario_craft_recipe,
+    "use_block": scenario_use_block,
+    "lure_entities": scenario_lure_entities,
+}
+
+
+def run(call: BridgeCall, names: list[str]) -> list[dict[str, Any]]:
+    arena = Arena(call)
+    results = []
+    try:
+        for name in names:
+            started = time.monotonic()
+            try:
+                result = SCENARIOS[name](arena)
+            except Exception as error:  # a scenario that cannot run is a failure, not a crash of the suite
+                result = outcome(name, False, f"{type(error).__name__}: {error}")
+            result["seconds"] = round(time.monotonic() - started, 1)
+            print(f"{name}: {'passed' if result['passed'] else 'FAILED'} ({result['detail']})", flush=True)
+            results.append(result)
+    finally:
+        try:
+            arena.fixture(action="cleanup")
+        except Exception:
+            pass
+    return results
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--scenario", action="append", dest="scenarios", choices=sorted(SCENARIOS), help="Scenario id; repeat for several.")
+    parser.add_argument("--bridge-state", type=Path, default=baseline.default_bridge_state_path())
+    parser.add_argument("--output", type=Path, default=None)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    call = baseline.http_bridge(baseline.read_bridge(args.bridge_state))
+    names = args.scenarios or list(SCENARIOS)
+    results = run(call, names)
+    output = args.output or REPO_ROOT / "run" / "live-tool-smoke" / f"{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps({"results": results}, indent=1), encoding="utf-8")
+    failed = [r["scenario"] for r in results if not r["passed"]]
+    print(f"{len(results) - len(failed)}/{len(results)} passed" + (f"; failed: {', '.join(failed)}" if failed else "") + f"; report: {output}")
+    return 0 if not failed else 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except baseline.BaselineError as error:
+        print(f"live-tool-smoke: {error}", file=sys.stderr)
+        sys.exit(3)

@@ -1,13 +1,13 @@
 package ai.moeru.airicraft.agent;
 
-import ai.moeru.airicraft.agent.tasks.OwnedKeyPress;
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.control.Priority;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -17,9 +17,9 @@ import net.minecraft.world.InteractionHand;
 import java.util.Optional;
 
 final class PlayerItemUseController {
+	private final Actuator actuator = new Actuator("item_use", Priority.FOREGROUND);
 	private static final long EAT_TIMEOUT_TICKS = 80L;
 
-	private final OwnedKeyPress useKey = new OwnedKeyPress();
 	private Eating eating;
 
 	String equip(Minecraft minecraft, String itemId) {
@@ -52,7 +52,7 @@ final class PlayerItemUseController {
 			if (minecraft.gameMode == null) {
 				throw new IllegalStateException("interaction_manager_unavailable");
 			}
-			minecraft.gameMode.useItem(player, InteractionHand.MAIN_HAND);
+			actuator.useItem(minecraft, player, InteractionHand.MAIN_HAND);
 			return "Tool result for equip_item: accepted itemId=" + itemId + " equipmentSlot=" + equippable.slot().getName();
 		}
 		return "Tool result for equip_item: accepted itemId=" + itemId + " equipmentSlot=mainhand";
@@ -76,8 +76,10 @@ final class PlayerItemUseController {
 			throw new IllegalStateException("interaction_manager_unavailable");
 		}
 		eating = new Eating(itemId, hunger, inventoryCount(player, itemId), tick + EAT_TIMEOUT_TICKS);
-		useKey.press(minecraft.options.keyUse);
-		minecraft.gameMode.useItem(player, InteractionHand.MAIN_HAND);
+		if (!actuator.holdUse()) {
+			throw new IllegalStateException("control_held_by_another_owner");
+		}
+		actuator.useItem(minecraft, player, InteractionHand.MAIN_HAND);
 		return "Tool result for eat_food: accepted itemId=" + itemId + " hunger=" + hunger;
 	}
 
@@ -97,7 +99,7 @@ final class PlayerItemUseController {
 		if (tick >= eating.deadlineTick()) {
 			return Optional.of(finish(minecraft, false, "consume_timeout"));
 		}
-		useKey.press(minecraft.options.keyUse);
+		actuator.holdUse();
 		return Optional.empty();
 	}
 
@@ -111,7 +113,7 @@ final class PlayerItemUseController {
 			&& eating.itemId().equals(itemId(minecraft.player.getUseItem()))) {
 			minecraft.gameMode.releaseUsingItem(minecraft.player);
 		}
-		useKey.release(minecraft == null ? null : minecraft.options.keyUse);
+		actuator.releaseUse(minecraft);
 		eating = null;
 	}
 
@@ -136,7 +138,7 @@ final class PlayerItemUseController {
 		return minecraft.player;
 	}
 
-	private static ItemStack selectItem(Minecraft minecraft, LocalPlayer player, String itemId) {
+	private ItemStack selectItem(Minecraft minecraft, LocalPlayer player, String itemId) {
 		if (itemId == null || itemId.isBlank()) {
 			throw new IllegalArgumentException("itemId is required");
 		}
@@ -156,10 +158,7 @@ final class PlayerItemUseController {
 			hotbarSlot = player.getInventory().getSelectedSlot();
 			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, hotbarSlot, ClickType.SWAP, player);
 		}
-		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (minecraft.getConnection() != null) {
-			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
-		}
+		actuator.selectHotbarAndSync(minecraft, hotbarSlot);
 		ItemStack selected = player.getInventory().getSelectedItem();
 		if (selected.isEmpty() || !itemId.equals(itemId(selected))) {
 			throw new IllegalStateException("item_equip_failed itemId=" + itemId);

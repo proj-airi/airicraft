@@ -92,8 +92,6 @@ def automaticPlaytestMode = providers.gradleProperty("airicraft.automaticPlaytes
 def hostedPlaytestAutoReset = providers.gradleProperty("airicraft.hostedPlaytestAutoReset").orElse("false")
 def lanPort = providers.gradleProperty("airicraft.lanPort")
 def codexDriverEnabled = providers.gradleProperty("airicraft.codexDriver").orElse("false")
-// Overrides navigation.backend (baritone or airicraft) for launched clients; blank keeps the config value.
-def navigationBackend = providers.gradleProperty("airicraft.navigationBackend").orElse("")
 def arthasVersion = providers.gradleProperty("airicraft.arthas.version").orElse("4.1.8")
 def arthasBootUrl = providers.gradleProperty("airicraft.arthas.bootUrl").orElse("https://arthas.aliyun.com/arthas-boot.jar")
 def arthasSelect = providers.gradleProperty("airicraft.arthas.select").filter { !it.isBlank() }
@@ -385,7 +383,6 @@ tasks.named("runClient").configure {
 		*hotswapJvmArgs(hotswapDevConfig)
 	)
 	systemProperty("airicraft.codexDriver", codexDriverEnabled.get())
-	if (!navigationBackend.get().isBlank()) systemProperty("airicraft.navigation.backend", navigationBackend.get())
 	systemProperty("airicraft.automaticPlaytest", automaticPlaytestEnabled.get())
 	if (automaticPlaytestId.isPresent()) systemProperty("airicraft.automaticPlaytestId", automaticPlaytestId.get())
 	systemProperty("airicraft.automaticPlaytestDir", automaticPlaytestDir.get())
@@ -431,7 +428,6 @@ allprojects {
 		dependsOn rootProject.tasks.named("prepareHotswapProductionConfigs")
 		jvmArgs.addAll(hotswapJvmArgs(taskHotswapConfig))
 		jvmArgs.add("-Dairicraft.codexDriver=${codexDriverEnabled.get()}")
-		if (!navigationBackend.get().isBlank()) jvmArgs.add("-Dairicraft.navigation.backend=${navigationBackend.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytest=${automaticPlaytestEnabled.get()}")
 		if (automaticPlaytestId.isPresent()) jvmArgs.add("-Dairicraft.automaticPlaytestId=${automaticPlaytestId.get()}")
 		jvmArgs.add("-Dairicraft.automaticPlaytestDir=${automaticPlaytestDir.get()}")
@@ -592,8 +588,6 @@ dependencies {
 	}
 	include(libs.cloth.config) { transitive = false }
 	modCompileOnly libs.modmenu
-	modImplementation files("libs/baritone-unoptimized-fabric-1.15.0.jar")
-	modImplementation files("libs/nether-pathfinder-1.4.1.jar")
     implementation libs.action.plan.advisor
     include libs.action.plan.advisor
 	implementation project(":navigation-core")

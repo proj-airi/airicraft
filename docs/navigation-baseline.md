@@ -4,7 +4,8 @@ Phase 0 of the [in-house navigation plan](superpowers/specs/2026-09-25-in-house-
 needs a repeatable measurement of navigation that does not depend on a model. The
 evaluator builds deterministic courses, `scripts/navigation-baseline` drives
 `navigate_to` directly, and every navigation task reports its metrics on the debug
-timeline. The same run compares Baritone now with the in-house backend later.
+timeline. It produced the Baritone baseline the in-house planner and motor had to match; Baritone
+is now removed and the benchmark measures the in-house navigation alone.
 
 ## Courses
 
@@ -49,26 +50,21 @@ remembered place), and counts of blocks broken or placed.
 3. Run the courses:
 
    ```sh
-   scripts/navigation-baseline --label baritone --runs 5
+   scripts/navigation-baseline --label airicraft --runs 5
    ```
 
    Use `--course <id>` (repeatable) to run a subset. The report is written to
    `run/navigation-baseline/<label>-<utc>.json` and a summary table is printed. The exit
    code is 0 only when every run passed.
 
-### Choosing the backend
+`airicraft agent debug navigation plan --x --y --z` dry-runs one plan from the player
+without moving and highlights it; `airicraft agent debug navigation state` shows the active
+process and planner diagnostics.
 
-The client's `navigation.backend` setting (`config/airicraft/airicraft.yml`) picks
-`baritone` (the default) or `airicraft`, the in-house planner and motor. It is reloadable
-with `airicraft reload`. The Gradle property `-Pairicraft.navigationBackend=<backend>`
-overrides it for a launched client, and `scripts/run-navigation-baseline --backend
-<backend>` passes that property. `airicraft agent debug navigation state` shows the active
-backend.
-
-On the Baritone backend, every navigation is also planned in-house without moving (shadow
-mode). The shadow outcome is in the terminal diagnostics under `planner.shadow`, and the
-summary counts `shadowFound`. `airicraft agent debug navigation plan --x --y --z` dry-runs
-one plan from the player and highlights it.
+There is no backend switch: earlier runs compared Baritone with the in-house planner through
+a `navigation.backend` setting, which was removed together with Baritone (a leftover key in
+`airicraft.yml` is ignored). To reproduce the Baritone numbers below, build the last commit
+that still carried it (`5323aa09^`).
 
 ### Unattended and in CI
 
@@ -80,9 +76,8 @@ scripts/run-navigation-baseline`. Course failures are recorded data; pass
 `--require-pass` to make them fail the command.
 
 The `navigation baseline` GitHub workflow runs it under Xvfb with Mesa software
-rendering. It runs on manual dispatch (with runs, courses and backend inputs) and on
-pushes that change the benchmark or the in-house backend; pushes measure the in-house
-backend. It prints the summary and one line per run in the
+rendering. It runs on manual dispatch (with runs and courses inputs) and on
+pushes that change the benchmark or the navigation code. It prints the summary and one line per run in the
 job log and uploads the report with the client logs.
 
 The fixture route can also be called directly:
@@ -175,6 +170,40 @@ container instead of reading every block, so its client-thread cost fell from 3.
 palettes, so the same expansions take longer: across 85 plans, p95 was 44.6 ms and the
 slowest 85.7 ms, again a `far_xz` segment. Other courses are unchanged.
 
+## Migration gate: in-house against Baritone (2026-09-30)
+
+The release gate of the migration ran both builds side by side on the same machine, the
+`farm_easy` world and headless Xvfb: Baritone at the last commit that shipped it, and the
+final in-house build, five runs per course. Ticks and path length are medians, with the
+Baritone figure in parentheses.
+
+| Course | Passed | Ticks | Path (blocks) | Health lost |
+| --- | --- | --- | --- | --- |
+| `flat_walk` | 5/5 | 83 (85) | 21.97 (21.7) | 0 |
+| `staircase_up` | 5/5 | 85 (83) | 19.01 (18.67) | 0 |
+| `drop_3` | 5/5 | 56 (51) | 14.52 (13.44) | 0 |
+| `drop_5_stairs` | 5/5 | 97 (111) | 24.21 (23.9) | 0 |
+| `river_crossing` | 5/5 | 97 (116) | 18.85 (18.95) | 0 |
+| `dirt_wall` | 5/5 | 135 (121) | 18.0 (16.92) | 0 |
+| `gap_bridge` | 5/5 | 68 (99) | 14.91 (16.28) | 0 |
+| `pillar_pit` | 5/5 | 77 (101) | 13.06 (14.89) | 0 |
+| `door_house` | 5/5 | 40 (43) | 8.79 (8.79) | 0 |
+| `cave_route` | 5/5 | 181 (164) | 45.48 (39.14) | 0 |
+| `far_xz` | 5/5 | 1718 (1804) | 401.79 (354.89) | 0 |
+| `travel_bounds_refusal` | 5/5 | 43 (92) | 10.92 (10.94) | 0 |
+
+60 of 60 runs passed on each build, with no stalls and no health lost. The median per-course
+tick ratio is 0.93 and every course is within +15% of Baritone. `far_xz` needed a fix on the
+way: the executor re-checked arrival after the path reported it had reached the goal and
+rejected a legitimate finish; the path's own `AT_GOAL` is now authoritative.
+
+A rerun on the final commit (`af8bd4d2`) passed 60 of 60 again, with the same medians to within
+a few ticks (`gap_bridge` 67, `far_xz` 1723), no stalls and no health lost.
+
+The benchmark covers movement only. `scripts/run-live-tool-smoke` drives the tools that
+ride on the control plane (equip, eat, place, break, attack, drop, craft, use a block,
+lure) against fixture arenas and records a JSON report; see its header for the scenarios.
+
 ## Metrics
 
 Each follow or navigate task ends with a `task`/`terminal_diagnostics` timeline entry.
@@ -190,10 +219,9 @@ Its correlation carries `taskId`, `goalType` and `terminalState`, and its payloa
 | `replans` | Water-stall replans plus follow reacquisitions |
 | `stalled` | Whether the stall watchdog ended the task |
 
-The payload's `planner` object comes from the backend. On the Baritone backend it holds the
-shadow plan: `outcome`, `reason`, `steps`, `cost`, `length`, `expanded` and `searchMillis`.
-On the in-house backend it holds `plans`, `replans`, `lastReplanReason`, `failure`,
-`medianSearchMillis`, `maxSearchMillis` and one entry per plan.
+The payload's `planner` object holds `plans`, `replans`, `lastReplanReason`, `failure`,
+`medianSearchMillis`, `maxSearchMillis` and one entry per plan. (Reports recorded on the
+Baritone backend carry a shadow plan there instead.)
 
 The script adds `outcome` (`completed`, `failed`, `cancelled`, `rejected` or `timeout`),
 `passed`, `healthLost` and the final feet position. Planner-visible events do not

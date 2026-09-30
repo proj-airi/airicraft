@@ -7,8 +7,8 @@ import ai.moeru.airicraft.BridgeUnavailableException;
 import ai.moeru.airicraft.FirstPersonScreenshotService;
 import ai.moeru.airicraft.SingleplayerWorldService;
 import ai.moeru.airicraft.agent.behavior.BehaviorTreeRuntime;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
-import ai.moeru.airicraft.agent.baritone.BaritonePathfindSettings;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.PathfindSettings;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.behavior.BehaviorTreeSnapshot;
 import ai.moeru.airicraft.agent.chat.ChatService;
@@ -365,10 +365,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade
+		NavigationFacade navigationFacade
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
-			smeltingProcessManager, cameraController, baritoneFacade, new MiningOpportunityPolicyState(), new MiningOpportunityJournal());
+			smeltingProcessManager, cameraController, navigationFacade, new MiningOpportunityPolicyState(), new MiningOpportunityJournal());
 	}
 
 	public EmbodiedAgentRuntime(
@@ -379,11 +379,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability,
-			smeltingProcessManager, cameraController, baritoneFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
+			smeltingProcessManager, cameraController, navigationFacade, miningOpportunityPolicy, new MiningOpportunityJournal());
 	}
 
 	private final Clock clock;
@@ -396,12 +396,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal
 	) {
 		this(airicraftConfig, config, screenshotService, worldTaskExecutor, observability, smeltingProcessManager,
-			cameraController, baritoneFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
+			cameraController, navigationFacade, miningOpportunityPolicy, miningOpportunityJournal, null, Clock.systemDefaultZone());
 	}
 
 	EmbodiedAgentRuntime(
@@ -412,7 +412,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		AgentObservability observability,
 		SmeltingProcessManager smeltingProcessManager,
 		CameraController cameraController,
-		BaritoneFacade baritoneFacade,
+		NavigationFacade navigationFacade,
 		MiningOpportunityPolicyState miningOpportunityPolicy,
 		MiningOpportunityJournal miningOpportunityJournal,
 		java.util.function.Function<AgentConfig.LlmConfig, ai.moeru.airicraft.agent.llm.LlmBackend> backendFactory,
@@ -423,7 +423,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.miningOpportunityPolicy = Objects.requireNonNull(miningOpportunityPolicy, "miningOpportunityPolicy");
 		this.miningOpportunityJournal = Objects.requireNonNull(miningOpportunityJournal, "miningOpportunityJournal");
 		this.codexDriverActive = Boolean.getBoolean("airicraft.codexDriver");
-		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), baritoneFacade, cameraController);
+		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), navigationFacade, cameraController);
 		this.worldTaskExecutor = Objects.requireNonNull(worldTaskExecutor, "worldTaskExecutor");
 		this.observability = new FlightRecordingObservability(Objects.requireNonNull(observability, "observability"), llmFlightRecorder);
 		this.smeltingProcessManager = Objects.requireNonNull(smeltingProcessManager, "smeltingProcessManager");
@@ -3555,11 +3555,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					+ " upserts=" + changes.upserts().size();
 			}
 			case PlannerToolCatalog.CONFIGURE_PATHFIND -> {
-				BaritonePathfindSettings.ApplyResult result = BaritonePathfindSettings.apply(
-					args != null && args.has("settings") && args.get("settings").isJsonObject()
-						? args.getAsJsonObject("settings")
-						: null
-				);
+				PathfindSettings.ApplyResult result = PathfindSettings.apply(args);
 				yield result.accepted()
 					? "Tool result for configure_pathfind: applied " + String.join(", ", result.changed())
 					: "TOOL_ERROR: configure_pathfind " + result.error();
@@ -5652,21 +5648,6 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			minecraft.player.getY(),
 			minecraft.player.getZ()
 		);
-	}
-
-	private void setForwardKeyPressed(boolean pressed) {
-		Minecraft minecraft = Minecraft.getInstance();
-		if (minecraft == null || minecraft.options == null) {
-			throw new IllegalStateException("Minecraft client input is not initialized");
-		}
-		minecraft.options.keyUp.setDown(pressed);
-	}
-
-	private boolean isForwardKeyPressed() {
-		Minecraft minecraft = Minecraft.getInstance();
-		return minecraft != null
-			&& minecraft.options != null
-			&& minecraft.options.keyUp.isDown();
 	}
 
 	private float resolveEffectiveHealthBefore(float observedHealthBefore, float healthAfter) {

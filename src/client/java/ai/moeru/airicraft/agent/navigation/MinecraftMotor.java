@@ -1,16 +1,20 @@
 package ai.moeru.airicraft.agent.navigation;
 
-import ai.moeru.airicraft.agent.control.CameraController;
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.agent.control.ControlPlane;
 import ai.moeru.airicraft.agent.control.MovementScreenCloser;
 import ai.moeru.airicraft.agent.tasks.MiningToolPreparation;
+import ai.moeru.airicraft.control.Channel;
+import ai.moeru.airicraft.control.ChannelIntent;
+import ai.moeru.airicraft.control.ControlArbiter;
+import ai.moeru.airicraft.control.ControlLease;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.navigation.GridPos;
 import ai.moeru.airicraft.navigation.MotorIntent;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.Options;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionHand;
@@ -20,23 +24,25 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
+import java.util.Set;
 
 /**
- * Applies motor intents to the client: movement keys relative to the current yaw, the shared
- * camera, and block breaking, placing and use through the interaction manager.
+ * Applies motor intents to the client: movement and look go through a foreground lease on the
+ * control plane, block breaking, placing and use through the interaction manager.
  */
 public final class MinecraftMotor {
 	/** Key threshold for eight-way movement: a component beyond cos(67.5 degrees) presses its key. */
 	private static final double KEY_THRESHOLD = 0.38;
-	/** True while this motor calls the interaction manager to break, so edit vetoes can tell path breaking apart. */
-	private static boolean breakingForNavigation;
-	private final CameraController camera;
-	private boolean holding;
+	private static final Set<Channel> CHANNELS = Set.of(Channel.LOCOMOTION, Channel.LOOK);
+	private final ControlPlane plane;
+	private final Actuator actuator;
+	private ControlLease lease;
 	private BlockPos breaking;
 	private Direction breakingSide;
 
-	public MinecraftMotor(CameraController camera) {
-		this.camera = camera;
+	public MinecraftMotor(ControlPlane plane) {
+		this.plane = plane;
+		this.actuator = new Actuator(plane, "navigation", Priority.FOREGROUND, true);
 	}
 
 	/** Applies one tick of intent; returns why an action could not be done, or null. */
@@ -46,25 +52,19 @@ public final class MinecraftMotor {
 			release(minecraft);
 			return null;
 		}
-		holding = true;
+		if (!holdControl()) return "control_preempted";
 		double yaw = Math.toRadians(player.getYRot());
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
-		boolean forwardKey = forward > KEY_THRESHOLD, backKey = forward < -KEY_THRESHOLD;
-		boolean sprint = intent.sprint() && forwardKey && !intent.sneak();
-		MovementScreenCloser.closeIfMoving(minecraft, forwardKey || backKey || Math.abs(left) > KEY_THRESHOLD
+		MovementScreenCloser.closeIfMoving(minecraft, Math.abs(forward) > KEY_THRESHOLD || Math.abs(left) > KEY_THRESHOLD
 			|| intent.jump() || intent.sneak() && player.isInWater());
-		Options options = minecraft.options;
-		options.keyUp.setDown(forwardKey);
-		options.keyDown.setDown(backKey);
-		options.keyLeft.setDown(left > KEY_THRESHOLD);
-		options.keyRight.setDown(left < -KEY_THRESHOLD);
-		options.keyJump.setDown(intent.jump());
-		options.keyShift.setDown(intent.sneak());
-		options.keySprint.setDown(sprint);
-		player.setSprinting(sprint);
+		plane.submit(lease, new ChannelIntent.Locomotion(forward > KEY_THRESHOLD, forward < -KEY_THRESHOLD,
+			left > KEY_THRESHOLD, left < -KEY_THRESHOLD, intent.jump(), intent.sneak(), intent.sprint()));
 		if (intent.look() != null) {
-			camera.startLookAt(minecraft, new Vec3(intent.look().x(), intent.look().y(), intent.look().z()), "navigation");
+			plane.submit(lease, new ChannelIntent.Look(intent.look().x(), intent.look().y(), intent.look().z(), "navigation"));
+		}
+		else {
+			plane.clear(lease, Channel.LOOK);
 		}
 
 		MotorIntent.Action action = intent.action();
@@ -77,20 +77,33 @@ public final class MinecraftMotor {
 		};
 	}
 
-	/** Lets go of every key this motor pressed. Idempotent. */
+	/** Lets go of every key this motor pressed, in this call. Idempotent. */
 	public void release(Minecraft minecraft) {
-		if (!holding) return;
-		holding = false;
+		if (lease == null) return;
+		ControlLease released = lease;
+		lease = null;
 		stopBreaking(minecraft);
-		Options options = minecraft.options;
-		options.keyUp.setDown(false);
-		options.keyDown.setDown(false);
-		options.keyLeft.setDown(false);
-		options.keyRight.setDown(false);
-		options.keyJump.setDown(false);
-		options.keyShift.setDown(false);
-		options.keySprint.setDown(false);
-		if (minecraft.player != null) minecraft.player.setSprinting(false);
+		plane.release(minecraft, released);
+	}
+
+	/**
+	 * Takes the lease on first use and again after a revocation, once whoever revoked it has let go.
+	 * False while a holder of higher or equal priority has the channels: the route pauses, it does not fail.
+	 */
+	public boolean holdControl() {
+		if (lease != null) {
+			ControlArbiter.Status status = plane.status(lease);
+			if (status instanceof ControlArbiter.Status.Held) return true;
+			if (status instanceof ControlArbiter.Status.Revoked revoked
+				&& plane.status(revoked.by()) instanceof ControlArbiter.Status.Held) return false;
+			plane.release(null, lease);
+			lease = null;
+		}
+		if (!(plane.acquire("navigation", Priority.FOREGROUND, CHANNELS) instanceof ControlArbiter.Acquisition.Granted granted)) {
+			return false;
+		}
+		lease = granted.lease();
+		return true;
 	}
 
 	public BlockPos breaking() {
@@ -105,33 +118,17 @@ public final class MinecraftMotor {
 		}
 		if (!pos.equals(breaking)) {
 			stopBreaking(minecraft);
-			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, player, List.of(state));
+			MiningToolPreparation.Result tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, actuator, player, List.of(state),
+				PathfindSettings.current().allowInventoryToolSwap());
 			if (!tool.ok()) return tool.message();
 			Direction side = facing(player.getEyePosition(), pos);
-			breakingForNavigation = true;
-			try {
-				if (!minecraft.gameMode.startDestroyBlock(pos, side)) return "break_refused " + pos.toShortString();
-			}
-			finally {
-				breakingForNavigation = false;
-			}
+			if (!actuator.startDestroy(minecraft, pos, side)) return "break_refused " + pos.toShortString();
 			breaking = pos.immutable();
 			breakingSide = side;
 		}
-		breakingForNavigation = true;
-		try {
-			minecraft.gameMode.continueDestroyBlock(pos, breakingSide);
-		}
-		finally {
-			breakingForNavigation = false;
-		}
+		actuator.continueDestroy(minecraft, pos, breakingSide);
 		player.swing(InteractionHand.MAIN_HAND);
 		return null;
-	}
-
-	/** Whether the current interaction-manager call is navigation clearing its path. Client thread. */
-	public static boolean breakingForNavigation() {
-		return breakingForNavigation;
 	}
 
 	private String place(Minecraft minecraft, LocalPlayer player, BlockPos target, BlockPos support) {
@@ -140,7 +137,7 @@ public final class MinecraftMotor {
 		Direction side = direction(support, target);
 		if (side == null) return "placement_not_adjacent " + target.toShortString();
 		Vec3 hit = Vec3.atCenterOf(support).add(side.getStepX() * 0.5, side.getStepY() * 0.5, side.getStepZ() * 0.5);
-		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, support, false));
+		InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, support, false));
 		if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 		return null;
 	}
@@ -148,38 +145,39 @@ public final class MinecraftMotor {
 	private String use(Minecraft minecraft, LocalPlayer player, BlockPos pos) {
 		Direction side = facing(player.getEyePosition(), pos);
 		Vec3 hit = Vec3.atCenterOf(pos).add(side.getStepX() * 0.5, side.getStepY() * 0.5, side.getStepZ() * 0.5);
-		InteractionResult result = minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, pos, false));
+		InteractionResult result = actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, side, pos, false));
 		if (result.consumesAction()) player.swing(InteractionHand.MAIN_HAND);
 		return null;
 	}
 
 	/** Puts a throwaway block in the main hand, from the hotbar or the main inventory. */
-	private static boolean selectThrowaway(Minecraft minecraft, LocalPlayer player) {
+	private boolean selectThrowaway(Minecraft minecraft, LocalPlayer player) {
 		var inventory = player.getInventory();
 		if (NavigationPolicies.isThrowaway(inventory.getSelectedItem())) return true;
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}
-		for (int slot = 0; slot < 36; slot++) {
+		boolean allowInventory = PathfindSettings.current().allowInventoryToolSwap();
+		for (int slot = 0; slot < (allowInventory ? 36 : 9); slot++) {
 			ItemStack stack = inventory.getItem(slot);
 			if (!NavigationPolicies.isThrowaway(stack)) continue;
 			int selected = inventory.getSelectedSlot();
 			if (slot < 9) {
 				selected = slot;
-				inventory.setSelectedSlot(selected);
+				if (!actuator.selectHotbarAndSync(minecraft, selected)) return false;
 			}
 			else {
 				// Main inventory indices 9..35 equal the player screen's slot IDs.
 				minecraft.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, slot, selected, ClickType.SWAP, player);
+				if (!actuator.syncHotbar(minecraft, selected)) return false;
 			}
-			if (minecraft.getConnection() != null) minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(selected));
 			return NavigationPolicies.isThrowaway(inventory.getSelectedItem());
 		}
 		return false;
 	}
 
 	private void stopBreaking(Minecraft minecraft) {
-		if (breaking != null && minecraft.gameMode != null) minecraft.gameMode.stopDestroyBlock();
+		if (breaking != null) actuator.stopDestroy(minecraft);
 		breaking = null;
 		breakingSide = null;
 	}

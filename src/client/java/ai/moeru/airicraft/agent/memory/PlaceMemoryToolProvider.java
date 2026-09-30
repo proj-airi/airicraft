@@ -3,7 +3,6 @@ package ai.moeru.airicraft.agent.memory;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import ai.moeru.airicraft.agent.llm.PlannerToolCatalog;
 import ai.moeru.airicraft.agent.llm.PlannerToolProvider;
-import baritone.api.BaritoneAPI;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -51,7 +50,7 @@ public final class PlaceMemoryToolProvider implements PlannerToolProvider {
 			if (minecraft.level == null || minecraft.player == null) {
 				throw new IllegalStateException("world_not_loaded");
 			}
-			var pos = BaritoneAPI.getProvider().getPrimaryBaritone().getPlayerContext().playerFeet();
+			var pos = ai.moeru.airicraft.agent.navigation.PlayerFeet.of(minecraft.player);
 			return new Context(minecraft.getSingleplayerServer() == null ? null : minecraft.getSingleplayerServer().getWorldPath(LevelResource.ROOT),
 				minecraft.level.dimension().location().toString(), pos.getX(), pos.getY(), pos.getZ());
 		}, command -> Minecraft.getInstance().execute(command),

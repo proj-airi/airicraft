@@ -20,6 +20,8 @@ public final class CameraController {
 	private CameraMotion activeMotion;
 	private RotationSpring spring;
 	private boolean directRequest;
+	/** Someone other than the control plane aimed this tick; navigation's look must not override it. */
+	private boolean aimedThisTick;
 	private LocalPlayer controlledPlayer;
 	private CompletableFuture<Void> alignment;
 
@@ -34,11 +36,22 @@ public final class CameraController {
 
 	/** Submit an aim target. Exact interactions use isLookingAt; mining uses blockHit. */
 	public Optional<Rotation> lookAt(Minecraft minecraft, Vec3 target) {
+		noteDirectAim();
 		return startLookAt(minecraft, target, defaultLerpTicks, "action");
+	}
+
+	void noteDirectAim() {
+		aimedThisTick = true;
+	}
+
+	/** Whether a reflex, executor or tool aimed since the last camera tick. Reset by {@link #tick}. */
+	public boolean aimedThisTick() {
+		return aimedThisTick;
 	}
 
 	public Optional<Rotation> faceDirection(LocalPlayer player, String direction) {
 		if (player == null) return Optional.empty();
+		noteDirectAim();
 		Optional<Rotation> rotation = directionRotation(direction);
 		rotation.ifPresent(value -> request(player, value, defaultLerpTicks, "vision", true));
 		return rotation;
@@ -54,16 +67,6 @@ public final class CameraController {
 		Optional<Rotation> rotation = lookRotation(player.getEyePosition(), target);
 		rotation.ifPresent(value -> request(player, value, durationTicks, reason, true));
 		return rotation;
-	}
-
-	/** Baritone supplies targets only; this controller owns rotation writes. */
-	public void lookFromBaritone(LocalPlayer player, float yaw, float pitch) {
-		if (acceptsBaritoneTarget()) request(player, new Rotation(yaw, pitch), defaultLerpTicks, "baritone", false);
-	}
-
-	boolean acceptsBaritoneTarget() {
-		return !directRequest && alignment == null
-			&& (activeMotion == null || "baritone".equals(activeMotion.reason()));
 	}
 
 	private void request(LocalPlayer player, Rotation target, int ticks, String reason, boolean direct) {
@@ -126,24 +129,6 @@ public final class CameraController {
 
 	public boolean capturePending() { return alignment != null; }
 
-	/** Hold path input while turning on the ground; preserve airborne/swimming control. */
-	public boolean allowsBaritoneInput(LocalPlayer player, baritone.api.utils.input.Input input) {
-		if (activeMotion == null || input == baritone.api.utils.input.Input.SNEAK) return true;
-		if (!"baritone".equals(activeMotion.reason())) return false;
-		return switch (input) {
-			case CLICK_LEFT -> {
-				var intended = raycast(player, Vec3.directionFromRotation(activeMotion.target().pitch(), activeMotion.target().yaw()));
-				yield intended.getType() == HitResult.Type.BLOCK
-					&& blockHit(raycast(player, player.getViewVector(1.0F)), intended.getBlockPos()).isPresent();
-			}
-			case CLICK_RIGHT -> aligned(new Rotation(player.getYRot(), player.getXRot()), activeMotion.target(), 0.5F);
-			case MOVE_FORWARD, MOVE_BACK, MOVE_LEFT, MOVE_RIGHT, JUMP, SPRINT ->
-				!player.onGround() || player.isInWater()
-					|| Math.abs(Mth.wrapDegrees(activeMotion.target().yaw() - player.getYRot())) < 10.0F;
-			case SNEAK -> true;
-		};
-	}
-
 	public CompletableFuture<Void> whenAligned() {
 		if (activeMotion == null) return CompletableFuture.completedFuture(null);
 		if (alignment == null) alignment = new CompletableFuture<>();
@@ -151,6 +136,7 @@ public final class CameraController {
 	}
 
 	public void tick(Minecraft minecraft) {
+		aimedThisTick = false;
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null || !player.isAlive() || (controlledPlayer != null && controlledPlayer != player)) {
 			clear();
@@ -175,6 +161,7 @@ public final class CameraController {
 		spring = null;
 		controlledPlayer = null;
 		directRequest = false;
+		aimedThisTick = false;
 		if (alignment != null) {
 			var cancelled = alignment;
 			alignment = null;

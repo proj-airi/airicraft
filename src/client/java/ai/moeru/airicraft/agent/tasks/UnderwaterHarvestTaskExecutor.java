@@ -1,8 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.control.Actuator;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalMineSpec;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -11,7 +13,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -33,17 +34,18 @@ import java.util.function.Supplier;
 
 /**
  * Harvests exact loaded source blocks inside a fixed local boundary. It owns
- * underwater approach and breathing; Baritone is used only to reach a safe
+ * underwater approach and breathing; navigation is used only to reach a safe
  * nearby position while the player is still breathing.
  */
 public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("underwater_harvest", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final int NAVIGATION_RADIUS_BLOCKS = 2;
 	private static final int BREAK_TIMEOUT_TICKS = 200;
 	private static final int PICKUP_TIMEOUT_TICKS = 80;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final CameraController camera;
 	private final MovementController movement;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
@@ -66,20 +68,20 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	private BlockPos groundingTarget;
 	private int groundingTicks;
 
-	public UnderwaterHarvestTaskExecutor(BaritoneFacade baritone, CameraController camera) {
-		this(Minecraft::getInstance, baritone, camera);
+	public UnderwaterHarvestTaskExecutor(NavigationFacade navigationFacade, CameraController camera) {
+		this(Minecraft::getInstance, navigationFacade, camera);
 	}
 
 	UnderwaterHarvestTaskExecutor(
 		Supplier<Minecraft> clientSupplier,
-		BaritoneFacade baritone,
+		NavigationFacade navigationFacade,
 		CameraController camera
 	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.camera = camera == null ? new CameraController() : camera;
-		this.movement = new MovementController();
-		this.underwaterEscape = new MinecraftUnderwaterEscapeController(baritone, movement, this.camera);
+		this.movement = new MovementController("underwater_harvest", Priority.FOREGROUND);
+		this.underwaterEscape = new MinecraftUnderwaterEscapeController(navigationFacade, movement, this.camera);
 	}
 
 	@Override
@@ -226,9 +228,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		}
 		run.clearApproach();
 		cancelNavigation();
-		if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_break_after_baritone_release")) {
-			return Optional.empty();
-		}
+		NavigationRelease.release(navigationFacade);
 		clearApproachAssist();
 		if (tickGroundingForBreak(request, minecraft, player, target, tick)) {
 			return Optional.empty();
@@ -238,7 +238,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		var cursorHit = camera.blockHit(minecraft, target.pos());
 		if (cursorHit.isEmpty()) return Optional.empty();
 		if (breakingTarget == null) {
-			if (!minecraft.gameMode.startDestroyBlock(target.pos(), cursorHit.get().getDirection())) {
+			if (!actuator.startDestroy(minecraft, target.pos(), cursorHit.get().getDirection())) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "break_start_failed targetPos=" + compactPos(target.pos())));
 			}
 			breakingTarget = target.pos();
@@ -248,7 +248,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (tick - breakStartedTick > BREAK_TIMEOUT_TICKS) {
 			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_timeout targetPos=" + compactPos(target.pos())));
 		}
-		minecraft.gameMode.continueDestroyBlock(target.pos(), cursorHit.get().getDirection());
+		actuator.continueDestroy(minecraft, target.pos(), cursorHit.get().getDirection());
 		player.swing(InteractionHand.MAIN_HAND);
 		if (!spec.blockIds().contains(blockId(minecraft.level.getBlockState(target.pos())))) {
 			harvestedBlocks++;
@@ -318,17 +318,12 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			clearApproachAssist();
 		}
 		UnderwaterHarvestPolicy.PositioningMode positioningMode = UnderwaterHarvestPolicy.positioningMode(target.environment());
-		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.BARITONE) {
-			if (!navigationStarted
-				&& !awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_dry_baritone")) {
-				return Optional.empty();
-			}
+		if (positioningMode == UnderwaterHarvestPolicy.PositioningMode.NAVIGATION) {
+			if (!navigationStarted) NavigationRelease.release(navigationFacade);
 		}
 		else {
 			cancelNavigation();
-			if (!awaitBaritoneRelease(request, minecraft, target, "waiting_to_start_underwater_approach")) {
-				return Optional.empty();
-			}
+			NavigationRelease.release(navigationFacade);
 		}
 		UnderwaterHarvestPolicy.ApproachUpdate progress = run.observeApproach(Math.sqrt(distanceSquared));
 		if (progress.decision() == UnderwaterHarvestPolicy.ApproachDecision.EXCLUDE_TARGET) {
@@ -350,19 +345,19 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		HarvestTarget target
 	) {
 		movement.stop(minecraft);
-		if (baritone == null || !baritone.isLoaded()) {
-			return excludeTarget(request, minecraft, target, "baritone_unavailable");
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
+			return excludeTarget(request, minecraft, target, "navigation_unavailable");
 		}
 		if (!navigationStarted) {
-			baritone.startNavigateNear(goalPosition(target.pos()), NAVIGATION_RADIUS_BLOCKS);
+			navigationFacade.startNavigateNear(goalPosition(target.pos()), NAVIGATION_RADIUS_BLOCKS);
 			navigationStarted = true;
 		}
-		Optional<String> event = baritone.pollPathEvent();
+		Optional<String> event = navigationFacade.pollPathEvent();
 		if (event.isPresent() && ("CALC_FAILED".equalsIgnoreCase(event.get())
 			|| "CANCELLED".equalsIgnoreCase(event.get()) || "CANCELED".equalsIgnoreCase(event.get()))) {
-			return excludeTarget(request, minecraft, target, "baritone_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
+			return excludeTarget(request, minecraft, target, "navigation_" + event.orElseThrow().toLowerCase(java.util.Locale.ROOT));
 		}
-		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_dry_target_with_baritone targetPos=" + compactPos(target.pos())
+		snapshot = snapshot(TaskExecutionState.RUNNING, request, "approaching_dry_target_with_navigation targetPos=" + compactPos(target.pos())
 			+ " approachTicks=" + run.approachProgress().activeTicks());
 		return Optional.empty();
 	}
@@ -448,15 +443,15 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	static <T> T routeApproachEffect(
 		UnderwaterHarvestPolicy.SourceEnvironment environment,
-		Supplier<T> baritoneEffect,
+		Supplier<T> navigationEffect,
 		Supplier<T> directEffect
 	) {
 		Objects.requireNonNull(environment, "environment");
-		Objects.requireNonNull(baritoneEffect, "baritoneEffect");
+		Objects.requireNonNull(navigationEffect, "navigationEffect");
 		Objects.requireNonNull(directEffect, "directEffect");
 		return UnderwaterHarvestPolicy.positioningMode(environment)
-			== UnderwaterHarvestPolicy.PositioningMode.BARITONE
-			? baritoneEffect.get()
+			== UnderwaterHarvestPolicy.PositioningMode.NAVIGATION
+			? navigationEffect.get()
 			: directEffect.get();
 	}
 
@@ -500,9 +495,8 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (UnderwaterHarvestPolicy.recoveryComplete(
 			mayResume,
 			escape.navigation().phase() == UnderwaterEscapeNavigator.Phase.REACHED,
-			escape.navigation().ownsBaritone(),
-			escape.waitingForBaritoneRelease(),
-			BaritoneReleaseBarrier.released(baritone)
+			escape.navigation().ownsNavigation(),
+			NavigationRelease.idle(navigationFacade)
 		)) {
 			underwaterEscape.reset(minecraft);
 			movement.stop(minecraft);
@@ -666,7 +660,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		return total;
 	}
 
-	private static boolean selectRequiredTool(Minecraft minecraft, LocalPlayer player, List<String> requiredToolItemIds) {
+	private boolean selectRequiredTool(Minecraft minecraft, LocalPlayer player, List<String> requiredToolItemIds) {
 		if (requiredToolItemIds == null || requiredToolItemIds.isEmpty()) {
 			return true;
 		}
@@ -720,24 +714,18 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 			&& requiredItemIds.contains(itemId(stack));
 	}
 
-	private static void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
+	private void selectAndSyncHotbarSlot(Minecraft minecraft, LocalPlayer player, int hotbarSlot) {
 		if (player.getInventory().getSelectedSlot() == hotbarSlot) {
 			return;
 		}
-		player.getInventory().setSelectedSlot(hotbarSlot);
-		if (minecraft.getConnection() != null) {
-			minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(hotbarSlot));
-		}
+		actuator.selectHotbarAndSync(minecraft, hotbarSlot);
 	}
 
 	private Optional<TaskTerminalEvent> tickCompletion(WorldTaskRequest request, Minecraft minecraft) {
 		cancelNavigation();
 		clearBreak(minecraft);
 		movement.stop(minecraft);
-		if (!BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_completion_baritone_release");
-			return Optional.empty();
-		}
+		NavigationRelease.release(navigationFacade);
 		underwaterEscape.reset(minecraft);
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		GoalMineSpec spec = request.goal() == null ? null : request.goal().mineSpec();
@@ -779,7 +767,7 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 
 	private void clearBreak(Minecraft minecraft) {
 		if (breakingTarget != null && minecraft != null && minecraft.gameMode != null) {
-			minecraft.gameMode.stopDestroyBlock();
+			actuator.stopDestroy(minecraft);
 		}
 		breakingTarget = null;
 		breakStartedTick = -1L;
@@ -797,28 +785,10 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void cancelNavigation() {
-		if (navigationStarted && baritone != null && baritone.isLoaded()) {
-			baritone.cancel();
+		if (navigationStarted && navigationFacade != null && navigationFacade.isLoaded()) {
+			navigationFacade.cancel();
 		}
 		navigationStarted = false;
-	}
-
-	private boolean awaitBaritoneRelease(
-		WorldTaskRequest request,
-		Minecraft minecraft,
-		HarvestTarget target,
-		String event
-	) {
-		if (BaritoneReleaseBarrier.releaseAndDrain(baritone)) {
-			return true;
-		}
-		movement.stop(minecraft);
-		snapshot = snapshot(
-			TaskExecutionState.RUNNING,
-			request,
-			event + " targetPos=" + compactPos(target.pos())
-		);
-		return false;
 	}
 
 	private void releaseControls() {

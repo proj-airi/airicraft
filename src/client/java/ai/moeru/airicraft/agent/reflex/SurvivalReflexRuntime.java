@@ -1,9 +1,11 @@
 package ai.moeru.airicraft.agent.reflex;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.AgentConfig;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.tasks.MinecraftUnderwaterEscapeController;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeNavigator;
@@ -33,6 +35,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public final class SurvivalReflexRuntime {
+	private final Actuator actuator = new Actuator("reflex", Priority.REFLEX);
 	static final int BREATHABLE_STABLE_TICKS = 12;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 	private static final double MELEE_ATTACK_DISTANCE = 3.0D;
@@ -44,7 +47,7 @@ public final class SurvivalReflexRuntime {
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
 	private final CameraController cameraController;
-	private final BaritoneFacade baritone;
+	private final NavigationFacade navigationFacade;
 	private final MinecraftUnderwaterEscapeController underwaterEscape;
 	private final Map<String, ObservedThreat> observedThreats = new LinkedHashMap<>();
 	private final List<SurvivalReflexEvent> pendingEvents = new ArrayList<>();
@@ -90,15 +93,15 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config) {
-		this(config, new MovementController(), new CameraController(), null);
+		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), null);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone) {
-		this(config, new MovementController(), new CameraController(), baritone);
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade navigationFacade) {
+		this(config, new MovementController("reflex", Priority.REFLEX), new CameraController(), navigationFacade);
 	}
 
-	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, BaritoneFacade baritone, CameraController cameraController) {
-		this(config, new MovementController(), cameraController, baritone);
+	public SurvivalReflexRuntime(AgentConfig.ReflexConfig config, NavigationFacade navigationFacade, CameraController cameraController) {
+		this(config, new MovementController("reflex", Priority.REFLEX), cameraController, navigationFacade);
 	}
 
 	SurvivalReflexRuntime(
@@ -113,14 +116,14 @@ public final class SurvivalReflexRuntime {
 		AgentConfig.ReflexConfig config,
 		MovementController movementController,
 		CameraController cameraController,
-		BaritoneFacade baritone
+		NavigationFacade navigationFacade
 	) {
 		this.config = Objects.requireNonNullElseGet(config, AgentConfig.ReflexConfig::defaults);
 		this.movementController = Objects.requireNonNull(movementController, "movementController");
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
-		this.baritone = baritone;
+		this.navigationFacade = navigationFacade;
 		this.underwaterEscape = new MinecraftUnderwaterEscapeController(
-			baritone,
+			navigationFacade,
 			this.movementController,
 			this.cameraController
 		);
@@ -570,7 +573,7 @@ public final class SurvivalReflexRuntime {
 		if (snapshot.action() != SurvivalReflexAction.DEFEND) {
 			changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, tick);
 		}
-		boolean usePositioning = shouldReposition(threats.size()) && baritone != null && baritone.isLoaded();
+		boolean usePositioning = shouldReposition(threats.size()) && navigationFacade != null && navigationFacade.isLoaded();
 		updateCreeperEscape(threats);
 		if (tickCombatEating(minecraft, player, threats, tick, combatEating, usePositioning)) return;
 		if (threats.stream().noneMatch(threat ->
@@ -768,7 +771,7 @@ public final class SurvivalReflexRuntime {
 		ResolvedThreat approach = threats.isEmpty() ? null : closestVisibleThreat(threats);
 		if (!shouldReposition(threats.size())) {
 			if (fuseProgress == null && approach != null && approach.distance() > MELEE_ATTACK_DISTANCE
-				&& baritone != null && baritone.isLoaded()) {
+				&& navigationFacade != null && navigationFacade.isLoaded()) {
 				updateCombatNavigation(goal(approach.entity().blockPosition()), tick);
 			}
 			else {
@@ -776,14 +779,14 @@ public final class SurvivalReflexRuntime {
 			}
 		}
 		cameraController.lookAt(minecraft, new Vec3(shieldGuard.facing().x, player.getEyeY(), shieldGuard.facing().z));
-		minecraft.options.keyUse.setDown(true);
+		actuator.holdUse();
 		if (!shieldUseOwned) pendingEvents.add(new SurvivalReflexEvent("reflex.shield_raised", mapOfNullable(
 			"sourceUuid", shieldGuard.source(), "incomingProjectile", Double.isFinite(earliest),
 			"creeperFuseProgress", fuseProgress,
 			"shieldDamage", player.getOffhandItem().getDamageValue(), "health", player.getHealth(), "tick", tick)));
 		shieldUseOwned = true;
 		if (!player.isUsingItem() || player.getUsedItemHand() != InteractionHand.OFF_HAND)
-			minecraft.gameMode.useItem(player, InteractionHand.OFF_HAND);
+			actuator.useItem(minecraft, player, InteractionHand.OFF_HAND);
 		return true;
 	}
 
@@ -836,7 +839,7 @@ public final class SurvivalReflexRuntime {
 		if (!shieldUseOwned) return;
 		shieldUseOwned = false;
 		if (minecraft == null) return;
-		minecraft.options.keyUse.setDown(false);
+		actuator.releaseUse(minecraft);
 		if (minecraft.player != null) pendingEvents.add(new SurvivalReflexEvent("reflex.shield_lowered", mapOfNullable(
 			"shieldDamage", minecraft.player.getOffhandItem().getDamageValue(), "health", minecraft.player.getHealth(),
 			"wasBlocking", minecraft.player.isBlocking())));
@@ -852,7 +855,7 @@ public final class SurvivalReflexRuntime {
 			movementController.stop(minecraft);
 			return;
 		}
-		if (baritone != null && baritone.isLoaded()) {
+		if (navigationFacade != null && navigationFacade.isLoaded()) {
 			movementController.stop(minecraft);
 			updateCombatNavigation(goal(threat.entity().blockPosition()), tick);
 		}
@@ -881,7 +884,7 @@ public final class SurvivalReflexRuntime {
 
 	private void reposition(Minecraft minecraft, List<ResolvedThreat> threats, long tick,
 		boolean shielding, boolean retreatForFood) {
-		if (baritone == null || !baritone.isLoaded()) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
 			stopCombatNavigation();
 			movementController.stop(minecraft);
 			return;
@@ -949,16 +952,16 @@ public final class SurvivalReflexRuntime {
 
 	void updateCombatNavigation(GoalPosition target, long tick) {
 		if (combatTarget == null || tick - combatRouteTick >= 20L
-			&& (!target.equals(combatTarget) || !baritone.processActive())) {
-			baritone.startNavigateNear(target, 2);
+			&& (!target.equals(combatTarget) || !navigationFacade.processActive())) {
+			navigationFacade.startNavigateNear(target, 2);
 			combatTarget = target;
 			combatRouteTick = tick;
 		}
 	}
 
 	private void stopCombatNavigation() {
-		if (combatTarget != null && baritone != null) {
-			baritone.cancel();
+		if (combatTarget != null && navigationFacade != null) {
+			navigationFacade.cancel();
 		}
 		combatTarget = null;
 	}
@@ -1067,7 +1070,7 @@ public final class SurvivalReflexRuntime {
 		player.connection.send(new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Rot(
 			player.getYRot(), player.getXRot(), player.onGround(), player.horizontalCollision));
 		boolean sprintHit = player.isSprinting();
-		minecraft.gameMode.attack(player, threat.entity());
+		actuator.attack(minecraft, player, threat.entity());
 		player.swing(InteractionHand.MAIN_HAND);
 		pendingEvents.add(new SurvivalReflexEvent("reflex.close_quarter_attack", mapOfNullable(
 			"threatUuid", threat.observed().uuid(),
@@ -1080,14 +1083,14 @@ public final class SurvivalReflexRuntime {
 		)));
 	}
 
-	private static void equipBestCombatItem(Minecraft minecraft, LocalPlayer player) {
+	private void equipBestCombatItem(Minecraft minecraft, LocalPlayer player) {
 		List<String> itemIds = new ArrayList<>();
 		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
 			itemIds.add(BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(slot).getItem()).toString());
 		int bestSlot = bestCombatInventorySlot(itemIds);
 		if (bestSlot < 0) return;
 		if (bestSlot < 9) {
-			player.getInventory().setSelectedSlot(bestSlot);
+			actuator.selectHotbar(minecraft, bestSlot);
 			return;
 		}
 		if (minecraft.gameMode == null) return;

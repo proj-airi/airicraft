@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.goals.GoalType;
@@ -19,14 +20,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class BaritoneTaskExecutorTest {
+class NavigationTaskExecutorTest {
 	@Test
-	void waterStallTemporarilyRaisesPenaltyReplansAndRestoresAfterProgress() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+	void waterStallReplansWithARaisedPenaltyForThatRequestOnly() {
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		AtomicReference<Optional<WaterStallRecovery.Sample>> waterSample = new AtomicReference<>(Optional.of(
 			new WaterStallRecovery.Sample(true, 4.0D, 62.0D, -8.0D)
 		));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, waterSample::get);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade, waterSample::get);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -39,60 +40,30 @@ class BaritoneTaskExecutorTest {
 
 		executor.tick(multiplayerAt(0L), Optional.of(request));
 		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS - 1L), Optional.of(request));
-		assertTrue(facade.waterPenaltyChanges.isEmpty());
+		assertEquals(1, facade.navigateCalls.size());
 
 		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS), Optional.of(request));
 
-		assertEquals(List.of(12.0D), facade.waterPenaltyChanges);
 		assertEquals(1, facade.cancelCalls);
 		assertEquals(2, facade.navigateCalls.size());
+		assertEquals(NavigationOptions.DEFAULT, facade.navigateOptions.get(0));
+		assertEquals(12.0D, facade.navigateOptions.get(1).waterPenalty(), "base cost 3 raised fourfold");
 		assertEquals("WATER_STALL_REPLAN", executor.snapshot().lastPathEvent());
 
 		waterSample.set(Optional.of(new WaterStallRecovery.Sample(true, 6.0D, 62.0D, -8.0D)));
 		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS + 1L), Optional.of(request));
 
-		assertEquals(List.of(12.0D, 3.0D), facade.waterPenaltyChanges);
 		assertEquals("WATER_STALL_RECOVERED", executor.snapshot().lastPathEvent());
+		assertEquals(2, facade.navigateCalls.size(), "recovery restores nothing and starts nothing");
 	}
 
 	@Test
-	void sessionGateDuringWaterReplanPreservesTheDeferredGoal() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		facade.activateOnStart = true;
+	void removingTheTaskDropsTheRecoveryPenaltySoTheNextRequestPlansNormally() {
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		AtomicReference<Optional<WaterStallRecovery.Sample>> waterSample = new AtomicReference<>(Optional.of(
 			new WaterStallRecovery.Sample(true, 4.0D, 62.0D, -8.0D)
 		));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, waterSample::get);
-		GoalSnapshot goal = new GoalSnapshot(
-			GoalType.NAVIGATE_TO,
-			null,
-			new GoalPosition(40, 62, -8, true),
-			null,
-			0L,
-			"action_graph"
-		);
-		WorldTaskRequest request = request("river-task", goal);
-
-		executor.tick(multiplayerAt(0L), Optional.of(request));
-		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS), Optional.of(request));
-		assertEquals("WATER_STALL_RELEASING", executor.snapshot().lastPathEvent());
-		assertEquals(1, facade.navigateCalls.size());
-
-		executor.tick(singleplayerLocal(), Optional.of(request));
-		facade.processActive = false;
-		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS + 1L), Optional.of(request));
-
-		assertEquals("WATER_STALL_REPLAN", executor.snapshot().lastPathEvent());
-		assertEquals(2, facade.navigateCalls.size());
-	}
-
-	@Test
-	void taskRemovalRestoresTemporaryWaterPenaltyWithoutWaitingForMovement() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		AtomicReference<Optional<WaterStallRecovery.Sample>> waterSample = new AtomicReference<>(Optional.of(
-			new WaterStallRecovery.Sample(true, 4.0D, 62.0D, -8.0D)
-		));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, waterSample::get);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade, waterSample::get);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -101,20 +72,20 @@ class BaritoneTaskExecutorTest {
 			0L,
 			"planner_response"
 		);
-		WorldTaskRequest request = request("nav-task", goal);
 
-		executor.tick(multiplayerAt(0L), Optional.of(request));
-		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS), Optional.of(request));
+		executor.tick(multiplayerAt(0L), Optional.of(request("nav-task", goal)));
+		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS), Optional.of(request("nav-task", goal)));
+		assertEquals(12.0D, facade.navigateOptions.getLast().waterPenalty());
 		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS + 1L), Optional.empty());
+		executor.tick(multiplayerAt(WaterStallRecovery.STALL_TICKS + 2L), Optional.of(request("next-task", goal)));
 
-		assertEquals(List.of(12.0D, 3.0D), facade.waterPenaltyChanges);
+		assertEquals(NavigationOptions.DEFAULT, facade.navigateOptions.getLast());
 	}
-
 
 	@Test
 	void navigateGoalStartsOnceAndReportsRunning() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -127,17 +98,16 @@ class BaritoneTaskExecutorTest {
 		executor.tick(multiplayer(), Optional.of(request("nav-task", goal)));
 		executor.tick(multiplayer(), Optional.of(request("nav-task", goal)));
 
-		assertEquals(1, facade.applySettingsCalls);
 		assertEquals(1, facade.navigateCalls.size());
 		assertEquals(TaskExecutionState.RUNNING, executor.snapshot().state());
 	}
 
 	@Test
 	void navigationStallFailsAndCancelsOnceAfterFiveSecondsDespiteJitter() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		java.util.concurrent.atomic.AtomicReference<WaterStallRecovery.Sample> sample =
 			new java.util.concurrent.atomic.AtomicReference<>(new WaterStallRecovery.Sample(false, -50.5, 66, -102.5));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, () -> Optional.of(sample.get()));
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade, () -> Optional.of(sample.get()));
 		WorldTaskRequest task = request("stuck-door", new GoalSnapshot(GoalType.NAVIGATE_TO, null,
 			new GoalPosition(-51, 66, -104, true), null, 0, "planner_tool"));
 		assertTrue(executor.tick(multiplayerAt(0), Optional.of(task)).isEmpty());
@@ -155,10 +125,10 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void navigationArrivalReportsTravelDiagnostics() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		AtomicReference<WaterStallRecovery.Sample> sample =
 			new AtomicReference<>(new WaterStallRecovery.Sample(false, 0.5D, 64.0D, 0.5D));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, () -> Optional.of(sample.get()));
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade, () -> Optional.of(sample.get()));
 		WorldTaskRequest task = request("walk", new GoalSnapshot(GoalType.NAVIGATE_TO, null,
 			new GoalPosition(3, 64, 4, true), null, 0, "planner_tool"));
 
@@ -183,10 +153,10 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void navigationMovementAndSessionPauseRestartStallWindow() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		java.util.concurrent.atomic.AtomicReference<WaterStallRecovery.Sample> sample =
 			new java.util.concurrent.atomic.AtomicReference<>(new WaterStallRecovery.Sample(false, 0, 64, 0));
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade, () -> Optional.of(sample.get()));
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade, () -> Optional.of(sample.get()));
 		WorldTaskRequest task = request("moving", new GoalSnapshot(GoalType.NAVIGATE_TO, null,
 			new GoalPosition(20, 64, 20, true), null, 0, "planner_tool"));
 		executor.tick(multiplayerAt(0), Optional.of(task));
@@ -202,8 +172,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void replacementNavigationGetsFreshBudgetAndArrivalWinsOverStall() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade,
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade,
 			() -> Optional.of(new WaterStallRecovery.Sample(false, 0, 64, 0)));
 		GoalSnapshot goal = new GoalSnapshot(GoalType.NAVIGATE_TO, null,
 			new GoalPosition(20, 64, 20, true), null, 0, "planner_tool");
@@ -217,9 +187,9 @@ class BaritoneTaskExecutorTest {
 	}
 
 	@Test
-	void deathGateCancelsActiveBaritoneProcess() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+	void deathGateCancelsActiveNavigation() {
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -239,8 +209,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void terminalPathEventBecomesCompletedTaskEvent() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -263,8 +233,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void navigationCalculationFailureRemainsTerminal() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -287,8 +257,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void cancelledPathEventVariantIsRecognizedAndSnapshotStaysTerminal() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -301,12 +271,11 @@ class BaritoneTaskExecutorTest {
 		executor.tick(multiplayer(), Optional.of(request("nav-task", goal)));
 		facade.pathEvents.add("cancelled");
 
-		assertTrue(executor.tick(multiplayerAt(20), Optional.of(request("nav-task", goal))).isEmpty());
-		Optional<TaskTerminalEvent> event = executor.tick(multiplayerAt(30), Optional.of(request("nav-task", goal)));
+		Optional<TaskTerminalEvent> event = executor.tick(multiplayerAt(20), Optional.of(request("nav-task", goal)));
 
 		assertTrue(event.isPresent());
 		assertEquals(TaskExecutionState.CANCELLED, event.orElseThrow().terminalState());
-		assertEquals(TaskTerminationCause.BARITONE_CANCELLED, event.orElseThrow().terminationCause());
+		assertEquals(TaskTerminationCause.NAVIGATION_CANCELLED, event.orElseThrow().terminationCause());
 		assertEquals(TaskExecutionState.CANCELLED, executor.snapshot().state());
 
 		executor.tick(multiplayer(), Optional.of(request("nav-task", goal)));
@@ -314,37 +283,23 @@ class BaritoneTaskExecutorTest {
 	}
 
 	@Test
-	void pathGoalEventCannotClaimArrivalWithoutPhysicalConfirmation() {
-		var facade = new FakeBaritoneFacade();
-		var executor = new BaritoneTaskExecutor(facade);
+	void arrivalIsAuthoritativeEvenWhenMomentumCarriedTheBodyOutOfTheGoalCell() {
+		var facade = new FakeNavigationFacade();
+		facade.navigationGoalReached = false; // the body has drifted a cell past the goal by the time the event is read
+		var executor = new NavigationTaskExecutor(facade);
 		var goal = new GoalSnapshot(GoalType.NAVIGATE_TO, null, new GoalPosition(318,-10,280,true),null,20L,"planner_tool");
-		executor.tick(multiplayer(),Optional.of(request("falling",goal)));
+		executor.tick(multiplayer(),Optional.of(request("overshoot",goal)));
 		facade.pathEvents.add("AT_GOAL");
-		assertTrue(executor.tick(multiplayerAt(20),Optional.of(request("falling",goal))).isEmpty());
-		var event=executor.tick(multiplayerAt(30),Optional.of(request("falling",goal))).orElseThrow();
-		assertEquals(TaskExecutionState.FAILED,event.terminalState());
-		assertEquals("navigation_arrival_unconfirmed",event.message());
-	}
-
-	@Test
-	void normalStepCanLandAfterPathEndWithoutReissuingMovement() {
-		var facade = new FakeBaritoneFacade();
-		var executor = new BaritoneTaskExecutor(facade);
-		var goal = new GoalSnapshot(GoalType.NAVIGATE_TO,null,new GoalPosition(319,-9,281,true),null,20L,"planner_tool");
-		var request = request("step-up",goal);
-		executor.tick(multiplayerAt(20),Optional.of(request));
-		facade.pathEvents.add("CANCELED");
-		assertTrue(executor.tick(multiplayerAt(21),Optional.of(request)).isEmpty());
-		facade.navigationGoalReached = true;
-		assertEquals(TaskExecutionState.COMPLETED,executor.tick(multiplayerAt(23),Optional.of(request)).orElseThrow().terminalState());
-		assertEquals(1, facade.navigateCalls.size());
+		var event=executor.tick(multiplayerAt(20),Optional.of(request("overshoot",goal))).orElseThrow();
+		assertEquals(TaskExecutionState.COMPLETED,event.terminalState());
+		assertEquals(TaskTerminationCause.GOAL_REACHED,event.terminationCause());
 	}
 
 	@Test
 	void cancelledNavigateAtReachedGoalCountsAsCompleted() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		facade.navigationGoalReached = true;
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -366,9 +321,9 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void failedCalculationAtReachedNavigateGoalCountsAsCompleted() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		facade.navigationGoalReached = true;
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -390,8 +345,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void repeatedTerminalPathEventsOnlyEmitOneTerminalCallbackPerGoal() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -405,9 +360,8 @@ class BaritoneTaskExecutorTest {
 		facade.pathEvents.add("CANCELED");
 		facade.pathEvents.add("CANCELED");
 
-		assertTrue(executor.tick(multiplayerAt(20), Optional.of(request("nav-task", goal))).isEmpty());
-		Optional<TaskTerminalEvent> first = executor.tick(multiplayerAt(30), Optional.of(request("nav-task", goal)));
-		Optional<TaskTerminalEvent> second = executor.tick(multiplayerAt(31), Optional.of(request("nav-task", goal)));
+		Optional<TaskTerminalEvent> first = executor.tick(multiplayerAt(20), Optional.of(request("nav-task", goal)));
+		Optional<TaskTerminalEvent> second = executor.tick(multiplayerAt(30), Optional.of(request("nav-task", goal)));
 
 		assertTrue(first.isPresent());
 		assertTrue(second.isEmpty());
@@ -416,8 +370,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void followRemainsRunningAfterReachingTarget() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.FOLLOW_PLAYER,
 			"LanAlice",
@@ -440,8 +394,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void cancelledFollowRearmsWithoutCompletingTask() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.FOLLOW_PLAYER,
 			"LanAlice",
@@ -464,8 +418,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void failedFollowCalculationRearmsWithoutCompletingTask() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.FOLLOW_PLAYER,
 			"LanAlice",
@@ -488,8 +442,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void clearingFollowExplicitlyCancelsWithoutRearming() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.FOLLOW_PLAYER,
 			"LanAlice",
@@ -509,8 +463,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void sameGoalTargetWithDifferentTickDoesNotRestartPathing() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot first = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -535,9 +489,28 @@ class BaritoneTaskExecutorTest {
 	}
 
 	@Test
+	void sessionGatePauseStopsNavigationAndRestartsTheSameGoalOnResume() {
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
+		GoalSnapshot goal = new GoalSnapshot(GoalType.NAVIGATE_TO, null,
+			new GoalPosition(10, 64, 20, true), null, 20L, "planner_response");
+		WorldTaskRequest request = request("nav-task", goal);
+
+		executor.tick(multiplayer(), Optional.of(request));
+		assertEquals(1, facade.navigateCalls.size());
+
+		executor.tick(singleplayerLocal(), Optional.of(request));
+		assertEquals(1, facade.cancelCalls, "a paused task must not keep steering the player");
+		assertEquals(TaskExecutionState.PAUSED_BY_SESSION_GATE, executor.snapshot().state());
+
+		executor.tick(multiplayer(), Optional.of(request));
+		assertEquals(2, facade.navigateCalls.size(), "the goal restarts when actuation resumes");
+	}
+
+	@Test
 	void sessionGatePausesWithoutCancellingGoalState() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.FOLLOW_PLAYER,
 			"Alice",
@@ -557,8 +530,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void noGoalStaysIdleEvenWhenActuationIsBlocked() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 
 		executor.tick(singleplayerLocal(), Optional.empty());
 
@@ -567,8 +540,8 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void replacingNavigationTaskDoesNotSurfaceInternalCancelledEvent() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		FakeNavigationFacade facade = new FakeNavigationFacade();
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot first = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -600,9 +573,9 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void replacingNavigationTaskAfterCompletionResetsSnapshotToRunning() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		facade.navigationGoalReached = true;
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot first = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -634,9 +607,9 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void facadeStartFailureBecomesFailedTaskEvent() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		facade.startNavigateFailure = new IllegalArgumentException("Invalid navigation goal");
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -657,9 +630,9 @@ class BaritoneTaskExecutorTest {
 
 	@Test
 	void unavailableFacadeBecomesFailedTaskEvent() {
-		FakeBaritoneFacade facade = new FakeBaritoneFacade();
+		FakeNavigationFacade facade = new FakeNavigationFacade();
 		facade.loaded = false;
-		BaritoneTaskExecutor executor = new BaritoneTaskExecutor(facade);
+		NavigationTaskExecutor executor = new NavigationTaskExecutor(facade);
 		GoalSnapshot goal = new GoalSnapshot(
 			GoalType.NAVIGATE_TO,
 			null,
@@ -675,9 +648,9 @@ class BaritoneTaskExecutorTest {
 		assertTrue(first.isPresent());
 		assertTrue(second.isEmpty());
 		assertEquals(TaskExecutionState.FAILED, first.orElseThrow().terminalState());
-		assertEquals("baritone_unavailable", first.orElseThrow().message());
+		assertEquals("navigation_unavailable", first.orElseThrow().message());
 		assertEquals(TaskExecutionState.FAILED, executor.snapshot().state());
-		assertEquals("baritone_unavailable", executor.snapshot().lastPathEvent());
+		assertEquals("navigation_unavailable", executor.snapshot().lastPathEvent());
 	}
 
 	@SuppressWarnings("unchecked")
@@ -714,9 +687,9 @@ class BaritoneTaskExecutorTest {
 		);
 	}
 
-	private static final class FakeBaritoneFacade implements BaritoneFacade {
-		private int applySettingsCalls;
+	private static final class FakeNavigationFacade implements NavigationFacade {
 		private final List<GoalPosition> navigateCalls = new ArrayList<>();
+		private final List<NavigationOptions> navigateOptions = new ArrayList<>();
 		private final List<String> followCalls = new ArrayList<>();
 		private final ArrayDeque<String> pathEvents = new ArrayDeque<>();
 		private boolean navigationGoalReached;
@@ -726,28 +699,10 @@ class BaritoneTaskExecutorTest {
 		private int cancelCalls;
 		private RuntimeException startNavigateFailure;
 		private boolean loaded = true;
-		private double waterPenalty = 3.0D;
-		private final List<Double> waterPenaltyChanges = new ArrayList<>();
 
 		@Override
 		public boolean isLoaded() {
 			return loaded;
-		}
-
-		@Override
-		public void applySettings() {
-			applySettingsCalls++;
-		}
-
-		@Override
-		public double walkOnWaterPenalty() {
-			return waterPenalty;
-		}
-
-		@Override
-		public void setWalkOnWaterPenalty(double value) {
-			waterPenalty = value;
-			waterPenaltyChanges.add(value);
 		}
 
 		@Override
@@ -758,19 +713,21 @@ class BaritoneTaskExecutorTest {
 		}
 
 		@Override
-		public void startNavigate(GoalPosition position) {
+		public void startNavigate(GoalPosition position, NavigationOptions options) {
 			if (startNavigateFailure != null) {
 				throw startNavigateFailure;
 			}
 			cancellationRequested = false;
 			navigateCalls.add(position);
+			navigateOptions.add(options);
 			processActive = activateOnStart;
 		}
 
 		@Override
-		public void startNavigateNear(GoalPosition position, int radiusBlocks) {
+		public void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions options) {
 			cancellationRequested = false;
 			navigateCalls.add(position);
+			navigateOptions.add(options);
 			processActive = activateOnStart;
 		}
 
@@ -780,12 +737,11 @@ class BaritoneTaskExecutorTest {
 		}
 
 		@Override
-		public boolean cancel() {
+		public void cancel() {
 			if (!cancellationRequested) {
 				cancelCalls++;
 				cancellationRequested = true;
 			}
-			return false;
 		}
 
 		@Override

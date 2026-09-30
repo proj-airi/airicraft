@@ -16,7 +16,7 @@ suppressAutoPauseOnFocusLost: true
 blockInteractionDelayTicks: 2
 
 # Spring response time in client ticks (approximate settling time, not a deadline).
-# Use 0 for the default spring. All automated turns are smoothed, including Baritone.
+# Use 0 for the default spring. All automated turns are smoothed.
 cameraLerpDefaultTicks: 0
 
 # Read-only realtime debug dashboard. Each Airicraft client owns one dashboard.
@@ -31,9 +31,3 @@ debugDashboard:
   visualCaptureEnabled: true
   # Completed server ticks between samples. 20 = at most 1 fps, 40 = 0.5 fps.
   visualCaptureIntervalTicks: 20
-
-# Navigation backend while the in-house pathfinder is being brought to parity with Baritone:
-# baritone (default) or airicraft. The system property airicraft.navigation.backend overrides it.
-# Reloadable with `airicraft reload`.
-navigation:
-  backend: baritone

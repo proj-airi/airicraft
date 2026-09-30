@@ -61,7 +61,7 @@ dependencies {
 	testImplementation libs.junit.jupiter
 	testImplementation rootProject.sourceSets.main.output
 	testImplementation rootProject.sourceSets.client.output
-	// Runtime fixtures instantiate the root client, including its Baritone tool schemas.
+	// Runtime fixtures instantiate the root client, including its tool schemas.
 	testRuntimeOnly files(rootProject.sourceSets.client.runtimeClasspath)
 	testRuntimeOnly libs.junit.platform.launcher
 }
@@ -157,10 +157,6 @@ tasks.register("runClientEvaluator", net.fabricmc.loom.task.prod.ClientProductio
 	mods.from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(configurations.evaluatorRuntimeMods)
-	mods.from(rootProject.layout.projectDirectory.files(
-		"libs/baritone-unoptimized-fabric-1.15.0.jar",
-		"libs/nether-pathfinder-1.4.1.jar"
-	))
 	requiredMods.each { modId ->
 		def compatName = modId == "journeymap" ? "journeymap" : "rei"
 		def compatProject = rootProject.findProject(":compat:${compatName}")

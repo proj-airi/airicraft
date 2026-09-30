@@ -1,10 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.ClickType;
 
@@ -15,22 +15,29 @@ import java.util.Set;
 public final class MiningToolPreparation {
 	private MiningToolPreparation() {}
 
-	public static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets) {
-		return ensureSelected(minecraft, player, targets, List.of());
+	public static Result ensureSelected(Minecraft minecraft, Actuator actuator, LocalPlayer player, List<BlockState> targets) {
+		return ensureSelected(minecraft, actuator, player, targets, List.of());
 	}
 
 	public static Result ensureSelected(
-		Minecraft minecraft, LocalPlayer player, List<BlockState> targets, List<String> requiredToolItemIds
+		Minecraft minecraft, Actuator actuator, LocalPlayer player, List<BlockState> targets, List<String> requiredToolItemIds
 	) {
-		return ensureSelected(minecraft, player, targets, requiredToolItemIds, true);
+		return ensureSelected(minecraft, actuator, player, targets, requiredToolItemIds, true, true);
 	}
 
-	public static Result ensureSelectedForClearance(Minecraft minecraft, LocalPlayer player, List<BlockState> targets) {
-		return ensureSelected(minecraft, player, targets, List.of(), false);
+	public static Result ensureSelectedForClearance(Minecraft minecraft, Actuator actuator, LocalPlayer player,
+		List<BlockState> targets) {
+		return ensureSelectedForClearance(minecraft, actuator, player, targets, true);
 	}
 
-	private static Result ensureSelected(Minecraft minecraft, LocalPlayer player, List<BlockState> targets,
-		List<String> requiredToolItemIds, boolean requireDrops) {
+	/** Tool choice for clearing a path; {@code allowInventory} false limits the choice to the hotbar. */
+	public static Result ensureSelectedForClearance(Minecraft minecraft, Actuator actuator, LocalPlayer player,
+		List<BlockState> targets, boolean allowInventory) {
+		return ensureSelected(minecraft, actuator, player, targets, List.of(), false, allowInventory);
+	}
+
+	private static Result ensureSelected(Minecraft minecraft, Actuator actuator, LocalPlayer player, List<BlockState> targets,
+		List<String> requiredToolItemIds, boolean requireDrops, boolean allowInventory) {
 		if (player.containerMenu != player.inventoryMenu
 			|| !player.containerMenu.getCarried().isEmpty() || player.isUsingItem()) {
 			return Result.failed("inventory_unavailable_for_tool_selection");
@@ -38,8 +45,9 @@ public final class MiningToolPreparation {
 		Set<String> required = requiredToolItemIds == null ? Set.of() : Set.copyOf(requiredToolItemIds);
 		var inventory = player.getInventory();
 		int selectedSlot = inventory.getSelectedSlot();
-		java.util.function.IntFunction<MiningToolSelection.Score> scores =
-			slot -> score(inventory.getItem(slot), targets, required);
+		java.util.function.IntFunction<MiningToolSelection.Score> scores = slot -> !allowInventory && slot >= 9
+			? new MiningToolSelection.Score(false, 0.0F)
+			: score(inventory.getItem(slot), targets, required);
 		int sourceSlot = requireDrops ? MiningToolSelection.preferredSlot(selectedSlot, scores)
 			: MiningToolSelection.preferredClearanceSlot(selectedSlot, scores);
 		if (sourceSlot < 0) {
@@ -51,14 +59,12 @@ public final class MiningToolPreparation {
 		if (sourceSlot != selectedSlot) {
 			if (sourceSlot < 9) {
 				selectedSlot = sourceSlot;
-				inventory.setSelectedSlot(selectedSlot);
+				if (!actuator.selectHotbarAndSync(minecraft, selectedSlot)) return Result.failed("hotbar_held_by_another_owner");
 			} else {
 				// Main inventory indices 9..35 equal the player screen's slot IDs.
 				minecraft.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, sourceSlot,
 					selectedSlot, ClickType.SWAP, player);
-			}
-			if (minecraft.getConnection() != null) {
-				minecraft.getConnection().send(new ServerboundSetCarriedItemPacket(selectedSlot));
+				if (!actuator.syncHotbar(minecraft, selectedSlot)) return Result.failed("hotbar_held_by_another_owner");
 			}
 		}
 		MiningToolSelection.Score actual = score(inventory.getSelectedItem(), targets, required);

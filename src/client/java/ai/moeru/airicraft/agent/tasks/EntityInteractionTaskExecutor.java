@@ -1,8 +1,10 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.control.Priority;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.client.Minecraft;
@@ -29,18 +31,19 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
+	private final Actuator actuator = new Actuator("entity_interaction", Priority.FOREGROUND);
 	private static final int TARGET_OUT_OF_RANGE_GRACE_TICKS = 20;
 	private static final int BUSY_STATE_TIMEOUT_TICKS = 100;
 	private static final int CHASE_GOAL_REFRESH_TICKS = 10;
-	private static final int BARITONE_CHASE_RADIUS_BLOCKS = 3;
+	private static final int NAVIGATION_CHASE_RADIUS_BLOCKS = 3;
 	private static final double CHASE_GOAL_REFRESH_DISTANCE_BLOCKS = 2.0D;
 	private static final double DIRECT_CHASE_DISTANCE_BLOCKS = 10.0D;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade navigationFacade;
+	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
-	private final MovementController movementController = new MovementController();
+	private final MovementController movementController = new MovementController("entity_interaction", Priority.FOREGROUND);
 
 	private WorldTaskRequest appliedTask;
 	private boolean terminalEventEmitted;
@@ -61,11 +64,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade) {
+	public EntityInteractionTaskExecutor(NavigationFacade navigationFacade) {
 		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
-	public EntityInteractionTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
+	public EntityInteractionTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
@@ -73,11 +76,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade) {
 		this(clientSupplier, navigationFacade, new CameraController());
 	}
 
-	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	EntityInteractionTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
@@ -164,7 +167,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		);
 		if (withinInteractionRange && hasLineOfSight) {
 			outOfRangeTicks = 0;
-			// Baritone owns steering on indirect approaches; aim only when we own the interaction.
+			// Navigation owns steering on indirect approaches; aim only when we own the interaction.
 			lookAtTarget(minecraft, target);
 			if (!cameraController.isAimingAt(minecraft, target.getBoundingBox())) {
 				movementController.stop(minecraft);
@@ -222,10 +225,10 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		Entity target
 	) {
 		movementController.stop(minecraft);
-		cancelBaritoneChase();
+		cancelNavigationChase();
 		// Chase navigation may select tools or building blocks. Restore the hand
 		// chosen for this attack before evaluating its cooldown or sending a hit.
-		player.getInventory().setSelectedSlot(attackHotbarSlot);
+		actuator.selectHotbar(minecraft, attackHotbarSlot);
 		if (player.getAttackStrengthScale(0.0F) < ATTACK_READY_THRESHOLD) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "attack_cooldown");
 			return Optional.empty();
@@ -233,7 +236,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 		if (!landedAttack) inventoryBeforeAttack = new InventoryItemCounter().count(player.getInventory());
 		attackedTarget = target;
-		minecraft.gameMode.attack(player, target);
+		actuator.attack(minecraft, player, target);
 		player.swing(InteractionHand.MAIN_HAND);
 		landedAttack = true;
 		if (interaction(request).attackMode() == EntityAttackMode.HIT_ONCE) {
@@ -285,7 +288,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		if (distance < 0.8D) {
 			cancelApproach();
 		} else if (shouldUseDirectChase(distance, hasBlockLineOfSight(minecraft, player, target), movementController.snapshot().stuck())) {
-			cancelBaritoneChase();
+			cancelNavigationChase();
 			lookAtTarget(minecraft, target);
 			movementController.moveForward(minecraft, false, false, tick);
 		} else if (navigationFacade != null && navigationFacade.isLoaded()) {
@@ -320,12 +323,12 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		Entity target
 	) {
 		movementController.stop(minecraft);
-		cancelBaritoneChase();
+		cancelNavigationChase();
 		InteractionHand hand = resolveInteractionHand(minecraft, player, interaction(request).itemId());
 		if (hand == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "required_item_missing"));
 		}
-		InteractionResult result = minecraft.gameMode.interact(player, target, hand);
+		InteractionResult result = actuator.interact(minecraft, player, target, hand);
 		if (!result.consumesAction()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "interaction_failed"));
 		}
@@ -343,7 +346,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	) {
 		outOfRangeTicks++;
 		if (shouldUseDirectChase(distance, hasLineOfSight, movementController.snapshot().stuck())) {
-			cancelBaritoneChase();
+			cancelNavigationChase();
 			lookAtTarget(minecraft, target);
 			movementController.moveForward(minecraft, true, false, tick);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "direct_chase");
@@ -358,7 +361,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			GoalPosition nextChaseGoal = chaseGoalFor(target);
 			if (shouldRefreshChaseGoal(chaseGoal, nextChaseGoal, chaseGoalRefreshTicks)) {
 				if (hasLineOfSight) {
-					navigationFacade.startNavigateNear(nextChaseGoal, BARITONE_CHASE_RADIUS_BLOCKS);
+					navigationFacade.startNavigateNear(nextChaseGoal, NAVIGATION_CHASE_RADIUS_BLOCKS);
 				}
 				else {
 					// A nearby goal can already be satisfied on the wrong side of an obstruction.
@@ -371,7 +374,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			else {
 				chaseGoalRefreshTicks++;
 			}
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, "baritone_chase");
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "navigation_chase");
 			return Optional.empty();
 		}
 		movementController.stop(minecraft);
@@ -382,7 +385,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range"));
 	}
 
-	private static InteractionHand resolveInteractionHand(Minecraft minecraft, LocalPlayer player, String itemId) {
+	private InteractionHand resolveInteractionHand(Minecraft minecraft, LocalPlayer player, String itemId) {
 		if (itemId == null || itemId.isBlank()) {
 			return InteractionHand.MAIN_HAND;
 		}
@@ -398,11 +401,11 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		int hotbarIndex = player.getInventory().getSelectedSlot();
 		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
-			player.getInventory().setSelectedSlot(sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
+			actuator.selectHotbar(minecraft, sourceSlot - InventoryMenu.USE_ROW_SLOT_START);
 			return InteractionHand.MAIN_HAND;
 		}
 		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, hotbarIndex, ClickType.SWAP, player);
-		player.getInventory().setSelectedSlot(hotbarIndex);
+		actuator.selectHotbar(minecraft, hotbarIndex);
 		ItemStack selected = player.getInventory().getSelectedItem();
 		if (selected.isEmpty()) {
 			return null;
@@ -645,10 +648,10 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 
 	private void cancelApproach() {
 		movementController.stop(clientSupplier.get());
-		cancelBaritoneChase();
+		cancelNavigationChase();
 	}
 
-	private void cancelBaritoneChase() {
+	private void cancelNavigationChase() {
 		if (chaseGoal != null && navigationFacade != null && navigationFacade.isLoaded()) {
 			navigationFacade.cancel();
 		}

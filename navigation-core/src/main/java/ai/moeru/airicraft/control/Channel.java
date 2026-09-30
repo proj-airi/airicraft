@@ -1,0 +1,18 @@
+package ai.moeru.airicraft.control;
+
+/**
+ * One independently leased part of the player's body. Eating can hold the hotbar while navigation
+ * holds locomotion and look.
+ */
+public enum Channel {
+	/** Movement keys: forward, back, strafe, jump, sneak and sprint. */
+	LOCOMOTION,
+	/** Where the camera points. */
+	LOOK,
+	/** The selected hotbar slot. */
+	HOTBAR,
+	/** Attacking and breaking blocks. */
+	PRIMARY,
+	/** Using items and blocks, including holding the use key to eat or block. */
+	SECONDARY
+}

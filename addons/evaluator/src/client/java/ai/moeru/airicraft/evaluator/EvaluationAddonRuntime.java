@@ -41,6 +41,7 @@ public final class EvaluationAddonRuntime {
 	private final EvaluationWaypointSeeder waypointSeeder = new EvaluationWaypointSeeder();
 	private final SurvivalSmokeFixtureService survivalFixtures = new SurvivalSmokeFixtureService();
 	private final NavigationCourseFixtureService navigationCourses = new NavigationCourseFixtureService();
+	private final ToolFixtureService toolFixtures = new ToolFixtureService();
 	private final NoticeCourseFixtureService noticeCourses = new NoticeCourseFixtureService();
 
 	private EvaluationScenario scenario;
@@ -238,6 +239,20 @@ public final class EvaluationAddonRuntime {
 			context.writeJson(200, context.onClientThread(() -> survivalFixtures.apply(request)));
 		}
 		catch (SurvivalSmokeFixtureService.FixtureException exception) {
+			throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+		}
+	}
+
+	public void handleToolFixture(BridgeRouteContext context) throws Exception {
+		if (!context.isMethod("POST")) {
+			context.writeJson(405, Map.of("error", "method_not_allowed"));
+			return;
+		}
+		ToolFixtureService.Request request = context.readJson(ToolFixtureService.Request.class);
+		try {
+			context.writeJson(200, context.onClientThread(() -> toolFixtures.apply(request)));
+		}
+		catch (ToolFixtureService.FixtureException exception) {
 			throw new BridgeUnavailableException(exception.code(), exception.getMessage());
 		}
 	}

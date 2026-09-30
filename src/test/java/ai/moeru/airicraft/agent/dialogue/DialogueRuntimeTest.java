@@ -1019,7 +1019,7 @@ class DialogueRuntimeTest {
 		);
 		backend.awaitConversationCount(1);
 		runtime.onInternalTaskUpdate(
-			"TASK UPDATE: state=CANCELLED taskId=mine-task goalType=MINE_BLOCKS message=Task cancelled terminationCause=BARITONE_CANCELLED",
+			"TASK UPDATE: state=CANCELLED taskId=mine-task goalType=MINE_BLOCKS message=Task cancelled terminationCause=NAVIGATION_CANCELLED",
 			11L,
 			SessionSnapshot.initial(),
 			Optional.of(goal),

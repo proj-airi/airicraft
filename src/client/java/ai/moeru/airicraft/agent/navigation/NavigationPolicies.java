@@ -26,28 +26,25 @@ public final class NavigationPolicies {
 	public static final Set<String> THROWAWAY_BLOCKS = Set.of("minecraft:cobblestone", "minecraft:cobbled_deepslate",
 		"minecraft:dirt", "minecraft:netherrack", "minecraft:stone", "minecraft:andesite", "minecraft:diorite",
 		"minecraft:granite", "minecraft:tuff", "minecraft:blackstone", "minecraft:end_stone", "minecraft:deepslate");
-	// Matches the Baritone mob avoidance profile Airicraft used.
 	private static final double MOB_AVOIDANCE_RADIUS = 16;
 	private static final double MOB_AVOIDANCE_COEFFICIENT = 4.0;
 	private static final double MOB_SCAN_RADIUS = 40;
-	/**
-	 * Set while an owner needs walking-only travel, such as leading animals. It mirrors the Baritone
-	 * settings those owners turn off, until policies are passed per request.
-	 */
-	private static volatile boolean walkOnly;
 
 	private NavigationPolicies() {
 	}
 
-	public static void setWalkOnly(boolean restricted) {
-		walkOnly = restricted;
-	}
-
-	/** The policy for the current player, or null when the travel policy forbids moving at all. */
-	public static MovementPolicy forPlayer(Minecraft minecraft, double waterPenalty) {
+	/**
+	 * The policy for one request: the planner's {@link PathfindSettings} and the request's options,
+	 * narrowed by the live world and inventory. Null when the travel policy forbids moving at all.
+	 */
+	public static MovementPolicy forPlayer(Minecraft minecraft, NavigationOptions options) {
 		LocalPlayer player = minecraft.player;
+		PathfindSettings.Values settings = PathfindSettings.current();
 		MovementPolicy policy = MovementPolicy.defaults()
-			.withWaterPenalty(waterPenalty)
+			.withBreaking(settings.allowBreak())
+			.withPlacing(settings.allowPlace())
+			.withMaxSafeFall(settings.maxFallHeight())
+			.withWaterPenalty(options.waterPenalty() != null ? options.waterPenalty() : settings.waterCost())
 			.withSprint(player.getFoodData().getFoodLevel() > 6)
 			.withPlaceableBlocks(throwawayCount(player));
 		WorldTravelPolicy.Limit limit = WorldTravelPolicy.limit(minecraft.level);
@@ -62,15 +59,17 @@ public final class NavigationPolicies {
 			policy = policy.withProtectedAreas(areas.stream()
 				.map(area -> new Box(area.x1(), area.y1(), area.z1(), area.x2(), area.y2(), area.z2())).toList());
 		}
-		// Doors stay usable: the Baritone settings this mirrors never disabled them.
-		if (walkOnly) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
-		return policy.withAvoidances(mobAvoidances(minecraft));
+		// Doors stay usable when walking only.
+		if (options.walkOnly()) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
+		return policy.withAvoidances(settings.avoidMobs() ? mobAvoidances(minecraft) : List.of());
 	}
 
 	public static int throwawayCount(LocalPlayer player) {
 		int count = 0;
 		var inventory = player.getInventory();
-		for (int slot = 0; slot < 36; slot++) {
+		// Blocks that navigation may not move into the hotbar cannot be placed, so they do not count.
+		int slots = PathfindSettings.current().allowInventoryToolSwap() ? 36 : 9;
+		for (int slot = 0; slot < slots; slot++) {
 			ItemStack stack = inventory.getItem(slot);
 			if (isThrowaway(stack)) count += stack.getCount();
 		}

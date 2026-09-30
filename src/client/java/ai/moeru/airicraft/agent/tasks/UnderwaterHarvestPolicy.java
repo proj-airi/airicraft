@@ -94,21 +94,19 @@ public final class UnderwaterHarvestPolicy {
 	}
 
 	public static PositioningMode positioningMode(SourceEnvironment environment) {
-		return environment == SourceEnvironment.DRY ? PositioningMode.BARITONE : PositioningMode.DIRECT;
+		return environment == SourceEnvironment.DRY ? PositioningMode.NAVIGATION : PositioningMode.DIRECT;
 	}
 
 	public static boolean recoveryComplete(
 		boolean airMarginReached,
 		boolean escapeTargetReached,
-		boolean escapeOwnsBaritone,
-		boolean waitingForBaritoneRelease,
-		boolean baritoneReleased
+		boolean escapeOwnsNavigation,
+		boolean navigationReleased
 	) {
 		return airMarginReached
 			&& escapeTargetReached
-			&& !escapeOwnsBaritone
-			&& !waitingForBaritoneRelease
-			&& baritoneReleased;
+			&& !escapeOwnsNavigation
+			&& navigationReleased;
 	}
 
 	public static SourceExhaustion sourceExhaustion(
@@ -239,7 +237,7 @@ public final class UnderwaterHarvestPolicy {
 	}
 
 	public enum PositioningMode {
-		BARITONE,
+		NAVIGATION,
 		DIRECT
 	}
 

@@ -1,6 +1,6 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -12,7 +12,7 @@ import java.util.Optional;
 
 /** A bounded harvest/collect/replant pass, owned and interruptible by the normal task runtime. */
 public final class CropTendingTaskExecutor implements WorldTaskExecutor {
-	private final BaritoneFacade navigation;
+	private final NavigationFacade navigation;
 	private final Environment environment;
 	private final WorldTaskExecutor planting;
 	private WorldTaskRequest request;
@@ -25,11 +25,11 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 	private TaskTerminalEvent terminal;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public CropTendingTaskExecutor(BaritoneFacade navigation, CameraController camera, WorldTaskExecutor planting) {
+	public CropTendingTaskExecutor(NavigationFacade navigation, CameraController camera, WorldTaskExecutor planting) {
 		this(navigation, new MinecraftCropTendingEnvironment(camera), planting);
 	}
 
-	CropTendingTaskExecutor(BaritoneFacade navigation, Environment environment, WorldTaskExecutor planting) {
+	CropTendingTaskExecutor(NavigationFacade navigation, Environment environment, WorldTaskExecutor planting) {
 		this.navigation = navigation;
 		this.environment = environment;
 		this.planting = planting;
@@ -70,7 +70,7 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 		activeTicks++;
 		phaseTicks++;
 		if (activeTicks > 2400 || phaseTicks > 240) return finish(session, false, "crop_tending_timeout");
-		if (phase != Phase.PLANT && phase != Phase.PLANTING && !navigationOwned && !BaritoneReleaseBarrier.released(navigation)) {
+		if (phase != Phase.PLANT && phase != Phase.PLANTING && !navigationOwned && !NavigationRelease.idle(navigation)) {
 			setSnapshot(TaskExecutionState.RUNNING, "waiting_for_navigation_release");
 			return Optional.empty();
 		}
@@ -116,13 +116,13 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 				if (navigation.navigationGoalReached(work)) {
 					release(session);
 				}
-				else if (BaritoneReleaseBarrier.released(navigation) || navigationOwned) {
+				else if (NavigationRelease.idle(navigation) || navigationOwned) {
 					if (!navigate(work)) return finish(session, false, "crop_pickup_approach_failed");
 				}
 			}
 		}
 		else if (phase == Phase.PLANT || phase == Phase.PLANTING) {
-			if (!BaritoneReleaseBarrier.released(navigation) && navigationOwned) {
+			if (!NavigationRelease.idle(navigation) && navigationOwned) {
 				release(session);
 			}
 			else if (phase == Phase.PLANT && environment.state(target(), args) != Cell.EMPTY_FARMLAND) {
@@ -186,7 +186,7 @@ public final class CropTendingTaskExecutor implements WorldTaskExecutor {
 
 	private Optional<TaskTerminalEvent> finishRelease(SessionSnapshot session) {
 		release(session);
-		if (!BaritoneReleaseBarrier.releaseAndDrain(navigation)) return Optional.empty();
+		NavigationRelease.release(navigation);
 		setSnapshot(terminal.terminalState(), terminal.message());
 		if (emitted) return Optional.empty();
 		emitted = true;

@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -23,7 +24,16 @@ class LureEntitiesTaskExecutorTest {
 		assertEquals(1, f.events.size());
 		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
 		assertFalse(f.nav.active);
-		assertFalse(f.env.settingsOwned);
+	}
+
+	@Test void everyTravelRequestIsWalkOnlyAndNothingIsLeftToRestore() {
+		Fixture f = new Fixture();
+		f.env.animals = List.of(animal("aaaaaaaa", 8, false, true));
+		f.tick(12);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.lastOptions);
+		f.env.animals = List.of(animal("aaaaaaaa", 11, false, false));
+		f.tick(2);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.lastOptions, "exact and near approaches both carry the option");
 	}
 
 	@Test void stopsForLaggingFollowerThenContinuesAfterCatchup() {
@@ -91,17 +101,16 @@ class LureEntitiesTaskExecutorTest {
 		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
 	}
 
-	@Test void interruptionRestoresSettingsAndResumeReequipsAndReacquiresSameIdentities() {
+	@Test void interruptionReleasesNavigationAndResumeReequipsAndReacquiresSameIdentities() {
 		Fixture f = new Fixture();
 		f.tick(2);
 		f.executor.tick(f.session(), Optional.empty());
 		assertFalse(f.nav.active);
-		assertFalse(f.env.settingsOwned);
 		f.env.held = false; // Combat took the hand and moved away from the flock.
 		f.env.animals = List.of(animal("aaaaaaaa", 8, false, true));
 		f.tick(1);
 		assertTrue(f.env.held);
-		assertTrue(f.env.settingsOwned);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.lastOptions);
 		assertEquals(1, f.env.initializations, "Resume must retain the resolved identities");
 		assertEquals(goal(8), f.nav.goals.getLast());
 	}
@@ -110,7 +119,6 @@ class LureEntitiesTaskExecutorTest {
 		Fixture f = new Fixture();
 		for (int i = 0; i < 7000; i++) f.executor.tick(SessionSnapshot.initial(), Optional.of(f.request));
 		assertEquals(0, f.env.initializations);
-		assertFalse(f.env.settingsOwned);
 		f.tick(2);
 		assertTrue(f.nav.active);
 		assertTrue(f.events.isEmpty());
@@ -124,7 +132,7 @@ class LureEntitiesTaskExecutorTest {
 		f.tick(20);
 		assertTrue(f.events.isEmpty(), "A loaded follower remains valid after the player approaches the other end of the herd");
 		assertTrue(f.nav.goals.contains(goal(25)));
-		assertTrue(f.env.settingsOwned);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.lastOptions);
 	}
 
 	@Test void missingAnimalFailsInsteadOfSilentlyCompletingSubset() {
@@ -134,7 +142,6 @@ class LureEntitiesTaskExecutorTest {
 		f.tick(1);
 		assertEquals("follower_missing_or_dead", f.events.getFirst().message());
 		assertFalse(f.nav.active);
-		assertFalse(f.env.settingsOwned);
 	}
 
 	@Test void failedStandingDestinationTriesAnotherCandidate() {
@@ -156,7 +163,6 @@ class LureEntitiesTaskExecutorTest {
 		stuck.tick(1210);
 		assertEquals("follower_not_approaching", stuck.events.getFirst().message());
 		assertFalse(stuck.nav.active);
-		assertFalse(stuck.env.settingsOwned);
 	}
 
 	@Test void activeButMotionlessNavigationTimesOutAndReleasesOwnership() {
@@ -164,7 +170,6 @@ class LureEntitiesTaskExecutorTest {
 		f.tick(1210);
 		assertEquals("lure_navigation_timeout", f.events.getFirst().message());
 		assertFalse(f.nav.active);
-		assertFalse(f.env.settingsOwned);
 	}
 
 	@Test void validatesBoundedAreaAndObservedSelectors() {
@@ -199,32 +204,28 @@ class LureEntitiesTaskExecutorTest {
 		Vec3 player = point(0);
 		List<LureEntitiesTaskExecutor.Follower> animals = List.of(animal("aaaaaaaa",2,false,true));
 		List<GoalPosition> leads = List.of(goal(10),goal(12));
-		boolean settingsOwned, held;
+		boolean held;
 		int initializations;
 		public String initialize(LureEntitiesStepArgs args) { initializations++; return null; }
 		public Vec3 position() { return player; }
 		public List<LureEntitiesTaskExecutor.Follower> followers() { return animals; }
 		public String holdItem() { held = true; return null; }
 		public List<GoalPosition> leadPositions(List<LureEntitiesTaskExecutor.Follower> followers) { return leads; }
-		public void beginTravel() { settingsOwned = true; }
-		public void release() { settingsOwned = false; }
 	}
-	private static final class Navigation implements BaritoneFacade {
+	private static final class Navigation implements NavigationFacade {
 		final Environment env;
 		Navigation(Environment env) { this.env=env; }
 		boolean active;
 		int radius;
+		NavigationOptions lastOptions;
 		List<GoalPosition> goals = new ArrayList<>();
 		Queue<String> events = new ArrayDeque<>();
 		public boolean isLoaded() { return true; }
-		public void applySettings() {}
-		public double walkOnWaterPenalty() { return 1; }
-		public void setWalkOnWaterPenalty(double v) {}
 		public void startFollow(String s) { fail("Only bounded navigation is allowed"); }
-		public void startNavigate(GoalPosition p) { goals.add(p); radius=0; active=true; }
-		public void startNavigateNear(GoalPosition p,int r) { goals.add(p); radius=r; active=true; }
+		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); radius=0; active=true; lastOptions=o; }
+		public void startNavigateNear(GoalPosition p,int r, NavigationOptions o) { goals.add(p); radius=r; active=true; lastOptions=o; }
 		public boolean processActive() { return active; }
-		public boolean cancel() { active=false; return true; }
+		public void cancel() { active=false; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }
 		public Optional<Double> estimatedTicksToGoal() { return Optional.empty(); }
 		public Optional<String> pollPathEvent() { return Optional.ofNullable(events.poll()); }

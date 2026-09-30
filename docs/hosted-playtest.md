@@ -85,7 +85,7 @@ The launcher, the tester presence and planner-recovery rules, multi-Play publica
 Hosted mode waits until the companion has reached the game screen before enabling
 the empty-host pause. This startup grace has no fixed timeout: loading-screen ticks
 continue until terrain loading finishes. After startup, hosted mode automatically
-pauses when no players other than the companion are connected. World simulation and client/Baritone/planner ticks stop; networking
+pauses when no players other than the companion are connected. World simulation and client/navigation/planner ticks stop; networking
 continues so testers can still join. The HUD shows `PAUSED — WAITING FOR PLAYERS`;
 chat and command keys still open Minecraft chat, and open screens continue to update. The next tester connection resumes the
 retained work, and the last tester disconnect pauses it again. Bridge status

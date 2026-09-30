@@ -1,6 +1,6 @@
 # Cave route mapping
 
-`map_cave` is a read-only System 1 geometry query. System 2 chooses a branch or remembered destination; the mapper supplies a route through the connected cave floor. Baritone still executes short movement segments.
+`map_cave` is a read-only System 1 geometry query. System 2 chooses a branch or remembered destination; the mapper supplies a route through the connected cave floor. Navigation executes the short movement segments.
 
 ```json
 {"radius":24,"verticalRadius":16,"opennessWeight":1}
@@ -27,7 +27,7 @@ scripts/playtest-follow-cave-route /tmp/cave-map.txt \
   --incident-output /tmp/cave-route-pause.txt --pause-on-complete
 ```
 
-Start the follower with simulation running and the player still at the map origin. It disables Baritone digging, placement, inventory use and bucket-fall actions. It tracks exact jobs and polls position against the current segment's two-block corridor. A detour, failed job, reflex interruption or observation timeout pauses the game and writes the pause state; it does not cancel or restart the job. Export the rolling recorder before diagnosing. A 30-second observation timeout is not proof of a failed path.
+Start the follower with simulation running and the player still at the map origin. It disables navigation digging, placement and inventory tool swaps. It tracks exact jobs and polls position against the current segment's two-block corridor. A detour, failed job, reflex interruption or observation timeout pauses the game and writes the pause state; it does not cancel or restart the job. Export the rolling recorder before diagnosing. A 30-second observation timeout is not proof of a failed path.
 
 This is a local playtest follower, not a native multi-waypoint movement executor. Polling is not a hard per-tick movement constraint. Terrain changes require remapping; mobs, food, torches and visit history remain contextual decisions. Configure automatic lighting separately. Prefer HotSwap for implementation changes; a normal runtime reload resets agent state and can release tick-debug pause, so read fresh tick state afterward.
 

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Launch an evaluator client, load a scenario world and run scripts/live-tool-smoke.
+
+The unattended form of the manual steps in that script's docstring. It shares its client launcher with
+scripts/run-navigation-baseline and needs a display: on Linux use `xvfb-run -a python3 scripts/run-live-tool-smoke`.
+
+Exit codes: 0 when every scenario passed, 1 when one failed, 3 when the client could not be driven.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load(name: str, file: str):
+    loader = importlib.machinery.SourceFileLoader(name, str(REPO_ROOT / "scripts" / file))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+runner = load("airicraft_run_navigation_baseline", "run-navigation-baseline")
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--scenario", action="append", dest="scenarios", help="Scenario id; repeat for several.")
+    parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "run" / "live-tool-smoke")
+    parser.add_argument("--world-archive", type=Path, default=runner.DEFAULT_WORLD_ARCHIVE)
+    parser.add_argument("--launch-timeout-seconds", type=float, default=1800.0)
+    args = parser.parse_args(argv)
+    output_dir = args.output_dir.resolve()
+
+    def driver_command(bridge_state: Path) -> list[str]:
+        command = [sys.executable, str(REPO_ROOT / "scripts" / "live-tool-smoke"),
+                   "--bridge-state", str(bridge_state), "--output", str(output_dir / "report.json")]
+        for scenario in args.scenarios or []:
+            command += ["--scenario", scenario]
+        return command
+
+    return runner.run_against_client(output_dir, args.world_archive, args.launch_timeout_seconds, driver_command).returncode
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except runner.baseline.BaselineError as error:
+        print(f"run-live-tool-smoke: {error}", file=sys.stderr)
+        sys.exit(3)

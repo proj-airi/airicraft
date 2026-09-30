@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.world.phys.Vec3;
@@ -12,7 +13,7 @@ import java.util.Set;
 
 /** Owns acquisition, follower pacing and animal arrival; gates remain explicit world actions. */
 public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
-	private final BaritoneFacade navigation;
+	private final NavigationFacade navigation;
 	private final Environment environment;
 	private WorldTaskRequest request;
 	private LureEntitiesStepArgs args;
@@ -25,8 +26,8 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 	private TaskTerminalEvent terminal;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
-	public LureEntitiesTaskExecutor(BaritoneFacade navigation) { this(navigation, new MinecraftLureEntitiesEnvironment()); }
-	LureEntitiesTaskExecutor(BaritoneFacade navigation, Environment environment) {
+	public LureEntitiesTaskExecutor(NavigationFacade navigation) { this(navigation, new MinecraftLureEntitiesEnvironment()); }
+	LureEntitiesTaskExecutor(NavigationFacade navigation, Environment environment) {
 		this.navigation = java.util.Objects.requireNonNull(navigation);
 		this.environment = java.util.Objects.requireNonNull(environment);
 	}
@@ -76,7 +77,6 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 		Vec3 player = environment.position();
 		String error = environment.holdItem();
 		if (error != null) return finish(false, error);
-		environment.beginTravel();
 		// Vanilla temptation ignores visibility; a nearby animal may already be following around a corner.
 		for (Follower follower : followers) if (distance(player, follower) <= 3.1) acquired.add(follower.uuid());
 
@@ -133,9 +133,10 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 
 	private boolean navigate(GoalPosition goal, int nearRadius) {
 		if (!navigationOwned) {
-			if (!BaritoneReleaseBarrier.released(navigation)) return true;
+			if (!NavigationRelease.idle(navigation)) return true;
 			navigation.pollPathEvent();
-			if (nearRadius > 0) navigation.startNavigateNear(goal, nearRadius); else navigation.startNavigate(goal);
+			if (nearRadius > 0) navigation.startNavigateNear(goal, nearRadius, NavigationOptions.WALK_ONLY);
+			else navigation.startNavigate(goal, NavigationOptions.WALK_ONLY);
 			navigationOwned = true;
 			navigationGoal = goal;
 			navigationRadius = nearRadius;
@@ -152,7 +153,7 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 		navigationOwned = false;
 		navigationGoal = null;
 	}
-	private void release() { stopNavigation(); environment.release(); }
+	private void release() { stopNavigation(); }
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason) {
 		release();
 		terminal = new TaskTerminalEvent(request.taskId(), null, success ? TaskExecutionState.COMPLETED : TaskExecutionState.FAILED,
@@ -161,7 +162,7 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 	}
 	private Optional<TaskTerminalEvent> finishRelease() {
 		release();
-		if (!BaritoneReleaseBarrier.releaseAndDrain(navigation)) return Optional.empty();
+		NavigationRelease.release(navigation);
 		setSnapshot(terminal.terminalState(), terminal.message(), List.of());
 		if (emitted) return Optional.empty();
 		emitted = true;
@@ -190,7 +191,5 @@ public final class LureEntitiesTaskExecutor implements WorldTaskExecutor {
 		List<Follower> followers();
 		String holdItem();
 		List<GoalPosition> leadPositions(List<Follower> followers);
-		void beginTravel();
-		void release();
 	}
 }

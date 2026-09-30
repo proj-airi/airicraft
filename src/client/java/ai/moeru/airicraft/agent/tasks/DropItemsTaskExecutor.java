@@ -1,8 +1,9 @@
 package ai.moeru.airicraft.agent.tasks;
 
-import ai.moeru.airicraft.agent.baritone.BaritoneFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
+import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -34,9 +35,9 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	private static final String INVENTORY_SCREEN_DISMISSED = "inventory_screen_dismissed";
 
 	private final Supplier<Minecraft> clientSupplier;
-	private final BaritoneFacade navigationFacade;
+	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
-	private final MovementController movementController = new MovementController();
+	private final MovementController movementController = new MovementController("drop_items", Priority.FOREGROUND);
 
 	private WorldTaskRequest appliedTask;
 	private int busyScreenTicks;
@@ -53,11 +54,11 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
 
-	public DropItemsTaskExecutor(BaritoneFacade navigationFacade) {
+	public DropItemsTaskExecutor(NavigationFacade navigationFacade) {
 		this(Minecraft::getInstance, navigationFacade, new CameraController());
 	}
 
-	public DropItemsTaskExecutor(BaritoneFacade navigationFacade, CameraController cameraController) {
+	public DropItemsTaskExecutor(NavigationFacade navigationFacade, CameraController cameraController) {
 		this(Minecraft::getInstance, navigationFacade, cameraController);
 	}
 
@@ -65,7 +66,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, null, new CameraController());
 	}
 
-	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier, BaritoneFacade navigationFacade, CameraController cameraController) {
+	DropItemsTaskExecutor(Supplier<Minecraft> clientSupplier, NavigationFacade navigationFacade, CameraController cameraController) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
@@ -210,7 +211,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		double distance = minecraft.player.distanceTo(target);
 		if (distance <= 10.0D && !movementController.snapshot().stuck()) {
 			cameraController.lookAt(minecraft, targetAimPoint(target));
-			cancelBaritoneChase();
+			cancelNavigationChase();
 			movementController.moveForward(minecraft, true, false, tick);
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " direct_chase");
 			return Optional.empty();
@@ -230,7 +231,7 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 			else {
 				chaseGoalRefreshTicks++;
 			}
-			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " baritone_chase");
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, reason + " navigation_chase");
 			return Optional.empty();
 		}
 		movementController.moveForward(minecraft, true, false, tick);
@@ -532,14 +533,14 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 
 	private void stopApproach(Minecraft minecraft) {
 		movementController.stop(minecraft);
-		cancelBaritoneChase();
+		cancelNavigationChase();
 	}
 
 	private void cancelApproach() {
 		stopApproach(clientSupplier.get());
 	}
 
-	private void cancelBaritoneChase() {
+	private void cancelNavigationChase() {
 		if (chaseGoal != null && navigationFacade != null && navigationFacade.isLoaded()) {
 			navigationFacade.cancel();
 		}
