@@ -42,6 +42,16 @@ class BlueprintDesignerTest {
         var worker=new BlueprintDesigner(c->responses.remove(),a->a.get("op").getAsString().equals("draft")?"TOOL_ERROR: conflict":DRAFT,()->true,(k,t)->{},3);
         assertEquals("iteration_limit",worker.run("brief","api","site","").status());
     }
+    @Test void recordsPromptAssistantTextAndDeniedCalls()throws Exception{
+        var entries=new ArrayList<String>();var call=new PlannerToolCall("one","blueprint",jsonArgs(),null);
+        var responses=new ArrayDeque<>(List.of(new PlannerResponse("I will inspect it",call,new JsonPrimitive("raw tool preamble")),draft(),done()));
+        var worker=new BlueprintDesigner(c->responses.remove(),a->a.get("op").getAsString().equals("lint")?LINT:DRAFT,()->true,(k,t)->entries.add(k+":"+t),4);
+        worker.run("build brief","authoring library","site","");
+        assertTrue(entries.stream().anyMatch(e->e.startsWith("system:")&&e.contains("authoring library")));
+        assertTrue(entries.contains("assistant_raw:\"raw tool preamble\""));assertTrue(entries.contains("assistant:I will inspect it"));assertTrue(entries.stream().anyMatch(e->e.startsWith("tool_result:TOOL_ERROR:")));
+        assertTrue(entries.contains("assistant:House ready for review"));
+    }
+    private static JsonObject jsonArgs(){var a=new JsonObject();a.addProperty("op","commit");return a;}
     @Test void finalLintFailureIsNotReportedAsCompleted()throws Exception{
         var responses=new ArrayDeque<>(List.of(draft(),done()));
         var worker=new BlueprintDesigner(c->responses.remove(),a->a.get("op").getAsString().equals("lint")?"TOOL_ERROR: unloaded_geometry":DRAFT,()->true,(k,t)->{},4);

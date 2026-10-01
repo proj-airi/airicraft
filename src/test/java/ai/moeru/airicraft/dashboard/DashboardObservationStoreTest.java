@@ -10,6 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DashboardObservationStoreTest {
+    @Test void seekingRetainsEarlierDesignerTurnsButExcludesFutureReplies(){
+        var store=new DashboardObservationStore(1024*1024);
+        store.advanceClock(1,false,true);store.append("blueprint_designer",1,1,Map.of("runId","first","text","earlier worker brief"));
+        store.advanceClock(300,false,true);store.append("blueprint_designer",300,300,Map.of("runId","second","text","second worker reply"));
+        store.advanceClock(600,false,true);store.append("blueprint_designer",600,600,Map.of("runId","second","text","future worker reply"));
+        var view=store.seek(300).get("observations").toString();
+        assertTrue(view.contains("earlier worker brief"));assertTrue(view.contains("second worker reply"));assertFalse(view.contains("future worker reply"));
+    }
+
 	@Test
 	void seekLoadsTheReferencedContextVersionAndKeysStayIndependent() {
 		DashboardObservationStore store = new DashboardObservationStore(1024L * 1024L);

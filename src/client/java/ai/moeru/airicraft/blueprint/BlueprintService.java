@@ -53,6 +53,9 @@ public final class BlueprintService {
     BlueprintService() {}
     private String designerLease;
     private volatile String designerSnapshot = "{}";
+    private java.util.function.Consumer<JsonObject> designerRecorder=event->{};
+    public synchronized void designerRecorder(java.util.function.Consumer<JsonObject> recorder){designerRecorder=Objects.requireNonNull(recorder);}
+    public synchronized void recordDesigner(String lease,JsonObject event){if(designActive(lease))designerRecorder.accept(event.deepCopy());}
     public String dashboardSnapshot() {
         String base=dashboardSnapshot;
         return base.substring(0,base.length()-1)+",\"designer\":"+designerSnapshot+"}";
@@ -71,6 +74,7 @@ public final class BlueprintService {
         return enqueue(arguments);
     }
     public synchronized void worldLeft() {
+        if(designerLease!=null){var event=JsonParser.parseString(designerSnapshot).getAsJsonObject();event.remove("transcript");event.addProperty("runId",designerLease);event.addProperty("kind","status");event.addProperty("text","cancelled: world session ended");event.addProperty("at",System.currentTimeMillis());designerRecorder.accept(event);}
         designerLease=null;designerSnapshot="{\"status\":\"cancelled\",\"message\":\"World session ended\"}";
         final long closedGeneration=++generation;
         pending=pending.handle((v,e)->{synchronized(this){if(generation==closedGeneration)reset();}return (Void)null;});

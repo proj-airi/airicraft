@@ -1,22 +1,22 @@
-// Dedicated, read-only transcript. This does not use the main planner's conversation store.
+// Separate recorded conversations, fed by the same timeline/export as the main dashboard.
 let mount;
-export function renderBlueprintDesigner(content,{api,replay}) {
-  if(content.dataset.view==='blueprint-designer'&&mount?.content===content&&mount.replay===replay)return;
-  if(mount)clearInterval(mount.timer);
-  content.dataset.view='blueprint-designer';
-  content.innerHTML='<section class="card"><div class="card-head"><h2>Blueprint designer</h2></div><div class="card-body"><p data-designer-status></p><p class="muted">Separate specialist conversation. Only the building brief, blueprint API and site/design evidence are supplied. Live session view.</p><div data-designer-transcript></div></div></section>';
-  const root=content.firstElementChild,status=root.querySelector('[data-designer-status]'),transcript=root.querySelector('[data-designer-transcript]');
-  const owner={content,replay,timer:null};mount=owner;let busy=false,last='';
-  async function refresh(){
-    if(mount!==owner||!root.isConnected){clearInterval(owner.timer);return;}
-    if(replay){status.textContent='Return to LIVE to view the current designer session.';return;}
-    if(busy||document.hidden)return;busy=true;
-    try{const snapshot=await(await api('/api/blueprint')).json();if(mount!==owner||!root.isConnected)return;
-      const d=snapshot.designer||{};status.textContent=`${d.status||'idle'} · ${d.model||'no worker started'}${d.blueprintId?' · '+d.blueprintId:''}`;
-      const encoded=JSON.stringify(d.transcript||[]);if(last===encoded)return;last=encoded;
-      const open=new Set([...transcript.querySelectorAll('details[open]')].map(e=>e.dataset.key));transcript.replaceChildren();
-      for(const entry of d.transcript||[]){const row=document.createElement('details');row.dataset.key=entry.at+':'+entry.kind;row.open=open.has(row.dataset.key)||entry.kind==='error';const label=document.createElement('summary');label.textContent=new Date(entry.at).toLocaleTimeString()+' · '+entry.kind;const body=document.createElement('pre');body.textContent=entry.text;row.append(label,body);transcript.append(row);}
-    }catch(e){status.textContent='Designer snapshot unavailable: '+e.message;}finally{busy=false;}
+export function renderBlueprintDesigner(content,{observations,replay}) {
+  if(content.dataset.view!=='blueprint-designer'||mount?.content!==content){
+    content.dataset.view='blueprint-designer';
+    content.innerHTML='<section class="card"><div class="card-head"><h2>Blueprint designer</h2></div><div class="card-body"><p data-designer-status></p><p class="muted">Separate recorded specialist conversations. Shows retained entries through the selected moment; older entries may have left the recording window.</p><div data-designer-transcript></div></div></section>';
+    mount={content,key:''};
   }
-  owner.timer=setInterval(refresh,2000);refresh();
+  const key=replay+':'+observations.map(o=>o.sequence).join(',');if(mount.key===key)return;mount.key=key;
+  const status=content.querySelector('[data-designer-status]'),root=content.querySelector('[data-designer-transcript]');
+  status.textContent=(replay?'Recorded playback':'Live recording')+' · '+observations.length+' entries';
+  const open=new Set([...root.querySelectorAll('details[open]')].map(e=>e.dataset.key));root.replaceChildren();
+  const runs=new Map();
+  for(const observation of observations){const e=observation.payload;let run=runs.get(e.runId);if(!run){run={meta:e,entries:[],status:'in progress / start not retained'};runs.set(e.runId,run);}run.entries.push({sequence:observation.sequence,...e});if(e.kind==='status')run.status=e.text;}
+  if(!runs.size){const p=document.createElement('p');p.textContent='No designer entries recorded at this moment. New design runs appear here and in session exports.';root.append(p);}
+  for(const [id,run] of runs){
+    const section=document.createElement('section'),heading=document.createElement('h3');heading.textContent=run.status+' · '+run.meta.model+' · '+run.meta.blueprintId;section.append(heading);
+    const label=document.createElement('p');label.className='muted';label.textContent='Run '+id;section.append(label);
+    for(const e of run.entries){const row=document.createElement('details');row.dataset.key=String(e.sequence);row.open=open.has(row.dataset.key)||e.kind==='error';const summary=document.createElement('summary');summary.textContent=new Date(e.at).toLocaleTimeString()+' · '+e.kind+(e.truncated?' · truncated':'');const body=document.createElement('pre');body.textContent=e.text;row.append(summary,body);section.append(row);}
+    root.append(section);
+  }
 }

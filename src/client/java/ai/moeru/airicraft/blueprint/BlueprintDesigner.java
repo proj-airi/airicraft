@@ -31,6 +31,7 @@ public final class BlueprintDesigner {
         var history=new ArrayList<LlmChatMessage>();
         history.add(LlmChatMessage.system(INSTRUCTIONS+"\nAUTHORING API\n"+authoring));
         history.add(LlmChatMessage.user("BUILDING BRIEF\n"+brief+"\nSITE\n"+site+"\nEXISTING DESIGN\n"+existing,LlmMessageKind.TASK));
+        transcript.accept("system",INSTRUCTIONS+"\nAUTHORING API\n"+authoring);
         transcript.accept("brief",brief);transcript.accept("context",site+"\n"+existing);
         JsonObject draft=null,lint=null;boolean rejected=false;int turns=0;
         for(;turns<maxTurns;turns++) {
@@ -39,6 +40,7 @@ public final class BlueprintDesigner {
                 return new Result("context_limit","Designer context limit reached; design requires further review.",draft,lint,turns);
             transcript.accept("progress","Model turn "+(turns+1)+" of "+maxTurns);
             var response=model.generate(LlmConversation.of(history));checkActive();
+            if(response.rawAssistantContent()!=null)transcript.accept("assistant_raw",response.rawAssistantContent().toString());
             if(response.toolCalls().isEmpty()) {
                 transcript.accept("assistant",response.replyText());
                 if(draft!=null&&!rejected) {
@@ -51,11 +53,12 @@ public final class BlueprintDesigner {
                 history.add(LlmChatMessage.user("No accepted final draft yet. Repair the rejected draft using the error, then lint it.",LlmMessageKind.TASK));
                 continue;
             }
+            if(!response.replyText().isBlank())transcript.accept("assistant",response.replyText());
             history.add(LlmChatMessage.assistantToolCalls(response.replyText(),response.toolCalls(),response.rawAssistantContent()));
             for(var tool:response.toolCalls()) {
                 checkActive();var args=tool.arguments();String op=args.has("op")?args.get("op").getAsString():"";
                 String result;
-                if(!tool.name().equals("blueprint")||!OPERATIONS.contains(op))result="TOOL_ERROR: designer may only draft, get, explain or lint blueprints";
+                if(!tool.name().equals("blueprint")||!OPERATIONS.contains(op)){result="TOOL_ERROR: designer may only draft, get, explain or lint blueprints";transcript.accept("tool_call",tool.name()+" "+args);transcript.accept("tool_result",result);}
                 else {
                     // Site and advisory rules are controlled by the host, not arbitrary model arguments.
                     args=args.deepCopy();args.remove("origin");args.remove("rules");args.remove("world");

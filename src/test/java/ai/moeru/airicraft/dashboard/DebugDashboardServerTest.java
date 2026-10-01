@@ -44,6 +44,7 @@ class DebugDashboardServerTest {
 		DashboardObservationStore store = new DashboardObservationStore(1024L * 1024L);
 		store.startSession("test", 0L, 100L);
 		store.append("llm_call", 5L, 150L, Map.of("requestBody", "full prompt", "rawResponseBody", "full response"));
+        store.append("blueprint_designer",5L,151L,Map.of("runId","worker-1","kind","assistant","text","separate designer reply"));
 		DebugDashboardServer server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
 		server.start(new DebugDashboardConfig(true, port, 1, 1024L * 1024L));
 		try {
@@ -61,9 +62,11 @@ class DebugDashboardServerTest {
 			assertEquals(401, unauthorized.statusCode());
 			assertEquals(200, bootstrap.statusCode());
 			assertTrue(JsonParser.parseString(bootstrap.body()).getAsJsonObject().has("sessionId"));
-			assertEquals(2, JsonParser.parseString(observations.body()).getAsJsonObject().getAsJsonArray("observations").size());
+			assertEquals(3, JsonParser.parseString(observations.body()).getAsJsonObject().getAsJsonArray("observations").size());
 			assertTrue(export.body().contains("full prompt"));
 			assertTrue(export.body().contains("full response"));
+            assertTrue(export.body().contains("blueprint_designer"));
+            assertTrue(export.body().contains("separate designer reply"));
 		}
 		finally {
 			server.stop();

@@ -2,6 +2,13 @@ package ai.moeru.airicraft.blueprint;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class BlueprintServiceLeaseTest {
+    @Test void recorderReceivesEntriesAndWorldCancellationButRejectsLateEntries(){
+        var service=new BlueprintService();var entries=new java.util.ArrayList<com.google.gson.JsonObject>();service.designerRecorder(entries::add);
+        String lease=service.beginDesign();var event=com.google.gson.JsonParser.parseString("{\"kind\":\"brief\",\"text\":\"house\"}").getAsJsonObject();service.recordDesigner(lease,event);event.addProperty("text","changed afterwards");
+        service.worldLeft();service.recordDesigner(lease,event);
+        assertEquals(2,entries.size());assertEquals("house",entries.getFirst().get("text").getAsString());assertEquals("status",entries.getLast().get("kind").getAsString());assertTrue(entries.getLast().get("text").getAsString().contains("cancelled"));
+    }
+
     @Test void workerExclusivelyOwnsDraftAndCancelledLeaseCannotPublishOrExecute(){
         var service=new BlueprintService();String lease=service.beginDesign();
         assertThrows(IllegalStateException.class,service::beginDesign);

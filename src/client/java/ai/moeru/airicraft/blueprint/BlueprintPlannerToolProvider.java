@@ -18,7 +18,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
     private String lease,blueprintId;
     private JsonArray site;
     private final List<Map<String,Object>> transcript=new ArrayList<>();
-    private String status="idle",modelSummary="";
+    private String status="idle",modelSummary="",recordedStatus="";
     private int transcriptChars;
     private volatile LlmBackend backend;
     private Thread workerThread;
@@ -62,7 +62,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
             boolean revise=explicitRevision||sameSite(blueprintId,site,anchor);
             String token=service.beginDesign();lease=token;
             if(!revise)blueprintId=UUID.randomUUID().toString();site=anchor;
-            transcript.clear();transcriptChars=0;status="running";modelSummary=config.model();publish(token);
+            transcript.clear();transcriptChars=0;recordedStatus="";status="running";modelSummary=config.model();publish(token);
             var result=new CompletableFuture<String>();
             workerThread=Thread.ofPlatform().daemon().name("airicraft-blueprint-designer").unstarted(()->{
                 LlmBackend localBackend=null;
@@ -111,13 +111,18 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
     };}
     private synchronized void record(String token,String kind,String text){
         if(!service.designActive(token))return;
+        recordEvent(token,kind,text);
         // Bound the viewer transcript independently of the model's working context.
         String bounded=text.length()>40_000?text.substring(0,40_000)+"\n[display truncated]":text;
         transcript.add(Map.of("kind",kind,"text",bounded,"at",System.currentTimeMillis()));transcriptChars+=bounded.length();
         while(transcriptChars>200_000&&transcript.size()>1)transcriptChars-=((String)transcript.removeFirst().get("text")).length();
         publish(token);
     }
-    private synchronized void publish(String token){service.publishDesigner(token,JSON.toJson(Map.of("status",status,"blueprintId",blueprintId,"model",modelSummary,"site",site,"transcript",transcript)));}
+    private void recordEvent(String token,String kind,String text){
+        var event=new JsonObject();event.addProperty("runId",token);event.addProperty("blueprintId",blueprintId);event.addProperty("model",modelSummary);event.add("site",site.deepCopy());event.addProperty("kind",kind);event.addProperty("at",System.currentTimeMillis());
+        boolean truncated=text.length()>1_000_000;event.addProperty("text",truncated?text.substring(0,1_000_000)+"\n[recording truncated]":text);event.addProperty("truncated",truncated);service.recordDesigner(token,event);
+    }
+    private synchronized void publish(String token){if(!recordedStatus.equals(status)){recordEvent(token,"status",status);recordedStatus=status;}service.publishDesigner(token,JSON.toJson(Map.of("status",status,"blueprintId",blueprintId,"model",modelSummary,"site",site,"transcript",transcript)));}
     private synchronized void cancel(String token){if(token!=null&&token.equals(lease)){status="cancelled";publish(token);service.endDesign(token,true);if(workerThread!=null)workerThread.interrupt();lease=null;}}
     @Override public synchronized void reset(){cancel(lease);}
     private synchronized String compact(String status,String summary,JsonObject draft,JsonObject lint){

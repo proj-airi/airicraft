@@ -82,6 +82,8 @@ public final class ClientRuntimeController {
 			AttentionRuleSource.load(), ai.moeru.airicraft.agent.perception.SalienceRuleSource.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
+        ai.moeru.airicraft.blueprint.BlueprintService.instance().designerRecorder(event ->
+            dashboardObservationStore.append("blueprint_designer",dashboardObservationStore.latestTick(),System.currentTimeMillis(),event));
 		this.dashboardObservationCollector = new DashboardObservationCollector(
 			dashboardObservationStore,
 			() -> {
