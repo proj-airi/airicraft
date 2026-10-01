@@ -27,7 +27,7 @@ class BlueprintServiceLeaseTest {
         for(var entry:java.util.Map.of("draft",draft,"source","function design(input) {}","lastLint",lint,"revision",4).entrySet()) {
             var field=BlueprintService.class.getDeclaredField(entry.getKey());field.setAccessible(true);field.set(service,entry.getValue());
         }
-        service.rememberTerrain(new com.google.gson.JsonObject(),java.util.Map.of("0,0",13),net.minecraft.util.math.BlockPos.ORIGIN,null);
+        service.rememberTerrain(new com.google.gson.JsonObject(),java.util.Map.of("0,0",13),net.minecraft.core.BlockPos.ZERO,null);
         for(var entry:java.util.Map.of("draft",draft,"source","function design(input) {}","lastLint",lint,"revision",4).entrySet()) {
             var field=BlueprintService.class.getDeclaredField(entry.getKey());field.setAccessible(true);assertEquals(entry.getValue(),field.get(service));
         }

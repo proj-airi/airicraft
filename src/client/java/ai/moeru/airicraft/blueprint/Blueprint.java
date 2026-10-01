@@ -1,12 +1,12 @@
 package ai.moeru.airicraft.blueprint;
 
 import com.google.gson.*;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.Registries;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.BlockRotation;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.core.BlockPos;
 import java.util.*;
 
 /** THROWAWAY: bounded component compiler, ownership and explicit composition. */
@@ -19,7 +19,7 @@ public final class Blueprint {
     public final JsonObject tree;
     public Blueprint(JsonObject tree, Map<String,Integer> surface) {
         this.tree = tree.deepCopy(); this.surface = surface;
-        visit(tree,"",BlockPos.ORIGIN,0,List.of(),new JsonObject(),0);
+        visit(tree,"",BlockPos.ZERO,0,List.of(),new JsonObject(),0);
     }
     private void visit(JsonObject node,String parent,BlockPos origin,int rotation,List<String> inherited,JsonObject inheritedGuidance,int depth) {
         if(depth>24 || components.size()>512) throw new IllegalArgumentException("component_limit");
@@ -27,7 +27,7 @@ public final class Blueprint {
         if(!id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("invalid_component_id: "+id);
         String path=parent.isEmpty()?id:parent+"."+id;
         if(!paths.add(path)) throw new IllegalArgumentException("duplicate_component: "+path);
-        BlockPos at=origin.add(rotate(vector(node,"at",BlockPos.ORIGIN),rotation));
+        BlockPos at=origin.offset(rotate(vector(node,"at",BlockPos.ZERO),rotation));
         int turn=node.has("rotate")?node.get("rotate").getAsInt():0;
         if(turn%90!=0) throw new IllegalArgumentException("rotation_must_be_quarter_turn");
         int rot=Math.floorMod(rotation+turn,360);
@@ -42,7 +42,7 @@ public final class Blueprint {
         info.put("origin",xyz(at)); info.put("rotation",rot);
         if(node.has("anchors")) {
             var anchors=new LinkedHashMap<String,Object>();
-            node.getAsJsonObject("anchors").entrySet().forEach(e->anchors.put(e.getKey(),xyz(at.add(rotate(vector(e.getValue()),rot)))));
+            node.getAsJsonObject("anchors").entrySet().forEach(e->anchors.put(e.getKey(),xyz(at.offset(rotate(vector(e.getValue()),rot)))));
             info.put("anchors",anchors);
         }
         var guidance=inheritedGuidance.deepCopy();
@@ -54,8 +54,8 @@ public final class Blueprint {
             info.put("volumeSize",node.getAsJsonObject("volume").get("size").deepCopy());
             JsonObject volume=node.getAsJsonObject("volume"); BlockPos size=vector(volume.get("size"));
             if(size.getX()<1||size.getY()<1||size.getZ()<1||(long)size.getX()*size.getY()*size.getZ()>8192) throw new IllegalArgumentException("volume_limit");
-            BlockState state=parseState(volume.get("state").getAsString()).rotate(switch(rot) {case 90->BlockRotation.CLOCKWISE_90; case 180->BlockRotation.CLOCKWISE_180;case 270->BlockRotation.COUNTERCLOCKWISE_90;default->BlockRotation.NONE;});
-            for(int y=0;y<size.getY();y++) for(int z=0;z<size.getZ();z++) for(int x=0;x<size.getX();x++) put(at.add(rotate(new BlockPos(x,y,z),rot)),state,path,allowed);
+            BlockState state=parseState(volume.get("state").getAsString()).rotate(switch(rot) {case 90->Rotation.CLOCKWISE_90; case 180->Rotation.CLOCKWISE_180;case 270->Rotation.COUNTERCLOCKWISE_90;default->Rotation.NONE;});
+            for(int y=0;y<size.getY();y++) for(int z=0;z<size.getZ();z++) for(int x=0;x<size.getX();x++) put(at.offset(rotate(new BlockPos(x,y,z),rot)),state,path,allowed);
         }
         if(node.has("foundation")) {
             if(surface==null||rot!=0) throw new IllegalArgumentException("foundation_requires_terrain_and_zero_rotation");
@@ -84,7 +84,7 @@ public final class Blueprint {
     public Map<String,Object> snapshot(int revision) {
         var out=new LinkedHashMap<String,Object>(); out.put("revision",revision);out.put("tree",tree);out.put("components",components);
         out.put("cells",cells.values().stream().map(Blueprint::describe).toList());
-        var materials=new TreeMap<String,Integer>(); cells.values().stream().filter(c->!c.state().isAir()).forEach(c->materials.merge(Registries.BLOCK.getId(c.state().getBlock()).toString(),1,Integer::sum));
+        var materials=new TreeMap<String,Integer>(); cells.values().stream().filter(c->!c.state().isAir()).forEach(c->materials.merge(BuiltInRegistries.BLOCK.getKey(c.state().getBlock()).toString(),1,Integer::sum));
         out.put("materials",materials);out.put("cellCount",cells.size());return out;
     }
     public static Map<String,Object> describe(Cell c) {
@@ -101,24 +101,24 @@ public final class Blueprint {
     }
     private static BlockPos rotate(BlockPos p,int r) {return switch(r){case 90->new BlockPos(-p.getZ(),p.getY(),p.getX());case 180->new BlockPos(-p.getX(),p.getY(),-p.getZ());case 270->new BlockPos(p.getZ(),p.getY(),-p.getX());default->p;};}
     public static BlockState parseState(String text) {
-        String[] parts=text.split("\\[",2);Identifier id=Identifier.of(parts[0]);
-        if(!Registries.BLOCK.containsId(id)) throw new IllegalArgumentException("unknown_block: "+id);
-        BlockState state=Registries.BLOCK.get(id).getDefaultState();
+        String[] parts=text.split("\\[",2);ResourceLocation id=ResourceLocation.parse(parts[0]);
+        if(!BuiltInRegistries.BLOCK.containsKey(id)) throw new IllegalArgumentException("unknown_block: "+id);
+        BlockState state=BuiltInRegistries.BLOCK.getValue(id).defaultBlockState();
         if(parts.length==2) {
             if(!parts[1].endsWith("]")) throw new IllegalArgumentException("invalid_state: "+text);
             for(String entry:parts[1].substring(0,parts[1].length()-1).split(",")) {
-                String[] kv=entry.split("=",2); Property<?> property=state.getBlock().getStateManager().getProperty(kv[0]);
+                String[] kv=entry.split("=",2); Property<?> property=state.getBlock().getStateDefinition().getProperty(kv[0]);
                 if(property==null||kv.length!=2) throw new IllegalArgumentException("invalid_property: "+entry);
                 state=with(state,property,kv[1]);
             }
         }
         return state;
     }
-    private static <T extends Comparable<T>> BlockState with(BlockState state,Property<T> p,String value) {return state.with(p,p.parse(value).orElseThrow(()->new IllegalArgumentException("invalid_property_value: "+value)));}
+    private static <T extends Comparable<T>> BlockState with(BlockState state,Property<T> p,String value) {return state.setValue(p,p.getValue(value).orElseThrow(()->new IllegalArgumentException("invalid_property_value: "+value)));}
     public static String stateText(BlockState state) {
-        String name=Registries.BLOCK.getId(state.getBlock()).toString();if(state.getEntries().isEmpty())return name;
-        var values=new ArrayList<String>();state.getEntries().forEach((p,v)->values.add(p.getName()+"="+valueName(p,v)));Collections.sort(values);
+        String name=BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();if(state.getValues().isEmpty())return name;
+        var values=new ArrayList<String>();state.getValues().forEach((p,v)->values.add(p.getName()+"="+valueName(p,v)));Collections.sort(values);
         return name+"["+String.join(",",values)+"]";
     }
-    @SuppressWarnings({"unchecked","rawtypes"}) private static String valueName(Property p,Comparable v){return p.name(v);}
+    @SuppressWarnings({"unchecked","rawtypes"}) private static String valueName(Property p,Comparable v){return p.getName(v);}
 }

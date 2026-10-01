@@ -2875,7 +2875,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		requireLivingPlayerForAction();
 		if (survivalReflexRuntime.snapshot().holdId()!=null) throw new IllegalStateException("work_in_safety_hold");
 		if (policyActive() || activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
-		var args=call.arguments();var client=MinecraftClient.getInstance();
+		var args=call.arguments();var client=Minecraft.getInstance();
 		var origin=new BlockPos(args.get("x").getAsInt(),args.get("y").getAsInt(),args.get("z").getAsInt());
 		var cells=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
 		var environment=new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client,cells);

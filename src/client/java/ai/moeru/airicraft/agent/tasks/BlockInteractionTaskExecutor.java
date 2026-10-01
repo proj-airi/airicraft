@@ -18,7 +18,6 @@ import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -193,11 +192,11 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		BlockPos target = blockPos(args.targetPosition());
 		try {
 			expectedPlacementState = args.expectedState() == null ? null
-				: BlockStateParser.block(BuiltInRegistries.BLOCK, args.expectedState(), false).blockState();
+				: BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, args.expectedState(), false).blockState();
 		} catch (com.mojang.brigadier.exceptions.CommandSyntaxException invalid) {
 			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, "invalid_expected_state " + invalid.getMessage()));
 		}
-		if (!minecraft.world.isChunkLoaded(target)) {
+		if (!minecraft.level.hasChunkAt(target)) {
 			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, target, "target_unloaded"));
 		}
 		BlockState before = minecraft.level.getBlockState(target);
@@ -277,7 +276,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		HitTarget hitTarget
 	) {
 		// Navigation owns movement and camera until its chosen stance is reached or rejected.
-		// Re-aiming at the block here prevents Baritone from steering along its path.
+		// Re-aiming at the block here prevents the navigator from steering along its path.
 		if (navigationStarted && navigationTargetIndex == targetIndex && target.equals(navigationTarget)) {
 			return navigateTowardInteractionRange(tick, minecraft, player, request, target, hitTarget,
 				new InteractionApproachReason(InteractionApproachReason.Kind.TARGET_NOT_VISIBLE, "continuing_stand_navigation"));
@@ -357,7 +356,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			);
 		}
         Optional<BlockHitResult> interactionHit=PlacementAimPolicy.selectHit(useCurrentViewRay,preciselyAligned,target,hitTarget.hitResult(),
-            useCurrentViewRay?currentViewHit(minecraft,player):null,player.getPos(),INTERACTION_RANGE_SQUARED);
+            useCurrentViewRay?currentViewHit(minecraft,player):null,player.position(),INTERACTION_RANGE_SQUARED);
         if(interactionHit.isEmpty())return Optional.empty();
 		clearNavigation();
 		boolean waterPlacement = waterPlacementUsesNormalInteraction(
@@ -376,7 +375,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
         }
 		InteractionResult blockResult;
 		try {
-			blockResult = minecraft.interactionManager.interactBlock(player, hand, interactionHit.get());
+			blockResult = actuator.useItemOn(minecraft, player, hand, interactionHit.get());
 		}
 		finally {
 			if (request.type() == WorldTaskType.PLACE_BLOCK) {
@@ -458,13 +457,13 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
     private static boolean placementRequiresSneak(Minecraft minecraft,LocalPlayer player,BlockState supportState) {
-        boolean stableStanding=player.isOnGround() && player.getPose()==net.minecraft.world.entity.Pose.STANDING
-            && !player.isSneaking() && !player.isInWater() && !player.isInLava()
-            && !player.onClimbable() && !player.hasVehicle() && !player.getAbilities().flying
-            && !minecraft.options.sneakKey.isPressed() && !minecraft.options.jumpKey.isPressed()
-            && !minecraft.options.forwardKey.isPressed() && !minecraft.options.backKey.isPressed()
-            && !minecraft.options.leftKey.isPressed() && !minecraft.options.rightKey.isPressed();
-        Vec3 velocity=player.getVelocity();
+        boolean stableStanding=player.onGround() && player.getPose()==net.minecraft.world.entity.Pose.STANDING
+            && !player.isShiftKeyDown() && !player.isInWater() && !player.isInLava()
+            && !player.onClimbable() && !player.isPassenger() && !player.getAbilities().flying
+            && !minecraft.options.keyShift.isDown() && !minecraft.options.keyJump.isDown()
+            && !minecraft.options.keyUp.isDown() && !minecraft.options.keyDown.isDown()
+            && !minecraft.options.keyLeft.isDown() && !minecraft.options.keyRight.isDown();
+        Vec3 velocity=player.getDeltaMovement();
         return PlacementSneakPolicy.requiresSneak(new PlacementSneakPolicy.Conditions(blockId(supportState),stableStanding,
             fullySupportedPlacementStance(minecraft,player.getBoundingBox()),velocity.x,velocity.z));
     }
@@ -473,14 +472,14 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
         if(region.isEmpty())return false;var floor=region.get();
         for(int x=floor.minX();x<=floor.maxX();x++)for(int z=floor.minZ();z<=floor.maxZ();z++){
             var pos=new BlockPos(x,floor.y(),z);
-            if(!minecraft.world.isChunkLoaded(pos) || !minecraft.world.getBlockState(pos).isCollisionShapeFullBlock(minecraft.world,pos))return false;
+            if(!minecraft.level.hasChunkAt(pos) || !minecraft.level.getBlockState(pos).isCollisionShapeFullBlock(minecraft.level,pos))return false;
         }
         return true;
     }
     private static BlockHitResult currentViewHit(Minecraft minecraft,LocalPlayer player) {
         Vec3 eye=player.getEyePosition();
         return PlacementAimPolicy.currentViewRayEnd(eye,player.getViewVector(1.0F),player.blockInteractionRange())
-            .map(end->minecraft.world.raycast(new ClipContext(eye,end,ClipContext.ShapeType.COLLIDER,ClipContext.FluidHandling.NONE,player)))
+            .map(end->minecraft.level.clip(new ClipContext(eye,end,ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,player)))
             .orElse(null);
     }
 
@@ -496,7 +495,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (!minecraft.level.hasChunkAt(pending.target())) {
 			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, pending.target(), "target_unloaded_during_confirmation"));
 		}
-		BlockState current = minecraft.world.getBlockState(pending.target());
+		BlockState current = minecraft.level.getBlockState(pending.target());
 		if (placementMatchesExpected(current)) {
 			pendingPlacementConfirmation = null;
 			return completeTarget(tick, request, pending.successMessage()
@@ -904,7 +903,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (minecraft == null || minecraft.level == null || player == null || target == null || hitTarget == null) {
 			return Optional.empty();
 		}
-		BlockPos current = player.getBlockPos();
+		BlockPos current = player.blockPosition();
         var standable=new java.util.HashMap<BlockPos,Boolean>();
         List<BlockPos> candidates=placement
             ? placementStandsAcrossSupports(placementSupports(minecraft,target,placementFacePreference),support->
@@ -965,7 +964,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		for (int dy = -4; dy <= 2; dy++) {
 			for (int dx = -4; dx <= 4; dx++) {
 				for (int dz = -4; dz <= 4; dz++) {
-					if (dx != 0 || dy != 0 || dz != 0) candidates.add(target.add(dx, dy, dz));
+					if (dx != 0 || dy != 0 || dz != 0) candidates.add(target.offset(dx, dy, dz));
 				}
 			}
 		}
@@ -1042,14 +1041,14 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 
     static <T> List<BlockPos> placementStandsAcrossSupports(List<T> supports,java.util.function.Function<T,List<BlockPos>> viable,BlockPos current) {
         return supports.stream().flatMap(support->viable.apply(support).stream()).distinct()
-            .sorted(Comparator.comparingInt((BlockPos p)->Math.max(0,p.getY()-current.getY())).thenComparingDouble(current::getSquaredDistance)).toList();
+            .sorted(Comparator.comparingInt((BlockPos p)->Math.max(0,p.getY()-current.getY())).thenComparingDouble(current::distSqr)).toList();
     }
     private List<HitTarget> placementSupports(Minecraft minecraft,BlockPos target,String preference) {
         var hits=new ArrayList<HitTarget>();
         for(var direction:facePreference(preference).map(List::of).orElse(DEFAULT_SUPPORT_ORDER)) {
-            var support=target.offset(direction);if(!minecraft.world.isChunkLoaded(support))continue;
-            var state=minecraft.world.getBlockState(support);
-            if(!state.isAir() && !state.isReplaceable())hits.add(hitOnBlock(support,state,direction.getOpposite()));
+            var support=target.relative(direction);if(!minecraft.level.hasChunkAt(support))continue;
+            var state=minecraft.level.getBlockState(support);
+            if(!state.isAir() && !state.canBeReplaced())hits.add(hitOnBlock(support,state,direction.getOpposite()));
         }
         return hits;
     }
@@ -1302,23 +1301,23 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			Vec3 look = hit.hitVec().subtract(eye).normalize();
 			float yaw = (float) Math.toDegrees(Math.atan2(-look.x, look.z));
 			Direction[] order = java.util.Arrays.stream(Direction.values())
-				.sorted(Comparator.comparingDouble((Direction d) -> -(d.getOffsetX()*look.x + d.getOffsetY()*look.y + d.getOffsetZ()*look.z)))
+				.sorted(Comparator.comparingDouble((Direction d) -> -(d.getStepX()*look.x + d.getStepY()*look.y + d.getStepZ()*look.z)))
 				.toArray(Direction[]::new);
 			context = new BlockPlaceContext(player, hand, stack, hit.hitResult()) {
-				@Override public Direction getHorizontalPlayerFacing() { return Direction.fromYRot(yaw); }
-				@Override public float getPlayerYaw() { return yaw; }
-				@Override public Direction getPlayerLookDirection() { return order[0]; }
-				@Override public Direction getVerticalPlayerLookDirection() { return look.y > 0 ? Direction.UP : Direction.DOWN; }
-				@Override public Direction[] getPlacementDirections() {
-					if (canReplaceExisting()) return order.clone();
+				@Override public Direction getHorizontalDirection() { return Direction.fromYRot(yaw); }
+				@Override public float getRotation() { return yaw; }
+				@Override public Direction getNearestLookingDirection() { return order[0]; }
+				@Override public Direction getNearestLookingVerticalDirection() { return look.y > 0 ? Direction.UP : Direction.DOWN; }
+				@Override public Direction[] getNearestLookingDirections() {
+					if (replacingClickedOnBlock()) return order.clone();
 					var directions = new ArrayList<>(List.of(order));
-					directions.remove(getSide().getOpposite());
-					directions.addFirst(getSide().getOpposite());
+					directions.remove(getClickedFace().getOpposite());
+					directions.addFirst(getClickedFace().getOpposite());
 					return directions.toArray(Direction[]::new);
 				}
 			};
 		}
-		return expectedPlacementState.equals(item.getBlock().getPlacementState(context));
+		return expectedPlacementState.equals(item.getBlock().getStateForPlacement(context));
 	}
 
 	static boolean placementConfirmed(BlockState state) {
@@ -1508,13 +1507,13 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (minecraft.level == null || !minecraft.level.hasChunkAt(pos) || !minecraft.level.hasChunkAt(pos.above())) {
 			return false;
 		}
-		BlockState feet = minecraft.world.getBlockState(pos);
-		BlockState head = minecraft.world.getBlockState(pos.up());
-		BlockState floor = minecraft.world.getBlockState(pos.down());
-		return (feet.isAir() || feet.isReplaceable())
-			&& (head.isAir() || head.isReplaceable())
-			&& hasStandingSupport(floor.getCollisionShape(minecraft.world, pos.down()).toAabbs())
-			&& minecraft.world.noCollision(minecraft.player, new AABB(
+		BlockState feet = minecraft.level.getBlockState(pos);
+		BlockState head = minecraft.level.getBlockState(pos.above());
+		BlockState floor = minecraft.level.getBlockState(pos.below());
+		return (feet.isAir() || feet.canBeReplaced())
+			&& (head.isAir() || head.canBeReplaced())
+			&& hasStandingSupport(floor.getCollisionShape(minecraft.level, pos.below()).toAabbs())
+			&& minecraft.level.noCollision(minecraft.player, new AABB(
 				pos.getX() + .2, pos.getY(), pos.getZ() + .2,
 				pos.getX() + .8, pos.getY() + 1.8, pos.getZ() + .8));
 	}

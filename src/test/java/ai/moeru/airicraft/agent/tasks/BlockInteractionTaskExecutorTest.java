@@ -42,10 +42,10 @@ class BlockInteractionTaskExecutorTest {
 	}
 	@Test void stairTopSupportsCenteredPlacementStance() {
 		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(
-			new Box(0, 0, 0, 1, .5, 1), new Box(0, .5, .5, 1, 1, 1))));
-		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, 1, 1, 1))));
-		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, 1, .5, 1))), "A bottom slab does not support integer-height feet");
-		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, .1, 1, 1))), "Support must overlap the player's footprint");
+			new AABB(0, 0, 0, 1, .5, 1), new AABB(0, .5, .5, 1, 1, 1))));
+		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, 1, 1, 1))));
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, 1, .5, 1))), "A bottom slab does not support integer-height feet");
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, .1, 1, 1))), "Support must overlap the player's footprint");
 		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of()));
 	}
 	@Test

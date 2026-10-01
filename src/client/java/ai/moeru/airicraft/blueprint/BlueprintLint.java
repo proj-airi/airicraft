@@ -2,12 +2,16 @@ package ai.moeru.airicraft.blueprint;
 
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.*;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.*;
-import net.minecraft.world.BlockView;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.BlockGetter;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -24,33 +28,33 @@ public final class BlueprintLint {
         var rules=new JsonArray();
         for(String id:List.of("entrance-access","room-lighting","room-coverage","stair-access","component-semantics","connected-route","guardrail-protection","walkable-area")) {var r=new JsonObject();r.addProperty("id",id);r.addProperty("source",resource(id+".js"));rules.add(r);}return rules;
     }
-    public static JsonObject capture(Blueprint draft,int revision,ServerWorld world,BlockPos origin) {
+    public static JsonObject capture(Blueprint draft,int revision,ServerLevel world,BlockPos origin) {
         if(draft.cells.isEmpty())throw new IllegalArgumentException("empty_blueprint");
         int minX=128,minY=128,minZ=128,maxX=-128,maxY=-128,maxZ=-128;
         for(var p:draft.cells.keySet()){minX=Math.min(minX,p.getX());minY=Math.min(minY,p.getY());minZ=Math.min(minZ,p.getZ());maxX=Math.max(maxX,p.getX());maxY=Math.max(maxY,p.getY());maxZ=Math.max(maxZ,p.getZ());}
         minX-=3;minY-=3;minZ-=3;maxX+=3;maxY+=3;maxZ+=3;
         if((long)(maxX-minX+1)*(maxY-minY+1)*(maxZ-minZ+1)>24000)throw new IllegalArgumentException("lint_volume_limit");
         final var planned=draft.cells;
-        BlockView merged=new BlockView(){
+        BlockGetter merged=new BlockGetter(){
             public BlockState getBlockState(BlockPos p){var c=planned.get(p.subtract(origin));return c==null?world.getBlockState(p):c.state();}
             public FluidState getFluidState(BlockPos p){return getBlockState(p).getFluidState();}
             public BlockEntity getBlockEntity(BlockPos p){return null;}
             public int getHeight(){return world.getHeight();}
-            public int getBottomY(){return world.getBottomY();}
+            public int getMinY(){return world.getMinY();}
         };
         var voxels=new LinkedHashMap<BlockPos,JsonArray>();var light=new HashMap<BlockPos,Integer>();var opaque=new HashSet<BlockPos>();var queue=new ArrayDeque<BlockPos>();
         int unknown=0;
         for(int y=minY;y<=maxY;y++)for(int z=minZ;z<=maxZ;z++)for(int x=minX;x<=maxX;x++) {
-            var local=new BlockPos(x,y,z);var p=local.add(origin);var a=new JsonArray();
+            var local=new BlockPos(x,y,z);var p=local.offset(origin);var a=new JsonArray();
             a.add(x);a.add(y);a.add(z);
-            boolean known=planned.containsKey(local)||(world.isChunkLoaded(p)&&p.getY()>=world.getBottomY()&&p.getY()<=world.getTopYInclusive());
+            boolean known=planned.containsKey(local)||(world.hasChunkAt(p)&&p.getY()>=world.getMinY()&&p.getY()<=world.getMaxY());
             a.add(known);var boxes=new JsonArray();int emission=0;boolean liquid=false;
             if(known){
-                var state=merged.getBlockState(p);emission=state.getLuminance();liquid=!state.getFluidState().isEmpty();
+                var state=merged.getBlockState(p);emission=state.getLightEmission();liquid=!state.getFluidState().isEmpty();
                 // An operable wooden door is treated as opened for access advice; iron doors remain obstacles.
-                if(!(state.getBlock() instanceof DoorBlock && !state.isOf(Blocks.IRON_DOOR)))
-                    for(var box:state.getCollisionShape(merged,p).getBoundingBoxes())boxes.add(JSON.toJsonTree(List.of(box.minX,box.minY,box.minZ,box.maxX,box.maxY,box.maxZ)));
-                if(state.isOpaqueFullCube())opaque.add(local);
+                if(!(state.getBlock() instanceof DoorBlock && !state.is(Blocks.IRON_DOOR)))
+                    for(var box:state.getCollisionShape(merged,p).toAabbs())boxes.add(JSON.toJsonTree(List.of(box.minX,box.minY,box.minZ,box.maxX,box.maxY,box.maxZ)));
+                if(state.isSolidRender())opaque.add(local);
             }else{unknown++;opaque.add(local);}
             a.add(boxes);a.add(emission);a.add(0);a.add(liquid);voxels.put(local,a);
             if(emission>0){light.put(local,emission);queue.add(local);}
@@ -58,10 +62,10 @@ public final class BlueprintLint {
         // Approximate block-light flood fill. No skylight, partial-block occlusion or light entering from outside the capture.
         while(!queue.isEmpty()){
             BlockPos p=queue.remove();int level=light.get(p)-1;if(level<=0)continue;
-            for(var direction:Direction.values()) {BlockPos next=p.offset(direction);if(!voxels.containsKey(next)||opaque.contains(next)||light.getOrDefault(next,0)>=level)continue;light.put(next,level);queue.add(next);}
+            for(var direction:Direction.values()) {BlockPos next=p.relative(direction);if(!voxels.containsKey(next)||opaque.contains(next)||light.getOrDefault(next,0)>=level)continue;light.put(next,level);queue.add(next);}
         }
         var geometry=new JsonArray();voxels.forEach((p,a)->{a.set(6,new JsonPrimitive(light.getOrDefault(p,0)));geometry.add(a);});
-        var out=new JsonObject();out.addProperty("revision",revision);out.addProperty("serverTick",world.getTime());out.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
+        var out=new JsonObject();out.addProperty("revision",revision);out.addProperty("serverTick",world.getGameTime());out.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
         out.add("components",JSON.toJsonTree(draft.components));
         out.add("cells",JSON.toJsonTree(draft.cells.values().stream().map(c->Map.of("position",Blueprint.xyz(c.position()),"owner",c.owner(),"state",Blueprint.stateText(c.state()))).toList()));
         out.add("geometry",geometry);out.addProperty("unknownCells",unknown);
