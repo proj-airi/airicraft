@@ -6,18 +6,30 @@ package ai.moeru.airicraft.navigation;
  *
  * @param moveX  world-space x of the desired horizontal direction; zero with moveZ to stand still
  * @param moveZ  world-space z of the desired horizontal direction
+ * @param swim   sprint-swim along the look vector: forward and sprint are held whatever the horizontal
+ *               direction, and the camera pitch (from {@code look}) steers up and down
  * @param look   where to point the camera, or null to leave it
  * @param action a block interaction to perform this tick, or null
  */
-public record MotorIntent(double moveX, double moveZ, boolean jump, boolean sneak, boolean sprint, Point look, Action action) {
+public record MotorIntent(double moveX, double moveZ, boolean jump, boolean sneak, boolean sprint, boolean swim, Point look,
+	Action action) {
 	public static final MotorIntent IDLE = new MotorIntent(0, 0, false, false, false, null, null);
 
+	public MotorIntent(double moveX, double moveZ, boolean jump, boolean sneak, boolean sprint, Point look, Action action) {
+		this(moveX, moveZ, jump, sneak, sprint, false, look, action);
+	}
+
+	/** Sprint-swimming toward {@code look}, which carries the height to rise or sink to. */
+	public static MotorIntent swimming(double moveX, double moveZ, Point look) {
+		return new MotorIntent(moveX, moveZ, false, false, true, true, look, null);
+	}
+
 	public boolean moving() {
-		return moveX != 0 || moveZ != 0;
+		return moveX != 0 || moveZ != 0 || swim;
 	}
 
 	public MotorIntent withAction(Action next) {
-		return new MotorIntent(moveX, moveZ, jump, sneak, sprint, look, next);
+		return new MotorIntent(moveX, moveZ, jump, sneak, sprint, swim, look, next);
 	}
 
 	public record Point(double x, double y, double z) {

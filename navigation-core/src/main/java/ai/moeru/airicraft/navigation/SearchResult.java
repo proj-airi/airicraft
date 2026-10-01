@@ -11,6 +11,12 @@ public sealed interface SearchResult permits SearchResult.Found, SearchResult.Pa
 		NO_ROUTE,
 		/** Exploration reached unloaded terrain; more may load as the player moves. */
 		UNLOADED_FRONTIER,
+		/**
+		 * Moves were dropped because the body would run out of air before finishing them: the goal may
+		 * be reachable only by surfacing and trying again. A partial path with this reason ends where
+		 * enough air remains.
+		 */
+		AIR_BUDGET,
 		NODE_BUDGET,
 		TIME_BUDGET,
 		/** A waypoint on the way to a goal farther than one segment; plan again from its end. */

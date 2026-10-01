@@ -25,6 +25,8 @@ terrain instead.
 | `pillar_pit` | leaving a six-deep pit | arrive | 64 cobblestone |
 | `door_house` | leaving a closed room through an oak door | arrive | none |
 | `cave_route` | a dark, winding one-wide tunnel with a step up | arrive | none |
+| `flooded_tunnel` | two sealed halls joined only by a 14-long, one-block-high flooded tunnel in unbreakable mass; needs the swimming pose | arrive | none |
+| `air_budget_tunnel` | the same halls joined by about 65 blocks of flooded tunnel, more than one breath; the planner must refuse rather than drown the player | refuse | none |
 | `far_xz` | 320 blocks east over natural terrain, crossing unloaded chunks | arrive | none |
 | `travel_bounds_refusal` | strategy travel bounds that end before the goal | refuse | none |
 

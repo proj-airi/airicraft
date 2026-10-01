@@ -12,6 +12,11 @@ import java.util.function.BooleanSupplier;
 public final class PathSearch {
 	private static final double MIN_IMPROVEMENT = 0.01;
 	private static final int CHECK_INTERVAL = 256;
+	/**
+	 * Paths reaching a cell with different air supplies are kept apart in bands this wide, so a route
+	 * that costs more but surfaces on the way is not discarded for a cheaper one that would drown.
+	 */
+	private static final int AIR_BAND_TICKS = 20;
 
 	private PathSearch() {
 	}
@@ -36,7 +41,10 @@ public final class PathSearch {
 		Moves.Overlay overlay;
 		/** Blocks the path to this node places; never more than the policy's placeable blocks. */
 		int places;
-		/** Another state at the same cell, reached by a path placing a different number of blocks. */
+		/** Air supply left on arrival; only tracked when the policy's breath is limited. */
+		double air;
+		int airBand;
+		/** Another state at the same cell, reached by a path placing a different number of blocks or arriving with other air. */
 		Node sibling;
 
 		Node(int x, int y, int z, double h) {
@@ -61,6 +69,8 @@ public final class PathSearch {
 		private final Heap open = new Heap();
 		private final Moves.Result result = new Moves.Result();
 		private final double weight;
+		private final boolean airTracked;
+		private boolean airPruned;
 
 		Run(Moves moves, GridPos start, Goal goal, SearchBudget budget, BooleanSupplier cancelled) {
 			this.moves = moves;
@@ -68,6 +78,8 @@ public final class PathSearch {
 			this.goal = goal;
 			this.budget = budget;
 			this.weight = budget.heuristicWeight();
+			MovementPolicy.Breath breath = moves.policy().breath();
+			this.airTracked = !breath.unlimited();
 			this.cancelled = cancelled == null ? () -> false : cancelled;
 		}
 
@@ -76,6 +88,10 @@ public final class PathSearch {
 			Node origin = node(start.x(), start.y(), start.z());
 			origin.g = 0;
 			origin.f = origin.h * weight;
+			if (airTracked) {
+				origin.air = moves.policy().breath().airTicks();
+				origin.airBand = band(origin.air);
+			}
 			open.add(origin);
 			Node best = origin;
 			int expanded = 0;
@@ -93,7 +109,10 @@ public final class PathSearch {
 				if (goal.isGoal(current.x, current.y, current.z)) {
 					return new SearchResult.Found(path(current), stats(expanded, started));
 				}
-				if (current.h < best.h || current.h == best.h && current.g < best.g) best = current;
+				// A partial path is followed to its end and the search runs again from there, so with a limited
+				// supply it must end where the head is out of the water: never stranded in a dead-end tunnel.
+				boolean endsSafely = !airTracked || current == origin || !moves.headWet(current.x, current.y, current.z);
+				if (endsSafely && (current.h < best.h || current.h == best.h && current.g < best.g)) best = current;
 				moves.overlay(current.overlay);
 				int kind = moves.probe(current.x, current.y, current.z);
 				double base = moves.probeBase();
@@ -108,9 +127,19 @@ public final class PathSearch {
 					int places = current.places + (result.places() ? 1 : 0);
 					if (places > moves.policy().placeableBlocks()) continue;
 					double g = current.g + result.cost;
-					Node next = state(result.x, result.y, result.z, places, g);
+					double air = 0;
+					if (airTracked) {
+						air = moves.airAfter(current.air, current.x, current.y, current.z, result);
+						if (air < 0) {
+							airPruned = true;
+							continue;
+						}
+						g += moves.lowAirCost(current.air, air);
+					}
+					Node next = state(result.x, result.y, result.z, places, band(air), g);
 					if (next == null) continue;
 					next.g = g;
+					next.air = air;
 					next.f = g + next.h * weight;
 					next.parent = current;
 					next.move = move;
@@ -120,7 +149,8 @@ public final class PathSearch {
 					else open.add(next);
 				}
 			}
-			SearchResult.Reason reason = moves.touchedUnloaded() ? SearchResult.Reason.UNLOADED_FRONTIER : SearchResult.Reason.NO_ROUTE;
+			SearchResult.Reason reason = moves.touchedUnloaded() ? SearchResult.Reason.UNLOADED_FRONTIER
+				: airPruned ? SearchResult.Reason.AIR_BUDGET : SearchResult.Reason.NO_ROUTE;
 			return partial(best, reason, expanded, started);
 		}
 
@@ -162,28 +192,35 @@ public final class PathSearch {
 		 * at one cell differ by blocks placed, so a costlier path that saved blocks is kept for gaps
 		 * further on.
 		 */
-		private Node state(int x, int y, int z, int places, double g) {
-			long key = GridPos.key(x, y, z);
-			Node head = nodes.get(key);
-			if (head == null) {
-				Node node = new Node(x, y, z, goal.heuristic(x, y, z));
-				node.places = places;
-				nodes.put(key, node);
-				return node;
-			}
-			Node same = null;
-			for (Node state = head; state != null; state = state.sibling) {
-				if (state.places > places) continue;
-				if (g >= state.g - MIN_IMPROVEMENT) return null;
-				if (state.places == places) {
-					if (state.closed) return null;
-					same = state;
-				}
-			}
-			if (same != null) return same;
-			Node node = new Node(x, y, z, head.h);
-			node.places = places;
-			node.sibling = head.sibling;
+		private static int band(double air) {
+			return (int) Math.floor(air / AIR_BAND_TICKS);
+		}
+
+		private Node state(int x, int y, int z, int places, int airBand, double g) {
+		long key = GridPos.key(x, y, z);
+		Node head = nodes.get(key);
+		if (head == null) {
+		Node node = new Node(x, y, z, goal.heuristic(x, y, z));
+		node.places = places;
+		node.airBand = airBand;
+		nodes.put(key, node);
+		return node;
+		}
+		Node same = null;
+		for (Node state = head; state != null; state = state.sibling) {
+		// A state with no more blocks placed and no less air that is also no costlier dominates.
+		if (state.places > places || state.airBand < airBand) continue;
+		if (g >= state.g - MIN_IMPROVEMENT) return null;
+		if (state.places == places && state.airBand == airBand) {
+		if (state.closed) return null;
+		same = state;
+		}
+		}
+		if (same != null) return same;
+		Node node = new Node(x, y, z, head.h);
+		node.places = places;
+		node.airBand = airBand;
+		node.sibling = head.sibling;
 			head.sibling = node;
 			return node;
 		}

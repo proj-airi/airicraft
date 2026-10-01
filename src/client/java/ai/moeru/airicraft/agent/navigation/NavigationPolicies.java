@@ -9,6 +9,7 @@ import ai.moeru.airicraft.navigation.Box;
 import ai.moeru.airicraft.navigation.MovementPolicy;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.entity.monster.Enemy;
@@ -46,7 +47,8 @@ public final class NavigationPolicies {
 			.withMaxSafeFall(settings.maxFallHeight())
 			.withWaterPenalty(options.waterPenalty() != null ? options.waterPenalty() : settings.waterCost())
 			.withSprint(player.getFoodData().getFoodLevel() > 6)
-			.withPlaceableBlocks(throwawayCount(player));
+			.withPlaceableBlocks(throwawayCount(player))
+			.withBreath(breath(player));
 		WorldTravelPolicy.Limit limit = WorldTravelPolicy.limit(minecraft.level);
 		if (limit.closed()) return null;
 		if (limit.bounds() != null) policy = policy.withTravelBounds(box(limit.bounds()));
@@ -62,6 +64,15 @@ public final class NavigationPolicies {
 		// Doors stay usable when walking only.
 		if (options.walkOnly()) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
 		return policy.withAvoidances(settings.avoidMobs() ? mobAvoidances(minecraft) : List.of());
+	}
+
+	/** The air to plan with: what the player has now, or no limit when nothing can drown them. */
+	static MovementPolicy.Breath breath(LocalPlayer player) {
+		if (player.getAbilities().invulnerable || player.hasEffect(MobEffects.WATER_BREATHING)
+			|| player.hasEffect(MobEffects.CONDUIT_POWER)) {
+			return MovementPolicy.Breath.UNLIMITED;
+		}
+		return MovementPolicy.Breath.of(player.getAirSupply(), player.getMaxAirSupply());
 	}
 
 	public static int throwawayCount(LocalPlayer player) {

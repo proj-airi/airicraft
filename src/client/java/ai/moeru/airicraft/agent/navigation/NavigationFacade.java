@@ -26,6 +26,15 @@ public interface NavigationFacade {
 
 	void startNavigateNear(GoalPosition position, int radiusBlocks, NavigationOptions options);
 
+	/**
+	 * Swims, walks or climbs to the nearest air (or, with {@code shore}, the nearest dry standing place),
+	 * planned against the air the player has left. Ends with {@code AT_GOAL} on arrival and
+	 * {@code CALC_FAILED} when none can be found. Returns false when this backend cannot plan it.
+	 */
+	default boolean startNavigateToAir(boolean shore, NavigationOptions options) {
+		return false;
+	}
+
 	/** Whether a navigation or follow request still controls movement. */
 	boolean processActive();
 

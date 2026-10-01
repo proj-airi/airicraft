@@ -5,6 +5,10 @@ import ai.moeru.airicraft.navigation.MotorIntent.Point;
 /** One executor per move family. Edits happen from the start cell before the body moves. */
 final class MoveExecutors {
 	private static final double EYE_HEIGHT = 1.62;
+	/** Eye height in the swimming pose. */
+	private static final double SWIM_EYE_HEIGHT = 0.4;
+	/** Where in its cell a swimmer's feet aim: the middle of the 0.6 block tall swimming body. */
+	private static final double SWIM_LEVEL = 0.3;
 	/** How close to the destination centre a step that turns afterwards must end. */
 	private static final double TURN_TOLERANCE = 0.45;
 
@@ -60,14 +64,15 @@ final class MoveExecutors {
 	};
 
 	static final MoveExecutor SWIM_UP = context -> {
-		MotorIntent intent = toward(context, centreOf(context.step.to()), true, false, false);
-		BodyState body = context.body;
+	BodyState body = context.body;
+	MotorIntent intent = swimming(context) ? swim(context, 0.6) : toward(context, centreOf(context.step.to()), true, false, false);
 		return finish(context, intent, body.feet().y() >= context.step.to().y() && sameColumn(body, context.step.to()));
 	};
 
 	static final MoveExecutor SWIM_DOWN = context -> {
-		MotorIntent intent = toward(context, centreOf(context.step.to()), false, true, false);
-		BodyState body = context.body;
+	BodyState body = context.body;
+	// Sink with the sneak key until the head is under, then dive along the look vector.
+	MotorIntent intent = swimming(context) ? swim(context, -0.1) : toward(context, centreOf(context.step.to()), false, true, false);
 		return finish(context, intent, body.feet().y() <= context.step.to().y() && sameColumn(body, context.step.to()));
 	};
 
@@ -135,6 +140,10 @@ final class MoveExecutors {
 	private static MoveExecutor.Outcome walk(StepContext context, boolean maySprint) {
 		BodyState body = context.body;
 		GridPos to = context.step.to();
+		if (swimming(context)) {
+			MotorIntent dive = swim(context, SWIM_LEVEL);
+			return finish(context, dive, context.atEnd() && (!context.turnsAfter() || context.distanceToEnd() < TURN_TOLERANCE));
+		}
 		boolean descending = context.next != null && context.next.type() == MoveType.SWIM_DOWN;
 		boolean jump = body.inWater() ? !descending : body.onGround() && body.horizontalCollision();
 		boolean sprint = maySprint && context.policy.allowSprint() && body.onGround() && !body.inWater() && context.distanceToEnd() > 0.6;
@@ -185,6 +194,37 @@ final class MoveExecutors {
 		double length = Math.sqrt(dx * dx + dz * dz);
 		if (length < 0.05) return new MotorIntent(0, 0, jump, sneak, false, lookAhead(context, target), null);
 		return new MotorIntent(dx / length, dz / length, jump, sneak, sprint, lookAhead(context, target), null);
+	}
+
+	/**
+	 * Whether this tick should sprint-swim. Swimming starts only with the head under water, so a body at
+	 * the surface treads instead; the plan decides by the cells it crosses, the body by where its head is.
+	 */
+	private static boolean swimming(StepContext context) {
+		BodyState body = context.body;
+		if (!body.inWater()) return false;
+		Moves live = context.live;
+		GridPos from = context.step.from(), to = context.step.to();
+		boolean planned = live.headWet(from.x(), from.y(), from.z()) || live.headWet(to.x(), to.y(), to.z());
+		if (!planned) return false;
+		GridPos feet = body.feet();
+		return body.swimming() || live.headWet(feet.x(), feet.y(), feet.z());
+	}
+
+	/**
+	 * Sprint-swims toward the destination column, steering the height with the camera pitch. The look
+	 * point sits as far above the aimed feet height as the eyes are above the feet now, so a level move
+	 * looks level in either pose.
+	 */
+	private static MotorIntent swim(StepContext context, double feetOffset) {
+		BodyState body = context.body;
+		GridPos to = context.step.to();
+		double eye = body.swimming() ? SWIM_EYE_HEIGHT : EYE_HEIGHT;
+		Point aim = new Point(to.x() + 0.5, to.y() + feetOffset + eye, to.z() + 0.5);
+		double dx = aim.x() - body.x(), dz = aim.z() - body.z();
+		double length = Math.sqrt(dx * dx + dz * dz);
+		if (length < 0.05) return MotorIntent.swimming(0, 0, aim);
+		return MotorIntent.swimming(dx / length, dz / length, aim);
 	}
 
 	private static MotorIntent centre(StepContext context, GridPos cell, boolean sneak) {

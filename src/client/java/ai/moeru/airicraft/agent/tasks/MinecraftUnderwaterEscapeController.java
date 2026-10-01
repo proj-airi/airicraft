@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.control.MovementController;
 import net.minecraft.world.level.block.state.BlockState;
@@ -27,6 +28,11 @@ public final class MinecraftUnderwaterEscapeController {
 	private final NavigationFacade navigationFacade;
 	private final UnderwaterEscapeNavigator navigator;
 	private Minecraft activeClient;
+	/** The air-aware planner drives the escape; the cell search below is its fallback. */
+	private boolean plannerOwned;
+	private boolean plannerFailed;
+	private UnderwaterEscapeSearch.SearchMode plannerMode;
+	private int plannerRuns;
 
 	private UnderwaterEscapeSearch.SearchMode mode;
 	private UnderwaterEscapeSearch.SearchSession searchSession;
@@ -85,8 +91,9 @@ public final class MinecraftUnderwaterEscapeController {
 			return snapshot();
 		}
 		activeClient = minecraft;
+		if (planAirRoute(requestedMode, targetSatisfied)) return snapshot();
 		if (searchSession != null
-			&& navigator.snapshot().phase() == UnderwaterEscapeNavigator.Phase.REACHED
+		&& navigator.snapshot().phase() == UnderwaterEscapeNavigator.Phase.REACHED
 			&& !targetSatisfied) {
 			restartSearch(minecraft);
 			activeClient = minecraft;
@@ -122,8 +129,47 @@ public final class MinecraftUnderwaterEscapeController {
 		return new Snapshot(searchStatus, candidates.size(), navigation);
 	}
 
+	/**
+	 * Lets the navigation planner find the way to air or shore: it plans through one-block flooded
+	 * tunnels in the swimming pose, against the air that is left, where the cell search below only
+	 * knows two-block-high water. Returns true while the planner has the player. A planner that cannot
+	 * route, or that arrives without the target satisfied too often, hands over to the cell search.
+	 */
+	private boolean planAirRoute(UnderwaterEscapeSearch.SearchMode requestedMode, boolean targetSatisfied) {
+		if (plannerFailed || navigationFacade == null || !navigationFacade.isLoaded()) return false;
+		if (targetSatisfied) {
+			if (plannerOwned) navigationFacade.cancel();
+			plannerOwned = false;
+			return false;
+		}
+		if (plannerOwned && plannerMode == requestedMode) {
+			java.util.Optional<String> event = navigationFacade.pollPathEvent();
+			if (event.isEmpty()) return true;
+			plannerOwned = false;
+			if (!"AT_GOAL".equalsIgnoreCase(event.get()) || plannerRuns >= 3) {
+				plannerFailed = true;
+				return false;
+			}
+		}
+		NavigationRelease.release(navigationFacade);
+		boolean shore = requestedMode == UnderwaterEscapeSearch.SearchMode.SAFE_STANDING;
+		plannerMode = requestedMode;
+		plannerRuns++;
+		if (!navigationFacade.startNavigateToAir(shore, NavigationOptions.DEFAULT)) {
+			plannerFailed = true;
+			return false;
+		}
+		plannerOwned = true;
+		return true;
+	}
+
 	public void reset(Minecraft minecraft) {
-		navigator.reset();
+	if (plannerOwned && navigationFacade != null) navigationFacade.cancel();
+	plannerOwned = false;
+	plannerFailed = false;
+	plannerMode = null;
+	plannerRuns = 0;
+	navigator.reset();
 		movement.stop(minecraft);
 		activeClient = null;
 		mode = null;

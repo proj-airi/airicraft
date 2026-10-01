@@ -11,6 +11,7 @@ import java.util.Map;
 final class SimBody {
 	private static final double HALF_WIDTH = 0.3;
 	private static final double HEIGHT = 1.8;
+	private static final double SWIM_HEIGHT = 0.6;
 	private static final double EPSILON = 1.0E-7;
 	private static final double[] BAND = {0.0, 0.2, 0.8, 1.0};
 
@@ -24,6 +25,11 @@ final class SimBody {
 	double velocityZ;
 	boolean onGround;
 	boolean horizontalCollision;
+	/** In the swimming pose: sprinting through water, 0.6 blocks tall. */
+	boolean swimming;
+	private double height = HEIGHT;
+	/** Ticks with the head under water, for air accounting in tests. */
+	int submergedTicks;
 	long tick;
 	int placed;
 	int broken;
@@ -48,20 +54,23 @@ final class SimBody {
 	}
 
 	BodyState state() {
-		return new BodyState(x, y, z, velocityY, onGround, inWater(), climbing(), horizontalCollision, tick);
+		return new BodyState(x, y, z, velocityY, onGround, inWater(), climbing(), horizontalCollision, swimming, tick);
 	}
 
 	void apply(MotorIntent intent) {
 		tick++;
 		act(intent.action());
 		boolean water = inWater();
+		updatePose(intent, water);
+		if (water && waterAt(y + (swimming ? 0.4 : 1.62))) submergedTicks++;
 		boolean climbing = climbing();
 		// Vanilla-like horizontal physics: acceleration toward the input, then friction or drag.
 		double input = intent.sneak() ? 0.3 : 1.0;
 		double acceleration, retention;
 		if (water) {
-			acceleration = 0.02;
-			retention = 0.8;
+		acceleration = 0.02;
+		// Sprinting through water drags less: 0.9 against 0.8.
+		retention = swimming ? 0.9 : 0.8;
 		}
 		else if (onGround) {
 			acceleration = intent.sprint() ? 0.13 : 0.1;
@@ -85,8 +94,15 @@ final class SimBody {
 		velocityX *= retention;
 		velocityZ *= retention;
 
-		if (water) {
-			// Players float with about 0.4 blocks of their body under the surface.
+		if (water && swimming) {
+		// Swimming pose: vertical speed follows the look vector, like vanilla.
+		double lookY = lookSlope(intent);
+		double blend = lookY < -0.2 ? 0.085 : 0.06;
+		velocityY = (velocityY + (lookY - velocityY) * blend) * 0.8;
+		fallStart = Double.NaN;
+		}
+		else if (water) {
+		// Players float with about 0.4 blocks of their body under the surface.
 			boolean deep = waterAt(y + 0.45);
 			velocityY = intent.jump() ? (deep ? 0.06 : -0.02) : intent.sneak() ? -0.08 : -0.02;
 			// Vanilla lifts a swimmer pushing against a bank that has room 0.6 blocks up.
@@ -109,6 +125,30 @@ final class SimBody {
 			fallStart = Double.NaN;
 		}
 		if (inWater()) fallStart = Double.NaN;
+	}
+
+	/** Enters the swimming pose when sprint-swimming with the head under water; leaves it when there is room to stand. */
+	private void updatePose(MotorIntent intent, boolean water) {
+		boolean want = intent.swim() && water && (swimming || waterAt(y + 1.62));
+		if (want) {
+			swimming = true;
+			height = SWIM_HEIGHT;
+		}
+		else if (swimming) {
+			height = HEIGHT;
+			if (collides(x, y, z)) height = SWIM_HEIGHT;
+			else swimming = false;
+		}
+	}
+
+	/** Vertical component of the unit vector from the eyes to the look point. */
+	private double lookSlope(MotorIntent intent) {
+		MotorIntent.Point look = intent.look();
+		if (look == null) return 0;
+		double eye = y + (swimming ? 0.4 : 1.62);
+		double dx = look.x() - x, dy = look.y() - eye, dz = look.z() - z;
+		double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+		return length < 1e-6 ? 0 : dy / length;
 	}
 
 	private void act(MotorIntent.Action action) {
@@ -217,7 +257,7 @@ final class SimBody {
 
 	private boolean collides(double px, double py, double pz) {
 		double minX = px - HALF_WIDTH, maxX = px + HALF_WIDTH, minZ = pz - HALF_WIDTH, maxZ = pz + HALF_WIDTH;
-		double minY = py, maxY = py + HEIGHT;
+		double minY = py, maxY = py + height;
 		for (int cx = (int) Math.floor(minX); cx <= (int) Math.floor(maxX - EPSILON); cx++) {
 			for (int cz = (int) Math.floor(minZ); cz <= (int) Math.floor(maxZ - EPSILON); cz++) {
 				for (int cy = (int) Math.floor(minY) - 1; cy <= (int) Math.floor(maxY - EPSILON); cy++) {
@@ -239,7 +279,7 @@ final class SimBody {
 
 	private boolean intersectsBody(int cx, int cy, int cz, double lo, double loY, double hi) {
 		return x + HALF_WIDTH > cx && x - HALF_WIDTH < cx + 1 && z + HALF_WIDTH > cz && z - HALF_WIDTH < cz + 1
-			&& y + HEIGHT > cy + EPSILON && y < cy + 1 - EPSILON;
+		&& y + height > cy + EPSILON && y < cy + 1 - EPSILON;
 	}
 
 	boolean inWater() {

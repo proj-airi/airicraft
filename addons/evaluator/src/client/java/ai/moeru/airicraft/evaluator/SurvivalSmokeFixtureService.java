@@ -33,6 +33,8 @@ final class SurvivalSmokeFixtureService {
 	private static final int CLEAR_BOTTOM = FIXTURE_Y - 1;
 	private static final int CLEAR_TOP = FIXTURE_Y + 6;
 	private static final int FLEE_THREAT_SYNC_DELAY_TICKS = 20;
+	/** Just over the low-air reflex threshold (100), so the reflex starts almost at once. */
+	private static final int FLOODED_CAVE_AIR_TICKS = 110;
 
 	private Origin origin;
 	private BlockPos fixtureCenter;
@@ -65,7 +67,8 @@ final class SurvivalSmokeFixtureService {
 	Map<String, Object> apply(Request request) {
 		Mode mode = request == null ? null : Mode.parse(request.mode());
 		if (mode == null) {
-			throw new FixtureException("invalid_request", "mode must be loadout, underwater, mob_defend, mob_flee, mob_flee_natural, or cleanup");
+			throw new FixtureException("invalid_request",
+				"mode must be loadout, underwater, flooded_cave, mob_defend, mob_flee, mob_flee_natural, or cleanup");
 		}
 
 		Minecraft minecraft = Minecraft.getInstance();
@@ -98,6 +101,7 @@ final class SurvivalSmokeFixtureService {
 		return switch (mode) {
 			case LOADOUT -> setupLoadout(level, player);
 			case UNDERWATER -> setupUnderwater(level, player);
+			case FLOODED_CAVE -> setupFloodedCave(level, player);
 			case MOB_DEFEND -> setupMob(level, player, true);
 			case MOB_FLEE -> setupMob(level, player, false);
 			case MOB_FLEE_NATURAL -> throw new IllegalStateException("natural flee handled above");
@@ -152,6 +156,26 @@ final class SurvivalSmokeFixtureService {
 		player.setAirSupply(80);
 		underwaterExitAtWorldTime = level.getGameTime() + 80L;
 		return payload(Mode.UNDERWATER, player, null);
+	}
+
+	/**
+	 * A sealed stone block with a flooded shaft capped over the player, a one-block-high flooded tunnel
+	 * off its foot and an air pocket at the end of the tunnel. Swimming up reaches stone, so only a route
+	 * that follows the tunnel in the swimming pose gets the player to air.
+	 */
+	private Map<String, Object> setupFloodedCave(ServerLevel level, ServerPlayer player) {
+		BlockPos center = fixtureCenter;
+		var water = Blocks.WATER.defaultBlockState();
+		fill(level, center.offset(-2, -1, -3), center.offset(15, 8, 3), Blocks.STONE.defaultBlockState());
+		fill(level, center.offset(0, 0, 0), center.offset(0, 4, 0), water);
+		fill(level, center.offset(1, 2, 0), center.offset(10, 2, 0), water);
+		fill(level, center.offset(11, 2, 0), center.offset(12, 2, 0), water);
+		fill(level, center.offset(11, 3, 0), center.offset(12, 3, 0), Blocks.AIR.defaultBlockState());
+		teleport(player, level, center.getX() + 0.5, center.getY() + 0.1, center.getZ() + 0.5);
+		player.setDeltaMovement(Vec3.ZERO);
+		player.setHealth(player.getMaxHealth());
+		player.setAirSupply(FLOODED_CAVE_AIR_TICKS);
+		return payload(Mode.FLOODED_CAVE, player, null);
 	}
 
 	private Map<String, Object> setupMob(ServerLevel level, ServerPlayer player, boolean defend) {
@@ -317,6 +341,7 @@ final class SurvivalSmokeFixtureService {
 	private enum Mode {
 		LOADOUT("loadout"),
 		UNDERWATER("underwater"),
+		FLOODED_CAVE("flooded_cave"),
 		MOB_DEFEND("mob_defend"),
 		MOB_FLEE("mob_flee"),
 		MOB_FLEE_NATURAL("mob_flee_natural"),

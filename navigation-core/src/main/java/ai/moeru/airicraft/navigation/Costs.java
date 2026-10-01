@@ -5,7 +5,17 @@ public final class Costs {
 	public static final double WALK = 20 / 4.317;
 	public static final double SPRINT = 20 / 5.612;
 	public static final double SNEAK = 20 / 1.3;
+	/** Treading water at the surface with the jump key held. */
 	public static final double WALK_IN_WATER = 20 / 2.2;
+	/**
+	 * Sprint-swimming with the head under water: 0.02 acceleration against 0.9 drag settles near
+	 * 3.6 blocks per second horizontally.
+	 */
+	public static final double SWIM = 20 / 3.6;
+	/** Swimming straight up or down along the look vector: vertical speed settles near 3.9 blocks per second. */
+	public static final double SWIM_VERTICAL = 20 / 3.9;
+	/** Air supply regained per tick with the head out of water. */
+	public static final double AIR_REFILL_PER_TICK = 4;
 	public static final double LADDER_UP = 20 / 2.35;
 	public static final double LADDER_DOWN = 20 / 3.0;
 	public static final double WALK_OFF_EDGE = WALK * 0.8;

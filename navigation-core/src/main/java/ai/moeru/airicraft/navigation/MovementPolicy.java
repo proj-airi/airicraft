@@ -20,6 +20,7 @@ import java.util.List;
  * @param travelBounds    cells every move envelope and edit must stay inside; null for none
  * @param protectedAreas  cells that must never be broken or placed into
  * @param avoidances      cost multipliers around points
+ * @param breath          the air the body has to spend under water; {@link Breath#UNLIMITED} plans as if it never drowns
  */
 public record MovementPolicy(
 	boolean allowBreak,
@@ -35,12 +36,54 @@ public record MovementPolicy(
 	double jumpPenalty,
 	Box travelBounds,
 	List<Box> protectedAreas,
-	List<Avoidance> avoidances
+	List<Avoidance> avoidances,
+	Breath breath
 ) {
 	public MovementPolicy {
 		if (maxSafeFall < 0 || maxWaterFall < 0 || placeableBlocks < 0) throw new IllegalArgumentException("negative policy limit");
 		protectedAreas = List.copyOf(protectedAreas);
 		avoidances = List.copyOf(avoidances);
+		if (breath == null) breath = Breath.UNLIMITED;
+	}
+
+	public MovementPolicy(boolean allowBreak, boolean allowPlace, boolean allowSprint, boolean allowDoors, int maxSafeFall,
+		int maxWaterFall, int placeableBlocks, double waterPenalty, double breakPenalty, double placePenalty, double jumpPenalty,
+		Box travelBounds, List<Box> protectedAreas, List<Avoidance> avoidances) {
+		this(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks, waterPenalty,
+			breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, Breath.UNLIMITED);
+	}
+
+	/**
+	 * The air a body has to spend with its head under water, in ticks. Vanilla drowning damage starts
+	 * once the supply has run out and stays out for another second, so planning treats zero as the
+	 * edge; {@code reserve} is the supply a plan should stay above and is priced, not forbidden, so
+	 * that a swimmer already low on air can still plan the way up.
+	 *
+	 * @param airTicks current air supply, or {@link Integer#MAX_VALUE} when the body cannot drown
+	 * @param maxTicks the supply when full
+	 * @param reserve  supply below which every further tick under water is penalised
+	 */
+	public record Breath(int airTicks, int maxTicks, int reserve) {
+		/** Never drowns: no air tracking in search. */
+		public static final Breath UNLIMITED = new Breath(Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
+		public static final int VANILLA_MAX = 300;
+		public static final int DEFAULT_RESERVE = 100;
+
+		public Breath {
+			if (airTicks < 0 || maxTicks < 0 || reserve < 0) throw new IllegalArgumentException("negative breath");
+		}
+
+		public static Breath of(int airTicks, int maxTicks) {
+			return new Breath(Math.max(0, airTicks), Math.max(1, maxTicks), DEFAULT_RESERVE);
+		}
+
+		public boolean unlimited() {
+			return airTicks == Integer.MAX_VALUE;
+		}
+
+		public Breath withReserve(int ticks) {
+			return new Breath(airTicks, maxTicks, ticks);
+		}
 	}
 
 	/** Matches the Baritone profile Airicraft applied before the in-house backend, minus parkour. */
@@ -51,52 +94,57 @@ public record MovementPolicy(
 	/** Walking only: no breaking, placing or doors. Used where the executor cannot edit terrain. */
 	public MovementPolicy noEdits() {
 		return new MovementPolicy(false, false, allowSprint, false, maxSafeFall, maxWaterFall, 0,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withBreaking(boolean allow) {
 		return new MovementPolicy(allow, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withPlacing(boolean allow) {
 		return new MovementPolicy(allowBreak, allow, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withMaxSafeFall(int blocks) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, blocks, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withPlaceableBlocks(int count) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, Math.max(0, count),
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withSprint(boolean allow) {
 		return new MovementPolicy(allowBreak, allowPlace, allow, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withWaterPenalty(double penalty) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			penalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances);
+			penalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withTravelBounds(Box bounds) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, bounds, protectedAreas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, bounds, protectedAreas, avoidances, breath);
 	}
 
 	public MovementPolicy withProtectedAreas(List<Box> areas) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, areas, avoidances);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, areas, avoidances, breath);
 	}
 
 	public MovementPolicy withAvoidances(List<Avoidance> sources) {
 		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
-			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, sources);
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, sources, breath);
+	}
+
+	public MovementPolicy withBreath(Breath next) {
+		return new MovementPolicy(allowBreak, allowPlace, allowSprint, allowDoors, maxSafeFall, maxWaterFall, placeableBlocks,
+			waterPenalty, breakPenalty, placePenalty, jumpPenalty, travelBounds, protectedAreas, avoidances, next);
 	}
 
 	public boolean canPlace() {

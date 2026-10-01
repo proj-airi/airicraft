@@ -6,7 +6,7 @@ import java.util.List;
  * A set of feet cells to reach. Search stops on the first node in the goal, and path following
  * reports arrival with the same predicate.
  */
-public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.NearXZ, Goal.AnyOf {
+public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.NearXZ, Goal.AnyOf, Goal.Breathable, Goal.DryLand {
 	boolean isGoal(int x, int y, int z);
 
 	/** Estimated cost to the goal; used to order search, so it should not overestimate much. */
@@ -83,6 +83,43 @@ public sealed interface Goal permits Goal.Block, Goal.XZ, Goal.Near, Goal.NearXZ
 			double best = Double.POSITIVE_INFINITY;
 			for (Goal goal : goals) best = Math.min(best, goal.heuristic(px, py, pz));
 			return best;
+		}
+	}
+
+	/**
+	 * Any feet cell whose head is out of the water: the nearest air. No heuristic, so search spreads
+	 * outward by cost and finds the cheapest breath, through flooded tunnels and around ceilings.
+	 */
+	record Breathable(TerrainView terrain) implements Goal {
+		@Override
+		public boolean isGoal(int x, int y, int z) {
+			CellInfo head = terrain.cell(x, y + 1, z);
+			if (!head.loaded() || head.fluid() != CellInfo.Fluid.NONE) return false;
+			// A body in the swimming pose has its head in the feet cell; a block over it means no air.
+			CellInfo feet = terrain.cell(x, y, z);
+			return !(head.hasCollision() && feet.fluid() == CellInfo.Fluid.WATER);
+		}
+
+		@Override
+		public double heuristic(int x, int y, int z) {
+			return 0;
+		}
+	}
+
+	/** Standing out of the water on something solid: the nearest shore. No heuristic. */
+	record DryLand(TerrainView terrain, MovementPolicy policy) implements Goal {
+		@Override
+		public boolean isGoal(int x, int y, int z) {
+			if (terrain.cell(x, y, z).fluid() != CellInfo.Fluid.NONE || terrain.cell(x, y + 1, z).fluid() != CellInfo.Fluid.NONE) {
+				return false;
+			}
+			Moves probe = new Moves(terrain, policy);
+			return probe.probe(x, y, z) == Moves.KIND_STAND;
+		}
+
+		@Override
+		public double heuristic(int x, int y, int z) {
+			return 0;
 		}
 	}
 

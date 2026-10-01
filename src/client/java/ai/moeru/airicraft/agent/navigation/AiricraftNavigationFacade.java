@@ -10,6 +10,7 @@ import ai.moeru.airicraft.navigation.Path;
 import ai.moeru.airicraft.navigation.PathFollower;
 import ai.moeru.airicraft.navigation.SearchBudget;
 import ai.moeru.airicraft.navigation.SearchResult;
+import ai.moeru.airicraft.navigation.TerrainView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -40,6 +41,9 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 
 	private enum Mode { IDLE, NAVIGATE, FOLLOW }
 
+	/** Goals that are a property of the terrain, not a cell: they are bound to the terrain they are checked against. */
+	private enum AirGoal { BREATHE, SHORE }
+
 	private final MinecraftMotor motor;
 	private final NavigationPlanner planner;
 	private final ConcurrentLinkedQueue<String> events = new ConcurrentLinkedQueue<>();
@@ -47,6 +51,11 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	private Goal goal;
 	private GridPos goalCell;
 	private boolean goalHasY;
+	private AirGoal airGoal;
+	/** An air request that found no route within the air budget plans again, ignoring it: swim and hope. */
+	private boolean airRetry;
+	/** The current last segment stopped short for want of air, not for want of a route. */
+	private boolean lastSegmentAir;
 	private String followName;
 	private NavigationPlanner.Pending pending;
 	private MovementPolicy plannedPolicy;
@@ -103,6 +112,17 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	}
 
 	@Override
+	public boolean startNavigateToAir(boolean shore, NavigationOptions requestOptions) {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) return false;
+		GridPos here = body(minecraft.player).feet();
+		begin(Mode.NAVIGATE, new Goal.Block(here.x(), here.y(), here.z()), here, false, requestOptions);
+		airGoal = shore ? AirGoal.SHORE : AirGoal.BREATHE;
+		airRetry = false;
+		return true;
+	}
+
+	@Override
 	public boolean processActive() {
 		return mode != Mode.IDLE;
 	}
@@ -141,7 +161,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		if (mode == Mode.IDLE || minecraft == null || minecraft.player == null) return Optional.empty();
 		LocalPlayer player = minecraft.player;
 		BodyState body = body(player);
-		if (goal != null && body.supported() && goal.isGoal(body.feet())) return Optional.empty();
+		if (goal != null && body.supported() && reached(minecraft, body.feet())) return Optional.empty();
 		String breakingTarget = null;
 		float progress = 0;
 		if (motor.breaking() != null && minecraft.gameMode != null) {
@@ -205,7 +225,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			return;
 		}
 		GridPos feet = body.feet();
-		if (goal.isGoal(feet) && body.supported()) {
+		if (reached(minecraft, feet) && body.supported()) {
 			if (mode == Mode.NAVIGATE) {
 				finish("AT_GOAL", null);
 				motor.release(minecraft);
@@ -231,7 +251,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			case RUNNING -> { }
 			case ARRIVED -> {
 				follower = null;
-				if (lastSegment) finish("CALC_FAILED", "goal_unreachable");
+				if (lastSegment) finish("CALC_FAILED", lastSegmentAir ? "air_budget" : "goal_unreachable");
 			}
 			case REPLAN -> {
 				follower = null;
@@ -252,6 +272,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			}
 			supportWait = 0;
 			MovementPolicy policy = NavigationPolicies.forPlayer(minecraft, options);
+			if (policy != null && airRetry) policy = policy.withBreath(MovementPolicy.Breath.UNLIMITED);
 			if (policy == null) {
 				finish("CALC_FAILED", "travel_policy_unavailable");
 				motor.release(minecraft);
@@ -262,7 +283,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(minecraft.level, start, target, goalHasY,
 				MinecraftCellClassifier.forPlayer(player));
 			plannedPolicy = policy;
-			pending = planner.submit(snapshot, policy, start, goal, target, BUDGET);
+			pending = planner.submit(snapshot, policy, start, goalOn(snapshot, policy), target, BUDGET);
 			pendingCaptureMillis = snapshot.captureMillis();
 		}
 		if (!pending.done()) {
@@ -278,13 +299,19 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			return false;
 		}
 		record(result, start);
+		if (airGoal != null && !airRetry && airBudget(result)) {
+			// No air within reach of the supply left: head for the nearest anyway, it is the best chance there is.
+			airRetry = true;
+			return false;
+		}
 		Path path = switch (result) {
 			case SearchResult.Found found -> {
 				lastSegment = false;
 				yield found.path();
 			}
 			case SearchResult.Partial partial -> {
-				lastSegment = partial.reason() == SearchResult.Reason.NO_ROUTE;
+				lastSegment = partial.reason() == SearchResult.Reason.NO_ROUTE || partial.reason() == SearchResult.Reason.AIR_BUDGET;
+				lastSegmentAir = partial.reason() == SearchResult.Reason.AIR_BUDGET;
 				yield progressed(partial.path()) ? partial.path() : null;
 			}
 			case SearchResult.Unreachable unreachable -> null;
@@ -297,6 +324,23 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		}
 		follower = new PathFollower(path);
 		return true;
+	}
+
+	private static boolean airBudget(SearchResult result) {
+		return result instanceof SearchResult.Partial partial && partial.reason() == SearchResult.Reason.AIR_BUDGET
+			|| result instanceof SearchResult.Unreachable unreachable && unreachable.reason() == SearchResult.Reason.AIR_BUDGET;
+	}
+
+	/** The goal as it is checked against {@code terrain}; terrain goals are bound to it. */
+	private Goal goalOn(TerrainView terrain, MovementPolicy policy) {
+		if (airGoal == null) return goal;
+		return airGoal == AirGoal.BREATHE ? new Goal.Breathable(terrain) : new Goal.DryLand(terrain, policy);
+	}
+
+	private boolean reached(Minecraft minecraft, GridPos feet) {
+		if (airGoal == null) return goal.isGoal(feet);
+		MovementPolicy policy = plannedPolicy != null ? plannedPolicy : MovementPolicy.defaults();
+		return goalOn(liveTerrain(minecraft), policy).isGoal(feet);
 	}
 
 	/** A segment must end closer to the goal than earlier ones, within a few tries. */
@@ -377,7 +421,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 
 	private BodyState body(LocalPlayer player) {
 		return new BodyState(player.getX(), player.getY(), player.getZ(), player.getDeltaMovement().y, player.onGround(),
-			player.isInWater(), player.onClimbable(), player.horizontalCollision, ticks);
+			player.isInWater(), player.onClimbable(), player.horizontalCollision, player.isSwimming(), ticks);
 	}
 
 	private void begin(Mode next, Goal target, GridPos cell, boolean hasY, NavigationOptions requestOptions) {
@@ -405,6 +449,9 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		mode = Mode.IDLE;
 		follower = null;
 		goal = null;
+		airGoal = null;
+		airRetry = false;
+		lastSegmentAir = false;
 		goalCell = null;
 		followName = null;
 		lastSegment = false;

@@ -57,9 +57,15 @@ public final class MinecraftMotor {
 		double forward = intent.moveX() * -Math.sin(yaw) + intent.moveZ() * Math.cos(yaw);
 		double left = intent.moveX() * Math.cos(yaw) + intent.moveZ() * Math.sin(yaw);
 		MovementScreenCloser.closeIfMoving(minecraft, Math.abs(forward) > KEY_THRESHOLD || Math.abs(left) > KEY_THRESHOLD
-			|| intent.jump() || intent.sneak() && player.isInWater());
-		plane.submit(lease, new ChannelIntent.Locomotion(forward > KEY_THRESHOLD, forward < -KEY_THRESHOLD,
-			left > KEY_THRESHOLD, left < -KEY_THRESHOLD, intent.jump(), intent.sneak(), intent.sprint()));
+		|| intent.swim() || intent.jump() || intent.sneak() && player.isInWater());
+		if (intent.swim()) {
+			// Sprint-swimming goes where the camera points, pitch included: forward is the only key.
+			plane.submit(lease, new ChannelIntent.Locomotion(true, false, false, false, false, false, true));
+		}
+		else {
+			plane.submit(lease, new ChannelIntent.Locomotion(forward > KEY_THRESHOLD, forward < -KEY_THRESHOLD,
+				left > KEY_THRESHOLD, left < -KEY_THRESHOLD, intent.jump(), intent.sneak(), intent.sprint()));
+		}
 		if (intent.look() != null) {
 			plane.submit(lease, new ChannelIntent.Look(intent.look().x(), intent.look().y(), intent.look().z(), "navigation"));
 		}

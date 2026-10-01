@@ -22,7 +22,18 @@ public final class Moves {
 	public static final int KIND_STAND = 1;
 	public static final int KIND_WATER = 2;
 	public static final int KIND_CLIMB = 3;
+	/**
+	 * Open water with room for the swimming pose (0.6 blocks tall) but not for the upright body: a
+	 * flooded tunnel one block high. Entered and left only from other water cells.
+	 */
+	public static final int KIND_SWIM = 4;
 	static final double HEIGHT = 1.8;
+	/** Body height while sprint-swimming. */
+	static final double SWIM_HEIGHT = 0.6;
+	/** Breaking while submerged is five times slower than on dry ground (no Aqua Affinity assumed). */
+	private static final double UNDERWATER_BREAK_FACTOR = 5;
+	/** Extra cost per tick of air spent below the policy's reserve. */
+	private static final double LOW_AIR_COST = 4;
 	/** Feet height difference walked without jumping: vanilla step height plus slab slack. */
 	static final double STEP = 0.63;
 	/** Highest rise a standing jump reaches. */
@@ -41,6 +52,8 @@ public final class Moves {
 	private double probeBase;
 	private boolean touchedUnloaded;
 	private Overlay overlay;
+	/** Whether the move being evaluated starts in water, where breaking cannot flood anything new. */
+	private boolean wetMove;
 
 	public Moves(TerrainView terrain, MovementPolicy policy) {
 		this.terrain = terrain;
@@ -82,9 +95,11 @@ public final class Moves {
 		if (deadly(feet) || deadly(head)) return KIND_INVALID;
 		boolean feetOpen = !feet.hasCollision(CENTER);
 		if (feet.fluid() == CellInfo.Fluid.WATER && feetOpen) {
-			if (!sweepFree(x, z, 1 << CENTER, y, y + HEIGHT)) return KIND_INVALID;
 			probeBase = y;
-			return KIND_WATER;
+			if (sweepFree(x, z, 1 << CENTER, y, y + HEIGHT)) return KIND_WATER;
+			if (sweepFree(x, z, 1 << CENTER, y, y + SWIM_HEIGHT)) return KIND_SWIM;
+			probeBase = Double.NaN;
+			return KIND_INVALID;
 		}
 		double base = standBase(x, y, z, feet);
 		if (!Double.isNaN(base)) {
@@ -105,6 +120,7 @@ public final class Moves {
 	public boolean evaluate(int move, int x, int y, int z, int fromKind, double fromBase, Result out) {
 		out.reset();
 		if (fromKind == KIND_INVALID) return false;
+		wetMove = swimmy(fromKind);
 		boolean possible;
 		if (move < 4) possible = traverse(CARDINAL_DX[move], CARDINAL_DZ[move], x, y, z, fromKind, fromBase, out);
 		else if (move < 8) possible = diagonal(DIAGONAL_DX[move - 4], DIAGONAL_DZ[move - 4], x, y, z, fromKind, fromBase, out);
@@ -156,12 +172,16 @@ public final class Moves {
 		double toBase = probeBase;
 		if (toKind != KIND_INVALID) {
 			if (Math.abs(toBase - fromBase) > STEP) return false;
+			// The swimming pose is entered from water and left into water only.
+			boolean swimPose = fromKind == KIND_SWIM || toKind == KIND_SWIM;
+			if (swimPose && !(swimmy(fromKind) && swimmy(toKind))) return false;
 			double top = Math.max(fromBase, toBase);
 			// Stepping up raises the head above the space the source node already cleared.
 			int mask = toBase > fromBase ? sourceMask | (1 << CENTER) : sourceMask;
-			double edits = sweepPair(x, z, mask, tx, tz, destMask, top, top + HEIGHT, out);
+			double edits = sweepPair(x, z, mask, tx, tz, destMask, top, top + (swimPose ? SWIM_HEIGHT : HEIGHT), out);
 			if (edits < 0) return false;
-			out.set(MoveType.TRAVERSE, tx, y, tz, horizontalCost(fromKind, toKind, tx, y, tz, out.edited()) + edits);
+			out.set(MoveType.TRAVERSE, tx, y, tz, horizontalCost(fromKind, toKind, x, y, z, tx, y, tz, out.edited()) + edits);
+			out.ticks = waterTicks(fromKind, toKind, x, y, z, tx, y, tz, 1) + edits;
 			return true;
 		}
 		if (policy.allowBreak() && fromKind != KIND_CLIMB) {
@@ -199,9 +219,9 @@ public final class Moves {
 		if (fromKind == KIND_CLIMB || !policy.permitsMovement(x, y, z, tx, y, tz, false)) return false;
 		int toKind = probe(tx, y, tz);
 		double toBase = probeBase;
-		if (toKind == KIND_INVALID || toKind == KIND_CLIMB || (toKind == KIND_WATER) != (fromKind == KIND_WATER)) return false;
+		if (toKind == KIND_INVALID || toKind == KIND_CLIMB || swimmy(toKind) != swimmy(fromKind)) return false;
 		if (Math.abs(toBase - fromBase) > STEP) return false;
-		double from = Math.max(fromBase, toBase), to = from + HEIGHT;
+		double from = Math.max(fromBase, toBase), to = from + (fromKind == KIND_SWIM || toKind == KIND_SWIM ? SWIM_HEIGHT : HEIGHT);
 		int sourceMask = bit(1 + dx, 1) | bit(1, 1 + dz) | bit(1 + dx, 1 + dz);
 		int destMask = bit(1 - dx, 1) | bit(1, 1 - dz) | bit(1 - dx, 1 - dz);
 		// Each side column is crossed near the corner it shares with both cells.
@@ -209,13 +229,14 @@ public final class Moves {
 		int sideZMask = bit(1 + dx, 1 - dz) | bit(1, 1 - dz) | bit(1 + dx, 1) | (1 << CENTER);
 		if (!sweepFree(x, z, sourceMask, from, to) || !sweepFree(tx, tz, destMask, from, to)
 			|| !sweepFree(tx, z, sideXMask, from, to) || !sweepFree(x, tz, sideZMask, from, to)) return false;
-		out.set(MoveType.DIAGONAL, tx, y, tz, horizontalCost(fromKind, toKind, tx, y, tz, false) * SQRT_2);
+		out.set(MoveType.DIAGONAL, tx, y, tz, horizontalCost(fromKind, toKind, x, y, z, tx, y, tz, false) * SQRT_2);
+		out.ticks = waterTicks(fromKind, toKind, x, y, z, tx, y, tz, SQRT_2);
 		return true;
 	}
 
 	private boolean ascend(int dx, int dz, int x, int y, int z, int fromKind, double fromBase, Result out) {
 		int tx = x + dx, ty = y + 1, tz = z + dz;
-		if (!policy.permitsMovement(x, y, z, tx, ty, tz, true)) return false;
+		if (fromKind == KIND_SWIM || !policy.permitsMovement(x, y, z, tx, ty, tz, true)) return false;
 		int toKind = probe(tx, ty, tz);
 		double toBase = probeBase;
 		boolean tunnel = false;
@@ -241,6 +262,7 @@ public final class Moves {
 		else if (rise > STEP) move = Math.max(Costs.JUMP_ONE_BLOCK, Costs.WALK) + policy.jumpPenalty();
 		else move = Costs.WALK;
 		out.set(MoveType.ASCEND, tx, ty, tz, move + headroom + edits);
+		if (fromKind == KIND_WATER) out.ticks = move + headroom + edits;
 		return true;
 	}
 
@@ -256,6 +278,7 @@ public final class Moves {
 			int ly = y - n;
 			int kind = probe(tx, ly, tz);
 			if (kind != KIND_INVALID) {
+				if (kind == KIND_SWIM) return false;
 				double height = fromBase - probeBase;
 				boolean water = kind == KIND_WATER;
 				if (height > (water ? policy.maxWaterFall() : policy.maxSafeFall()) + EPSILON) return false;
@@ -285,9 +308,11 @@ public final class Moves {
 	private boolean up(int x, int y, int z, int fromKind, double fromBase, Result out) {
 		int ty = y + 1;
 		int toKind = probe(x, ty, z);
-		if (fromKind == KIND_WATER) {
-			if (toKind != KIND_WATER || !policy.permitsMovement(x, y, z, x, ty, z, false)) return false;
-			out.set(MoveType.SWIM_UP, x, ty, z, Costs.WALK_IN_WATER + submerged(x, ty, z));
+		if (swimmy(fromKind)) {
+			if (!swimmy(toKind) || !policy.permitsMovement(x, y, z, x, ty, z, false)) return false;
+			double ticks = headWet(x, y, z) || headWet(x, ty, z) ? Costs.SWIM_VERTICAL : Costs.WALK_IN_WATER;
+			out.set(MoveType.SWIM_UP, x, ty, z, ticks + submerged(x, ty, z));
+			out.ticks = ticks;
 			return true;
 		}
 		if (toKind == KIND_CLIMB) {
@@ -312,8 +337,10 @@ public final class Moves {
 		int ty = y - 1;
 		int toKind = probe(x, ty, z);
 		if (!policy.permitsMovement(x, y, z, x, ty, z, false)) return false;
-		if (fromKind == KIND_WATER && toKind == KIND_WATER) {
-			out.set(MoveType.SWIM_DOWN, x, ty, z, Costs.WALK_IN_WATER + submerged(x, ty, z));
+		if (swimmy(fromKind) && swimmy(toKind)) {
+			double ticks = headWet(x, y, z) || headWet(x, ty, z) ? Costs.SWIM_VERTICAL : Costs.WALK_IN_WATER;
+			out.set(MoveType.SWIM_DOWN, x, ty, z, ticks + submerged(x, ty, z));
+			out.ticks = ticks;
 			return true;
 		}
 		if (fromKind == KIND_CLIMB && (toKind == KIND_CLIMB || toKind == KIND_STAND)) {
@@ -323,9 +350,10 @@ public final class Moves {
 		return false;
 	}
 
-	private double horizontalCost(int fromKind, int toKind, int tx, int ty, int tz, boolean edited) {
-		if (fromKind == KIND_WATER || toKind == KIND_WATER) {
-			return Costs.WALK_IN_WATER + (toKind == KIND_WATER ? policy.waterPenalty() + submerged(tx, ty, tz) : 0);
+	private double horizontalCost(int fromKind, int toKind, int fx, int fy, int fz, int tx, int ty, int tz, boolean edited) {
+		if (isWater(fromKind) || isWater(toKind)) {
+			double ticks = waterTicks(fromKind, toKind, fx, fy, fz, tx, ty, tz, 1);
+			return ticks + (swimmy(toKind) ? policy.waterPenalty() + submerged(tx, ty, tz) : 0);
 		}
 		double cost = policy.allowSprint() && !edited && toKind == KIND_STAND ? Costs.SPRINT : Costs.WALK;
 		CellInfo floor = cell(tx, ty - 1, tz);
@@ -333,8 +361,57 @@ public final class Moves {
 		return factor > 0 && factor < 1 ? cost / factor : cost;
 	}
 
+	/**
+	 * Time for one horizontal water move. With the head under water at either end the body sprint-swims;
+	 * along the surface it can only tread, which is slower.
+	 */
+	private double waterTicks(int fromKind, int toKind, int fx, int fy, int fz, int tx, int ty, int tz, double scale) {
+		if (!isWater(fromKind) && !isWater(toKind)) return Double.NaN;
+		boolean swimming = swimmy(fromKind) && swimmy(toKind) && (headWet(fx, fy, fz) || headWet(tx, ty, tz));
+		return (swimming ? Costs.SWIM : Costs.WALK_IN_WATER) * scale;
+	}
+
 	private double submerged(int x, int y, int z) {
-		return cell(x, y + 1, z).fluid() == CellInfo.Fluid.WATER ? Costs.SUBMERGED : 0;
+		return headWet(x, y, z) ? Costs.SUBMERGED : 0;
+	}
+
+	/** Whether a body with its feet in this cell has its head under water; the swimming pose always does. */
+	public boolean headWet(int x, int y, int z) {
+		CellInfo head = cell(x, y + 1, z);
+		if (head.fluid() == CellInfo.Fluid.WATER) return true;
+		return head.hasCollision() && cell(x, y, z).fluid() == CellInfo.Fluid.WATER;
+	}
+
+	/**
+	 * The air supply left after taking {@code move} from the cell {@code (fx, fy, fz)} with {@code air}
+	 * to spare. A move with the head under water at both ends spends its whole duration, one with the
+	 * head under at one end spends half of it, and a dry one refills the supply.
+	 */
+	public double airAfter(double air, int fx, int fy, int fz, Result move) {
+		MovementPolicy.Breath breath = policy.breath();
+		if (breath.unlimited()) return air;
+		boolean from = headWet(fx, fy, fz), to = headWet(move.x, move.y, move.z);
+		double ticks = Double.isNaN(move.ticks) ? move.cost : move.ticks;
+		if (from && to) return air - ticks;
+		if (from || to) return air - ticks / 2;
+		return Math.min(breath.maxTicks(), air + Costs.AIR_REFILL_PER_TICK * ticks);
+	}
+
+	/** Cost of arriving with {@code airAfter} left: ticks spent below the reserve are priced steeply, not forbidden. */
+	public double lowAirCost(double airBefore, double airAfter) {
+		int reserve = policy.breath().reserve();
+		if (airAfter >= reserve) return 0;
+		double below = reserve - Math.max(airAfter, 0);
+		double already = reserve - Math.min(Math.max(airBefore, 0), reserve);
+		return Math.max(0, below - already) * LOW_AIR_COST;
+	}
+
+	private static boolean swimmy(int kind) {
+		return kind == KIND_WATER || kind == KIND_SWIM;
+	}
+
+	private static boolean isWater(int kind) {
+		return swimmy(kind);
 	}
 
 	/** Feet height when standing on the cell's top surface, or NaN when it cannot be stood on. */
@@ -385,7 +462,7 @@ public final class Moves {
 				continue;
 			}
 			if (!canBreak(x, cy, z, cell)) return -1;
-			if (out.addBreak(x, cy, z)) cost += cell.breakTicks() + policy.breakPenalty();
+			if (out.addBreak(x, cy, z)) cost += cell.breakTicks() * (wetMove ? UNDERWATER_BREAK_FACTOR : 1) + policy.breakPenalty();
 		}
 		return cost;
 	}
@@ -412,14 +489,19 @@ public final class Moves {
 		if (!policy.allowBreak() || !cell.breakable() || cell.fluid() != CellInfo.Fluid.NONE || !policy.permitsEdit(x, y, z)) {
 			return false;
 		}
-		// Falling blocks and fluids would pour into the opening.
+		// Falling blocks and fluids would pour into the opening. Water pours in harmlessly when the
+		// body already swims; lava never does.
 		CellInfo above = cell(x, y + 1, z);
-		if (!above.loaded() || above.falling() || above.fluid() != CellInfo.Fluid.NONE) return false;
+		if (!above.loaded() || above.falling() || !pourable(above)) return false;
 		for (int side = 0; side < 4; side++) {
 			CellInfo neighbour = cell(x + CARDINAL_DX[side], y, z + CARDINAL_DZ[side]);
-			if (!neighbour.loaded() || neighbour.fluid() != CellInfo.Fluid.NONE) return false;
+			if (!neighbour.loaded() || !pourable(neighbour)) return false;
 		}
 		return true;
+	}
+
+	private boolean pourable(CellInfo neighbour) {
+		return neighbour.fluid() == CellInfo.Fluid.NONE || wetMove && neighbour.fluid() == CellInfo.Fluid.WATER;
 	}
 
 	private static boolean deadly(CellInfo cell) {
@@ -516,6 +598,8 @@ public final class Moves {
 		public int y;
 		public int z;
 		public double cost;
+		/** Time the move takes, for air accounting; NaN when it equals {@link #cost}. */
+		public double ticks = Double.NaN;
 		public MoveType type;
 		private int[] breaks = new int[12];
 		private int breakCount;
@@ -526,6 +610,7 @@ public final class Moves {
 		void reset() {
 			type = null;
 			cost = Double.POSITIVE_INFINITY;
+			ticks = Double.NaN;
 			clearEdits();
 		}
 

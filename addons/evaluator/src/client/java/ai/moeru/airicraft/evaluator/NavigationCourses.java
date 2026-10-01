@@ -58,6 +58,8 @@ final class NavigationCourses {
 			.door(8, 1, 3)
 			.build(new Cell(5, 1, 3), new Cell(14, 1, 3)),
 		caveRoute(),
+		floodedTunnel(),
+		airBudgetTunnel(),
 		new NavigationCourse(
 			"far_xz",
 			"Travel " + FAR_TRAVEL_BLOCKS + " blocks east over natural terrain from the recorded origin, crossing unloaded chunks.",
@@ -121,7 +123,45 @@ final class NavigationCourses {
 			.build(new Cell(1, 1, 1), new Cell(12, 2, 9));
 	}
 
-	private static final class Builder {
+	/**
+ * Two sealed halls joined only by a one-block-high flooded tunnel through unbreakable mass: the start
+ * hall ends in a pond whose floor leads into the tunnel, and the tunnel surfaces in a second pond in
+ * the goal hall. The tunnel is too low for the upright body, so only the swimming pose gets through;
+ * about 100 ticks of air are spent under water.
+ */
+private static NavigationCourse floodedTunnel() {
+	return new Builder("flooded_tunnel", "Dive into a pond and swim a fourteen-long, one-block-high flooded tunnel to a second hall.")
+		.fill(0, 0, 0, 28, 8, 6, Block.BARRIER)
+		.carve(1, 3, 2, 8, 5, 4)
+		.fill(5, 1, 2, 8, 2, 4, Block.WATER)
+		.fill(9, 1, 3, 22, 1, 3, Block.WATER)
+		.carve(23, 3, 2, 27, 5, 4)
+		.fill(23, 1, 2, 26, 2, 4, Block.WATER)
+		.build(new Cell(2, 3, 3), new Cell(27, 3, 3));
+}
+
+/**
+ * The same halls with the tunnel folded into three rows, about sixty-five blocks under water: far more
+ * than one breath (300 ticks, roughly 54 blocks of swimming). Planning must refuse instead of sending
+ * the player in to drown.
+ */
+private static NavigationCourse airBudgetTunnel() {
+	return new Builder("air_budget_tunnel", "A sixty-five-block flooded tunnel is longer than one breath; the planner must refuse it.")
+		.fill(0, 0, 0, 29, 8, 12, Block.BARRIER)
+		.carve(1, 3, 2, 8, 5, 4)
+		.fill(5, 1, 2, 8, 2, 4, Block.WATER)
+		.fill(9, 1, 3, 26, 1, 3, Block.WATER)
+		.fill(26, 1, 3, 26, 1, 7, Block.WATER)
+		.fill(7, 1, 7, 26, 1, 7, Block.WATER)
+		.fill(7, 1, 7, 7, 1, 11, Block.WATER)
+		.fill(7, 1, 11, 23, 1, 11, Block.WATER)
+		.carve(24, 3, 10, 28, 5, 12)
+		.fill(24, 1, 10, 27, 2, 12, Block.WATER)
+		.expect(Expectation.REFUSE)
+		.build(new Cell(2, 3, 3), new Cell(28, 3, 11));
+}
+
+private static final class Builder {
 		private final String id;
 		private final String description;
 		private final LinkedHashMap<Cell, Block> blocks = new LinkedHashMap<>();

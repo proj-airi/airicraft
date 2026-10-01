@@ -23,7 +23,7 @@ class NavigationCoursesTest {
 
 		assertEquals(new HashSet<>(ids).size(), ids.size());
 		assertEquals(List.of("flat_walk", "staircase_up", "drop_3", "drop_5_stairs", "river_crossing", "dirt_wall",
-			"gap_bridge", "pillar_pit", "door_house", "cave_route", "far_xz", "travel_bounds_refusal"), ids);
+			"gap_bridge", "pillar_pit", "door_house", "cave_route", "flooded_tunnel", "air_budget_tunnel", "far_xz", "travel_bounds_refusal"), ids);
 	}
 
 	@Test
