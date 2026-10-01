@@ -232,6 +232,7 @@ public final class ClientRuntimeController {
 
 	public void onClientTick(Minecraft minecraft) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(minecraft);
+        ai.moeru.airicraft.blueprint.BlueprintService.instance().tick(minecraft);
 		if (!automaticPlaytest.freezing()) {
 			navigationFacade.releaseIfIdle(minecraft);
 			currentAgentRuntime().onClientTick(minecraft);

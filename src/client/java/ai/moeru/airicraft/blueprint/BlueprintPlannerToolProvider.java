@@ -34,17 +34,22 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
                 propForProvider("site",Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3)),
                 propForProvider("revise",stringForProvider("Existing blueprintId, when revising."))),List.of("brief","site")));
         if(driver)result.addAll(new BlueprintToolProvider().openAiTools());
-        else result.add(toolForProvider("blueprint","Inspect or realize the current design. get returns compact metadata and findings; explain traces a local position; commit requires exact revision and origin and is creative Blueprint-* only; verify checks placed blocks. Author through design_blueprint. No blocks are placed during design.",
-            propertiesForProvider(propForProvider("op",Map.of("type","string","enum",List.of("get","explain","commit","verify"))),
-                propForProvider("revision",Map.of("type","integer")),propForProvider("origin",vector()),propForProvider("position",vector())),List.of("op")));
+        else result.add(toolForProvider("blueprint","Inspect or realize the current design. list discovers saved designs; load selects blueprintId for inspection/revision. get returns compact metadata and findings; explain traces a local position; commit requires exact revision and origin and is creative Blueprint-* only; verify checks placed blocks. Author through design_blueprint. No blocks are placed during design.",
+            propertiesForProvider(propForProvider("op",Map.of("type","string","enum",List.of("get","list","load","explain","commit","verify"))),
+                propForProvider("blueprintId",stringForProvider("Saved ID for load; list discovers saved designs.")),propForProvider("revision",Map.of("type","integer")),propForProvider("origin",vector()),propForProvider("position",vector())),List.of("op")));
         return result;
     }
     private static Map<String,Object> vector(){return Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3);}
     @Override public CompletableFuture<String> execute(PlannerToolCall call){
         if(call.name().equals("design_blueprint"))return start(call.arguments());
         String op=call.arguments().has("op")?call.arguments().get("op").getAsString():"";
-        if(!driver&&!Set.of("get","explain","commit","verify").contains(op))return CompletableFuture.completedFuture("TOOL_ERROR: use design_blueprint for authoring");
-        return service.execute(call.arguments()).thenApply(r->!driver&&op.equals("get")&&!r.startsWith("TOOL_ERROR:")?compact("current","",JsonParser.parseString(r).getAsJsonObject(),null):r);
+        if(!driver&&!Set.of("get","list","load","explain","commit","verify").contains(op))return CompletableFuture.completedFuture("TOOL_ERROR: use design_blueprint for authoring");
+        return service.execute(call.arguments()).thenApply(r->{
+            if(!r.startsWith("TOOL_ERROR:")&&Set.of("get","load").contains(op)){
+                var d=JsonParser.parseString(r).getAsJsonObject();synchronized(this){if(d.has("blueprintId")&&!d.get("blueprintId").isJsonNull())blueprintId=d.get("blueprintId").getAsString();if(d.has("origin"))site=d.getAsJsonArray("origin");}
+                return driver?r:compact("current","",d,null);
+            }return r;
+        });
     }
     private synchronized CompletableFuture<String> start(JsonObject args){
         try{
@@ -75,6 +80,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
                     var model=localBackend;
                     var worker=new BlueprintDesigner(c->model.generate(c).payload(),a->{
                         if(a.get("op").getAsString().equals("lint"))a.add("origin",anchor);
+                        if(a.get("op").getAsString().equals("draft"))a.addProperty("blueprintId",blueprintId);
                         return invoke(token,a);
                     },()->service.designActive(token),(kind,text)->record(token,kind,text),16);
                     var outcome=worker.run(brief,docs.get("components").getAsString(),"World origin "+anchor+"; ground captured in input.terrain. Dimensions and coordinates in the draft are local.",existing);
