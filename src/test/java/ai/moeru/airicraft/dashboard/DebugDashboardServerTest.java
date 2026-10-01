@@ -34,6 +34,7 @@ class DebugDashboardServerTest {
 			var request = HttpRequest.newBuilder(URI.create(base + "/api/blueprint")).header("Authorization", "Bearer " + token).POST(HttpRequest.BodyPublishers.ofString("{}")).build();
 			assertEquals(405, HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).statusCode());
 			assertEquals(200, send(base + "/blueprint.js", null).statusCode());
+			assertEquals(200, send(base + "/blueprint-designer.js", null).statusCode());
 		} finally { server.stop(); }
 	}
 

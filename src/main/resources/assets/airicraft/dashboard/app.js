@@ -1,3 +1,4 @@
+import { renderBlueprintDesigner } from './blueprint-designer.js';
 import { renderBlueprint } from './blueprint.js';
 const state = {
   token: new URLSearchParams(location.hash.slice(1)).get('token') || '',
@@ -209,6 +210,7 @@ function reconcileChildren(parent, next) {
 }
 
 function render() {
+  if(state.view==='blueprint-designer'){renderBlueprintDesigner(el('content'),{api,replay:state.replay||!state.live});return;}
   if(state.view==='blueprint'){renderBlueprint(el('content'),{api,replay:state.replay||!state.live});return;}
   const snapshot = snapshotAtCursor();
   if (!snapshot && state.view !== 'timeline' && state.view !== 'logs' && state.view !== 'raw' && state.view !== 'transcript' && state.view !== 'compactions') {

@@ -121,6 +121,7 @@ public final class DebugDashboardServer {
 		candidate.createContext("/app.css", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/app.css", "text/css; charset=utf-8"));
 		candidate.createContext("/app.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/app.js", "text/javascript; charset=utf-8"));
 		candidate.createContext("/blueprint.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/blueprint.js", "text/javascript; charset=utf-8"));
+		candidate.createContext("/blueprint-designer.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/blueprint-designer.js", "text/javascript; charset=utf-8"));
 		candidate.createContext("/api/blueprint", exchange -> {
 			if (authorizeGet(exchange)) writeText(exchange, 200, "application/json; charset=utf-8", blueprintSnapshot.get());
 		});

@@ -19,6 +19,7 @@ public final class PlannerToolRegistry {
 	private String fixedInstructions;
 	private PlannerReferences references = new PlannerReferences();
 	public PlannerReferences references() { return references; }
+	public void resetProviders() { providers.forEach(PlannerToolProvider::reset); }
 	public void shareReferences(PlannerToolRegistry other) { references = other.references; }
 
 	/** Freeze native schemas for one model session; self tools remain dynamic. */

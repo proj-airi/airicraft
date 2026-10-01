@@ -13,7 +13,7 @@ Blueprint state is owned by `BlueprintService` inside the mod. The normal `bluep
 
 ## Authoring and inspection
 
-Use `blueprint` with `op:"rule_docs"` to retrieve the component library, rule API and defaults. Submit JavaScript defining `function design(input)` with `op:"draft", source:...`. `get` returns the current draft; `explain` traces a local position to its owner and overridden contributors. The authoring library and advisory sources live under `src/main/resources/blueprint/`.
+The normal planner delegates authoring to `design_blueprint` (see below). In Codex driver mode, use `blueprint` with `op:"rule_docs"` to retrieve the component library, rule API and defaults, then submit JavaScript defining `function design(input)` with `op:"draft", source:...`. `get` returns compact draft metadata to the ordinary planner and the full draft in driver mode; `explain` traces a local position to its owner and overridden contributors. The authoring library and advisory sources live under `src/main/resources/blueprint/`.
 
 Components include `Assembly`, `Room`, `Floor`, `Door`, `Window`, `Staircase`, `GableRoof`, `Foundation`, `Solid` and `Clearance`. Explicit `replaces` relationships resolve intentional overlaps. `Clearance` emits owned air; unspecified cells do not change the world.
 
@@ -30,7 +30,7 @@ Annotate circulation surfaces rather than furniture footprints. The compiler ret
 
 `commit` requires an exact revision and origin. It currently spawns the draft's cells directly and is limited to creative worlds named `Blueprint-*`. `verify` checks those committed cells against the world. Unspecified cells remain untouched: moving/removing geometry in a later draft does not automatically undo an earlier commit. Use explicit Clearance or separate test sites for those changes. Survival placement/pathfinding execution is not implemented.
 
-`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are Codex-driver-only diagnostics (creative test setup and camera positioning). The normal planner can draft, inspect and lint without external-driver mode. The dashboard exposes none of these mutation operations.
+`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are Codex-driver-only diagnostics (creative test setup and camera positioning). The normal planner delegates drafting and linting to its designer and can inspect, commit and verify without external-driver mode. The dashboard exposes none of these mutation operations.
 
 ## Validation
 
@@ -41,3 +41,15 @@ The live creative check on 2026-10-01 used two workshop sites in `Blueprint-Supe
 One rule hit an isolated error during the first cold run; other rules continued and the next complete run succeeded. Rule failures remain visible as failures, not a clean bill of health. Null exception messages now fall back to the error class name.
 
 A clean-client repeat completed all eight rules, rejected an intentionally throwing draft without changing the revision, verified 66/66 committed cells, and retained revision 1 through `airicraft reload`. The dashboard was browser-verified against this live session, including its empty-draft state and rendered component/rule lists.
+
+## Dedicated designer
+
+The normal planner calls `design_blueprint({brief,site:[x,y,z],revise?})`. A separate model conversation receives the brief, local terrain height field, semantic authoring library and its own draft/compiler/lint results. It does not inherit the main planner's chat, character, inventory, movement history or gameplay tools. The configured model/backend is reused. One design job runs at a time; its tool result returns when the bounded loop completes, fails or is cancelled. The main planner reviews the returned ID, revision, dimensions and findings before explicitly committing and verifying.
+
+The specialist can only draft, inspect coordinates/components and run the bundled advisory rules. Each successful draft updates the Blueprint preview. Full cell maps are omitted from its repeated conversational feedback. It has a 16-turn and 240,000-character conversation budget; budget exhaustion is reported rather than treated as completion. A final host-run lint is required before a completed result. Findings remain advisory, and rule failures are returned for review.
+
+`revise` refers to the ID returned by this planner session and must retain the same site. It seeds a fresh specialist conversation with the existing component tree rather than unrelated earlier chat. There is currently one current design, not a durable multi-blueprint catalog. Planner reset cancels an active design; world leave invalidates its lease and clears the preview. Late model responses cannot write into a new session. Direct authoring through the raw `blueprint` tool remains available only in Codex driver mode; ordinary planners use the specialist.
+
+The **Blueprint designer** dashboard tab is separate from the main LLM transcript. It shows the brief, supplied site/design context, model progress, assistant replies, tool calls, compiler/lint results and errors. It is a read-only live-session transcript, capped at 200,000 characters (40,000 per entry); display truncation is explicit. The worker is not fed the viewer transcript, and its internal conversation is not added to the main planner's transcript. Historical playback/export of this separate transcript is not yet implemented.
+
+The first live specialist check on 2026-10-01 used DeepSeek via the normal planner: the parent invoked `design_blueprint`, the worker started with two isolated messages and blueprint-only tools, and the dashboard displayed its separate brief, context, draft call, compiler rejection and next iteration. This validates delegation and visibility, not successful completion of that house. Screenshot: ignored `run/blueprint-evidence/designer-dashboard-live.jpg`. The focused suite passed 9 designer/provider/lease tests and 9 dashboard tests.

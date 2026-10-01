@@ -39,9 +39,28 @@ public final class BlueprintService {
     private String source;
     private JsonElement lastLint;
 
-    private BlueprintService() {}
-    public String dashboardSnapshot() { return dashboardSnapshot; }
+    BlueprintService() {}
+    private String designerLease;
+    private volatile String designerSnapshot = "{}";
+    public String dashboardSnapshot() {
+        String base=dashboardSnapshot;
+        return base.substring(0,base.length()-1)+",\"designer\":"+designerSnapshot+"}";
+    }
+    public synchronized String beginDesign() {
+        if(designerLease!=null)throw new IllegalStateException("designer_busy");
+        designerLease=UUID.randomUUID().toString();return designerLease;
+    }
+    public synchronized boolean designActive(String lease){return lease!=null&&lease.equals(designerLease);}
+    public synchronized void endDesign(String lease,boolean cancel){
+        if(designActive(lease)){if(cancel)generation++;designerLease=null;}
+    }
+    public synchronized void publishDesigner(String lease,String snapshot){if(designActive(lease))designerSnapshot=snapshot;}
+    public synchronized CompletableFuture<String> executeDesigner(String lease,JsonObject arguments){
+        if(!designActive(lease))return CompletableFuture.failedFuture(new java.util.concurrent.CancellationException("designer_cancelled"));
+        return enqueue(arguments);
+    }
     public synchronized void worldLeft() {
+        designerLease=null;designerSnapshot="{\"status\":\"cancelled\",\"message\":\"World session ended\"}";
         final long closedGeneration=++generation;
         pending=pending.handle((v,e)->{synchronized(this){if(generation==closedGeneration)reset();}return (Void)null;});
         dashboardSnapshot = "{\"available\":false,\"message\":\"World closed; blueprint session ended\"}";
@@ -53,6 +72,10 @@ public final class BlueprintService {
     // Serialize control operations, including asynchronous Graal evaluations. HTTP viewers
     // only read the immutable published string; they never call this control interface.
     public synchronized CompletableFuture<String> execute(JsonObject arguments) {
+        if(designerLease!=null)return CompletableFuture.completedFuture("TOOL_ERROR: blueprint designer_busy");
+        return enqueue(arguments);
+    }
+    private synchronized CompletableFuture<String> enqueue(JsonObject arguments) {
         var fixed = arguments.deepCopy();
         final long requestGeneration=generation;
         var result = pending.handle((v,e) -> (Void)null).thenCompose(v -> executeNow(fixed,requestGeneration));
