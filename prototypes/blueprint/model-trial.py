@@ -5,7 +5,7 @@ Task file and budgets are fixed per run via environment; no manual source repair
 """
 import json, os, re, sys, time, hashlib, urllib.request, urllib.error
 from pathlib import Path
-from serve import ROOT
+ROOT=Path(__file__).resolve().parents[2]
 from offline import Offline
 call=Offline().call
 HERE=Path(__file__).resolve().parent
@@ -29,12 +29,12 @@ SYSTEM='''You are testing a semantic Minecraft blueprint interface. Produce orig
 Each component has a unique sibling id, optional at:[x,y,z] relative to parent and rotate:0/90/180/270. Front is negative Z. Room interior dimensions exclude one-block walls; its floor is y=0 and interior starts y=1. Floors between stacked rooms: second room at y=first interior height+1. Room wall openings use local [horizontalOffset,heightAboveFloor-1,0]. Nested children replace a parent's volume; unrelated overlaps error unless replaces names the earlier owner path (or array of paths). Paths include the root id. Clearance explicitly emits air. A wooden Door starts at its lower-half position. Staircase facing south rises toward positive Z; each step is one block higher and one block farther along Z. For an exterior step aligned with a door at x=5,z=0, a one-step staircase at [5,0,-1] faces toward it. The floor top is y=1, exterior ground top y=0. Use full block states where needed. Solid can emit lights, with an explicit replaces path if replacing a floor or interior cell. Avoid overlaps by assigning slots deliberately.
 Room guidance defaults to lighting=expected; set guidance lighting=dark for intentionally dark rooms. Tag exterior Door with guidance:{access:'walk'}. Guidance is inherited and overridable. Rules are advisory, but address unintentional findings. Lighting estimates are approximate block-light only; missing skylight is deliberate for night-time usability. Do not assert a whole-building route was proven by the local entrance check.
 You have the component library below; compose these constructors or write new JS functions. No Java, network, filesystem, async, or imports. Do not use unavailable fluent methods or fictional constructors.
-'''+(ROOT/'src/main/resources/blueprint-prototype/components.js').read_text()
+'''+(ROOT/'src/main/resources/blueprint/components.js').read_text()
 SYSTEM=SYSTEM.replace('Maximum 3 design submissions and 8 model turns.',f'Maximum {MAX_DESIGNS} design submissions and {MAX_TURNS} model turns.')
 SYSTEM+='\nThe bundled rules also check room coverage, straight staircase headroom/landings, empty semantic components, and ignored constructor fields. Use returned coordinates and component paths to diagnose failures. Keep occupied rooms covered; do not change their intent to evade advice. Use actual constructor calls, not merely type labels.'
 SYSTEM+='\nDeclare meaningful relationships when appropriate: Entrance is an open walk-in doorway; WalkRoute({id,from,to,bounds,width:.6}) checks a bounded connection between local integer feet coordinates (X/Z voxel centers); Guardrail({id,surface,edge,height:1,children}) identifies the exact surface component path and its local minX/maxX/minZ/maxZ edge. A cube at y=0 has walking surface y=1. Route bounds must include the complete outside-to-inside or floor-to-platform connection. No applicable subjects means a rule did not check that intent. Inspect assessments for route witnesses and collision owners. These remain advisory; use the constructors as documented.'
 SYSTEM+='\nWalkableArea({id,surface,blocks}) is a blueprint-only annotation on support blocks: surface is an exact component path, optional blocks selects integer support-block coordinates in that surface component frame; omitted blocks means the declared volume top layer. It checks preserved support and two blocks of clearance above actual slab/stair/full-block collision tops. Mark circulation surfaces, not furniture footprints. Pair it with WalkRoute for required connections.'
-resource_dir=ROOT/'src/main/resources/blueprint-prototype'
+resource_dir=ROOT/'src/main/resources/blueprint'
 resource_hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in resource_dir.glob('*.js')}
 TASKS=json.loads(Path(os.environ.get('BLUEPRINT_TASKS_FILE',str(HERE/'model-tasks.json'))).read_text())
 selected=sys.argv[1:] or [t['id'] for t in TASKS]

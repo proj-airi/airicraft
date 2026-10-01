@@ -2,38 +2,15 @@
 
 Throwaway experiment on `codex/blueprint-prototype`. The question is whether composing named semantic objects, retaining block provenance, and separating draft from realization makes building easier.
 
-## Run without Minecraft (current experiment)
+## Runtime migration
 
-```sh
-BLUEPRINT_OFFLINE=1 python3 prototypes/blueprint/serve.py
-```
+The interactive Python playground is retired. Blueprint state and execution now live in the Java mod; use the existing debug dashboard's read-only **Blueprint** tab. See [the current integration guide](../../docs/blueprints.md).
 
-Open http://127.0.0.1:8788. Requires Python 3 and Node; no Gradle, game process, rendering or world mutation. Compile, component inspection, provenance and JavaScript linting work offline. World controls are disabled. Each evaluation runs in a short-lived Node worker with a 96 MiB heap cap, one-second JS timeout and eight-second process timeout. The prototype VM is for locally authored/generated experiment code, not a hardened multi-tenant sandbox.
-
-The offline compiler is a temporary adapter reproducing the Java component traversal. It does **not** validate against Minecraft's block registry/default states. Geometry uses a small explicit full-cube/straight-stair/open-wooden-door fixture; other shapes are unknown. Ground is solid below local y=0. Terrain sampling/foundations are currently live-only. The bundled component library and rule sources are shared across both backends. A saved live house matched all 1,007 cell positions, material IDs and ownership histories offline; that does not establish full engine equivalence.
-
-## Run with Minecraft
-
-With JDK 25 on `JAVA_HOME`:
-
-```sh
-export AIRICRAFT_BRIDGE_STATE_FILE=/tmp/airicraft-blueprint-bridge.json
-scripts/codex-driver
-```
-
-In a second terminal, with the same environment:
-
-```sh
-python3 prototypes/blueprint/serve.py
-```
-
-Open http://127.0.0.1:8788. Join a scratch world named `Blueprint-*` using the normal world selector or `airicraft worlds join`. The prototype tool is available only in Codex driver mode. `op: prepare` enables creative in that scratch world. The UI is a small adapter over the public wrapper CLI, not a second control bridge.
-
-The one-off `create-worlds.py` uses `nbtlib` and this checkout's `run/saves/a/level.dat` as a metadata template to seed **fresh, chunk-free** superflat and normal terrain scratch worlds. It neither copies chunks nor modifies existing worlds. Existing scratch worlds are retained.
+This directory retains historical model outputs, evidence reports and offline regression/experiment harnesses only. They are not required to run or view blueprints. The offline compiler remains a synthetic fixture, not a Minecraft engine simulation. Run `python3 prototypes/blueprint/check-walkable.py` (and the other `check-*.py` probes) for lightweight rule regression checks.
 
 ## Authoring
 
-Define `function design(input)` returning a component tree. The built-in constructors are in `src/main/resources/blueprint-prototype/components.js`; `house.js` is the two-story example. Ordinary JavaScript functions can define reusable components, and arrays/loops compose repeated instances.
+Define `function design(input)` returning a component tree. The built-in constructors are in `src/main/resources/blueprint/components.js`; `house.js` is the two-story example. Ordinary JavaScript functions can define reusable components, and arrays/loops compose repeated instances.
 
 - Coordinates are integer local block coordinates. Front is negative Z. Sizes are counts, not inclusive endpoints.
 - `Room.interior` is usable width, height, depth; walls add one block on each side. Its floor is local y=0.
@@ -52,14 +29,14 @@ Direct tool use:
 
 ```sh
 wrapper/build/install/airicraft/bin/airicraft agent tools call \
-  --name blueprint_prototype --arguments '{"op":"get"}' --verbose
+  --name blueprint --arguments '{"op":"get"}' --verbose
 ```
 
 `draft` takes `source`; `commit` takes `revision` and `origin:[x,y,z]`; `explain` takes `position` and optionally `world:true`; `sample` takes a world `origin`. `view` takes `position`, optional `yaw` and `pitch`, and positions the creative player for screenshots. Use `camera screenshot --output <path>` for actual Minecraft evidence.
 
 ## Deliberate prototype limits
 
-One in-memory draft and last commit per provider; restart/reload loses provenance. World blocks remain saved. No undo, save/import format, commit diff, removal of old unspecified cells, multi-client editing, general layout solver, or survival executor. Recompiling a smaller design does not erase remnants of an earlier commit. Terrain snapshots are not automatically refreshed; resample before adapting to a changed site. Sampling invalidates the old draft, requiring recompilation. `op: save` flushes the scratch world to disk. Limit 8,192 cells, 512 components and 24 nested levels. Commit uses direct state writes with neighbor notifications suppressed; this is suitable for static geometry experiments, not proof of redstone/physics correctness.
+One in-memory draft and last commit per world session in the shared mod service; leaving the world or restarting loses provenance. Agent reload preserves the session. World blocks remain saved. No undo, save/import format, commit diff, removal of old unspecified cells, multi-client editing, general layout solver, or survival executor. Recompiling a smaller design does not erase remnants of an earlier commit. Terrain snapshots are not automatically refreshed; resample before adapting to a changed site. Sampling invalidates the old draft, requiring recompilation. `op: save` flushes the scratch world to disk. Limit 8,192 cells, 512 components and 24 nested levels. Commit uses direct state writes with neighbor notifications suppressed; this is suitable for static geometry experiments, not proof of redstone/physics correctness.
 
 ## Live experiment — 2026-09-30
 
@@ -81,14 +58,14 @@ Driven through `scripts/codex-driver`, with `codexDriverActive: true`, normal op
 
 Runtime evidence (ignored local files) is under `run/blueprint-evidence/`: draft JSON, exact state verification, provenance responses, probe results, before/after and interior screenshots. The first normal-world sample was water; its screenshot and material observations informed choosing a dry sand footprint. This experiment establishes height-based foundations on that site, not general terrain suitability or access planning.
 
-The terrain and superflat worlds retain these earlier builds. Minecraft was subsequently stopped at the user's request to reduce MacBook load; the editor now runs offline. Restart commands are above.
+The terrain and superflat worlds retain these earlier builds. Minecraft was subsequently stopped at the user's request to reduce MacBook load; that historical offline playground has since been replaced by the mod-owned dashboard.
 
 **Verdict:** semantic composition and block provenance work together in live Minecraft. Explicit owned air is useful for both openings and inspection. Terrain should stay distinguishable from authored blocks. Next design work should address attachment/constraint resolution, terrain suitability (including fluids/vegetation), access to elevated entrances, and durable identity/provenance before treating this as production construction tooling.
 
 
 ## Extensible advisory rules
 
-Rules are ordinary JavaScript defining `function check(ctx)`. `lint` uses bundled `entrance-access` and `room-lighting` rules unless given `rules:[{id,source}]`; the UI has a custom-rule editor. Rules receive a detached draft/site snapshot, run independently, and cannot block commits. Results pin the draft revision and contain per-rule status, component paths, coordinates and evidence. Click a finding to select its component and highlight its coordinates.
+Rules are ordinary JavaScript defining `function check(ctx)`. `lint` uses bundled `entrance-access` and `room-lighting` rules unless given `rules:[{id,source}]`; custom rules are supplied through the blueprint control tool. Rules receive a detached draft/site snapshot, run independently, and cannot block commits. Results pin the draft revision and contain per-rule status, component paths, coordinates and evidence. Click a finding to select its component and highlight its coordinates.
 
 ```js
 function check(ctx) {
@@ -134,7 +111,7 @@ Rule inputs now expose a Room's declared `interior` dimensions, constructor `ign
 
 ## Variety trials and independent review
 
-See [variety-report.md](variety-report.md) for bridge, warehouse, courtyard and watchtower judgments. The editor exposes all four as `Qwen trial · variety-*` buttons. These are unchanged model outputs with known defects; the watchtower run was interrupted by a provider rate limit. No Minecraft process is needed.
+See [variety-report.md](variety-report.md) for bridge, warehouse, courtyard and watchtower judgments. The former editor exposed all four as `Qwen trial · variety-*` buttons; their sources remain in the examples directory. These are unchanged model outputs with known defects; the watchtower run was interrupted by a provider rate limit. No Minecraft process is needed.
 
 A fresh exploratory batch can use:
 
@@ -173,7 +150,7 @@ These are semantic component declarations, not execution instructions. `WalkRout
 - Every bundled rule reports applicability: checked subject count or **no applicable subjects**. Older custom rules remain compatible and show **applicability not reported** unless they call `ctx.track()` and `ctx.checked(component)`. A checked subject may still produce unverified findings; zero findings does not certify an entire structure.
 - Custom rules can use `ctx.access.connected(component)`, `ctx.protection(component)` and `ctx.checked(component, assessment)` to expose their own results. The component guidance uses the same `route` and `guardrail` data that these constructors emit.
 
-The editor includes `Advice demo · advice-bridge-before` (unchanged Qwen geometry plus explicit review relationships) and `advice-bridge-after` (human repair). The former reports a failed connection and two flush-rail warnings; adding approach stairs and raising rails clears all three. The repaired bridge **retains its y=1 deck**, so it still does not meet the original brief's requested y=0 datum. These examples demonstrate the selected advice, not full brief compliance. Original `variety-*` trial sources remain unchanged.
+The historical fixtures include `Advice demo · advice-bridge-before` (unchanged Qwen geometry plus explicit review relationships) and `advice-bridge-after` (human repair). The former reports a failed connection and two flush-rail warnings; adding approach stairs and raising rails clears all three. The repaired bridge **retains its y=1 deck**, so it still does not meet the original brief's requested y=0 datum. These examples demonstrate the selected advice, not full brief compliance. Original `variety-*` trial sources remain unchanged.
 
 Run `python3 prototypes/blueprint/check-relations.py` for route/step repair, rotation, width, blocked endpoints and provenance, local uncertainty, guardrail repair, semantic entrances, applicability, suppression and saved Qwen warehouse/courtyard/watchtower replay. The replay adds explicit route declarations without changing geometry. Shared JS is registered for both offline and live lint, but this iteration is validated only in the offline worker/editor; Minecraft and Java builds remain off.
 
@@ -197,6 +174,6 @@ The compiler preserves `volumeSize` separately from final cell ownership. Removi
 
 For a full floor block at y=0, y=1 and y=2 must be clear. The exposed collision tops of slabs and stair treads are measured at their actual heights; lower and upper stair treads are checked separately. The offline fixture now recognizes ordinary bottom/top/double slabs. Partial-footprint surfaces remain conservative/unverified. This rule checks vertical clearance over selected surfaces, not player-width clearance or route connectivity: keep `WalkRoute` for required connections. Annotate circulation surfaces rather than furniture footprints. The two-block style recommendation is intentionally stricter than the route helper's 1.8-block body.
 
-The editor's `advice-walkable-before` and `advice-walkable-after` demos mark only a workshop's center aisle. The original beam leaves one block above it; raising the beam clears both the surface warning and the required aisle connection. These are human-authored demos. Original Qwen designs remain unchanged.
+The historical fixture `advice-walkable-before` and `advice-walkable-after` demos mark only a workshop's center aisle. The original beam leaves one block above it; raising the beam clears both the surface warning and the required aisle connection. These are human-authored demos. Original Qwen designs remain unchanged.
 
 `python3 prototypes/blueprint/check-walkable.py` verifies support removal, low/two-high ceilings, subset selection, ownership, rotation, slab/stair heights, uncertainty, suppression and annotation-only geometry. Shared rules and volume metadata are wired into the live compiler, but validation for this iteration remains offline; no Minecraft launch or Java build was performed.

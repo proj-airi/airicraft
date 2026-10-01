@@ -20,6 +20,24 @@ class DebugDashboardServerTest {
 	Path temporaryDirectory;
 
 	@Test
+	void blueprintSnapshotIsAuthenticatedReadOnlyAndDetachedFromWorldWork() throws Exception {
+		var snapshot = new java.util.concurrent.atomic.AtomicReference<>("{\"available\":false}");
+		var server = new DebugDashboardServer(new DashboardObservationStore(1024 * 1024), temporaryDirectory.resolve("latest.log"), () -> Map.of(), java.util.List::of, snapshot::get);
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 1024 * 1024));
+		try {
+			String base = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			assertEquals(401, send(base + "/api/blueprint", null).statusCode());
+			assertEquals("{\"available\":false}", send(base + "/api/blueprint", token).body());
+			snapshot.set("{\"available\":true,\"revision\":7,\"cells\":[]}");
+			assertEquals(7, JsonParser.parseString(send(base + "/api/blueprint", token).body()).getAsJsonObject().get("revision").getAsInt());
+			var request = HttpRequest.newBuilder(URI.create(base + "/api/blueprint")).header("Authorization", "Bearer " + token).POST(HttpRequest.BodyPublishers.ofString("{}")).build();
+			assertEquals(405, HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).statusCode());
+			assertEquals(200, send(base + "/blueprint.js", null).statusCode());
+		} finally { server.stop(); }
+	}
+
+	@Test
 	void servesStaticUiAndKeepsObservationApisBehindTheViewerToken() throws Exception {
 		int port = freePort();
 		DashboardObservationStore store = new DashboardObservationStore(1024L * 1024L);

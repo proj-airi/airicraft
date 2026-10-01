@@ -1,4 +1,4 @@
-package ai.moeru.airicraft.blueprint.prototype;
+package ai.moeru.airicraft.blueprint;
 
 import com.google.gson.*;
 import net.minecraft.block.BlockState;
@@ -10,14 +10,14 @@ import net.minecraft.util.math.BlockPos;
 import java.util.*;
 
 /** THROWAWAY: bounded component compiler, ownership and explicit composition. */
-public final class BlueprintPrototype {
+public final class Blueprint {
     public record Cell(BlockPos position, BlockState state, String owner, List<String> contributors) {}
     public final LinkedHashMap<BlockPos, Cell> cells = new LinkedHashMap<>();
     public final List<Map<String,Object>> components = new ArrayList<>();
     private final Set<String> paths = new HashSet<>();
     private final Map<String,Integer> surface;
     public final JsonObject tree;
-    public BlueprintPrototype(JsonObject tree, Map<String,Integer> surface) {
+    public Blueprint(JsonObject tree, Map<String,Integer> surface) {
         this.tree = tree.deepCopy(); this.surface = surface;
         visit(tree,"",BlockPos.ORIGIN,0,List.of(),new JsonObject(),0);
     }
@@ -83,7 +83,7 @@ public final class BlueprintPrototype {
     }
     public Map<String,Object> snapshot(int revision) {
         var out=new LinkedHashMap<String,Object>(); out.put("revision",revision);out.put("tree",tree);out.put("components",components);
-        out.put("cells",cells.values().stream().map(BlueprintPrototype::describe).toList());
+        out.put("cells",cells.values().stream().map(Blueprint::describe).toList());
         var materials=new TreeMap<String,Integer>(); cells.values().stream().filter(c->!c.state().isAir()).forEach(c->materials.merge(Registries.BLOCK.getId(c.state().getBlock()).toString(),1,Integer::sum));
         out.put("materials",materials);out.put("cellCount",cells.size());return out;
     }

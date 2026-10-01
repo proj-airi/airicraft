@@ -1,4 +1,4 @@
-package ai.moeru.airicraft.blueprint.prototype;
+package ai.moeru.airicraft.blueprint;
 
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.*;
@@ -12,11 +12,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-/** Prototype facts and isolated JS advice. No rule can mutate Minecraft or block a commit. */
+/** Captured facts and isolated JS advice. No rule can mutate Minecraft or block a commit. */
 public final class BlueprintLint {
     private static final Gson JSON=new Gson();
     public static String resource(String name) {
-        try(var in=BlueprintLint.class.getResourceAsStream("/blueprint-prototype/"+name)) {
+        try(var in=BlueprintLint.class.getResourceAsStream("/blueprint/"+name)) {
             return new String(Objects.requireNonNull(in).readAllBytes(),StandardCharsets.UTF_8);
         }catch(Exception e){throw new IllegalStateException(e);}
     }
@@ -24,7 +24,7 @@ public final class BlueprintLint {
         var rules=new JsonArray();
         for(String id:List.of("entrance-access","room-lighting","room-coverage","stair-access","component-semantics","connected-route","guardrail-protection","walkable-area")) {var r=new JsonObject();r.addProperty("id",id);r.addProperty("source",resource(id+".js"));rules.add(r);}return rules;
     }
-    public static JsonObject capture(BlueprintPrototype draft,int revision,ServerWorld world,BlockPos origin) {
+    public static JsonObject capture(Blueprint draft,int revision,ServerWorld world,BlockPos origin) {
         if(draft.cells.isEmpty())throw new IllegalArgumentException("empty_blueprint");
         int minX=128,minY=128,minZ=128,maxX=-128,maxY=-128,maxZ=-128;
         for(var p:draft.cells.keySet()){minX=Math.min(minX,p.getX());minY=Math.min(minY,p.getY());minZ=Math.min(minZ,p.getZ());maxX=Math.max(maxX,p.getX());maxY=Math.max(maxY,p.getY());maxZ=Math.max(maxZ,p.getZ());}
@@ -61,9 +61,9 @@ public final class BlueprintLint {
             for(var direction:Direction.values()) {BlockPos next=p.offset(direction);if(!voxels.containsKey(next)||opaque.contains(next)||light.getOrDefault(next,0)>=level)continue;light.put(next,level);queue.add(next);}
         }
         var geometry=new JsonArray();voxels.forEach((p,a)->{a.set(6,new JsonPrimitive(light.getOrDefault(p,0)));geometry.add(a);});
-        var out=new JsonObject();out.addProperty("revision",revision);out.addProperty("serverTick",world.getTime());out.add("origin",JSON.toJsonTree(BlueprintPrototype.xyz(origin)));
+        var out=new JsonObject();out.addProperty("revision",revision);out.addProperty("serverTick",world.getTime());out.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
         out.add("components",JSON.toJsonTree(draft.components));
-        out.add("cells",JSON.toJsonTree(draft.cells.values().stream().map(c->Map.of("position",BlueprintPrototype.xyz(c.position()),"owner",c.owner(),"state",BlueprintPrototype.stateText(c.state()))).toList()));
+        out.add("cells",JSON.toJsonTree(draft.cells.values().stream().map(c->Map.of("position",Blueprint.xyz(c.position()),"owner",c.owner(),"state",Blueprint.stateText(c.state()))).toList()));
         out.add("geometry",geometry);out.addProperty("unknownCells",unknown);
         out.addProperty("lightingMethod","Approximate block-light only; excludes skylight, external boundary light and partial-block occlusion. Design advice, not a spawn-safety guarantee.");
         out.addProperty("accessMethod","Local straight entrance approach using actual collision boxes, 0.6x1.8 player and <=0.6 step-up; wooden doors assumed operable. Not a whole-building pathfinding proof.");
@@ -84,6 +84,6 @@ public final class BlueprintLint {
     }
     private static void addResult(JsonArray results,JsonObject rule,JsonElement value,Throwable error){
         var r=new JsonObject();r.add("id",rule.get("id"));r.addProperty("status",error==null?"completed":"error");
-        if(error==null)r.add("result",value);else{while(error.getCause()!=null)error=error.getCause();r.addProperty("message",error.getMessage());}results.add(r);
+        if(error==null)r.add("result",value);else{while(error.getCause()!=null)error=error.getCause();r.addProperty("message",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage());}results.add(r);
     }
 }

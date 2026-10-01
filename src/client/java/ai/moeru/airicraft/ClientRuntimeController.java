@@ -92,7 +92,7 @@ public final class ClientRuntimeController {
 					: dashboard;
 			}
 		);
-		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment, this::diagnosticSecrets);
+		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment, this::diagnosticSecrets, ai.moeru.airicraft.blueprint.BlueprintService.instance()::dashboardSnapshot);
 		this.bridgeServer = new ModBridgeServer(
 			this::highlightManager,
 			this::agentRuntime,
@@ -216,6 +216,7 @@ public final class ClientRuntimeController {
 	}
 
 	public void onWorldLeave() {
+		ai.moeru.airicraft.blueprint.BlueprintService.instance().worldLeft();
 		automaticPlaytest.worldLeft("world_left");
 		worldCameraService.clear();
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.clear();

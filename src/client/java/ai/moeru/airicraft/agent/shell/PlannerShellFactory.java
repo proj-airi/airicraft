@@ -212,7 +212,7 @@ public final class PlannerShellFactory {
 			new CurrentWorldQueryToolProvider(worldQueryService, result -> effectiveWorldReadObserver.accept(result.observedPositions())),
 			scriptedQueries,
 			new ai.moeru.airicraft.agent.llm.SelfToolProvider(scriptedQueries),
-			new ai.moeru.airicraft.blueprint.prototype.BlueprintPrototypeToolProvider(),
+			new ai.moeru.airicraft.blueprint.BlueprintToolProvider(),
 			new ai.moeru.airicraft.agent.llm.PolicyDocsToolProvider(),
 			rulesTools,
 			new WorldFeatureSearchToolProvider(worldFeatureSearchService, result -> effectiveWorldReadObserver.accept(result.observedPositions())),

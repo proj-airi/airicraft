@@ -1,7 +1,7 @@
 // Throwaway offline adapter: semantic compiler + conservative, explicitly synthetic geometry.
 // No Minecraft registry or engine is loaded. Unsupported shapes remain unknown.
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const resources=path.resolve(__dirname,'../../src/main/resources/blueprint-prototype');
+const resources=path.resolve(__dirname,'../../src/main/resources/blueprint');
 const resource=name=>fs.readFileSync(path.join(resources,name),'utf8');
 function evaluate(source,expression,input={}) {
   if(source.length>32768)throw Error('source_limit');

@@ -1,3 +1,4 @@
+import { renderBlueprint } from './blueprint.js';
 const state = {
   token: new URLSearchParams(location.hash.slice(1)).get('token') || '',
   observations: [],
@@ -208,6 +209,7 @@ function reconcileChildren(parent, next) {
 }
 
 function render() {
+  if(state.view==='blueprint'){renderBlueprint(el('content'),{api,replay:state.replay||!state.live});return;}
   const snapshot = snapshotAtCursor();
   if (!snapshot && state.view !== 'timeline' && state.view !== 'logs' && state.view !== 'raw' && state.view !== 'transcript' && state.view !== 'compactions') {
     updateContent(`<div class="empty-state"><div class="loader"></div><h2>Waiting for the first runtime snapshot</h2><p>Transitions and transcripts will appear as soon as Airicraft emits them.</p></div>`);
