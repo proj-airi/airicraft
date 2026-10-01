@@ -13,6 +13,18 @@ class BlueprintServiceLeaseTest {
         assertTrue(service.executeDesigner(lease,BlueprintDesigner.json("draft")).isCompletedExceptionally());
         String next=service.beginDesign();assertNotEquals(lease,next);assertTrue(service.designActive(next));
     }
+    @Test void samplingPreservesPublishedDraftAndAdvice() throws Exception {
+        var service=new BlueprintService();
+        var draft=new Blueprint(com.google.gson.JsonParser.parseString("{\"id\":\"house\"}").getAsJsonObject(),null);
+        var lint=com.google.gson.JsonParser.parseString("{\"rules\":[]}");
+        for(var entry:java.util.Map.of("draft",draft,"source","function design(input) {}","lastLint",lint,"revision",4).entrySet()) {
+            var field=BlueprintService.class.getDeclaredField(entry.getKey());field.setAccessible(true);field.set(service,entry.getValue());
+        }
+        service.rememberTerrain(new com.google.gson.JsonObject(),java.util.Map.of("0,0",13),net.minecraft.util.math.BlockPos.ORIGIN,null);
+        for(var entry:java.util.Map.of("draft",draft,"source","function design(input) {}","lastLint",lint,"revision",4).entrySet()) {
+            var field=BlueprintService.class.getDeclaredField(entry.getKey());field.setAccessible(true);assertEquals(entry.getValue(),field.get(service));
+        }
+    }
     @Test void worldLeaveClearsPreviewAndRejectsOldWorker(){
         var service=new BlueprintService();String lease=service.beginDesign();service.publishDesigner(lease,"{\"status\":\"running\"}");
         service.worldLeft();assertFalse(service.designActive(lease));

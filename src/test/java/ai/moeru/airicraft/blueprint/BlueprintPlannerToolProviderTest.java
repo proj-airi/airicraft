@@ -14,6 +14,12 @@ class BlueprintPlannerToolProviderTest {
         var args=new JsonObject();args.addProperty("op","draft");args.addProperty("source","untrusted source");
         assertTrue(provider.execute(new PlannerToolCall("a","blueprint",args,null)).join().startsWith("TOOL_ERROR: use design_blueprint"));
     }
+    @Test void repeatedSiteRevisesInsteadOfResamplingBuiltStructure(){
+        var site=JsonParser.parseString("[64,-60,32]").getAsJsonArray();
+        assertTrue(BlueprintPlannerToolProvider.sameSite("current",site,site.deepCopy()));
+        assertFalse(BlueprintPlannerToolProvider.sameSite(null,site,site));
+        assertFalse(BlueprintPlannerToolProvider.sameSite("current",site,JsonParser.parseString("[80,-60,32]").getAsJsonArray()));
+    }
     @Test void badRequestsNeverStartWorker(){
         var provider=new BlueprintPlannerToolProvider(AgentConfig.LlmConfig.defaults(),false);
         var args=JsonParser.parseString("{\"brief\":\"house\",\"site\":[1.5,2,3]}").getAsJsonObject();

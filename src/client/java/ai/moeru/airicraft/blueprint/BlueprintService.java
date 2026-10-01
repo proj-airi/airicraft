@@ -143,7 +143,7 @@ public final class BlueprintService {
                         for(int sy=Math.max(world.getBottomY(),y-2);sy<=y;sy++) sampled.add(Map.of("position",List.of(x,sy-origin.getY(),z),"state",Blueprint.stateText(world.getBlockState(new BlockPos(p.getX(),sy,p.getZ()))),"owner","terrain","source","observed"));
                     }
                     var t=new JsonObject();t.add("surface",JSON.toJsonTree(heights));t.addProperty("maxSurface",max);t.addProperty("minSurface",min);t.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
-                    terrain=t;surface=heights;terrainOrigin=origin;terrainWorld=world;draft=null;source=null;lastLint=null;
+                    rememberTerrain(t,heights,origin,world);
                     return JSON.toJson(Map.of("terrain",t,"cells",sampled,"note","Observed terrain context, never committed as design blocks; 16x16 height field and top three layers."));
                 }
                 if(op.equals("explain")) {
@@ -193,6 +193,10 @@ public final class BlueprintService {
                 return JSON.toJson(Map.of("revision",revision,"written",draft.cells.size(),"matched",matched,"origin",Blueprint.xyz(origin),"mode","creative_direct_blocks"));
             });
         }).thenApply(result->{if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");publish(expectedGeneration);return result;}).exceptionally(error->{Throwable cause=error;while(cause.getCause()!=null)cause=cause.getCause();return "TOOL_ERROR: blueprint "+cause.getMessage();});
+    }
+    // Sampling updates authoring input; only a successful draft replaces the published design.
+    void rememberTerrain(JsonObject captured,Map<String,Integer> heights,BlockPos origin,ServerWorld world) {
+        terrain=captured;surface=heights;terrainOrigin=origin;terrainWorld=world;
     }
     private void requireDraft(){if(draft==null)throw new IllegalStateException("no_draft");}
 }

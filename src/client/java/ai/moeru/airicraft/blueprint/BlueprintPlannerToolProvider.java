@@ -29,7 +29,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
     @Override public String promptInstructions(){return "For construction, call design_blueprint with a building brief and site. It delegates all source authoring and lint repair to an isolated designer. Review its compact result and unresolved findings, then explicitly commit using blueprint with the returned revision and origin. Never claim a design is built before commit and verify succeed.";}
     @Override public List<Map<String,Object>> openAiTools(){
         var result=new ArrayList<Map<String,Object>>();
-        result.add(toolForProvider("design_blueprint","Design or revise a semantic blueprint in a separate specialist conversation. Does not place blocks. Returns blueprintId, revision, dimensions and advisory findings. Runs a bounded design/compile/lint repair loop; may take several minutes. Use revise with the returned blueprintId to improve this session's current design.",
+        result.add(toolForProvider("design_blueprint","Design or revise a semantic blueprint in a separate specialist conversation. Does not place blocks. Returns blueprintId, revision, dimensions and advisory findings. Runs a bounded design/compile/lint repair loop; may take several minutes. Use revise with the returned blueprintId to improve this session's current design. Repeating the same site also revises it, retaining the original terrain context.",
             propertiesForProvider(propForProvider("brief",stringForProvider("What to build, intended use, materials and constraints.")),
                 propForProvider("site",Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3)),
                 propForProvider("revise",stringForProvider("Existing blueprintId, when revising."))),List.of("brief","site")));
@@ -52,8 +52,9 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
             String brief=args.get("brief").getAsString();if(brief.isBlank()||brief.length()>8000)throw new IllegalArgumentException("brief must contain 1..8000 characters");
             JsonArray anchor=args.getAsJsonArray("site").deepCopy();if(anchor.size()!=3)throw new IllegalArgumentException("site must have three integers");
             for(var n:anchor){if(!n.isJsonPrimitive()||!n.getAsJsonPrimitive().isNumber()||n.getAsDouble()!=n.getAsInt())throw new IllegalArgumentException("site must have three integers");}
-            boolean revise=args.has("revise");
-            if(revise&&(blueprintId==null||!blueprintId.equals(args.get("revise").getAsString())||!anchor.equals(site)))throw new IllegalArgumentException("revision blueprintId or site does not match this session");
+            boolean explicitRevision=args.has("revise");
+            if(explicitRevision&&(blueprintId==null||!blueprintId.equals(args.get("revise").getAsString())||!anchor.equals(site)))throw new IllegalArgumentException("revision blueprintId or site does not match this session");
+            boolean revise=explicitRevision||sameSite(blueprintId,site,anchor);
             String token=service.beginDesign();lease=token;
             if(!revise)blueprintId=UUID.randomUUID().toString();site=anchor;
             transcript.clear();transcriptChars=0;status="running";modelSummary=config.model();publish(token);
@@ -89,6 +90,9 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
             result.whenComplete((v,e)->{if(result.isCancelled())cancel(token);});
             return result;
         }catch(Exception error){return CompletableFuture.completedFuture("TOOL_ERROR: design_blueprint "+error.getMessage());}
+    }
+    static boolean sameSite(String currentId,JsonArray currentSite,JsonArray requestedSite) {
+        return currentId!=null&&requestedSite.equals(currentSite);
     }
     private String invoke(String token,JsonObject args)throws Exception{
         return service.executeDesigner(token,args).get(60,TimeUnit.SECONDS);
