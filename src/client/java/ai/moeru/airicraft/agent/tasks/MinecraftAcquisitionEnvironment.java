@@ -233,14 +233,30 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 	}
 
 	private GoalPosition workPosition(BlockPos target, AcquisitionConstraints constraints) {
-		if (travelEligible(position()) && interactionPath(client().player.getEyePosition(), target) != null) return position();
-		List<BlockPos> sites = new ArrayList<>();
-		for (BlockPos cursor : workPositions(target)) {
-			if (travelEligible(position(cursor)) && standable(cursor)
-				&& interactionPath(Vec3.atBottomCenterOf(cursor).add(0, 1.62, 0), target) != null) sites.add(cursor.immutable());
-		}
-		return sites.stream().min(Comparator.comparingDouble(pos -> pos.distToCenterSqr(client().player.position())))
-			.map(MinecraftAcquisitionEnvironment::position).orElse(null);
+	if (travelEligible(position()) && interactionPath(client().player.getEyePosition(), target) != null) return position();
+	// Dry footing mines fastest, then the sea floor (mining is five times slower submerged, five times
+	// slower again when floating), so a swimming site is a fallback in that order.
+	List<BlockPos> dry = new ArrayList<>(), grounded = new ArrayList<>(), floating = new ArrayList<>();
+	for (BlockPos cursor : workPositions(target)) {
+	if (!travelEligible(position(cursor))) continue;
+	boolean isDry = standable(cursor);
+	if (!isDry && !swimmable(cursor)) continue;
+	if (interactionPath(Vec3.atBottomCenterOf(cursor).add(0, 1.62, 0), target) == null) continue;
+	(isDry ? dry : safeSupport(cursor.below()) ? grounded : floating).add(cursor.immutable());
+	}
+	List<BlockPos> sites = !dry.isEmpty() ? dry : !grounded.isEmpty() ? grounded : floating;
+	return sites.stream().min(Comparator.comparingDouble(pos -> pos.distToCenterSqr(client().player.position())))
+	.map(MinecraftAcquisitionEnvironment::position).orElse(null);
+	}
+
+	/** Open water a swimmer can float in with room for the body: the feet cell is water, nothing solid at feet or head. */
+	private boolean swimmable(BlockPos pos) {
+	var level = client().level;
+	if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.above())) return false;
+	BlockState feet = level.getBlockState(pos), head = level.getBlockState(pos.above());
+	return feet.getFluidState().is(FluidTags.WATER)
+	&& feet.getCollisionShape(level, pos).isEmpty() && head.getCollisionShape(level, pos.above()).isEmpty()
+	&& !hazardous(feet) && !hazardous(head) && !head.getFluidState().is(FluidTags.LAVA);
 	}
 
 	static Iterable<BlockPos> workPositions(BlockPos target) {
@@ -282,7 +298,8 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 		return drops.isEmpty() || inventory.getSlotWithRemainingSpace(drops.getFirst().getItem()) >= 0;
 	}
 	@Override public boolean canInteract(Candidate target) {
-		if (!client().player.onGround()) return false;
+	// A swimmer is never on the ground; being in the water is as steady as the sea floor gets.
+	if (!client().player.onGround() && !client().player.isInWater()) return false;
 		if (target.kind() == Kind.DROP) return client().level.getEntitiesOfClass(ItemEntity.class,
 			new AABB(block(target.position())).inflate(3), item -> item.isAlive() && item.getStringUUID().equals(target.id())
 				&& client().player.distanceToSqr(item) <= 1).size() > 0;
@@ -313,6 +330,73 @@ final class MinecraftAcquisitionEnvironment implements Environment {
 		minecraft.player.swing(InteractionHand.MAIN_HAND);
 		return targetPresent(target) ? BreakStatus.BREAKING : BreakStatus.BROKEN;
 	}
+	@Override public boolean submerged() {
+	return client().player != null && client().player.isUnderWater();
+	}
+	@Override public boolean breakFitsBreath(Candidate target) {
+	return breakFits(target, client().player.getAirSupply());
+	}
+	@Override public boolean breakFitsFullBreath(Candidate target) {
+	return breakFits(target, client().player.getMaxAirSupply());
+	}
+	@Override public String breathDetail(Candidate target) {
+	var player = client().player;
+	return "expectedBreakTicks=" + expectedBreakTicks(target) + " air=" + player.getAirSupply() + "/" + player.getMaxAirSupply()
+	+ " onGround=" + player.onGround() + " inWater=" + player.isInWater();
+	}
+	private boolean breakFits(Candidate target, int air) {
+	int reflexFloor = ai.moeru.airicraft.agent.AgentConfig.ReflexConfig.defaults().lowAirTicks();
+	return expectedBreakTicks(target) + BREAK_BREATH_MARGIN_TICKS <= air - reflexFloor;
+	}
+	/**
+ * Ticks the break takes at the speed it will have, or 0 when unknown: with the best tool carried (the
+ * executor picks it when it starts breaking, not before), the water penalty when swimming, and the
+ * fivefold loss for not being on the ground only when there is no floor to settle on.
+ */
+private int expectedBreakTicks(Candidate target) {
+var minecraft = client();
+if (target.kind() != Kind.BLOCK || minecraft.level == null || minecraft.player == null) return 0;
+BlockPos pos = block(target.position());
+BlockState state = minecraft.level.getBlockState(pos);
+float hardness = state.getDestroySpeed(minecraft.level, pos);
+if (!(hardness > 0)) return 0;
+var player = minecraft.player;
+float speed = 1.0F;
+boolean harvests = !state.requiresCorrectToolForDrops();
+var inventory = player.getInventory();
+for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+var stack = inventory.getItem(slot);
+if (stack.isEmpty()) continue;
+boolean toolHarvests = !state.requiresCorrectToolForDrops() || stack.isCorrectToolForDrops(state);
+float toolSpeed = stack.getDestroySpeed(state);
+if (toolHarvests && !harvests) {
+// The first tool that can harvest at all beats any that cannot.
+harvests = true;
+speed = Math.max(1.0F, toolSpeed);
+}
+else if (toolHarvests == harvests && toolSpeed > speed) speed = toolSpeed;
+}
+if (player.isInWater()) speed *= (float) player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.SUBMERGED_MINING_SPEED);
+if (!player.onGround() && !(player.isInWater() && floorBelow(player))) speed /= 5.0F;
+float progress = speed / hardness / (harvests ? 30.0F : 100.0F);
+return progress > 0 ? (int) Math.min(100_000, Math.ceil(1.0 / progress)) : 0;
+}
+
+/** Whether something solid lies within a few blocks under the player, so sinking ends on it. */
+	private boolean floorBelow(net.minecraft.world.entity.player.Player player) {
+	var level = client().level;
+	BlockPos cursor = player.blockPosition();
+	for (int depth = 0; depth < 4; depth++, cursor = cursor.below()) {
+	BlockState state = level.getBlockState(cursor);
+	if (state.isFaceSturdy(level, cursor, net.minecraft.core.Direction.UP) && state.getFluidState().isEmpty()) return true;
+	}
+	return false;
+	}
+	@Override public int breakTimeoutTicks(Candidate target) {
+int expected = expectedBreakTicks(target);
+if (expected <= 0) return DEFAULT_BREAK_TIMEOUT_TICKS;
+return Math.max(DEFAULT_BREAK_TIMEOUT_TICKS, (int) Math.min(6_000, expected * 3L / 2 + 40));
+}
 	@Override public void cancelBreaking() {
 		if (breaking != null && client().gameMode != null) actuator.stopDestroy(client());
 		breaking = null;

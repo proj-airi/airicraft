@@ -68,7 +68,7 @@ final class SurvivalSmokeFixtureService {
 		Mode mode = request == null ? null : Mode.parse(request.mode());
 		if (mode == null) {
 			throw new FixtureException("invalid_request",
-				"mode must be loadout, underwater, flooded_cave, mob_defend, mob_flee, mob_flee_natural, or cleanup");
+				"mode must be loadout, underwater, flooded_cave, sunken_ore, mob_defend, mob_flee, mob_flee_natural, or cleanup");
 		}
 
 		Minecraft minecraft = Minecraft.getInstance();
@@ -102,6 +102,7 @@ final class SurvivalSmokeFixtureService {
 			case LOADOUT -> setupLoadout(level, player);
 			case UNDERWATER -> setupUnderwater(level, player);
 			case FLOODED_CAVE -> setupFloodedCave(level, player);
+			case SUNKEN_ORE -> setupSunkenOre(level, player, request);
 			case MOB_DEFEND -> setupMob(level, player, true);
 			case MOB_FLEE -> setupMob(level, player, false);
 			case MOB_FLEE_NATURAL -> throw new IllegalStateException("natural flee handled above");
@@ -176,6 +177,29 @@ final class SurvivalSmokeFixtureService {
 		player.setHealth(player.getMaxHealth());
 		player.setAirSupply(FLOODED_CAVE_AIR_TICKS);
 		return payload(Mode.FLOODED_CAVE, player, null);
+	}
+
+	/**
+	 * A four-deep pond cut into stone with a coal ore on its floor, the player on the shore with a wooden
+	 * pickaxe. The ore can only be mined from the water.
+	 */
+	private Map<String, Object> setupSunkenOre(ServerLevel level, ServerPlayer player, Request request) {
+		BlockPos center = fixtureCenter;
+		fill(level, center.offset(-8, -6, -8), center.offset(16, -1, 8), Blocks.STONE.defaultBlockState());
+		fill(level, center.offset(2, -4, -3), center.offset(8, -1, 3), Blocks.WATER.defaultBlockState());
+		level.setBlockAndUpdate(center.offset(5, -5, 0), Blocks.COAL_ORE.defaultBlockState());
+		teleport(player, level, center.getX() + 0.5, center.getY() + 0.1, center.getZ() + 0.5);
+		player.setDeltaMovement(Vec3.ZERO);
+		player.getInventory().clearContent();
+		String pickaxe = request.pickaxe() == null ? "wooden" : request.pickaxe();
+		player.getInventory().add(new ItemStack(switch (pickaxe) {
+			case "stone" -> Items.STONE_PICKAXE;
+			case "iron" -> Items.IRON_PICKAXE;
+			default -> Items.WOODEN_PICKAXE;
+		}));
+		player.setHealth(player.getMaxHealth());
+		player.setAirSupply(request.air() == null ? player.getMaxAirSupply() : request.air());
+		return payload(Mode.SUNKEN_ORE, player, null);
 	}
 
 	private Map<String, Object> setupMob(ServerLevel level, ServerPlayer player, boolean defend) {
@@ -332,7 +356,8 @@ final class SurvivalSmokeFixtureService {
 		return Map.of("x", position.x, "y", position.y, "z", position.z);
 	}
 
-	record Request(String mode) {
+	/** {@code pickaxe} (wooden, stone, iron) and {@code air} only shape the sunken_ore mode. */
+	record Request(String mode, String pickaxe, Integer air) {
 	}
 
 	private record Origin(ResourceKey<Level> world, Vec3 position, float yaw, float pitch) {
@@ -342,6 +367,7 @@ final class SurvivalSmokeFixtureService {
 		LOADOUT("loadout"),
 		UNDERWATER("underwater"),
 		FLOODED_CAVE("flooded_cave"),
+		SUNKEN_ORE("sunken_ore"),
 		MOB_DEFEND("mob_defend"),
 		MOB_FLEE("mob_flee"),
 		MOB_FLEE_NATURAL("mob_flee_natural"),

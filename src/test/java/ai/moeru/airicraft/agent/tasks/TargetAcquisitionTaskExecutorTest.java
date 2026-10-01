@@ -499,6 +499,44 @@ class TargetAcquisitionTaskExecutorTest {
 		assertThrows(IllegalArgumentException.class, () -> new AcquisitionConstraints(null, 0, 8, false));
 	}
 
+	@Test void underwaterBreakThatDoesNotFitTheBreathSurfacesRefillsThenBreaks() {
+		Fixture f = new Fixture();
+		f.env.interactable = true;
+		f.env.submerged = true;
+		f.env.fitsBreath = false;
+		f.tick(4);
+		assertEquals(0, f.env.breaks, "does not start a break it cannot finish");
+		assertEquals(1, f.nav.airRequests, "asks navigation for air once");
+		assertTrue(f.nav.active);
+		// Head out of the water and the supply back: the same target is mined.
+		f.env.submerged = false;
+		f.env.fitsBreath = true;
+		f.tick(6);
+		assertTrue(f.env.breaks > 0, "mines once the breath holds");
+		assertEquals(1, f.nav.airRequests);
+	}
+	@Test void underwaterBreakThatNoBreathCouldHoldIsRejectedWithoutSurfacing() {
+		Fixture f = new Fixture();
+		f.env.interactable = true;
+		f.env.submerged = true;
+		f.env.fitsBreath = false;
+		f.env.fitsFullBreath = false;
+		f.tick(6);
+		assertEquals(0, f.env.breaks);
+		assertEquals(0, f.nav.airRequests, "refilling cannot help");
+		assertFalse(f.events.isEmpty());
+		assertTrue(f.events.getLast().message().contains("break_exceeds_breath"), f.events.getLast().message());
+	}
+	@Test void theBreathOnlyMattersUnderWater() {
+		Fixture f = new Fixture();
+		f.env.interactable = true;
+		f.env.fitsBreath = false;
+		f.env.fitsFullBreath = false;
+		f.tick(4);
+		assertTrue(f.env.breaks > 0);
+		assertEquals(0, f.nav.airRequests);
+	}
+
 	private static GoalPosition pos(int x, int y, int z) { return new GoalPosition(x,y,z,true); }
 	static final class Fixture {
 		final FakeEnvironment env = new FakeEnvironment();
@@ -529,6 +567,10 @@ class TargetAcquisitionTaskExecutorTest {
 		boolean selectiveInteractable;
 		boolean requiredToolAvailable = true;
 		boolean canCollectDrop = true;
+		boolean submerged, fitsBreath = true, fitsFullBreath = true;
+		public boolean submerged() { return submerged; }
+		public boolean breakFitsBreath(Candidate t) { return fitsBreath; }
+		public boolean breakFitsFullBreath(Candidate t) { return fitsFullBreath; }
 		public boolean canCollectDrop(Candidate target) { return canCollectDrop; }
 		Set<GoalPosition> visible;
 		boolean countOnBreak;
@@ -578,7 +620,9 @@ class TargetAcquisitionTaskExecutorTest {
 	static final class FakeNavigation implements NavigationFacade {
 		boolean active;
 		boolean goalReached;
+		int airRequests;
 		List<GoalPosition> goals = new ArrayList<>();
+		public boolean startNavigateToAir(boolean shore, NavigationOptions o) { airRequests++; active = true; return true; }
 		public boolean isLoaded() { return true; }
 		public void startFollow(String s) { fail("unexpected follow"); }
 		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); active = true; }

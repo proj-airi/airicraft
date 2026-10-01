@@ -248,8 +248,17 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 			if (navigation.navigationProgress().map(progress -> progress.breakingProgress() > 0).orElse(false)) progressTicks = 0;
 			boolean reached = environment.canInteract(target);
 			if (reached) {
-				release();
-				enter(target.kind() == Kind.BLOCK ? Phase.BREAK : Phase.PICKUP);
+			release();
+			if (target.kind() == Kind.BLOCK && !breakFitsBreath()) {
+				// Mining under water is slow and the survival reflex pulls the player up at low air, so a break
+				// that does not fit what is left waits for a fresh breath, or is given up when none would hold it.
+				if (!environment.breakFitsFullBreath(target)) {
+					reject("break_exceeds_breath " + environment.breathDetail(target));
+					return Optional.empty();
+				}
+				enter(Phase.BREATHE);
+			}
+			else enter(target.kind() == Kind.BLOCK ? Phase.BREAK : Phase.PICKUP);
 			}
 			// Excavating a route can exceed twelve seconds while still advancing.
 			// Bound it by actual stalls and the whole attempt's active-tick budget.
@@ -271,8 +280,29 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 				if (event.contains("FAIL") || event.equals("CANCELED") || event.equals("CANCELLED")) reject("approach_" + event);
 			}
 		}
+		else if (phase == Phase.BREATHE) {
+			if (phaseTicks > BREATHE_TIMEOUT_TICKS) reject("breathe_timeout");
+			else if (!environment.submerged() && environment.breakFitsBreath(target)) {
+		enter(Phase.APPROACH);
+		progressPosition = environment.position();
+		progressTicks = 0;
+	}
+			else {
+				if (!navigationOwned && environment.submerged()) {
+					navigation.pollPathEvent();
+					if (!navigation.startNavigateToAir(false, ai.moeru.airicraft.agent.navigation.NavigationOptions.DEFAULT)) {
+						reject("no_air_route");
+						return Optional.empty();
+					}
+					navigationOwned = true;
+				}
+				String event = navigation.pollPathEvent().orElse("");
+				if (event.contains("FAIL") || event.equals("CANCELED") || event.equals("CANCELLED")) reject("breathe_" + event);
+				else if (event.equals("AT_GOAL")) { navigation.cancel(); navigationOwned = false; }
+			}
+		}
 		else if (phase == Phase.BREAK) {
-			if (phaseTicks > 240) reject("break_timeout");
+		if (phaseTicks > environment.breakTimeoutTicks(target)) reject("break_timeout");
 			else {
 				BreakResult result = environment.breakTarget(target, opportunitySpec == null ? spec : opportunitySpec);
 				if (result instanceof ToolFailure failure) {
@@ -372,6 +402,10 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 		return Optional.of(terminal);
 	}
 
+	private boolean breakFitsBreath() {
+		return !environment.submerged() || environment.breakFitsBreath(target);
+	}
+
 	private void enter(Phase next) { phase = next; phaseTicks = 0; }
 	private void release() {
 		if (navigationOwned) navigation.cancel();
@@ -403,7 +437,11 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	}
 	@Override public void shutdown() { onWorldLeave(); }
 
-	enum Phase { SELECT, APPROACH, BREAK, PICKUP, SETTLE, RELEASE }
+	static final int DEFAULT_BREAK_TIMEOUT_TICKS = 240;
+	static final int BREATHE_TIMEOUT_TICKS = 600;
+	/** Slack on top of the break itself: the descent from the surface and a moment to aim. */
+	static final int BREAK_BREATH_MARGIN_TICKS = 40;
+	enum Phase { SELECT, APPROACH, BREATHE, BREAK, PICKUP, SETTLE, RELEASE }
 	enum Kind { DROP, BLOCK }
 	sealed interface BreakResult {}
 	enum BreakStatus implements BreakResult { BREAKING, BROKEN, FAILED }
@@ -427,5 +465,15 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 		boolean canInteract(Candidate target);
 		BreakResult breakTarget(Candidate target, GoalMineSpec spec);
 		void cancelBreaking();
+		/** Ticks the break phase may take: long enough for the real mining speed, which underwater is a fraction of dry. */
+		default int breakTimeoutTicks(Candidate target) { return DEFAULT_BREAK_TIMEOUT_TICKS; }
+		/** Whether the player's head is under water, where the air supply runs down. */
+		default boolean submerged() { return false; }
+		/** Whether breaking the target fits the air left, above the level where the survival reflex takes over. */
+		default boolean breakFitsBreath(Candidate target) { return true; }
+		/** Whether breaking the target would fit a full breath: when it does not, waiting for air cannot help. */
+		default boolean breakFitsFullBreath(Candidate target) { return true; }
+		/** The numbers behind {@link #breakFitsBreath}, for the rejection reason. */
+		default String breathDetail(Candidate target) { return ""; }
 	}
 }
