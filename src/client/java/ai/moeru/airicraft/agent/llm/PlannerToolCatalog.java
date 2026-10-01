@@ -277,12 +277,18 @@ public final class PlannerToolCatalog {
 				prop("entityTypeId", optionalString("Exact namespaced entity type id, for example minecraft:sheep.")),
 				prop("itemId", optionalString("Optional exact namespaced item id to equip first, for example minecraft:shears."))
 			), List.of("uuid")), PlannerToolCatalog::validateUseEntityArguments),
+		builtInTool("construct_blueprint", false, tool("construct_blueprint", "Construct the current saved semantic blueprint using normal movement and block placement, without LLM decisions or spawning blocks. Pins revision and origin. Returns tracked work; inspect_work observes completion. Navigation preserves existing blocks. Supply materials first. Unsupported or inaccessible cells produce an explicit failure, never partial success.", properties(
+			prop("revision", integer("Current blueprint revision.")),
+			prop("x", integer("Blueprint world origin x.")), prop("y", integer("Blueprint world origin y.")), prop("z", integer("Blueprint world origin z."))
+		), List.of("revision","x","y","z")), args -> { requireInt(args,"revision");requireInt(args,"x");requireInt(args,"y");requireInt(args,"z"); }),
 		builtInTool(PLACE_BLOCK, false, tool(PLACE_BLOCK, "Place a block item at one or more intended modified target positions. Target positions must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("x", integer("Intended modified target block x coordinate.")),
 				prop("y", integer("Intended modified target block y coordinate.")),
 				prop("z", integer("Intended modified target block z coordinate.")),
 				prop("facePreference", enumString("Direction from the target cell to its support neighbor. Use down for the floor below (clicks its top), up for the ceiling above. Prefer auto unless a specific support is required.", List.of("auto", "down", "north", "south", "east", "west", "up"))),
+                prop("escapeBounds", Map.of("type","array","items",Map.of("type","integer"),"minItems",6,"maxItems",6,"description","Optional construction bounds [minX,minY,minZ,maxX,maxY,maxZ]. Reject placement if no conservative walking exit remains.")),
+				prop("expectedState", optionalString("Desired block state, including properties. Placement predicts and verifies this state; unspecified properties use block defaults. Example minecraft:oak_stairs[facing=south,half=bottom].")),
 				prop("requireCurrentTargetMaterial", enumString("Required current target material before placement. Default air_or_replaceable.", List.of("air", "replaceable", "air_or_replaceable"))),
 				prop("targets", array("Ordered target blocks to place into. Maximum 16. Root facePreference and requireCurrentTargetMaterial apply as defaults.", placeBlockTargetSchema()))
 			), List.of("itemId")), PlannerToolCatalog::validatePlaceBlockArguments),
@@ -695,13 +701,35 @@ public final class PlannerToolCatalog {
 		}
 	}
 
+	private static void validateExpectedPlacementState(JsonObject arguments) {
+		if (!arguments.has("expectedState")) return;
+		var state = arguments.get("expectedState");
+		if (!state.isJsonPrimitive() || !state.getAsJsonPrimitive().isString()) {
+			throw new JsonParseException("expectedState must be a non-empty block-state string");
+		}
+		requireString(arguments, "expectedState");
+	}
+
 	private static void validatePlaceBlockArguments(JsonObject arguments) {
+        if(arguments.has("escapeBounds")) {
+            var e=arguments.get("escapeBounds");
+            if(!e.isJsonArray() || e.getAsJsonArray().size()!=6)throw new JsonParseException("escapeBounds requires six integers");
+            for(var coordinate:e.getAsJsonArray()) {
+                if(!coordinate.isJsonPrimitive() || !coordinate.getAsJsonPrimitive().isNumber()
+                    || coordinate.getAsDouble()!=coordinate.getAsInt())throw new JsonParseException("escapeBounds requires six integers");
+            }
+            var a=e.getAsJsonArray();
+            for(int axis=0;axis<3;axis++)if(a.get(axis).getAsInt()>a.get(axis+3).getAsInt())throw new JsonParseException("escapeBounds minimum exceeds maximum");
+        }
+
 		requireString(arguments, "itemId");
+		validateExpectedPlacementState(arguments);
 		validateFacePreference(arguments, "facePreference");
 		validateTargetMaterial(arguments, "requireCurrentTargetMaterial");
 		validateBlockTargetShape(arguments, target -> {
 			validateFacePreference(target, "facePreference");
 			validateTargetMaterial(target, "requireCurrentTargetMaterial");
+			validateExpectedPlacementState(target);
 		});
 	}
 
@@ -1248,6 +1276,7 @@ public final class PlannerToolCatalog {
 				prop("y", integer("Intended modified target block y coordinate.")),
 				prop("z", integer("Intended modified target block z coordinate.")),
 				prop("facePreference", enumString("Direction from the target cell to its support neighbor. Use down for the floor below (clicks its top), up for the ceiling above. Prefer auto unless a specific support is required. Overrides root default.", List.of("auto", "down", "north", "south", "east", "west", "up"))),
+				prop("expectedState", optionalString("Desired block state, including properties. Placement predicts and verifies this state; unspecified properties use block defaults. Example minecraft:oak_stairs[facing=south,half=bottom].")),
 				prop("requireCurrentTargetMaterial", enumString("Required current target material before placement. Overrides root default.", List.of("air", "replaceable", "air_or_replaceable")))
 			),
 			"required", List.of("x", "y", "z"),

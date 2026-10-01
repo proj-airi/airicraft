@@ -7,6 +7,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class PlannerToolCatalogTest {
+    @Test void validatesConstructionEscapeBounds() {
+        String args="{\"itemId\":\"stone\",\"x\":1,\"y\":64,\"z\":2,\"escapeBounds\":[0,60,0,9,70,9]}";
+        PlannerToolCatalog.parseToolCall(toolCall("place_block",args));
+        for(String bad:java.util.List.of("[1]","[0,60,0,-1,70,9]","[0,60,0,9.5,70,9]","[0,60,0,\"9\",70,9]"))
+            assertThrows(RuntimeException.class,()->PlannerToolCatalog.parseToolCall(toolCall("place_block",args.replace("[0,60,0,9,70,9]",bad))));
+    }
+
+	@Test void placementAcceptsDesiredStateAndRejectsNonStringState() {
+		String args = "{\"itemId\":\"minecraft:oak_stairs\",\"x\":1,\"y\":64,\"z\":2,\"expectedState\":\"minecraft:oak_stairs[facing=south,half=bottom]\"}";
+		assertEquals("minecraft:oak_stairs[facing=south,half=bottom]", PlannerToolCatalog.parseToolCall(toolCall("place_block", args)).arguments().get("expectedState").getAsString());
+		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("place_block", args.replace("\"minecraft:oak_stairs[facing=south,half=bottom]\"", "42"))));
+	}
 	@Test void foodPolicyCanBeReadAndChangedAtomically() {
 		assertEquals("configure_food", PlannerToolCatalog.parseToolCall(toolCall("configure_food", "{}")).name());
 		assertEquals("heal", PlannerToolCatalog.parseToolCall(toolCall("configure_food",

@@ -113,6 +113,22 @@ public final class BlueprintService {
         if(storageError!=null)out.addProperty("storageError",storageError);
         dashboardSnapshot=JSON.toJson(out);
     }
+    /** Pin the semantic draft as immutable construction input on the client thread. */
+    public synchronized List<BlueprintConstructionProgram.Cell> constructionCells(MinecraftClient client,int expectedRevision,BlockPos origin) {
+        requireDraft();
+        if(client.player==null || client.world==null || client.getServer()==null || ownerServer!=client.getServer()
+            || !client.getServer().getSavePath(WorldSavePath.ROOT).toString().equals(draftWorld))throw new IllegalStateException("construction_world_changed");
+        if(revision!=expectedRevision)throw new IllegalStateException("blueprint_revision_changed");
+        var result=new ArrayList<BlueprintConstructionProgram.Cell>();
+        for(var cell:draft.cells.values()) {
+            var p=cell.position().add(origin);
+            if(!client.world.isChunkLoaded(p) || !client.world.getWorldBorder().contains(p) || !p.isWithinDistance(client.player.getBlockPos(),128)
+                || p.getY()<client.world.getBottomY() || p.getY()>client.world.getTopYInclusive())throw new IllegalStateException("construction_out_of_loaded_nearby_world");
+            result.add(new BlueprintConstructionProgram.Cell(p.getX(),p.getY(),p.getZ(),Blueprint.stateText(cell.state()),
+                net.minecraft.registry.Registries.ITEM.getId(cell.state().getBlock().asItem()).toString(),cell.owner()));
+        }
+        return List.copyOf(result);
+    }
     private CompletableFuture<String> executeNow(JsonObject a,long expectedGeneration) {
         MinecraftClient client=MinecraftClient.getInstance();
         return CompletableFuture.supplyAsync(()->{

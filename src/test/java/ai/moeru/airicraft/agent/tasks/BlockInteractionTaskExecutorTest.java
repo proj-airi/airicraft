@@ -19,6 +19,35 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BlockInteractionTaskExecutorTest {
+    @Test void placementSearchUsesSideSupportWhenBelowSupportHasNoReachableStance() {
+        var current=new BlockPos(99,-55,34);var inside=new BlockPos(100,-55,34);
+        var checked=new java.util.ArrayList<String>();
+        var result=BlockInteractionTaskExecutor.placementStandsAcrossSupports(List.of("below","west"),support->{
+            checked.add(support);return support.equals("west")?List.of(inside):List.of();
+        },current);
+        assertEquals(List.of("below","west"),checked);
+        assertEquals(List.of(inside),result);
+    }
+    @Test void placementStancesFromMultipleFacesAreDeduplicatedAndPreferNoClimb() {
+        var current=new BlockPos(0,0,0);var level=new BlockPos(2,0,0);var high=new BlockPos(0,1,0);
+        assertEquals(List.of(level,high),BlockInteractionTaskExecutor.placementStandsAcrossSupports(List.of(1,2),s->List.of(high,level),current));
+    }
+
+	@Test void upperFloorEdgeCanUseVisibleGroundStanceThreeBlocksBelowTarget() {
+		var target = new BlockPos(96, -56, 36);
+		var stand = new BlockPos(96, -59, 37);
+		assertEquals(List.of(stand), BlockInteractionTaskExecutor.viablePlacementStandCandidates(
+			target, target.north(), new BlockPos(97, -56, 35), Set.of(),
+			stand::equals, p -> true, p -> true));
+	}
+	@Test void stairTopSupportsCenteredPlacementStance() {
+		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(
+			new Box(0, 0, 0, 1, .5, 1), new Box(0, .5, .5, 1, 1, 1))));
+		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, 1, 1, 1))));
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, 1, .5, 1))), "A bottom slab does not support integer-height feet");
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new Box(0, 0, 0, .1, 1, 1))), "Support must overlap the player's footprint");
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of()));
+	}
 	@Test
 	void roofLipCanBeClickedBelowItsOccludedFaceCenter() {
 		BlockPos support = new BlockPos(0, 136, 4);

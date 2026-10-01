@@ -6,8 +6,11 @@ import java.util.List;
 
 public record BlockPlacementStepArgs(
 	String itemId,
-	List<Target> targets
+	List<Target> targets,
+	ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds escapeBounds
 ) {
+	public BlockPlacementStepArgs(String itemId,List<Target> targets) { this(itemId,targets,null); }
+
 	public static final int MAX_TARGETS = BlockBreakStepArgs.MAX_TARGETS;
 
 	public BlockPlacementStepArgs(String itemId, GoalPosition targetPosition, String facePreference, String requiredTargetMaterial) {
@@ -49,8 +52,12 @@ public record BlockPlacementStepArgs(
 	public record Target(
 		GoalPosition targetPosition,
 		String facePreference,
-		String requiredTargetMaterial
+		String requiredTargetMaterial,
+		String expectedState
 	) {
+		public Target(GoalPosition position, String face, String material) {
+			this(position, face, material, null);
+		}
 		public Target {
 			targetPosition = targetPosition == null
 				? null
@@ -60,6 +67,7 @@ public record BlockPlacementStepArgs(
 			}
 			facePreference = normalizeOptional(facePreference);
 			requiredTargetMaterial = normalizeOptional(requiredTargetMaterial);
+			expectedState = normalizeOptional(expectedState);
 		}
 	}
 
