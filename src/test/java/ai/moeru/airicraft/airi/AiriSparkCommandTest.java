@@ -26,7 +26,8 @@ class AiriSparkCommandTest {
 			- Walk to Rin
 			- Wait there
 			Why: Rin asked
-			Context: Rin is at the house""", command.plannerText());
+			Context: Rin is at the house
+			""" + AiriSparkCommand.INSTRUCTION, command.plannerText());
 	}
 
 	@Test void severalOptionsAreNumbered() {
@@ -39,7 +40,8 @@ class AiriSparkCommandTest {
 			Command from AIRI, intent proposal.
 			Option 1: Mine iron
 			Option 2: Build a shelter
-			- Use cobblestone""", command.plannerText());
+			- Use cobblestone
+			""" + AiriSparkCommand.INSTRUCTION, command.plannerText());
 	}
 
 	@Test void aCommandWithoutAnIdIsRejected() {
@@ -53,6 +55,6 @@ class AiriSparkCommandTest {
 		String text = AiriSparkCommand.parse(data).plannerText();
 
 		assertEquals(AiriSparkCommand.MAX_TEXT_LENGTH, text.length());
-		assertTrue(text.endsWith("..."));
+		assertTrue(text.endsWith("...\n" + AiriSparkCommand.INSTRUCTION));
 	}
 }

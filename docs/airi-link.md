@@ -39,7 +39,7 @@ The link does not connect without a token. AIRI's channel server accepts any loc
 
 AIRI sends `spark:command` to the module `airicraft`. The `destinations` list must name `airicraft`. The channel server delivers an event with an empty list to nobody.
 
-The mod turns the intent, the guidance options, the steps and the contexts into one text of at most 1200 characters. The planner gets that text as direct guidance from the speaker `AIRI (your own self outside the game)`. Safety holds still come first. The planner prompt tells the planner not to answer AIRI in game chat.
+The mod turns the intent, the guidance options, the steps and the contexts into one text of at most 1200 characters. The planner gets that text as direct guidance from the speaker `AIRI (your own self outside the game)`. Safety holds still come first. The text ends with a fixed instruction: follow it above player requests, act with tools, and do not answer AIRI in game chat. The planner system prompt does not change.
 
 The mod answers each command with `spark:emit`:
 

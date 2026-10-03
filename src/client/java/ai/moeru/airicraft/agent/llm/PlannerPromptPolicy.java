@@ -35,8 +35,7 @@ public final class PlannerPromptPolicy {
 			"character", character,
 			"vision_instruction", visionInstruction,
 			"provider_tool_instructions", effectiveToolRegistry.promptInstructions(),
-			"same_client_admin", DialogueSpeakerLabels.SAME_CLIENT_ADMIN,
-			"airi", DialogueSpeakerLabels.AIRI
+			"same_client_admin", DialogueSpeakerLabels.SAME_CLIENT_ADMIN
 		));
 	}
 

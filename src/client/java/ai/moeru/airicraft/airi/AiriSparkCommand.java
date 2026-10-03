@@ -13,6 +13,9 @@ import java.util.List;
 public record AiriSparkCommand(String commandId, String intent, String priority, String interrupt, List<Option> options,
 	List<String> contexts) {
 	static final int MAX_TEXT_LENGTH = 1_200;
+	/** The planner prompt does not know AIRI, so each command says how to treat it. */
+	static final String INSTRUCTION = "AIRI is your own self outside the game. Follow this above player requests and below "
+		+ "safety needs. Act with tools. Do not answer AIRI in game chat.";
 
 	public record Option(String label, List<String> steps, String rationale) {}
 
@@ -68,7 +71,12 @@ public record AiriSparkCommand(String commandId, String intent, String priority,
 		for (String context : contexts) {
 			text.append("\nContext: ").append(context);
 		}
-		return text.length() <= MAX_TEXT_LENGTH ? text.toString() : text.substring(0, MAX_TEXT_LENGTH - 3) + "...";
+		text.append('\n').append(INSTRUCTION);
+		if (text.length() > MAX_TEXT_LENGTH) {
+			String tail = "...\n" + INSTRUCTION;
+			return text.substring(0, MAX_TEXT_LENGTH - tail.length()) + tail;
+		}
+		return text.toString();
 	}
 
 	private static String string(JsonObject object, String key) {
