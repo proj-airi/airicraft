@@ -1,6 +1,6 @@
 # Link to AIRI as the body
 
-Status: accepted (2026-10-03). Not implemented yet.
+Status: accepted (2026-10-03). Partly implemented. [AIRI link](../airi-link.md) gives the current state.
 
 ## Context
 

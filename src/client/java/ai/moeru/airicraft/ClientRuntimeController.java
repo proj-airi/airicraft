@@ -30,6 +30,7 @@ import ai.moeru.airicraft.agent.tasks.WorldTaskExecutor;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import ai.moeru.airicraft.dashboard.DashboardObservationCollector;
 import ai.moeru.airicraft.dashboard.DashboardObservationStore;
+import ai.moeru.airicraft.airi.AiriBody;
 import ai.moeru.airicraft.airi.AiriLink;
 import ai.moeru.airicraft.airi.AiriLinkStatus;
 import ai.moeru.airicraft.dashboard.DebugDashboardServer;
@@ -66,6 +67,7 @@ public final class ClientRuntimeController {
 	private final DashboardObservationCollector dashboardObservationCollector;
 	private final DebugDashboardServer debugDashboardServer;
 	private final AiriLink airiLink = AiriLink.create();
+	private final AiriBody airiBody = new AiriBody(airiLink, this::currentAgentRuntime);
 	private String announcedDashboardUrl = "";
 	private long lastDashboardCaptureFailureLogAtMs;
 	private final PlannerDebugOverlay plannerDebugOverlay = new PlannerDebugOverlay();
@@ -260,6 +262,7 @@ public final class ClientRuntimeController {
 			}
 		}
 		automaticPlaytest.onClientTick(minecraft);
+		airiBody.tick(minecraft);
 		pollConversationScrollKeys(minecraft);
 		announceDashboardUrl(minecraft);
 	}
@@ -471,6 +474,7 @@ public final class ClientRuntimeController {
 		bridgeServer.stop();
 		debugDashboardServer.stop();
 		dashboardObservationCollector.close();
+		airiBody.close();
 		airiLink.close();
 	}
 

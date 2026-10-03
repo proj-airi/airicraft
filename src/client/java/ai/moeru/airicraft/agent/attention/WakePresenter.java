@@ -34,6 +34,7 @@ public final class WakePresenter {
 			case "social.player_spoke" -> createPlayerSpokeTrigger(event);
 			case "social.player_addressed_agent" -> createAddressedChatTrigger(event);
 			case "social.local_controller_spoke" -> createLocalControllerTrigger(event);
+			case "social.airi_commanded" -> createAiriCommandTrigger(event);
 			case "social.system_message" -> createSystemTrigger(event);
 			case "pickup.item_picked_up" -> createPickupTrigger(event);
 			case "social.item_offered" -> createItemOfferTrigger(event);
@@ -81,6 +82,14 @@ public final class WakePresenter {
 			event.tick(),
 			event.timestampMs()
 		);
+	}
+
+	private PlannerTrigger createAiriCommandTrigger(SemanticEvent event) {
+		String message = stringPayloadValue(event.payload(), "message");
+		if (message == null) {
+			return null;
+		}
+		return PlannerTrigger.direct(PlannerTriggerType.CHAT, DialogueSpeakerLabels.AIRI, message, event.tick(), event.timestampMs());
 	}
 
 	private PlannerTrigger createSystemTrigger(SemanticEvent event) {
