@@ -17,7 +17,7 @@ The mod has two tracks:
 - **Standalone.** The built-in planner is the brain. It plays the character from `character.json`, talks in game chat and decides all work. This is the behavior before the link. It is the default, and it needs no AIRI.
 - **Linked.** AIRI is the self, and the mod is the body. The rest of this decision describes this track.
 
-The `airi.enabled` setting selects the track. The standalone track must keep working without AIRI. With the link off, the link code opens no connection and does no work on the client tick. The planner prompt is the same on both tracks, so AIRI-specific instructions travel with each AIRI command.
+The `airi.enabled` setting selects the track. The standalone track must keep working without AIRI. With the link off, the link code opens no connection and does no work on the client tick. Each track has its own planner system prompt. The linked prompt is the standalone prompt plus an AIRI body section from `prompts/planner-airi-body.md`. The section tells the planner that AIRI is its self and how to treat AIRI commands.
 
 In the linked track, AIRI is the self. Airicraft is the body.
 

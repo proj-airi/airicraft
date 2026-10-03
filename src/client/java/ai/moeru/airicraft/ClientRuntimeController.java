@@ -496,6 +496,8 @@ public final class ClientRuntimeController {
 	private EmbodiedAgentRuntime createRuntime(AiricraftConfig airicraftConfig, AgentConfig agentConfig, RuleModule attentionRules,
 		RuleModule salienceRules) {
 		PathfindSettings.reset();
+		AgentConfig runtimeConfig = agentConfig.withPlannerMode(airicraftConfig.airi().enabled()
+			? ai.moeru.airicraft.agent.llm.PlannerMode.AIRI_BODY : ai.moeru.airicraft.agent.llm.PlannerMode.STANDALONE);
 		var miningOpportunityPolicy = new ai.moeru.airicraft.agent.tasks.MiningOpportunityPolicyState();
 		var miningOpportunityJournal = new ai.moeru.airicraft.agent.tasks.MiningOpportunityJournal();
 		SmeltingProcessManager smeltingProcessManager = new SmeltingProcessManager();
@@ -523,10 +525,10 @@ public final class ClientRuntimeController {
 		);
 		EmbodiedAgentRuntime runtime = new EmbodiedAgentRuntime(
 			airicraftConfig,
-			agentConfig,
+			runtimeConfig,
 			screenshotService,
 			worldTaskExecutor,
-			AgentObservability.create(agentConfig.observability()),
+			AgentObservability.create(runtimeConfig.observability()),
 			smeltingProcessManager,
 			cameraController,
 			navigationFacade,

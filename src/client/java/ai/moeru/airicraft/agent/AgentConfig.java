@@ -1,6 +1,7 @@
 package ai.moeru.airicraft.agent;
 
 import ai.moeru.airicraft.agent.character.CharacterCard;
+import ai.moeru.airicraft.agent.llm.PlannerMode;
 
 public record AgentConfig(
 	boolean verificationEnabled,
@@ -10,7 +11,8 @@ public record AgentConfig(
 	ReflexConfig reflex,
 	ObservabilityConfig observability,
 	CharacterCard character,
-	PerceptionConfig perception
+	PerceptionConfig perception,
+	PlannerMode plannerMode
 ) {
 	public AgentConfig {
 		llm = llm == null ? LlmConfig.defaults() : llm;
@@ -19,6 +21,20 @@ public record AgentConfig(
 		observability = observability == null ? ObservabilityConfig.defaults() : observability;
 		character = character == null ? CharacterCard.defaults() : character;
 		perception = perception == null ? PerceptionConfig.defaults() : perception;
+		plannerMode = plannerMode == null ? PlannerMode.STANDALONE : plannerMode;
+	}
+
+	public AgentConfig(
+		boolean verificationEnabled,
+		boolean verificationAutoRunAll,
+		LlmConfig llm,
+		IdleConfig idle,
+		ReflexConfig reflex,
+		ObservabilityConfig observability,
+		CharacterCard character,
+		PerceptionConfig perception
+	) {
+		this(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, character, perception, null);
 	}
 
 	public AgentConfig(
@@ -46,7 +62,14 @@ public record AgentConfig(
 
 	/** The character comes from its own file, not agent.yml; loaders attach it here. */
 	public AgentConfig withCharacter(CharacterCard nextCharacter) {
-		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, nextCharacter, perception);
+		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, nextCharacter, perception,
+			plannerMode);
+	}
+
+	/** The mode comes from the AIRI link setting in airicraft.yml; the runtime controller attaches it here. */
+	public AgentConfig withPlannerMode(PlannerMode nextPlannerMode) {
+		return new AgentConfig(verificationEnabled, verificationAutoRunAll, llm, idle, reflex, observability, character, perception,
+			nextPlannerMode);
 	}
 
 	public AgentConfig(

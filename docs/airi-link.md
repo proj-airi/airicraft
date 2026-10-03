@@ -10,7 +10,7 @@ The link does not yet read the character card from `module:configure` or send `o
 
 ## Standalone and linked
 
-Without the link, the mod runs standalone. The built-in planner is the brain and plays the character from `character.json`. This is the default. With the link on, AIRI is the self and the mod is the body. Set `airi.enabled: false` and run `/airicraft reload` to go back to standalone.
+Without the link, the mod runs standalone. The built-in planner is the brain and plays the character from `character.json`. This is the default. With the link on, AIRI is the self and the mod is the body, and the planner gets the linked system prompt. Set `airi.enabled: false` and run `/airicraft reload` to go back to standalone.
 
 ## Turn it on
 
@@ -43,7 +43,7 @@ The link does not connect without a token. AIRI's channel server accepts any loc
 
 AIRI sends `spark:command` to the module `airicraft`. The `destinations` list must name `airicraft`. The channel server delivers an event with an empty list to nobody.
 
-The mod turns the intent, the guidance options, the steps and the contexts into one text of at most 1200 characters. The planner gets that text as direct guidance from the speaker `AIRI (your own self outside the game)`. Safety holds still come first. The text ends with a fixed instruction: follow it above player requests, act with tools, and do not answer AIRI in game chat. The planner system prompt does not change.
+The mod turns the intent, the guidance options, the steps and the contexts into one text of at most 1200 characters. The planner gets that text as direct guidance from the speaker `AIRI (your own self outside the game)`. Safety holds still come first. With the link on, the planner system prompt adds an AIRI body section from `src/client/resources/prompts/planner-airi-body.md`. It tells the planner to follow AIRI above player requests, to act with tools and not to answer AIRI in game chat. The standalone prompt does not change.
 
 The mod answers each command with `spark:emit`:
 
