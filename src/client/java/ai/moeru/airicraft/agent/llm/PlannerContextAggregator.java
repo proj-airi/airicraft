@@ -18,6 +18,7 @@ public final class PlannerContextAggregator {
 	private final PlannerToolRegistry toolRegistry;
 	private final boolean backendManagedHistory;
 	private final String characterPrompt;
+	private final PlannerMode plannerMode;
 
 	private String fixedSystemPrompt;
 	private boolean decisionContextEnabled;
@@ -59,6 +60,19 @@ public final class PlannerContextAggregator {
 		boolean backendManagedHistory,
 		String characterPrompt
 	) {
+		this(clock, compactionTriggerTokens, visionMode, toolRegistry, backendManagedHistory, characterPrompt, PlannerMode.STANDALONE);
+	}
+
+	/** The planner mode selects the system prompt. */
+	public PlannerContextAggregator(
+		Clock clock,
+		int compactionTriggerTokens,
+		PlannerVisionMode visionMode,
+		PlannerToolRegistry toolRegistry,
+		boolean backendManagedHistory,
+		String characterPrompt,
+		PlannerMode plannerMode
+	) {
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.zoneId = clock.getZone();
 		this.compactionTriggerTokens = compactionTriggerTokens;
@@ -66,6 +80,7 @@ public final class PlannerContextAggregator {
 		this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry");
 		this.backendManagedHistory = backendManagedHistory;
 		this.characterPrompt = characterPrompt;
+		this.plannerMode = Objects.requireNonNull(plannerMode, "plannerMode");
 	}
 
 	public boolean compactionPending() {
@@ -433,8 +448,8 @@ public final class PlannerContextAggregator {
 	}
 
 	private String systemPrompt() {
-		if (!toolRegistry.hasFixedPrefix()) return PlannerPromptPolicy.systemPrompt(visionMode, toolRegistry, characterPrompt);
-		if (fixedSystemPrompt == null) fixedSystemPrompt = PlannerPromptPolicy.systemPrompt(visionMode, toolRegistry, characterPrompt);
+		if (!toolRegistry.hasFixedPrefix()) return PlannerPromptPolicy.systemPrompt(visionMode, toolRegistry, characterPrompt, plannerMode);
+		if (fixedSystemPrompt == null) fixedSystemPrompt = PlannerPromptPolicy.systemPrompt(visionMode, toolRegistry, characterPrompt, plannerMode);
 		return fixedSystemPrompt;
 	}
 

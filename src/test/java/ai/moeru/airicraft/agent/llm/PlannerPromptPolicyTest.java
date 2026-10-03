@@ -2,11 +2,13 @@ package ai.moeru.airicraft.agent.llm;
 
 import ai.moeru.airicraft.agent.character.CharacterCard;
 import ai.moeru.airicraft.agent.character.CharacterPrompt;
+import ai.moeru.airicraft.agent.dialogue.DialogueSpeakerLabels;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -126,5 +128,27 @@ class PlannerPromptPolicyTest {
 		assertTrue(prompt.startsWith("You are Airi,"));
 		assertTrue(priorities > 0 && rules > priorities);
 		assertTrue(prompt.contains("Be a responsive teammate, as talkative as your character."));
+	}
+
+	@Test
+	void theStandaloneModeKeepsTheStandalonePrompt() {
+		String character = CharacterPrompt.render(CharacterCard.defaults(), "Airi");
+
+		assertEquals(PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, PlannerToolRegistry.empty(), character),
+			PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, PlannerToolRegistry.empty(), character, PlannerMode.STANDALONE));
+	}
+
+	@Test
+	void theAiriBodyModeAddsTheBodySectionAfterTheStandalonePrompt() {
+		String character = CharacterPrompt.render(CharacterCard.defaults(), "Airi");
+		String standalone = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, PlannerToolRegistry.empty(), character);
+
+		String body = PlannerPromptPolicy.systemPrompt(PlannerVisionMode.EXTERNAL_SUMMARY, PlannerToolRegistry.empty(), character,
+			PlannerMode.AIRI_BODY);
+
+		assertTrue(body.startsWith(standalone.stripTrailing() + "\n\nAIRI BODY\n"));
+		assertTrue(body.contains("Messages from \"" + DialogueSpeakerLabels.AIRI + "\" are your own intentions"));
+		assertFalse(standalone.contains("AIRI BODY"));
+		assertFalse(body.contains("{{"));
 	}
 }

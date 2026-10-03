@@ -2019,6 +2019,30 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return chatService.lastChatText();
 	}
 
+	/**
+	 * Gives a command from AIRI to the planner as direct guidance. Call it on the client thread.
+	 * Returns why the planner cannot take it, or null when the planner takes it.
+	 */
+	public String onAiriCommand(String commandId, String guidance) {
+		if (!plannerEnabled()) {
+			return "the planner is off";
+		}
+		if (!sessionSnapshot.worldLoaded()) {
+			return "no world is loaded";
+		}
+		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.airi_commanded", Map.of(
+			"commandId", commandId,
+			"message", guidance
+		));
+		drainEventPipeline();
+		return null;
+	}
+
+	/** Delivers agent events of the matching types to the subscriber on the client thread. */
+	public AgentEventBus.Subscription subscribeEvents(java.util.function.Predicate<String> types, java.util.function.Consumer<SemanticEvent> subscriber) {
+		return eventBus.subscribe(types, subscriber);
+	}
+
 	public void onChatReceived(String senderName, String plainTextMessage) {
 		if (isAgentChatEcho(
 			senderName,

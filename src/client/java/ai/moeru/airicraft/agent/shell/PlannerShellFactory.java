@@ -253,7 +253,7 @@ public final class PlannerShellFactory {
 		PlannerOrchestrator orchestrator = createOrchestrator(controllerConfig, toolRegistry, visionService, inventoryService,
 			effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 			effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, plannerCallJournal),
-			dual ? cacheSession + ":controller" : null, characterPrompt, backendFactory);
+			dual ? cacheSession + ":controller" : null, characterPrompt, config.plannerMode(), backendFactory);
 		controllerRef.set(orchestrator);
 		DialogueRuntime dialogue = new DialogueRuntime(orchestrator, config.llm().maxRecentConversationTurns(), effectiveClock, plannerGoal);
 		dialogue.configureCoalescing(config.llm().plannerSessionCoalesceStepMillis(), config.llm().plannerSessionCoalesceMinMillis(),
@@ -284,7 +284,7 @@ public final class PlannerShellFactory {
 			var thinker = createOrchestrator(thinkingConfig, thinkingRegistry, visionService, inventoryService,
 				effectiveClock, observability, debugRecorder, effectiveActionToolExecutor, effectiveChatSink,
 				effectiveToolExecutionObserver, CompositePlannerLifecycleListener.of(journal, thinkingCalls, handoffEvidence), cacheSession + ":thinking",
-				characterPrompt, backendFactory);
+				characterPrompt, config.plannerMode(), backendFactory);
 			var generations = new java.util.concurrent.atomic.AtomicLong(1L);
 			orchestrator.shareGenerationSequence(generations);
 			thinker.shareGenerationSequence(generations);
@@ -297,7 +297,7 @@ public final class PlannerShellFactory {
 		CurrentViewVisionService vision, CurrentInventoryService inventory, Clock clock, AgentObservability observability,
 		AgentDebugRecorder debug, PlannerActionToolExecutor actions, PlannerChatSink chat,
 		PlannerToolExecutionObserver toolObserver, ai.moeru.airicraft.agent.llm.PlannerLifecycleListener listener, String cacheKey,
-		String characterPrompt, java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory) {
+		String characterPrompt, ai.moeru.airicraft.agent.llm.PlannerMode plannerMode, java.util.function.Function<AgentConfig.LlmConfig, LlmBackend> backendFactory) {
 		LlmBackend backend = backendFactory != null ? backendFactory.apply(llm) : switch (llm.plannerBackend()) {
 			case OPENAI_COMPATIBLE -> new OpenAiCompatibleLlmBackend(llm, observability, tools, cacheKey);
 			case CODEX_APP_SERVER -> new CodexAppServerLlmBackend(llm, observability, tools);
@@ -306,7 +306,7 @@ public final class PlannerShellFactory {
 			new PlannerCompactionService(new OpenAiCompatibleChatClient(llm, observability, tools,
 				cacheKey == null ? null : cacheKey + ":compaction"), observability),
 			new PlannerContextAggregator(clock, llm.plannerCompactionTriggerTokens(),
-				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt), vision, inventory, llm.plannerVisionMode(),
+				llm.plannerVisionMode(), tools, llm.backendManagedHistory(), characterPrompt, plannerMode), vision, inventory, llm.plannerVisionMode(),
 			llm.visionImageDetail(), 1, clock, observability,
 			listener, debug, actions, chat, tools, toolObserver, llm.plannerMaxImages(),
 			new ai.moeru.airicraft.agent.llm.PlannerVisionService(llm, observability));
