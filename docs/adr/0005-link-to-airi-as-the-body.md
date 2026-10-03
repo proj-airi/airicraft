@@ -12,7 +12,14 @@ AIRI already has a protocol for sub-agents on its channel server. A sub-agent se
 
 ## Decision
 
-AIRI is the self. Airicraft is the body.
+The mod has two tracks:
+
+- **Standalone.** The built-in planner is the brain. It plays the character from `character.json`, talks in game chat and decides all work. This is the behavior before the link. It is the default, and it needs no AIRI.
+- **Linked.** AIRI is the self, and the mod is the body. The rest of this decision describes this track.
+
+The `airi.enabled` setting selects the track. The standalone track must keep working without AIRI. With the link off, the link code opens no connection and does no work on the client tick. The planner prompt is the same on both tracks, so AIRI-specific instructions travel with each AIRI command.
+
+In the linked track, AIRI is the self. Airicraft is the body.
 
 | Concern | Owner |
 | --- | --- |

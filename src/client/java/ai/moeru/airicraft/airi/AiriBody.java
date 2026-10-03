@@ -35,6 +35,12 @@ public final class AiriBody implements AutoCloseable {
 	}
 
 	public void tick(Minecraft minecraft) {
+		if (link.state() == AiriLink.State.DISABLED) {
+			// The standalone track: the planner is the only brain, and this class does no work.
+			close();
+			linkReady = false;
+			return;
+		}
 		follow(runtimes.get());
 		boolean ready = link.state() == AiriLink.State.READY;
 		if (ready && !linkReady) {

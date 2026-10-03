@@ -8,6 +8,10 @@ The link connects, authenticates, announces the module `airicraft`, sends heartb
 
 The link does not yet read the character card from `module:configure` or send `output:speech`. Those parts come in later changes.
 
+## Standalone and linked
+
+Without the link, the mod runs standalone. The built-in planner is the brain and plays the character from `character.json`. This is the default. With the link on, AIRI is the self and the mod is the body. Set `airi.enabled: false` and run `/airicraft reload` to go back to standalone.
+
 ## Turn it on
 
 1. In AIRI, open Settings > Connection and set the channel server token.
