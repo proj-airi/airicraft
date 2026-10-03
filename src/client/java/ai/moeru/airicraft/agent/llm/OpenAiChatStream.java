@@ -20,6 +20,7 @@ final class OpenAiChatStream implements Flow.Subscriber<String> {
 	private String finishReason;
 	private boolean done;
 	private int characters;
+	private int payloadCharacters;
 
 	OpenAiChatStream(Consumer<String> preview) {
 		this.preview = preview;
@@ -32,7 +33,8 @@ final class OpenAiChatStream implements Flow.Subscriber<String> {
 
 	@Override public void onNext(String line) {
 		characters += line.length();
-		if (characters > 4 * 1024 * 1024) throw new JsonParseException("Planner stream exceeds 4 MiB");
+		// Some providers repeat a status envelope on every token chunk, so raw size is only a coarse guard; the payload cap below is the real bound.
+		if (characters > 64 * 1024 * 1024) throw new JsonParseException("Planner stream exceeds 64 MiB");
 		if (line.isEmpty()) {
 			if (!frame.isEmpty()) acceptFrame();
 		} else if (line.startsWith("data:")) {
@@ -59,6 +61,7 @@ final class OpenAiChatStream implements Flow.Subscriber<String> {
 			if (choice.has("finish_reason") && !choice.get("finish_reason").isJsonNull()) finishReason = choice.get("finish_reason").getAsString();
 			if (!choice.has("delta") || choice.get("delta").isJsonNull()) continue;
 			JsonObject delta = choice.getAsJsonObject("delta");
+			countPayload(delta, "reasoning");
 			append(message, delta, "reasoning_content", "Reasoning");
 			append(message, delta, "content", "Response");
 			if (!delta.has("tool_calls") || delta.get("tool_calls").isJsonNull()) continue;
@@ -77,10 +80,20 @@ final class OpenAiChatStream implements Flow.Subscriber<String> {
 		}
 	}
 
+	private void countPayload(JsonObject delta, String key) {
+		if (delta.has(key) && delta.get(key).isJsonPrimitive()) addPayload(delta.get(key).getAsString().length());
+	}
+
+	private void addPayload(int length) {
+		payloadCharacters += length;
+		if (payloadCharacters > 4 * 1024 * 1024) throw new JsonParseException("Planner stream exceeds 4 MiB");
+	}
+
 	private void append(JsonObject target, JsonObject delta, String key, String nextChannel) {
 		if (!delta.has(key) || delta.get(key).isJsonNull()) return;
 		String text = delta.get(key).getAsString();
 		if (text.isEmpty()) return;
+		addPayload(text.length());
 		target.addProperty(key, (target.has(key) ? target.get(key).getAsString() : "") + text);
 		if (nextChannel != null) {
 			if (!channel.equals(nextChannel)) {

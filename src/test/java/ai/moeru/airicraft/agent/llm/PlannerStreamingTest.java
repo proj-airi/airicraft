@@ -21,6 +21,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class PlannerStreamingTest {
 	private static final LlmConversation CONVERSATION = LlmConversation.of(List.of(LlmChatMessage.system("test")));
 
+	@Test void providerEnvelopeOverheadDoesNotCountAgainstPayloadCap() {
+		var stream = new OpenAiChatStream(ignored -> { });
+		String envelope = "x".repeat(400);
+		// 20k chunks of one reasoning token each carry ~8 MiB of provider status text but almost no payload.
+		for (int i = 0; i < 20_000; i++) {
+			stream.onNext("data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning\":\"a\"},\"runinfra\":{\"m\":\"" + envelope + "\"}}]}");
+			stream.onNext("");
+		}
+		stream.onNext("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}");
+		stream.onNext("");
+		assertTrue(stream.response().contains("\"ok\""));
+		var big = new OpenAiChatStream(ignored -> { });
+		String chunk = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" + "y".repeat(1 << 20) + "\"}}]}";
+		assertThrows(com.google.gson.JsonParseException.class, () -> { for (int i = 0; i < 5; i++) { big.onNext(chunk); big.onNext(""); } });
+	}
+
 	@Test void streamsBeforeCompletionAndAssemblesReasoningToolsAndUsage() throws Exception {
 		var firstToken = new CountDownLatch(1);
 		var release = new CountDownLatch(1);
