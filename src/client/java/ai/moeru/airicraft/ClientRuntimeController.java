@@ -405,6 +405,7 @@ public final class ClientRuntimeController {
 	}
 
 	public synchronized ReloadResult reload() {
+		ai.moeru.airicraft.agent.modded.ClientItemGroups.install();
 		AiricraftConfig nextConfig;
 		AgentConfig nextAgentConfig;
 		IdleIdeasConfig nextIdleIdeasConfig;
