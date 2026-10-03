@@ -5,6 +5,10 @@ function Component({id, type='Component', at=[0,0,0], rotate=0, children=[], ...
 function Assembly(p) { return Component({type:'Assembly',...p}); }
 function Solid({size, material, ...p}) { return Component({type:'Solid',volume:{size,state:material},...p}); }
 function Clearance({size,...p}) { return Solid({type:'Clearance',size,material:'air',...p}); }
+// Natural obstacles (trees, leaves, mushrooms listed in input.terrain.obstacles) inside the build volume must be removed, not built around.
+// SiteClearance yields: any other component may occupy its cells without `replaces`, so size it generously over the footprint and roof space.
+// Keep it above ground (local y > surface); it breaks whatever is there, including soil.
+function SiteClearance({size,...p}) { return Clearance({size,yields:true,...p}); }
 function Floor(p) { return Solid({type:'Floor',...p}); }
 function Window({id,at=[0,0,0],width=3,height=2,material='glass',...p}) {
   return Solid({id,at,type:'Window',size:[width,height,1],material,...p});

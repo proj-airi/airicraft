@@ -21,4 +21,20 @@ class BlueprintDiagnosticsTest {
         var error=assertThrows(IllegalArgumentException.class,()->new Blueprint(tree,null));
         assertTrue(error.getMessage().contains("replaces:[\"a.wall\"]"),error.getMessage());
     }
+    @Test void yieldingClearanceDoesNotConflictInEitherOrder(){
+        String clear="{\"id\":\"clear\",\"yields\":true,\"volume\":{\"size\":[2,1,1],\"state\":\"minecraft:air\"}}";
+        String wall="{\"id\":\"wall\",\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:stone\"}}";
+        for(String children:new String[]{clear+","+wall,wall+","+clear}){
+            var blueprint=new Blueprint(JsonParser.parseString("{\"id\":\"a\",\"children\":["+children+"]}").getAsJsonObject(),null);
+            var origin=blueprint.cells.get(net.minecraft.core.BlockPos.ZERO);
+            assertEquals("a.wall",origin.owner(),children);
+            assertEquals("a.clear",blueprint.cells.get(new net.minecraft.core.BlockPos(1,0,0)).owner());
+        }
+    }
+    @Test void missingIdIsNamedNotANullPointer(){
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":[{\"type\":\"WalkableArea\"}]}").getAsJsonObject();
+        var error=assertThrows(IllegalArgumentException.class,()->new Blueprint(tree,null));
+        assertTrue(error.getMessage().startsWith("missing_component_id"),error.getMessage());
+        assertTrue(error.getMessage().contains("WalkableArea"),error.getMessage());
+    }
 }

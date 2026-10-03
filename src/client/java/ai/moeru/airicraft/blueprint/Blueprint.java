@@ -16,6 +16,7 @@ public final class Blueprint {
     public final List<Map<String,Object>> components = new ArrayList<>();
     private final Set<String> paths = new HashSet<>();
     private final Map<String,Integer> surface;
+    private final Set<String> softOwners=new HashSet<>();
     public final JsonObject tree;
     public Blueprint(JsonObject tree, Map<String,Integer> surface) {
         this.tree = tree.deepCopy(); this.surface = surface;
@@ -23,6 +24,7 @@ public final class Blueprint {
     }
     private void visit(JsonObject node,String parent,BlockPos origin,int rotation,List<String> inherited,JsonObject inheritedGuidance,int depth) {
         if(depth>24 || components.size()>512) throw new IllegalArgumentException("component_limit");
+        if(!node.has("id")||!node.get("id").isJsonPrimitive()) throw new IllegalArgumentException("missing_component_id: every component needs a unique string id"+(node.has("type")?" (type "+node.get("type").getAsString()+" under "+(parent.isEmpty()?"root":parent)+")":""));
         String id=node.get("id").getAsString();
         if(!id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("invalid_component_id: "+id);
         String path=parent.isEmpty()?id:parent+"."+id;
@@ -31,6 +33,7 @@ public final class Blueprint {
         int turn=node.has("rotate")?node.get("rotate").getAsInt():0;
         if(turn%90!=0) throw new IllegalArgumentException("rotation_must_be_quarter_turn");
         int rot=Math.floorMod(rotation+turn,360);
+        if(node.has("yields")&&node.get("yields").getAsBoolean()) softOwners.add(path);
         var allowed=new ArrayList<>(inherited);
         if(node.has("replaces")) {
             var replace=node.get("replaces");
@@ -80,8 +83,10 @@ public final class Blueprint {
         if(Math.abs(p.getX())>128||Math.abs(p.getY())>128||Math.abs(p.getZ())>128||cells.size()>=8192) throw new IllegalArgumentException("blueprint_bounds_limit");
         Cell old=cells.get(p);
         var history=new ArrayList<String>();
+        // A yielding component (site clearing) never displaces another component's cell and is displaced by any later one.
+        if(old!=null&&softOwners.contains(path)) return;
         if(old!=null) {
-            boolean permitted=path.startsWith(old.owner()+".")||allowed.stream().anyMatch(a->old.owner().equals(a)||old.owner().startsWith(a+"."));
+            boolean permitted=softOwners.contains(old.owner())||path.startsWith(old.owner()+".")||allowed.stream().anyMatch(a->old.owner().equals(a)||old.owner().startsWith(a+"."));
             if(!permitted) throw new IllegalArgumentException("component_conflict at "+xyz(p)+": "+old.owner()+" vs "+path
                 +". To overlap on purpose, give "+path+" (or an ancestor) replaces:[\""+old.owner()+"\"] using the exact full dotted path; shorter relative names do not match.");
             history.addAll(old.contributors());
