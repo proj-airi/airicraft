@@ -64,11 +64,17 @@ public final class Blueprint {
             for(int x=0;x<size.getX();x++) for(int z=0;z<size.getZ();z++) {
                 Integer ground=surface.get((at.getX()+x)+","+(at.getZ()+z));
                 if(ground==null) throw new IllegalArgumentException("unsampled_foundation_column");
-                if(ground>=at.getY()) throw new IllegalArgumentException("terrain_intersects_floor");
+                if(ground>=at.getY()) throw new IllegalArgumentException("terrain_intersects_floor at column "+(at.getX()+x)+","+(at.getZ()+z)+": ground top is local y="+ground+" but foundation "+path+" floor is local y="+at.getY()
+                    +"; highest ground under its footprint is y="+footprintMax(at,size)+". Raise the foundation/floor to at least that +1 (foundation blocks fill y=ground+1..floor-1) or lower the site; use Clearance to remove blocks above ground.");
                 for(int y=ground+1;y<at.getY();y++) put(new BlockPos(at.getX()+x,y,at.getZ()+z),state,path,allowed);
             }
         }
         if(node.has("children")) for(JsonElement child:node.getAsJsonArray("children")) visit(child.getAsJsonObject(),path,at,rot,allowed,guidance,depth+1);
+    }
+    private int footprintMax(BlockPos at,BlockPos size) {
+        int max=Integer.MIN_VALUE;
+        for(int x=0;x<size.getX();x++) for(int z=0;z<size.getZ();z++){Integer g=surface.get((at.getX()+x)+","+(at.getZ()+z));if(g!=null)max=Math.max(max,g);}
+        return max;
     }
     private void put(BlockPos p,BlockState state,String path,List<String> allowed) {
         if(Math.abs(p.getX())>128||Math.abs(p.getY())>128||Math.abs(p.getZ())>128||cells.size()>=8192) throw new IllegalArgumentException("blueprint_bounds_limit");
@@ -76,7 +82,8 @@ public final class Blueprint {
         var history=new ArrayList<String>();
         if(old!=null) {
             boolean permitted=path.startsWith(old.owner()+".")||allowed.stream().anyMatch(a->old.owner().equals(a)||old.owner().startsWith(a+"."));
-            if(!permitted) throw new IllegalArgumentException("component_conflict at "+xyz(p)+": "+old.owner()+" vs "+path);
+            if(!permitted) throw new IllegalArgumentException("component_conflict at "+xyz(p)+": "+old.owner()+" vs "+path
+                +". To overlap on purpose, give "+path+" (or an ancestor) replaces:[\""+old.owner()+"\"] using the exact full dotted path; shorter relative names do not match.");
             history.addAll(old.contributors());
         }
         history.add(path); cells.put(p,new Cell(p,state,path,List.copyOf(history)));
