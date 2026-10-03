@@ -1745,3 +1745,24 @@ completed successfully (`/tmp/structure-final-tests.log`): root 2,081 tests,
 4 expected skips, zero failures/errors; unchanged navigation-core 79 and wrapper
 100 reports were up-to-date. `git diff --check` passed. Actual client-process
 absence was verified before this build.
+
+
+### Live LLM designer on natural terrain (2026-10-03)
+
+First end-to-end trial of `design_blueprint` (glm-5-3-flash, reasoning effort `low`, OpenAI-compatible provider) followed by `construct_blueprint` in Survival on the natural-terrain `Blueprint-Terrain` world (seed 42, features on), headless under Xvfb. Materials and tools were supplied with the driver-only `prepare` `give` option. One designer run per site; not a statistical result.
+
+Problems found and fixed on this branch:
+
+- **Provider stream cap.** The runinfra stream repeats a status envelope on every token chunk, so a long reasoning turn exceeded the old 4 MiB raw-line cap after about 9k tokens. The cap now bounds accumulated payload text; raw size keeps a coarse 64 MiB guard.
+- **Trees counted as ground.** `sample` used the no-leaves heightmap, so logs and giant mushrooms became "surface" and Foundation built on top of trunks (spikes of +4..+6 in a sloped forest). `sample` now looks through logs, leaves, mushroom blocks, vines, cactus and bamboo (and the air under floating canopies) to the soil, and adds `terrain.obstacles` (per column, run-length `block@y0..y1` in local y).
+- **Error text did not name the fix.** `terrain_intersects_floor` now gives the column, floor and highest ground; `component_conflict` spells out the exact full dotted `replaces` path; a component with no `id` reports `missing_component_id` instead of a NullPointerException. With the old text the model spent all 16 iterations looping on these.
+- **Site clearing conflicted with everything.** `SiteClearance` (a Clearance with `yields: true`) never displaces another component's cell and is displaced by any later one, so it is order-independent and needs no `replaces`. It is an experiment; the designer is told to size it to the building volume.
+
+Live construction results (Survival, flight disabled, no construction LLM calls):
+
+| Site | Ground | Result |
+| --- | --- | --- |
+| Dark-oak/giant-mushroom forest, origin `[0,71,32]`, oak cabin rev 6 (864 cells, 12-block-tall clearance) | -4..+2, 178 obstacle columns | **Failed**, `construction_no_feasible_target`: 165 placed, 262 cells left, 352 failed attempts, 817 blocks travelled, 42 scaffolds placed and removed. Placement failures were `safe_stand_position_not_found` on upper walls and roof; giant mushrooms and a trunk stood right beside the footprint, outside the clearance. The model's clearance reached 12 blocks up through the canopy, which forced scaffold towers just to break leaves. |
+| Obstacle-free sandy slope, origin `[60,65,20]`, oak cabin rev 11 (438 cells, cobblestone foundation following a 3-block drop) | -3..+2, no obstacles | **Failed late**: 282 placed, 15 cells left (the last target was a glass pane at `[74,70,21]`, `safe_stand_position_not_found attemptedStandPositions=0`), 409 failed attempts, 13,546 ticks, scaffolds fully removed. Visually a complete cabin on its foundation; the slope itself was handled. |
+
+Open questions: why stand-position search yields zero candidates for window panes on the high side of a slope (suspect the escape guard); whether clearance should be derived from `terrain.obstacles` by the program instead of authored; and designer drift from the brief (the first draft used white concrete despite a material list).
