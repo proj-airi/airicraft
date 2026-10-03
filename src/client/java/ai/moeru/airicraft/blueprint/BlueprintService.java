@@ -243,6 +243,13 @@ public final class BlueprintService {
                         case "survival" -> GameType.SURVIVAL;
                         default -> throw new IllegalArgumentException("gameMode must be creative or survival");
                     };
+                    // Driver-only test setup: top up the inventory so Survival runs need no offline save edits.
+                    if(a.has("give")){for(var entry:a.getAsJsonObject("give").entrySet()){
+                        var item=net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(net.minecraft.resources.ResourceLocation.parse(entry.getKey()));
+                        if(item==net.minecraft.world.item.Items.AIR)throw new IllegalArgumentException("unknown_item: "+entry.getKey());
+                        int remaining=entry.getValue().getAsInt();
+                        while(remaining>0){int n=Math.min(remaining,item.getDefaultMaxStackSize());if(!player.getInventory().add(new net.minecraft.world.item.ItemStack(item,n)))throw new IllegalStateException("inventory_full");remaining-=n;}
+                    }}
                     player.setGameMode(gameMode);server.setDifficulty(net.minecraft.world.Difficulty.PEACEFUL,false);world.setDayTime(6000);world.setWeatherParameters(0,6000,false,false);
                     return JSON.toJson(Map.of("creative",gameMode==GameType.CREATIVE,"gameMode",requestedMode,"world",worldKey,"position",Blueprint.xyz(player.blockPosition())));
                 }
