@@ -43,17 +43,17 @@ final class PlacementAimPolicy {
 	}
 
 	static Optional<BlockHitResult> selectHit(boolean useCurrentView, boolean preciselyAligned,
-		BlockPos target, BlockHitResult planned, BlockHitResult current, Vec3 feet, double maxFeetDistanceSquared) {
+		BlockPos target, BlockHitResult planned, BlockHitResult current, Vec3 eye, double maxEyeDistanceSquared) {
 		if (!useCurrentView) return preciselyAligned ? Optional.ofNullable(planned) : Optional.empty();
 		if (target == null || planned == null || current == null || current.getType() != HitResult.Type.BLOCK
 			|| current.isInside() || !current.getBlockPos().equals(planned.getBlockPos())
 			|| current.getDirection() != planned.getDirection()
 			|| !current.getBlockPos().relative(current.getDirection()).equals(target)
-			|| !finite(planned.getLocation()) || !finite(current.getLocation()) || !finite(feet)
-			|| !Double.isFinite(maxFeetDistanceSquared) || maxFeetDistanceSquared < 0D
-			|| feet.distanceToSqr(current.getLocation()) > maxFeetDistanceSquared) {
+			|| !finite(planned.getLocation()) || !finite(current.getLocation()) || !finite(eye)
+			|| !Double.isFinite(maxEyeDistanceSquared) || maxEyeDistanceSquared < 0D
+			|| eye.distanceToSqr(current.getLocation()) > maxEyeDistanceSquared) {
 			// This is an early path, not a stricter replacement for existing precisely aligned interaction.
-			// In particular, the old feet reach can admit low faces just beyond the eye ray's reach.
+			// The caller separately validates the planned point from the same eye position.
 			return preciselyAligned ? Optional.ofNullable(planned) : Optional.empty();
 		}
 		return Optional.of(current);

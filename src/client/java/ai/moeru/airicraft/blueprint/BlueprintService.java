@@ -35,6 +35,7 @@ public final class BlueprintService {
     private CompletableFuture<Void> pending = CompletableFuture.completedFuture(null);
     private volatile long generation;
     private volatile String dashboardSnapshot = "{\"available\":false,\"message\":\"No blueprint draft\"}";
+    private String dashboardDesignJson, dashboardTailJson;
     private net.minecraft.server.MinecraftServer ownerServer;
     private String source;
     private JsonElement lastLint;
@@ -81,6 +82,7 @@ public final class BlueprintService {
         dashboardSnapshot = "{\"available\":false,\"message\":\"World closed; blueprint session ended\"}";
     }
     private void reset() {
+        dashboardDesignJson=null;dashboardTailJson=null;
         store=null;restored=false;draftId=null;lastCommitId=null;storageError=null;savedDesigns.clear();committedPlans.clear();integrity.clear();resetScan();
         ownerServer=null;draft=null;committed=null;source=null;lastLint=null;revision=0;committedRevision=0;
         committedOrigin=null;committedWorld=null;terrain=null;surface=null;terrainOrigin=null;terrainWorld=null;draftWorld=null;
@@ -98,20 +100,35 @@ public final class BlueprintService {
         pending = result.handle((v,e) -> (Void)null);
         return result;
     }
+    private synchronized void publish(long expectedGeneration,String operation) {
+        if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");
+        // Maintenance changes integrity only. Control operations can replace a
+        // design even without changing its revision (for example a new commit origin).
+        if(!"maintenance".equals(operation))dashboardDesignJson=null;
+        publish(expectedGeneration);
+    }
     private synchronized void publish(long expectedGeneration) {
         if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");
-        var out = new JsonObject();out.addProperty("available",draft!=null);
-        if(draft!=null)out.add("draft",JSON.toJsonTree(draft.snapshot(revision)));
-        if(source!=null)out.addProperty("source",source);
-        if(lastLint!=null)out.add("lint",lastLint);
-        out.addProperty("revision",revision);out.addProperty("committedRevision",committedRevision);
-        if(committedOrigin!=null)out.add("committedOrigin",JSON.toJsonTree(Blueprint.xyz(committedOrigin)));
-        out.addProperty("scope","Saved in this world; dashboard is read-only");
-        out.addProperty("activeBlueprintId",draftId);
-        out.add("savedDesigns",JSON.toJsonTree(savedDesigns.values()));
-        out.add("integrity",JSON.toJsonTree(integrity));
-        if(storageError!=null)out.addProperty("storageError",storageError);
-        dashboardSnapshot=JSON.toJson(out);
+        boolean designChanged=dashboardDesignJson==null;
+        if(designChanged){
+            var out = new JsonObject();out.addProperty("available",draft!=null);
+            if(draft!=null)out.add("draft",JSON.toJsonTree(draft.snapshot(revision)));
+            if(source!=null)out.addProperty("source",source);
+            if(lastLint!=null)out.add("lint",lastLint);
+            out.addProperty("revision",revision);out.addProperty("committedRevision",committedRevision);
+            if(committedOrigin!=null)out.add("committedOrigin",JSON.toJsonTree(Blueprint.xyz(committedOrigin)));
+            out.addProperty("scope","Saved in this world; dashboard is read-only");
+            out.addProperty("activeBlueprintId",draftId);
+            out.add("savedDesigns",JSON.toJsonTree(savedDesigns.values()));
+            dashboardDesignJson=JSON.toJson(out);
+        }
+        var tail=new JsonObject();tail.add("integrity",JSON.toJsonTree(integrity));
+        if(storageError!=null)tail.addProperty("storageError",storageError);
+        String nextTail=JSON.toJson(tail);
+        if(designChanged || !nextTail.equals(dashboardTailJson)){
+            dashboardSnapshot=dashboardDesignJson.substring(0,dashboardDesignJson.length()-1)+","+nextTail.substring(1);
+            dashboardTailJson=nextTail;
+        }
     }
     /** Pin the semantic draft as immutable construction input on the client thread. */
     public synchronized List<BlueprintConstructionProgram.Cell> constructionCells(Minecraft client,int expectedRevision,BlockPos origin) {
@@ -217,8 +234,14 @@ public final class BlueprintService {
                 if(!server.getWorldPath(LevelResource.ROOT).normalize().getFileName().toString().startsWith("Blueprint-"))throw new IllegalStateException("requires_Blueprint_scratch_world");
                 if(op.equals("prepare")) {
                     if(!Boolean.getBoolean("airicraft.codexDriver"))throw new IllegalStateException("codex_driver_required");
-                    player.setGameMode(GameType.CREATIVE);server.setDifficulty(net.minecraft.world.Difficulty.PEACEFUL,false);world.setDayTime(6000);world.setWeatherParameters(0,6000,false,false);
-                    return JSON.toJson(Map.of("creative",true,"world",worldKey,"position",Blueprint.xyz(player.blockPosition())));
+                    String requestedMode=a.has("gameMode")?a.get("gameMode").getAsString():"creative";
+                    GameType gameMode=switch(requestedMode){
+                        case "creative" -> GameType.CREATIVE;
+                        case "survival" -> GameType.SURVIVAL;
+                        default -> throw new IllegalArgumentException("gameMode must be creative or survival");
+                    };
+                    player.setGameMode(gameMode);server.setDifficulty(net.minecraft.world.Difficulty.PEACEFUL,false);world.setDayTime(6000);world.setWeatherParameters(0,6000,false,false);
+                    return JSON.toJson(Map.of("creative",gameMode==GameType.CREATIVE,"gameMode",requestedMode,"world",worldKey,"position",Blueprint.xyz(player.blockPosition())));
                 }
                 if(!player.isCreative())throw new IllegalStateException("creative_required");
                 if(op.equals("save")) {
@@ -252,7 +275,7 @@ public final class BlueprintService {
             var data=new JsonObject();data.addProperty("version",1);data.addProperty("activeId",draftId);data.addProperty("lastCommitId",lastCommitId);data.addProperty("revision",revision);data.add("designs",JSON.toJsonTree(savedDesigns.values()));
             BlueprintStore target=store;
             return CompletableFuture.supplyAsync(()->{try{target.save(data);return result;}catch(Exception e){if(expectedGeneration==generation)storageError=e.toString();throw new java.util.concurrent.CompletionException(e);}},STORAGE);
-        }).thenApply(result->{if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");publish(expectedGeneration);return result;}).exceptionally(error->{Throwable cause=error;while(cause.getCause()!=null)cause=cause.getCause();if(expectedGeneration==generation)publish(expectedGeneration);return "TOOL_ERROR: blueprint "+cause.getMessage();});
+        }).thenApply(result->{if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");publish(expectedGeneration,a.get("op").getAsString());return result;}).exceptionally(error->{Throwable cause=error;while(cause.getCause()!=null)cause=cause.getCause();if(expectedGeneration==generation)publish(expectedGeneration,a.get("op").getAsString());return "TOOL_ERROR: blueprint "+cause.getMessage();});
     }
     private String currentDraft(){var out=JSON.toJsonTree(draft.snapshot(revision)).getAsJsonObject();out.addProperty("blueprintId",draftId);if(terrainOrigin!=null)out.add("origin",JSON.toJsonTree(Blueprint.xyz(terrainOrigin)));return JSON.toJson(out);}
     private JsonObject captureDesign(String dimension,BlockPos origin) {

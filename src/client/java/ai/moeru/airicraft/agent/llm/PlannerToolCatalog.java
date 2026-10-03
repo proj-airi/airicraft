@@ -287,6 +287,7 @@ public final class PlannerToolCatalog {
 				prop("y", integer("Intended modified target block y coordinate.")),
 				prop("z", integer("Intended modified target block z coordinate.")),
 				prop("facePreference", enumString("Direction from the target cell to its support neighbor. Use down for the floor below (clicks its top), up for the ceiling above. Prefer auto unless a specific support is required.", List.of("auto", "down", "north", "south", "east", "west", "up"))),
+                prop("tower", bool("Jump and place one temporary full block underfoot. Requires expectedState and escapeBounds.")),
                 prop("escapeBounds", Map.of("type","array","items",Map.of("type","integer"),"minItems",6,"maxItems",6,"description","Optional construction bounds [minX,minY,minZ,maxX,maxY,maxZ]. Reject placement if no conservative walking exit remains.")),
 				prop("expectedState", optionalString("Desired block state, including properties. Placement predicts and verifies this state; unspecified properties use block defaults. Example minecraft:oak_stairs[facing=south,half=bottom].")),
 				prop("requireCurrentTargetMaterial", enumString("Required current target material before placement. Default air_or_replaceable.", List.of("air", "replaceable", "air_or_replaceable"))),
@@ -711,6 +712,8 @@ public final class PlannerToolCatalog {
 	}
 
 	private static void validatePlaceBlockArguments(JsonObject arguments) {
+        if(arguments.has("tower") && (!arguments.get("tower").isJsonPrimitive() || !arguments.get("tower").getAsJsonPrimitive().isBoolean()))
+            throw new JsonParseException("tower must be a boolean");
         if(arguments.has("escapeBounds")) {
             var e=arguments.get("escapeBounds");
             if(!e.isJsonArray() || e.getAsJsonArray().size()!=6)throw new JsonParseException("escapeBounds requires six integers");

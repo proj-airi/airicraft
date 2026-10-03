@@ -7,8 +7,10 @@ import java.util.List;
 public record BlockPlacementStepArgs(
 	String itemId,
 	List<Target> targets,
-	ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds escapeBounds
+	ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds escapeBounds,
+    boolean tower
 ) {
+    public BlockPlacementStepArgs(String itemId,List<Target> targets,ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds bounds) { this(itemId,targets,bounds,false); }
 	public BlockPlacementStepArgs(String itemId,List<Target> targets) { this(itemId,targets,null); }
 
 	public static final int MAX_TARGETS = BlockBreakStepArgs.MAX_TARGETS;
@@ -29,6 +31,8 @@ public record BlockPlacementStepArgs(
 					return target;
 				})
 				.toList();
+		if (tower && (targets.size()!=1 || escapeBounds==null || targets.getFirst().expectedState()==null))
+            throw new IllegalArgumentException("tower requires one exact-state target and construction bounds");
 		if (targets.isEmpty()) {
 			throw new IllegalArgumentException("targets must not be empty");
 		}

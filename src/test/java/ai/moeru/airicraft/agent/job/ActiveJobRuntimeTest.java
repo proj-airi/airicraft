@@ -760,6 +760,22 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void navigationIgnoresPreviousPlacementFailure() {
+		ActiveJobRuntime runtime = runtime();
+		runtime.applyPlannerResponse(new DialogueResponse("Climb the scaffold.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE,
+				ActiveJobProposal.navigateTo(new GoalPosition(104, -57, 31, true))), 1L), 0, "test", 1L);
+		WorldTaskRequest request = runtime.activeTaskRequest().orElseThrow();
+		runtime.tick(new TaskExecutionSnapshot(TaskExecutionState.FAILED, "previous-placement",
+			null, "BlockInteraction", "target_not_visible", null, null), evidence(0, 2L), true, false, 2L);
+		assertEquals(ActiveJobStatus.QUEUED, runtime.current().status());
+		assertEquals(request.taskId(), runtime.activeTaskRequest().orElseThrow().taskId());
+		runtime.tick(new TaskExecutionSnapshot(TaskExecutionState.COMPLETED, request.taskId(),
+			null, "Navigation", "arrived", null, null), evidence(0, 3L), true, false, 3L);
+		assertEquals(ActiveJobStatus.COMPLETED, runtime.current().status());
+	}
+
+	@Test
 	void primitiveJobAppliesOnlyMatchingTaskSnapshot() {
 		Map<TaskExecutionState, ActiveJobStatus> taskStatuses = Map.of(
 			TaskExecutionState.RUNNING, ActiveJobStatus.RUNNING,

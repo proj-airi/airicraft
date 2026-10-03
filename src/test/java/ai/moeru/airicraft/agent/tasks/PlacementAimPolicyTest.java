@@ -93,7 +93,7 @@ class PlacementAimPolicyTest {
 	}
 
 	@Test
-	void lowDistantFloorFaceKeepsLegacyPreciselyAlignedPathWhenEyeRayCannotReachIt() {
+	void preciseFallbackLeavesPlannedReachValidationToCaller() {
 		BlockPos floor = new BlockPos(0, 63, 4);
 		Vec3 point = new Vec3(0.5D, 64D, 4.9D);
 		Vec3 eye = FEET.add(0D, 1.62D, 0D);
@@ -108,7 +108,7 @@ class PlacementAimPolicyTest {
 	}
 
 	@Test
-	void actualHitMustRespectExistingFeetReachEvenIfPlannedPointIsCloser() {
+	void actualHitMustRespectEyeReachEvenIfPlannedPointIsCloser() {
 		Vec3 feet = new Vec3(0.5D, 64.5D, -1.49D);
 		assertTrue(feet.distanceToSqr(PLANNED.getLocation()) < 20.25D);
 		assertTrue(select(true, false, TARGET, OFF_CENTER, feet).isEmpty());
@@ -117,7 +117,7 @@ class PlacementAimPolicyTest {
 	}
 
 	@Test
-	void nonFiniteHitOrFeetGeometryFailsClosed() {
+	void nonFiniteHitOrEyeGeometryFailsClosed() {
 		for (double invalid : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
 			assertTrue(select(true, false, TARGET, hit(new Vec3(invalid, 64.8D, 3D), Direction.NORTH, SUPPORT, false), FEET).isEmpty());
 			assertTrue(select(true, false, TARGET, OFF_CENTER, new Vec3(invalid, 64D, 0.5D)).isEmpty());

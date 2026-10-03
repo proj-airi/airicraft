@@ -77,6 +77,22 @@ class CameraControllerTest {
 		assertTrue(aim.y < 70.0625);
 	}
 
+	@Test void closeWallUsesVisibleFaceWhenBlockAboveOccludesTheCenter() {
+		var pos = new net.minecraft.core.BlockPos(165, -59, 32);
+		var shape = net.minecraft.world.phys.shapes.Shapes.block();
+		var eye = new Vec3(165.3667829332416, -57.37999999523163, 33.58445256007759);
+		java.util.function.Predicate<Vec3> visible = point -> {
+			var target = shape.clip(eye, point, pos);
+			var occluder = shape.clip(eye, point, pos.above());
+			return target != null && (occluder == null || eye.distanceToSqr(target.getLocation()) < eye.distanceToSqr(occluder.getLocation()));
+		};
+		assertFalse(visible.test(Vec3.atCenterOf(pos)), "Recorded close stance cannot see the lower block centre");
+		var aim = CameraController.blockAim(pos, shape, eye, visible).orElseThrow();
+		assertTrue(visible.test(aim));
+		assertTrue(aim.z > 32.99, "Aim just inside the exposed front face");
+		assertTrue(CameraController.blockAim(pos, shape, eye, point -> false).isEmpty(), "No fabricated aim for a fully occluded block");
+	}
+
 	@Test void springCrossesBlockOutlineBeforeItSettles() {
 		var controller = new CameraController();
 		var eye = new Vec3(0.5, 0.5, 0);

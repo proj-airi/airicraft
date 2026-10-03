@@ -54,6 +54,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	/** The current path is the closest the goal can be approached: fail at its end. */
 	private boolean lastSegment;
 	private int supportWait;
+    private int startRecoveryTicks;
 	private int replans;
 	private int segmentsWithoutProgress;
 	private double bestRemaining = Double.POSITIVE_INFINITY;
@@ -257,6 +258,20 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 				motor.release(minecraft);
 				return false;
 			}
+            var moves=new ai.moeru.airicraft.navigation.Moves(liveTerrain(minecraft),policy);
+            var recovery=NavigationStartRecovery.intent(body,player.getBoundingBox(),
+                p->moves.probe(p.x(),p.y(),p.z())!=ai.moeru.airicraft.navigation.Moves.KIND_INVALID,
+                box->minecraft.level.noCollision(player,box));
+            if(recovery.isPresent()){
+                if(!motor.holdControl())return false;
+                if(++startRecoveryTicks>40){
+                    finish("CALC_FAILED","start_stance_recovery_timeout");motor.release(minecraft);return false;
+                }
+                String failed=motor.apply(minecraft,recovery.get());
+                if(failed!=null){finish("CALC_FAILED",failed);motor.release(minecraft);}
+                return false;
+            }
+            startRecoveryTicks=0;
 			GridPos start = body.feet();
 			GridPos target = goalHasY ? goalCell : new GridPos(goalCell.x(), start.y(), goalCell.z());
 			WorldTerrainSnapshot snapshot = WorldTerrainSnapshot.capture(minecraft.level, start, target, goalHasY,
@@ -278,6 +293,11 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			return false;
 		}
 		record(result, start);
+        if (result instanceof SearchResult.Partial && !options.acceptsPath(result)) {
+            finish("CALC_FAILED", "incomplete_stance_route " + reason(result));
+            motor.release(minecraft);
+            return false;
+        }
 		Path path = switch (result) {
 			case SearchResult.Found found -> {
 				lastSegment = false;
@@ -409,6 +429,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		followName = null;
 		lastSegment = false;
 		supportWait = 0;
+        startRecoveryTicks=0;
 		segmentsWithoutProgress = 0;
 		bestRemaining = Double.POSITIVE_INFINITY;
 	}

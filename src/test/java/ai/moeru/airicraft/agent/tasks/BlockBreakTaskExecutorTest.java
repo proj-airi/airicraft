@@ -12,6 +12,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BlockBreakTaskExecutorTest {
+	@Test void absentTargetRayCannotWaitForeverBeforeMiningStarts() {
+		var executor = new BlockBreakTaskExecutor(() -> null);
+		for (int tick=0;tick<40;tick++) assertEquals(false, executor.aimWaitExpired(false));
+		assertTrue(executor.aimWaitExpired(false));
+		// A different task must not inherit the previous task's expired aim budget.
+		executor.tick(null, Optional.empty());
+		assertEquals(false, executor.aimWaitExpired(false));
+	}
+
+	@Test void successfulTargetRayResetsConsecutiveAimWait() {
+		var executor = new BlockBreakTaskExecutor(() -> null);
+		for (int tick=0;tick<40;tick++) assertEquals(false, executor.aimWaitExpired(false));
+		assertEquals(false, executor.aimWaitExpired(true));
+		for (int tick=0;tick<40;tick++) assertEquals(false, executor.aimWaitExpired(false));
+		assertTrue(executor.aimWaitExpired(false));
+	}
+
 	@Test
 	void pausesWhenSessionGateBlocksActuation() {
 		BlockBreakTaskExecutor executor = new BlockBreakTaskExecutor(() -> null);

@@ -147,6 +147,26 @@ public final class Moves {
 		return best;
 	}
 
+    /** Clearance for the first 0.42-block impulse at the actual, possibly off-centre body. */
+    boolean jumpLaunchClear(BodyState body) {
+        double minX = body.x() - 0.3, maxX = body.x() + 0.3;
+        double minZ = body.z() - 0.3, maxZ = body.z() + 0.3;
+        double head = body.y() + HEIGHT;
+        double[] bands = {0, 0.2, 0.8, 1};
+        for (int x = (int) Math.floor(minX + EPSILON); x <= Math.floor(maxX - EPSILON); x++) {
+            for (int z = (int) Math.floor(minZ + EPSILON); z <= Math.floor(maxZ - EPSILON); z++) {
+                int mask = 0;
+                for (int bx = 0; bx < 3; bx++) for (int bz = 0; bz < 3; bz++) {
+                    if (maxX > x + bands[bx] + EPSILON && minX < x + bands[bx + 1] - EPSILON
+                        && maxZ > z + bands[bz] + EPSILON && minZ < z + bands[bz + 1] - EPSILON)
+                        mask |= 1 << CellInfo.region(bx, bz);
+                }
+                if (!sweepFree(x, z, mask, head, head + 0.42)) return false;
+            }
+        }
+        return true;
+    }
+
 	private boolean traverse(int dx, int dz, int x, int y, int z, int fromKind, double fromBase, Result out) {
 		int tx = x + dx, tz = z + dz;
 		if (!policy.permitsMovement(x, y, z, tx, y, tz, false)) return false;

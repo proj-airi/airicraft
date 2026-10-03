@@ -23,6 +23,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private final Actuator actuator = new Actuator("block_break", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
 	private static final int TARGET_TIMEOUT_TICKS = 200;
+	private static final int AIM_TIMEOUT_TICKS = 40;
 
 	private final Supplier<Minecraft> clientSupplier;
 	private final CameraController cameraController;
@@ -35,6 +36,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private int skippedTargets;
 	private boolean breakingActive;
 	private long targetStartTick = -1L;
+	private int aimWaitTicks;
 
 	public BlockBreakTaskExecutor(CameraController cameraController) {
 		this(Minecraft::getInstance, cameraController);
@@ -101,6 +103,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 			targetIndex++;
 			breakingActive = false;
 			targetStartTick = -1L;
+			aimWaitTicks = 0;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_skipped targetPos=" + compactPos(pos));
 			return Optional.empty();
 		}
@@ -113,6 +116,10 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		}
 		cameraController.lookAtBlock(minecraft, pos);
 		var hit = cameraController.blockHit(minecraft, pos);
+		if (aimWaitExpired(hit.isPresent())) {
+			if (breakingActive) actuator.stopDestroy(minecraft);
+			return fail(request, TaskFailure.of(TaskFailureCode.TRANSIENT, "break_aim_timeout targetPos=" + compactPos(pos)));
+		}
 		if (hit.isEmpty()) {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_aim targetPos=" + compactPos(pos));
 			return Optional.empty();
@@ -120,7 +127,8 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		long tick = sessionSnapshot == null ? 0L : sessionSnapshot.tickCount();
 		if (!breakingActive) {
 			MiningToolPreparation.Result toolSelection =
-				MiningToolPreparation.ensureSelected(minecraft, actuator, player, List.of(state));
+				player.isCreative() ? MiningToolPreparation.Result.success()
+                    : MiningToolPreparation.ensureSelected(minecraft, actuator, player, List.of(state));
 			if (!toolSelection.ok()) {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_ITEM, toolSelection.message()));
 			}
@@ -144,6 +152,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 			targetIndex++;
 			breakingActive = false;
 			targetStartTick = -1L;
+			aimWaitTicks = 0;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "target_broken targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId);
 			return Optional.empty();
 		}
@@ -164,6 +173,12 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.COMPLETED, message, TaskTerminationCause.GOAL_REACHED));
 	}
 
+	boolean aimWaitExpired(boolean hasTargetHit) {
+		if (hasTargetHit) aimWaitTicks = 0;
+		else aimWaitTicks++;
+		return aimWaitTicks > AIM_TIMEOUT_TICKS;
+	}
+
 	private Optional<TaskTerminalEvent> fail(WorldTaskRequest request, TaskFailure failure) {
 		snapshot = snapshot(TaskExecutionState.FAILED, request, failure.detail());
 		if (terminalEventEmitted) {
@@ -178,7 +193,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private static boolean withinInteractionRange(LocalPlayer player, Vec3 pos) {
-		return player.distanceToSqr(pos) <= INTERACTION_RANGE_SQUARED;
+		return player.getEyePosition().distanceToSqr(pos) <= INTERACTION_RANGE_SQUARED;
 	}
 
 	private static BlockPos blockPos(GoalPosition position) {
@@ -239,5 +254,6 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		skippedTargets = 0;
 		breakingActive = false;
 		targetStartTick = -1L;
+		aimWaitTicks = 0;
 	}
 }

@@ -2889,7 +2889,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		policyRuntime=new ai.moeru.airicraft.policy.PolicyRuntime(program,host,outcome->{
 			var details=new LinkedHashMap<String,Object>();details.put("blueprint",args.deepCopy());details.put("reason",outcome.reason());details.put("result",outcome.result());details.put("effects",outcome.effects());details.put("progress",program.progress());details.put("elapsedTicks",outcome.elapsedTicks());
 			recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.valueOf(outcome.state()),"construct_blueprint","FINISHED",false,tickCount,details));
-		},Math.max(12000,Math.min(240000,cells.size()*300)),Math.max(128,cells.size()*8));
+		},Math.max(12000,Math.min(240000,cells.size()*300)),ai.moeru.airicraft.blueprint.BlueprintConstructionProgram.effectLimit(cells.size()));
 		var work=new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,"construct_blueprint","CONSTRUCTION",true,tickCount,Map.of("blueprint",args.deepCopy(),"cells",cells.size()));
 		recordWork(work);dialogueRuntime.observeAcceptedWork(work);
 		return "Tool result for construct_blueprint: "+new com.google.gson.Gson().toJson(work.summary());
@@ -4154,11 +4154,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					stringArg(target, "expectedState").orElse(stringArg(args, "expectedState").orElse(null))
 				));
 			}
-			return new BlockPlacementStepArgs(itemId, targets, escape);
+			return new BlockPlacementStepArgs(itemId, targets, escape, args.has("tower") && args.get("tower").getAsBoolean());
 		}
 		return new BlockPlacementStepArgs(itemId, List.of(new BlockPlacementStepArgs.Target(
 			parseTargetPosition(args), rootFacePreference, rootRequiredTargetMaterial,
-			stringArg(args, "expectedState").orElse(null))), escape);
+			stringArg(args, "expectedState").orElse(null))), escape, args.has("tower") && args.get("tower").getAsBoolean());
 	}
 
 	private static BlockUseStepArgs parseBlockUseArgs(JsonObject args) {

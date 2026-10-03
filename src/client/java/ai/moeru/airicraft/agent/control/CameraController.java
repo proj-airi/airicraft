@@ -100,13 +100,32 @@ public final class CameraController {
 	/** Aim inside the selection shape, including thin blocks such as leaf litter and crops. */
 	public Optional<Rotation> lookAtBlock(Minecraft minecraft, BlockPos pos) {
 		if (minecraft == null || minecraft.player == null || minecraft.level == null) return Optional.empty();
-		return blockAim(pos, minecraft.level.getBlockState(pos).getShape(minecraft.level, pos), minecraft.player.getEyePosition())
+		Vec3 eye = minecraft.player.getEyePosition();
+		return blockAim(pos, minecraft.level.getBlockState(pos).getShape(minecraft.level, pos), eye,
+			point -> blockHit(minecraft.level.clip(new ClipContext(eye, point, ClipContext.Block.OUTLINE,
+				ClipContext.Fluid.NONE, minecraft.player)), pos).isPresent())
 			.flatMap(aim -> lookAt(minecraft, aim));
 	}
 
 	static Optional<Vec3> blockAim(BlockPos pos, VoxelShape shape, Vec3 eye) {
+		return blockAim(pos, shape, eye, point -> true);
+	}
+
+	/** Geometry-only aim query shared by execution and hypothetical access planning. */
+	public static Optional<Vec3> blockAim(BlockPos pos, VoxelShape shape, Vec3 eye, java.util.function.Predicate<Vec3> visible) {
 		return shape.toAabbs().stream()
-			.map(box -> box.getCenter().add(pos.getX(), pos.getY(), pos.getZ()))
+			.flatMap(box -> {
+				var center = box.getCenter();
+				// The centre can be hidden by a neighbouring block even when an outer
+				// face is exposed. Stay slightly inside each shape so raycasts hit it.
+				double dx = Math.max(0, box.getXsize() / 2 - .001);
+				double dy = Math.max(0, box.getYsize() / 2 - .001);
+				double dz = Math.max(0, box.getZsize() / 2 - .001);
+				return java.util.stream.Stream.of(center, center.add(dx,0,0), center.add(-dx,0,0),
+					center.add(0,dy,0), center.add(0,-dy,0), center.add(0,0,dz), center.add(0,0,-dz));
+			})
+			.map(point -> point.add(pos.getX(), pos.getY(), pos.getZ()))
+			.filter(visible)
 			.min(java.util.Comparator.comparingDouble(eye::distanceToSqr));
 	}
 

@@ -5,7 +5,8 @@ import java.util.*;
 /** Beam-bounded best-first search over legal geometry edits, never over movement ticks. */
 public final class AccessRepairSearch {
     private AccessRepairSearch() { }
-    public record Edit(ConstructionEscape.Position position,String before,String after,double cost,ConstructionEscape.Position stance) {
+    public record Edit(ConstructionEscape.Position position,String before,String after,double cost,ConstructionEscape.Position stance,boolean tower) {
+        public Edit(ConstructionEscape.Position position,String before,String after,double cost,ConstructionEscape.Position stance){this(position,before,after,cost,stance,false);}
         public Edit(ConstructionEscape.Position position,String before,String after,double cost){this(position,before,after,cost,null);}
         public Edit {
             Objects.requireNonNull(position);Objects.requireNonNull(before);Objects.requireNonNull(after);

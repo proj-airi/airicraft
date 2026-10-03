@@ -16,7 +16,12 @@ public final class ConstructionRepairLedger {
     }
     public void beforeEdit(ConstructionEscape.Position position,String requiredState,String component,String intermediateState) {
         Objects.requireNonNull(position);Objects.requireNonNull(requiredState);
-        debts.compute(position,(p,old)->new Debt(old==null?requiredState:old.requiredState(),old==null?component:old.component(),intermediateState));
+        debts.compute(position,(p,old)->{
+            // A restoration attempt may fail or the process may stop before confirmation.
+            // Keep the owned intermediate block recognizable until observation clears it.
+            if(old!=null && old.requiredState().equals(intermediateState))return old;
+            return new Debt(old==null?requiredState:old.requiredState(),old==null?component:old.component(),intermediateState);
+        });
     }
     public void reconcile(Function<ConstructionEscape.Position,String> observedState) {
         debts.entrySet().removeIf(entry->entry.getValue().requiredState().equals(observedState.apply(entry.getKey())));
