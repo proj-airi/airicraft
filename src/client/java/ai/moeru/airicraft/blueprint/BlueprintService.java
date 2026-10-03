@@ -203,15 +203,18 @@ public final class BlueprintService {
                 if(op.equals("sample")) {
                     BlockPos origin=Blueprint.vector(a,"origin",player.blockPosition());
                     if(!origin.closerThan(player.blockPosition(),96))throw new IllegalArgumentException("sample_too_far");
-                    var heights=new LinkedHashMap<String,Integer>();var sampled=new ArrayList<Map<String,Object>>();int max=-128,min=128;
+                    var heights=new LinkedHashMap<String,Integer>();var obstacles=new LinkedHashMap<String,List<String>>();var sampled=new ArrayList<Map<String,Object>>();int max=-128,min=128;
                     for(int x=-1;x<=14;x++)for(int z=-1;z<=14;z++) {
                         BlockPos p=origin.offset(x,0,z);if(!world.hasChunkAt(p))throw new IllegalStateException("terrain_chunk_unloaded");
-                        int y=world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,p.getX(),p.getZ())-1;
+                        int top=world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,p.getX(),p.getZ())-1;
+                        // Trees and giant mushrooms are obstacles, not ground: look through them to the soil and report them separately.
+                        int y=top;for(int guard=0;guard<48&&y>world.getMinY();guard++){var below=world.getBlockState(new BlockPos(p.getX(),y,p.getZ()));if(!growth(below)&&!(y<top&&below.isAir()))break;y--;}
                         if(Math.abs(y-origin.getY())>48)throw new IllegalStateException("terrain_outside_capture_height");
+                        var column=obstacleRuns(world,p.getX(),y,p.getZ(),origin.getY());if(!column.isEmpty())obstacles.put(x+","+z,column);
                         heights.put(x+","+z,y-origin.getY());max=Math.max(max,y-origin.getY());min=Math.min(min,y-origin.getY());
                         for(int sy=Math.max(world.getMinY(),y-2);sy<=y;sy++) sampled.add(Map.of("position",List.of(x,sy-origin.getY(),z),"state",Blueprint.stateText(world.getBlockState(new BlockPos(p.getX(),sy,p.getZ()))),"owner","terrain","source","observed"));
                     }
-                    var t=new JsonObject();t.add("surface",JSON.toJsonTree(heights));t.addProperty("maxSurface",max);t.addProperty("minSurface",min);t.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
+                    var t=new JsonObject();t.add("surface",JSON.toJsonTree(heights));t.addProperty("maxSurface",max);t.addProperty("minSurface",min);if(!obstacles.isEmpty()){t.add("obstacles",JSON.toJsonTree(obstacles));t.addProperty("obstaclesNote","surface is bare ground. obstacles[\"x,z\"] lists vegetation or other blocks above that ground as block@localY0..localY1 (local y = world y minus origin y). Cover them with Clearance if the building needs the space; construction breaks owned air normally.");}t.add("origin",JSON.toJsonTree(Blueprint.xyz(origin)));
                     rememberTerrain(t,heights,origin,world);
                     return JSON.toJson(Map.of("terrain",t,"cells",sampled,"note","Observed terrain context, never committed as design blocks; 16x16 height field and top three layers."));
                 }
@@ -344,6 +347,25 @@ public final class BlueprintService {
         }
     }
     // Sampling updates authoring input; only a successful draft replaces the published design.
+    /** Natural growth that sits on the ground and must not be mistaken for it. */
+    static boolean growth(net.minecraft.world.level.block.state.BlockState state) {
+        if(state.is(net.minecraft.tags.BlockTags.LOGS)||state.is(net.minecraft.tags.BlockTags.LEAVES))return true;
+        String id=net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+        return id.contains("mushroom_block")||id.contains("mushroom_stem")||id.contains("vine")||id.equals("cactus")||id.startsWith("bamboo");
+    }
+    /** Run-length summary of non-air, non-fluid blocks up to 16 above the given ground, as local y (world y minus originY). */
+    private static List<String> obstacleRuns(ServerLevel world,int x,int groundY,int z,int originY) {
+        var runs=new ArrayList<String>();String current=null;int start=0,last=0;
+        for(int dy=1;dy<=16;dy++){
+            var state=world.getBlockState(new BlockPos(x,groundY+dy,z));
+            String id=state.isAir()||!state.getFluidState().isEmpty()?null:net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath();
+            if(id!=null&&id.equals(current)){last=groundY+dy;continue;}
+            if(current!=null)runs.add(current+"@"+(start-originY)+".."+(last-originY));
+            current=id;start=last=groundY+dy;
+        }
+        if(current!=null)runs.add(current+"@"+(start-originY)+".."+(last-originY));
+        return runs;
+    }
     void rememberTerrain(JsonObject captured,Map<String,Integer> heights,BlockPos origin,ServerLevel world) {
         terrain=captured;surface=heights;terrainOrigin=origin;terrainWorld=world;
     }
