@@ -6,7 +6,7 @@ function Assembly(p) { return Component({type:'Assembly',...p}); }
 function Solid({size, material, ...p}) { return Component({type:'Solid',volume:{size,state:material},...p}); }
 function Clearance({size,...p}) { return Solid({type:'Clearance',size,material:'air',...p}); }
 // Natural obstacles (trees, leaves, mushrooms listed in input.terrain.obstacles) inside the build volume must be removed, not built around.
-// SiteClearance yields: any other component may occupy its cells without `replaces`, so size it generously over the footprint and roof space.
+// SiteClearance yields: any other component may occupy its cells without `replaces`. Size it to the building's own volume (footprint, floor to roof peak) plus at most one block of walking room; every non-air cell in it is broken from scaffolds, so do not clear canopy above the roof.
 // Keep it above ground (local y > surface); it breaks whatever is there, including soil.
 function SiteClearance({size,...p}) { return Clearance({size,yields:true,...p}); }
 function Floor(p) { return Solid({type:'Floor',...p}); }
