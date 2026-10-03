@@ -30,6 +30,8 @@ import ai.moeru.airicraft.agent.tasks.WorldTaskExecutor;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import ai.moeru.airicraft.dashboard.DashboardObservationCollector;
 import ai.moeru.airicraft.dashboard.DashboardObservationStore;
+import ai.moeru.airicraft.airi.AiriLink;
+import ai.moeru.airicraft.airi.AiriLinkStatus;
 import ai.moeru.airicraft.dashboard.DebugDashboardServer;
 import ai.moeru.airicraft.debug.ClientTickDebugRuntime;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -63,6 +65,7 @@ public final class ClientRuntimeController {
 	private final DashboardObservationStore dashboardObservationStore;
 	private final DashboardObservationCollector dashboardObservationCollector;
 	private final DebugDashboardServer debugDashboardServer;
+	private final AiriLink airiLink = AiriLink.create();
 	private String announcedDashboardUrl = "";
 	private long lastDashboardCaptureFailureLogAtMs;
 	private final PlannerDebugOverlay plannerDebugOverlay = new PlannerDebugOverlay();
@@ -109,6 +112,10 @@ public final class ClientRuntimeController {
 
 	public AiricraftConfig config() {
 		return config;
+	}
+
+	public AiriLinkStatus airiLinkStatus() {
+		return airiLink.status();
 	}
 
 	public HighlightManager highlightManager() {
@@ -173,6 +180,7 @@ public final class ClientRuntimeController {
 		var agent = currentAgentRuntime().config();
 		var secrets = new java.util.ArrayList<String>(agent.observability().otlpHeaders().values());
 		secrets.add(agent.llm().apiKey()); secrets.add(agent.llm().visionApiKey()); secrets.add(bridgeServer.diagnosticCredential());
+		secrets.add(config.airi().token());
 		return secrets.stream().filter(java.util.Objects::nonNull).toList();
 	}
 
@@ -213,6 +221,7 @@ public final class ClientRuntimeController {
 			debugDashboardServer.stop();
 		}
 		bridgeServer.start();
+		airiLink.configure(config.airi());
 	}
 
 	public void onWorldLeave() {
@@ -447,6 +456,7 @@ public final class ClientRuntimeController {
 			debugDashboardServer.stop();
 		}
 		announcedDashboardUrl = "";
+		airiLink.configure(nextConfig.airi());
 		return new ReloadResult(nextConfig, nextAgentConfig, nextIdleIdeasConfig, nextRuntime.sessionSnapshot());
 	}
 
@@ -461,6 +471,7 @@ public final class ClientRuntimeController {
 		bridgeServer.stop();
 		debugDashboardServer.stop();
 		dashboardObservationCollector.close();
+		airiLink.close();
 	}
 
 	private EmbodiedAgentRuntime currentAgentRuntime() {
@@ -571,6 +582,11 @@ public final class ClientRuntimeController {
 				"historyByteBudget", airicraftConfig.debugDashboard().historyByteBudget(),
 				"visualCaptureEnabled", airicraftConfig.debugDashboard().visualCaptureEnabled(),
 				"visualCaptureIntervalTicks", airicraftConfig.debugDashboard().visualCaptureIntervalTicks()
+			));
+			payload.put("airi", Map.of(
+				"enabled", airicraftConfig.airi().enabled(),
+				"url", airicraftConfig.airi().url(),
+				"tokenSet", airicraftConfig.airi().hasToken()
 			));
 			return payload;
 		}

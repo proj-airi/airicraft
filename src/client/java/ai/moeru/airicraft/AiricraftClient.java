@@ -53,6 +53,11 @@ public class AiricraftClient implements ClientModInitializer {
 							return 0;
 						}
 					}))
+				.then(ClientCommandManager.literal("airi")
+					.executes(context -> {
+						context.getSource().sendFeedback(Component.literal(RUNTIME_CONTROLLER.airiLinkStatus().describe()));
+						return 1;
+					}))
 				.then(ClientCommandManager.literal("debug")
 					.then(ClientCommandManager.literal("states")
 						.executes(context -> {
