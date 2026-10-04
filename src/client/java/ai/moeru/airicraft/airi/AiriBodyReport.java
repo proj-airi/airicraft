@@ -3,10 +3,12 @@ package ai.moeru.airicraft.airi;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -26,6 +28,7 @@ public final class AiriBodyReport {
 	static final long STATUS_REFRESH_MS = 60_000L;
 	static final long DAMAGE_MIN_INTERVAL_MS = 20_000L;
 	static final int MAX_CHAT_LENGTH = 300;
+	static final int FOREGROUND_WORK_LIMIT = 32;
 	/** AIRI stage windows. The Mineflayer bot uses the same destination. */
 	static final List<String> STAGE_DESTINATIONS = List.of("proj-airi:stage-*");
 
@@ -37,6 +40,8 @@ public final class AiriBodyReport {
 	private String commandWorkId;
 	private String currentWorkId;
 	private String currentWorkLabel;
+	/** Top-level work that ran in the foreground. A terminal snapshot can lose the foreground flag. */
+	private final Set<String> foregroundWorkIds = new LinkedHashSet<>();
 
 	public AiriBodyReport(Supplier<String> ids) {
 		this.ids = Objects.requireNonNull(ids, "ids");
@@ -120,6 +125,14 @@ public final class AiriBodyReport {
 		return List.of(dropped);
 	}
 
+	/** The body left the world. The open command and the current work end with it. */
+	public List<Outgoing> worldLeft() {
+		currentWorkId = null;
+		currentWorkLabel = null;
+		foregroundWorkIds.clear();
+		return dropOpenCommand("The body left the world.");
+	}
+
 	/** One agent event. Only the event types below make output. */
 	public List<Outgoing> event(String type, Map<String, ?> payload, long nowMs) {
 		return switch (type) {
@@ -127,7 +140,8 @@ public final class AiriBodyReport {
 				"Dimension: " + text(payload, "dimensionId", "unknown") + "."));
 			case "combat.damage_taken" -> damage(payload, nowMs);
 			case "work.changed" -> work(payload);
-			case "social.player_spoke", "social.player_addressed_agent" -> chat(text(payload, "player", "A player"), text(payload, "message", ""));
+			// The chat ingest also publishes social.player_addressed_agent for the same line, so only this type is read.
+			case "social.player_spoke" -> chat(text(payload, "player", "A player"), text(payload, "message", ""));
 			default -> List.of();
 		};
 	}
@@ -154,15 +168,21 @@ public final class AiriBodyReport {
 		String state = text(payload, "state", "");
 		String label = text(payload, "label", "work");
 		boolean terminal = state.equals("SUCCEEDED") || state.equals("FAILED") || state.equals("CANCELLED");
-		if (!terminal && Boolean.TRUE.equals(payload.get("foreground"))) {
+		boolean foreground = Boolean.TRUE.equals(payload.get("foreground"));
+		if (!terminal && foreground) {
 			currentWorkId = workId;
 			currentWorkLabel = label;
+			rememberForeground(workId);
 		}
 		else if (terminal && workId.equals(currentWorkId)) {
 			currentWorkId = null;
 			currentWorkLabel = null;
 		}
-		if (commandId != null && commandWorkId == null && !terminal && Boolean.TRUE.equals(payload.get("foreground"))) {
+		boolean wasForeground = foregroundWorkIds.contains(workId) || foreground;
+		if (terminal) {
+			foregroundWorkIds.remove(workId);
+		}
+		if (commandId != null && commandWorkId == null && !terminal && foreground) {
 			commandWorkId = workId;
 			return List.of(emit(commandId, "working", "Started " + label + "."));
 		}
@@ -176,10 +196,18 @@ public final class AiriBodyReport {
 				default -> List.of(emit(id, "dropped", "Cancelled " + label + "."));
 			};
 		}
-		if (state.equals("FAILED") && Boolean.TRUE.equals(payload.get("foreground"))) {
+		if (state.equals("FAILED") && wasForeground) {
 			return List.of(notify("alarm", "soon", "Work in Minecraft failed: " + label + ".", failure(payload).substring(1).strip()));
 		}
 		return List.of();
+	}
+
+	private void rememberForeground(String workId) {
+		foregroundWorkIds.remove(workId);
+		foregroundWorkIds.add(workId);
+		if (foregroundWorkIds.size() > FOREGROUND_WORK_LIMIT) {
+			foregroundWorkIds.remove(foregroundWorkIds.iterator().next());
+		}
 	}
 
 	private static String failure(Map<String, ?> payload) {

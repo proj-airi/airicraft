@@ -53,7 +53,7 @@ The mod answers each command with `spark:emit`:
 | `working` | The first top-level work after the command started. |
 | `done` | That work succeeded. |
 | `blocked` | That work failed. The note gives the failure. |
-| `dropped` | The planner is off, no world is loaded, the work was cancelled, a newer command replaced it, or the mod reloaded. |
+| `dropped` | The body cannot act (the planner is off or degraded, it has no model, or the world is not LAN or multiplayer). Or the work was cancelled, a newer command replaced it, the body left the world, the link was turned off, or the mod reloaded. |
 
 Only one command is open at a time. A command that the planner answers without work stays `queued`.
 

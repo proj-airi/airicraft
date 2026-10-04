@@ -121,4 +121,25 @@ class AiriBodyReportTest {
 		assertEquals("Steve: hello", events.get(0).data().get("text").getAsString());
 		assertEquals(List.of(), report.event("task.started", Map.of(), 0));
 	}
+
+	@Test void aForegroundFailureAlarmsAlsoWhenTheTerminalSnapshotIsNotForeground() {
+		report.event("work.changed", work("JOB:4", "RUNNING", true), 0);
+		var failed = report.event("work.changed", work("JOB:4", "FAILED", false), 0);
+		assertEquals("Work in Minecraft failed: MINE_BLOCKS.", failed.get(0).data().get("headline").getAsString());
+		assertEquals(List.of(), report.event("work.changed", work("JOB:5", "FAILED", false), 0));
+	}
+
+	@Test void addressedChatIsNotReportedTwice() {
+		var payload = Map.of("player", "Steve", "message", "hello");
+		assertEquals(1, report.event("social.player_spoke", payload, 0).size());
+		assertEquals(List.of(), report.event("social.player_addressed_agent", payload, 0));
+	}
+
+	@Test void leavingTheWorldDropsTheOpenCommand() {
+		report.commandAccepted("cmd-1");
+		report.event("work.changed", work("JOB:1", "RUNNING", true), 0);
+		assertEquals(List.of("spark:emit dropped"), states(report.worldLeft()));
+		assertEquals(List.of(), report.worldLeft());
+		assertTrue(report.statusText(at(1)).endsWith("No work is running."));
+	}
 }

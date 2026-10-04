@@ -2,6 +2,7 @@ package ai.moeru.airicraft.airi;
 
 import java.time.Duration;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -13,6 +14,9 @@ public interface AiriLinkScheduler {
 	Cancellable schedule(Runnable task, Duration delay);
 
 	long nowMillis();
+
+	/** Stops the scheduler after the tasks that are already queued. Later tasks are ignored. */
+	default void close() {}
 
 	interface Cancellable {
 		void cancel();
@@ -27,18 +31,33 @@ public interface AiriLinkScheduler {
 		return new AiriLinkScheduler() {
 			@Override
 			public void execute(Runnable task) {
-				executor.execute(task);
+				try {
+					executor.execute(task);
+				}
+				catch (RejectedExecutionException closed) {
+					// The link is closed. Late transport callbacks have nothing to do.
+				}
 			}
 
 			@Override
 			public Cancellable schedule(Runnable task, Duration delay) {
-				ScheduledFuture<?> future = executor.schedule(task, delay.toMillis(), TimeUnit.MILLISECONDS);
-				return () -> future.cancel(false);
+				try {
+					ScheduledFuture<?> future = executor.schedule(task, delay.toMillis(), TimeUnit.MILLISECONDS);
+					return () -> future.cancel(false);
+				}
+				catch (RejectedExecutionException closed) {
+					return () -> {};
+				}
 			}
 
 			@Override
 			public long nowMillis() {
 				return System.currentTimeMillis();
+			}
+
+			@Override
+			public void close() {
+				executor.shutdown();
 			}
 		};
 	}

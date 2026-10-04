@@ -128,6 +128,7 @@ import ai.moeru.airicraft.agent.session.AutoLanOpenState;
 import ai.moeru.airicraft.agent.session.LanHostingService;
 import ai.moeru.airicraft.agent.session.PlayerLifecycleState;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
+import ai.moeru.airicraft.agent.session.SessionMode;
 import ai.moeru.airicraft.agent.session.SessionRuntime;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexEvent;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexRuntime;
@@ -2019,6 +2020,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return chatService.lastChatText();
 	}
 
+	public long chatSentLineCount() {
+		return chatService.sentLineCount();
+	}
+
+	public List<String> chatLinesSentAfter(long count) {
+		return chatService.linesSentAfter(count);
+	}
+
 	/**
 	 * Gives a command from AIRI to the planner as direct guidance. Call it on the client thread.
 	 * Returns why the planner cannot take it, or null when the planner takes it.
@@ -2029,6 +2038,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		if (!sessionSnapshot.worldLoaded()) {
 			return "no world is loaded";
+		}
+		if (sessionSnapshot.mode() != SessionMode.SINGLEPLAYER_LAN_HOST && sessionSnapshot.mode() != SessionMode.REMOTE_MULTIPLAYER) {
+			return "the body acts only in a LAN or multiplayer world";
+		}
+		if (!llmAvailable()) {
+			return "the planner has no model";
+		}
+		if (isDegraded()) {
+			return "the planner is degraded";
 		}
 		eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "social.airi_commanded", Map.of(
 			"commandId", commandId,

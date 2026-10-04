@@ -17,7 +17,7 @@ import net.minecraft.client.Minecraft;
 public final class AiriBody implements AutoCloseable {
 	private static final int STATUS_EVERY_TICKS = 20;
 	private static final Set<String> REPORTED_EVENTS = Set.of(
-		"player.died", "combat.damage_taken", "work.changed", "social.player_spoke", "social.player_addressed_agent");
+		"player.died", "combat.damage_taken", "work.changed", "social.player_spoke");
 
 	private final AiriLink link;
 	private final Supplier<EmbodiedAgentRuntime> runtimes;
@@ -25,7 +25,8 @@ public final class AiriBody implements AutoCloseable {
 	private EmbodiedAgentRuntime runtime;
 	private AgentEventBus.Subscription subscription;
 	private boolean linkReady;
-	private long lastBodyChatTick = Long.MIN_VALUE;
+	private long lastBodyChatCount;
+	private boolean inWorld;
 	private int ticks;
 
 	public AiriBody(AiriLink link, Supplier<EmbodiedAgentRuntime> runtimes) {
@@ -37,17 +38,26 @@ public final class AiriBody implements AutoCloseable {
 	public void tick(Minecraft minecraft) {
 		if (link.state() == AiriLink.State.DISABLED) {
 			// The standalone track: the planner is the only brain, and this class does no work.
+			// The open command ends here. Its guidance can still be in the planner queue.
+			report.dropOpenCommand("The link to AIRI was turned off.");
 			close();
 			linkReady = false;
 			return;
 		}
 		follow(runtimes.get());
+		boolean nowInWorld = runtime.sessionSnapshot().worldLoaded();
+		if (inWorld && !nowInWorld) {
+			send(report.worldLeft());
+		}
+		inWorld = nowInWorld;
 		boolean ready = link.state() == AiriLink.State.READY;
 		if (ready && !linkReady) {
 			report.resend();
 		}
 		linkReady = ready;
 		if (!ready) {
+			// AIRI does not get old body lines after a reconnect.
+			lastBodyChatCount = runtime.chatSentLineCount();
 			return;
 		}
 		reportBodyChat(minecraft);
@@ -88,7 +98,7 @@ public final class AiriBody implements AutoCloseable {
 			send(report.dropOpenCommand("The body reloaded."));
 		}
 		runtime = current;
-		lastBodyChatTick = current.lastChatTick();
+		lastBodyChatCount = current.chatSentLineCount();
 		subscription = current.subscribeEvents(REPORTED_EVENTS::contains,
 			event -> onClientThread(() -> send(report.event(event.type(), event.payload(), System.currentTimeMillis()))));
 	}
@@ -108,15 +118,18 @@ public final class AiriBody implements AutoCloseable {
 		subscription = null;
 	}
 
-	/** The lines that the body itself says in the game. */
+	/** The lines that the body itself says in the game. Each line goes out once, also when one tick sends several. */
 	private void reportBodyChat(Minecraft minecraft) {
-		long chatTick = runtime.lastChatTick();
-		if (chatTick == lastBodyChatTick) {
+		long count = runtime.chatSentLineCount();
+		if (count == lastBodyChatCount) {
 			return;
 		}
-		lastBodyChatTick = chatTick;
+		List<String> lines = runtime.chatLinesSentAfter(lastBodyChatCount);
+		lastBodyChatCount = count;
 		String name = minecraft.player == null ? "The body" : minecraft.player.getName().getString();
-		send(report.chat(name + " (the body)", runtime.lastChatText()));
+		for (String line : lines) {
+			send(report.chat(name + " (the body)", line));
+		}
 	}
 
 	private AiriBodyReport.BodyFacts facts(Minecraft minecraft) {

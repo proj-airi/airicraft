@@ -121,6 +121,7 @@ public final class AiriLink implements AutoCloseable {
 			disconnect();
 			state = State.STOPPED;
 		});
+		scheduler.close();
 	}
 
 	private void apply(AiriLinkConfig nextConfig) {
