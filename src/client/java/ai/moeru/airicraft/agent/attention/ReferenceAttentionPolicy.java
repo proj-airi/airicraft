@@ -50,7 +50,7 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 
 	/** Types the constitution decides entirely; rule modules never see them. */
 	public static final Set<String> CONSTITUTION_TYPES = Set.of(
-		"social.player_addressed_agent", "social.local_controller_spoke", "reflex.resolved");
+		"social.player_addressed_agent", "social.local_controller_spoke", "social.airi_commanded", "reflex.resolved");
 
 	/** The bundled default planner rule: pickups are progress owned by an active mining job. */
 	public static EventPolicyDecision defaultRule(SemanticEvent event, AttentionState state) {
@@ -84,6 +84,8 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 			case "social.local_controller_spoke" -> evidence.resetCommand()
 				? WakeDecision.none(AttentionStage.CONSTITUTION, "constitution.reset_command", "reset commands are handled before the planner")
 				: WakeDecision.immediate(Urgency.DIRECT, AttentionStage.CONSTITUTION, "constitution.direct_chat", "");
+			case "social.airi_commanded" -> WakeDecision.immediate(Urgency.DIRECT, AttentionStage.CONSTITUTION,
+				"constitution.airi_command", "");
 			case "reflex.resolved" -> WakeDecision.immediate(Urgency.CRITICAL, AttentionStage.CONSTITUTION,
 				"constitution.safety_handoff", "");
 			case "social.player_spoke" -> {

@@ -887,6 +887,19 @@
       "extraWake": null
     },
     {
+      "type": "social.airi_commanded",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": false,
+        "trigger": "CHAT",
+        "bypass": true
+      },
+      "observeVisible": false,
+      "extraWake": null
+    },
+    {
       "type": "social.item_offered",
       "producers": [
         "EmbodiedAgentRuntime"
