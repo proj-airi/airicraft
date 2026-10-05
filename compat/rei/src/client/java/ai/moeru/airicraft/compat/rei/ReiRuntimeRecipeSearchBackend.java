@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
+	private static final String TAG_CATEGORY = "minecraft:plugins/tag";
 	private static final int MAX_MATCHED_ITEMS = 8;
 	private static final int MAX_INGREDIENTS = 9;
 	private static final int MAX_ALTERNATIVES = 4;
@@ -173,6 +174,10 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 		EntryStack<?> matchedItem,
 		Map<String, RecipeSearchResult> results
 	) {
+		if (TAG_CATEGORY.equals(categoryId.getIdentifier().toString())) {
+			// REI lists item tags as pseudo-recipes; they are membership data, not ways to make an item.
+			return;
+		}
 		boolean matches = switch (role) {
 			case "output" -> entriesMatch(display.getOutputEntries(), matchedItem);
 			case "input" -> entriesMatch(display.getInputEntries(), matchedItem);
