@@ -12,9 +12,11 @@ import me.shedaniel.rei.api.common.category.CategoryIdentifier;
 import me.shedaniel.rei.api.common.display.Display;
 import me.shedaniel.rei.api.common.entry.EntryIngredient;
 import me.shedaniel.rei.api.common.entry.EntryStack;
+import me.shedaniel.rei.api.common.entry.type.VanillaEntryTypes;
 import me.shedaniel.rei.api.common.util.EntryStacks;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -28,6 +30,9 @@ import java.util.concurrent.CompletableFuture;
 
 final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 	private static final int MAX_MATCHED_ITEMS = 8;
+	private static final int MAX_INGREDIENTS = 9;
+	private static final int MAX_ALTERNATIVES = 4;
+	private static final int MAX_WORKSTATIONS = 4;
 
 	@Override
 	public boolean available() {
@@ -183,7 +188,10 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 			entryId(matchedItem),
 			categoryId.getIdentifier().toString(),
 			categoryTitle(categoryId),
-			recipeId
+			recipeId,
+			ingredientSummaries(display.getInputEntries()),
+			ingredientSummaries(display.getOutputEntries()),
+			workstations(categoryId)
 		));
 	}
 
@@ -206,6 +214,46 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 			.map(DisplayCategory::getTitle)
 			.map(ReiRuntimeRecipeSearchBackend::title)
 			.orElse(categoryId.getIdentifier().toString());
+	}
+
+	/** One string per ingredient: alternatives joined by "|", with an item count when it is not one. */
+	private static List<String> ingredientSummaries(List<EntryIngredient> ingredients) {
+		return ingredients.stream()
+			.filter(ingredient -> !ingredient.isEmpty())
+			.limit(MAX_INGREDIENTS)
+			.map(ingredient -> ingredient.stream()
+				.limit(MAX_ALTERNATIVES)
+				.map(ReiRuntimeRecipeSearchBackend::countedEntry)
+				.distinct()
+				.collect(java.util.stream.Collectors.joining("|"))
+				+ (ingredient.size() > MAX_ALTERNATIVES ? "|..." : ""))
+			.toList();
+	}
+
+	private static String countedEntry(EntryStack<?> stack) {
+		String id = entryId(stack);
+		if (stack.getType() == VanillaEntryTypes.ITEM) {
+			int count = stack.<ItemStack>castValue().getCount();
+			if (count > 1) {
+				return id + " x" + count;
+			}
+		}
+		return id;
+	}
+
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private static List<String> workstations(CategoryIdentifier<?> categoryId) {
+		Optional<CategoryRegistry.CategoryConfiguration<Display>> category =
+			CategoryRegistry.getInstance().tryGet((CategoryIdentifier) categoryId);
+		java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+		if (category.isPresent()) {
+			for (EntryIngredient ingredient : category.get().getWorkstations()) {
+				if (!ingredient.isEmpty() && ids.size() < MAX_WORKSTATIONS) {
+					ids.add(entryId(ingredient.get(0)));
+				}
+			}
+		}
+		return List.copyOf(ids);
 	}
 
 	private static String entryId(EntryStack<?> stack) {
@@ -235,7 +283,10 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 		String matchedItem,
 		String recipeType,
 		String category,
-		String recipeId
+		String recipeId,
+		List<String> inputs,
+		List<String> outputs,
+		List<String> workstations
 	) {
 		private String compact() {
 			return "{role=" + role
@@ -243,6 +294,9 @@ final class ReiRuntimeRecipeSearchBackend implements RecipeSearchBackend {
 				+ ", recipeType=" + recipeType
 				+ ", category=\"" + category + "\""
 				+ ", recipeId=" + recipeId
+				+ ", inputs=" + inputs
+				+ ", outputs=" + outputs
+				+ ", workstations=" + workstations
 				+ "}";
 		}
 	}
