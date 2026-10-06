@@ -30,6 +30,7 @@
   - Config shared with normal dev: `run/config/airicraft`.
   - Jar cache ignored: `.airicraft-compat/integration/`; never vendor optional-mod jars or copy them into `run/mods`.
   - Setup/list jars: `scripts/compat setup`, `scripts/compat mods`.
+  - Test an extra mod (for example Create Fly for 1.21.8) without vendoring it: put its jar in a local directory and pass `-Pairicraft.extraModsDir=<dir>` to `scripts/compat` or `scripts/codex-driver`.
   - Verify live: mod list has `airicraft` + `airicraft-journeymap-compat` + `journeymap` + `airicraft-rei-compat` + `roughlyenoughitems`; `airicraft map status` says `available: true`, `preferredProvider: journeymap`; planner still exposes `search_recipes`.
 - Evaluation batches:
   - Each `scenarios/<id>/scenario.yml` declares `requiredMods: [journeymap, roughlyenoughitems]` as needed. Omitted or empty means no optional integrations; dependencies of a declared mod are included automatically.

@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.actions;
 
+import ai.moeru.airicraft.modded.ItemGroups;
 import ai.moeru.airicraft.agent.tasks.ResourceGatheringCatalog;
 import ai.moeru.airicraft.agent.tasks.SmeltingFuelCost;
 import ai.moeru.actionplan.ResolutionContext;
@@ -292,11 +293,11 @@ final class AiricraftDomainMethodSession {
 		}
 		String bestObservedLogPlank = "";
 		int bestObservedLogCount = 0;
-		for (int index = 0; index < ActionGraphDomainKnowledge.logItemIds().size(); index++) {
-			String logItemId = ActionGraphDomainKnowledge.logItemIds().get(index);
+		for (String logItemId : ActionGraphDomainKnowledge.logItemIds()) {
 			int count = existingGoalCount(ActionGoal.inventoryItem(logItemId, 1));
-			if (count > bestObservedLogCount && index < ActionGraphDomainKnowledge.plankItemIds().size()) {
-				bestObservedLogPlank = ActionGraphDomainKnowledge.plankItemIds().get(index);
+			String plank = ItemGroups.plankFor(logItemId);
+			if (count > bestObservedLogCount && !plank.isEmpty()) {
+				bestObservedLogPlank = plank;
 				bestObservedLogCount = count;
 			}
 		}
@@ -387,11 +388,7 @@ final class AiricraftDomainMethodSession {
 	}
 
 	private static String logItemForPlank(String plankItemId) {
-		int index = ActionGraphDomainKnowledge.plankItemIds().indexOf(plankItemId);
-		if (index < 0 || index >= ActionGraphDomainKnowledge.logItemIds().size()) {
-			return "";
-		}
-		return ActionGraphDomainKnowledge.logItemIds().get(index);
+		return ItemGroups.logFor(plankItemId);
 	}
 
 	private boolean observedAnyWoodMaterial() {

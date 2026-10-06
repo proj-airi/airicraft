@@ -75,6 +75,7 @@ public final class ReiRecipeSearchToolProvider implements PlannerToolProvider {
 			If REI recipe-viewer knowledge is needed, call search_recipes.
 			search_recipes.query accepts item ids or item names.
 			search_recipes.mode="output" finds recipes that make an item; mode="input" finds uses; mode="all" searches both.
+			Each result lists inputs and outputs (alternatives joined by |, counts as xN) and the category's workstations, so it also covers modded machine recipes that have no crafting-table form.
 			search_recipes is read-only recipe knowledge. Do not pass its recipe ids to craft_recipe unless check_craftables also lists them as currently craftable.
 			""";
 	}

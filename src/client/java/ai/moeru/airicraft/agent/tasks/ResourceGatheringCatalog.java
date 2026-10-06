@@ -1,10 +1,14 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.modded.ItemGroups;
+
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 
 public final class ResourceGatheringCatalog {
 	private static final Map<TaskResourceKind, ResourceEntry> BY_KIND = buildByKind();
@@ -22,8 +26,35 @@ public final class ResourceGatheringCatalog {
 			.toList();
 	}
 
+	/** Convention tags (Fabric's {@code c:} namespace) whose items also count toward a resource kind. */
+	private static final Map<TaskResourceKind, List<String>> EXTRA_ITEM_TAGS = Map.of(
+		TaskResourceKind.COAL, List.of("c:coal"),
+		TaskResourceKind.RAW_IRON, List.of("c:raw_materials/iron"),
+		TaskResourceKind.RAW_COPPER, List.of("c:raw_materials/copper"),
+		TaskResourceKind.RAW_GOLD, List.of("c:raw_materials/gold"),
+		TaskResourceKind.DIAMOND, List.of("c:gems/diamond"),
+		TaskResourceKind.EMERALD, List.of("c:gems/emerald"),
+		TaskResourceKind.REDSTONE, List.of("c:dusts/redstone"),
+		TaskResourceKind.LAPIS_LAZULI, List.of("c:gems/lapis"),
+		TaskResourceKind.QUARTZ, List.of("c:gems/quartz")
+	);
+
+	/** The entry for a kind, widened with the live registry's modded members of its tags and groups. */
 	public static Optional<ResourceEntry> entry(TaskResourceKind kind) {
-		return Optional.ofNullable(BY_KIND.get(kind));
+		ResourceEntry base = BY_KIND.get(kind);
+		if (base == null) {
+			return Optional.empty();
+		}
+		LinkedHashSet<String> accepted = new LinkedHashSet<>(base.acceptedItemIds());
+		if (kind == TaskResourceKind.WOOD_LOGS) {
+			accepted.addAll(ItemGroups.members(ItemGroups.Group.LOGS));
+		}
+		TreeSet<String> tagged = new TreeSet<>();
+		for (String tag : EXTRA_ITEM_TAGS.getOrDefault(kind, List.of())) {
+			tagged.addAll(ItemGroups.tagMembers(tag));
+		}
+		accepted.addAll(tagged);
+		return Optional.of(new ResourceEntry(kind, List.copyOf(accepted), base.primaryItemId(), base.aggregate()));
 	}
 
 	public static Optional<ResourceEntry> entry(String resourceKind) {
