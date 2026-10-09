@@ -193,7 +193,7 @@ public final class BlueprintService {
                 if(op.equals("load")){
                     String id=a.get("blueprintId").getAsString();var record=savedDesigns.get(id);if(record==null)throw new IllegalArgumentException("unknown_blueprint_id");
                     var d=record.getAsJsonObject("draft");if(savedWorld(server,d)!=world)throw new IllegalArgumentException("blueprint_dimension_mismatch");
-                    var next=new Blueprint(d.getAsJsonObject("tree"),readSurface(d));draft=next;draftId=id;source=d.get("source").getAsString();revision++;d.addProperty("revision",revision);d.getAsJsonObject("snapshot").addProperty("revision",revision);draftWorld=worldKey;lastLint=null;
+                    var next=new Blueprint(d.getAsJsonObject("tree"),readSurface(d),readObstacles(d));draft=next;draftId=id;source=d.get("source").getAsString();revision++;d.addProperty("revision",revision);d.getAsJsonObject("snapshot").addProperty("revision",revision);draftWorld=worldKey;lastLint=null;
                     surface=readSurface(d);terrain=d.has("terrain")?d.getAsJsonObject("terrain"):null;terrainOrigin=d.has("origin")?Blueprint.vector(d.get("origin")):null;terrainWorld=terrainOrigin==null?null:world;
                     lastCommitId=record.has("committed")?id:null;committed=committedPlans.get(id);
                     if(committed!=null){var c=record.getAsJsonObject("committed");committedRevision=c.get("revision").getAsInt();committedOrigin=Blueprint.vector(c.get("origin"));committedWorld=savedWorld(server,c);}else{committedRevision=0;committedOrigin=null;committedWorld=null;}
@@ -296,6 +296,12 @@ public final class BlueprintService {
         out.add("snapshot",JSON.toJsonTree(draft.snapshot(revision)));
         return out;
     }
+    private static Map<String,List<String>> readObstacles(JsonObject data) {
+        if(!data.has("terrain")||!data.getAsJsonObject("terrain").has("obstacles"))return null;
+        var result=new LinkedHashMap<String,List<String>>();
+        data.getAsJsonObject("terrain").getAsJsonObject("obstacles").entrySet().forEach(e->{var runs=new ArrayList<String>();e.getValue().getAsJsonArray().forEach(r->runs.add(r.getAsString()));result.put(e.getKey(),runs);});
+        return result;
+    }
     private static Map<String,Integer> readSurface(JsonObject data) {
         if(!data.has("surface"))return null;
         var result=new LinkedHashMap<String,Integer>();data.getAsJsonObject("surface").entrySet().forEach(e->result.put(e.getKey(),e.getValue().getAsInt()));return result;
@@ -312,12 +318,12 @@ public final class BlueprintService {
             if(data.has("designs"))for(var value:data.getAsJsonArray("designs")){
                 var record=value.getAsJsonObject();String id=record.get("id").getAsString();
                 if(savedDesigns.size()>=32)throw new IllegalStateException("saved_blueprint_limit_32");
-                if(record.has("committed")){var c=record.getAsJsonObject("committed");committedPlans.put(id,new Blueprint(c.getAsJsonObject("tree"),readSurface(c)));}
+                if(record.has("committed")){var c=record.getAsJsonObject("committed");committedPlans.put(id,new Blueprint(c.getAsJsonObject("tree"),readSurface(c),readObstacles(c)));}
                 savedDesigns.put(id,record);
             }
             if(data.has("activeId")&&!data.get("activeId").isJsonNull()){
                 draftId=data.get("activeId").getAsString();var d=savedDesigns.get(draftId).getAsJsonObject("draft");
-                draft=new Blueprint(d.getAsJsonObject("tree"),readSurface(d));source=d.get("source").getAsString();revision=data.get("revision").getAsInt();
+                draft=new Blueprint(d.getAsJsonObject("tree"),readSurface(d),readObstacles(d));source=d.get("source").getAsString();revision=data.get("revision").getAsInt();
                 draftWorld=server.getWorldPath(LevelResource.ROOT).toString();surface=readSurface(d);terrain=d.has("terrain")?d.getAsJsonObject("terrain"):null;
                 terrainOrigin=d.has("origin")?Blueprint.vector(d.get("origin")):null;terrainWorld=terrainOrigin==null?null:savedWorld(server,d);
             }

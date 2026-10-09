@@ -31,6 +31,19 @@ class BlueprintDiagnosticsTest {
             assertEquals("a.clear",blueprint.cells.get(new net.minecraft.core.BlockPos(1,0,0)).owner());
         }
     }
+    @Test void obstaclesInsideTheBuiltVolumeAreClearedByTheProgram(){
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"volume\":{\"size\":[2,3,2],\"state\":\"minecraft:stone\"}}").getAsJsonObject();
+        var obstacles=Map.of(
+            "1,1",java.util.List.of("oak_log@1..2","oak_leaves@3..4"),   // inside; y above the roof peak (2) stays
+            "2,0",java.util.List.of("oak_log@0..1"),                      // one block of walking room
+            "5,5",java.util.List.of("oak_log@0..1"));                     // far away
+        var blueprint=new Blueprint(tree,null,obstacles);
+        assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(1,1,1)).state().is(net.minecraft.world.level.block.Blocks.STONE),"existing cells win");
+        var walking=blueprint.cells.get(new net.minecraft.core.BlockPos(2,0,0));
+        assertNotNull(walking);assertTrue(walking.state().isAir());assertEquals(Blueprint.DERIVED_CLEARANCE,walking.owner());
+        assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(5,0,5)));
+        assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(1,3,1)),"canopy above the roof is left alone");
+    }
     @Test void missingIdIsNamedNotANullPointer(){
         var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":[{\"type\":\"WalkableArea\"}]}").getAsJsonObject();
         var error=assertThrows(IllegalArgumentException.class,()->new Blueprint(tree,null));

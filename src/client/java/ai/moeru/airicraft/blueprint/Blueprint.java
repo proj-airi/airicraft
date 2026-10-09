@@ -7,6 +7,7 @@ import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Blocks;
 import java.util.*;
 
 /** THROWAWAY: bounded component compiler, ownership and explicit composition. */
@@ -18,9 +19,42 @@ public final class Blueprint {
     private final Map<String,Integer> surface;
     private final Set<String> softOwners=new HashSet<>();
     public final JsonObject tree;
-    public Blueprint(JsonObject tree, Map<String,Integer> surface) {
+    public Blueprint(JsonObject tree, Map<String,Integer> surface) {this(tree,surface,null);}
+    /** Natural obstacles ("x,z" to "block@y0..y1" runs, local y) inside the built volume are cleared by the program, not the designer. */
+    public Blueprint(JsonObject tree, Map<String,Integer> surface, Map<String,List<String>> obstacles) {
         this.tree = tree.deepCopy(); this.surface = surface;
         visit(tree,"",BlockPos.ZERO,0,List.of(),new JsonObject(),0);
+        if(obstacles!=null) deriveClearance(obstacles);
+    }
+    public static final String DERIVED_CLEARANCE="derived_clearance";
+    /** Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell. */
+    private void deriveClearance(Map<String,List<String>> obstacles) {
+        int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,maxY=Integer.MIN_VALUE;
+        for(var c:cells.values()) {
+            if(c.state().isAir()) continue;
+            var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());maxY=Math.max(maxY,p.getY());
+        }
+        if(maxY==Integer.MIN_VALUE) return;
+        var air=Blocks.AIR.defaultBlockState();int cleared=0;
+        softOwners.add(DERIVED_CLEARANCE);
+        for(var column:obstacles.entrySet()) {
+            String[] xz=column.getKey().split(",");int x=Integer.parseInt(xz[0]),z=Integer.parseInt(xz[1]);
+            if(x<minX-1||x>maxX+1||z<minZ-1||z>maxZ+1) continue;
+            for(String run:column.getValue()) {
+                int at=run.lastIndexOf('@');if(at<0) continue;
+                String[] range=run.substring(at+1).split("\\.\\.");
+                int y0=Integer.parseInt(range[0]),y1=Integer.parseInt(range[1]);
+                for(int y=y0;y<=Math.min(y1,maxY);y++) {
+                    var p=new BlockPos(x,y,z);
+                    if(cells.containsKey(p)) continue;
+                    put(p,air,DERIVED_CLEARANCE,List.of());cleared++;
+                }
+            }
+        }
+        if(cleared>0) {
+            var info=new LinkedHashMap<String,Object>();info.put("path",DERIVED_CLEARANCE);info.put("type","DerivedClearance");info.put("origin",xyz(BlockPos.ZERO));info.put("rotation",0);
+            info.put("guidance",new JsonObject());info.put("clearedBlocks",cleared);components.add(info);
+        }
     }
     private void visit(JsonObject node,String parent,BlockPos origin,int rotation,List<String> inherited,JsonObject inheritedGuidance,int depth) {
         if(depth>24 || components.size()>512) throw new IllegalArgumentException("component_limit");
