@@ -73,11 +73,17 @@ def main():
         blueprint_id = max(listed, key=lambda e: e["revision"])["id"]
     else:
         blueprint_id = a.blueprint_id
-    tool("blueprint", {"op": "load", "blueprintId": blueprint_id})
-    draft = json.loads(tool("blueprint", {"op": "get"}))
+    for attempt in range(4):  # the first load after a client start can still bump the revision
+        tool("blueprint", {"op": "load", "blueprintId": blueprint_id})
+        draft = json.loads(tool("blueprint", {"op": "get"}))
+        started = json.loads(tool("construct_blueprint", {"revision": draft["revision"], "x": x, "y": y, "z": z})
+                             .split(": ", 1)[1])
+        if started.get("accepted"):
+            break
+        time.sleep(5)
+    else:
+        raise RuntimeError(f"construct_blueprint rejected: {started}")
     metrics.update(blueprintId=blueprint_id, revision=draft["revision"], cells=draft["cellCount"], materials=draft["materials"])
-    started = json.loads(tool("construct_blueprint", {"revision": draft["revision"], "x": x, "y": y, "z": z})
-                         .split(": ", 1)[1])
     op = started["workId"]; metrics["workId"] = op
     deadline = time.time() + a.max_minutes * 60
     while time.time() < deadline:

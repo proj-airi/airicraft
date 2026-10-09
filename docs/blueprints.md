@@ -1766,3 +1766,19 @@ Live construction results (Survival, flight disabled, no construction LLM calls)
 | Obstacle-free sandy slope, origin `[60,65,20]`, oak cabin rev 11 (438 cells, cobblestone foundation following a 3-block drop) | -3..+2, no obstacles | **Failed late**: 282 placed, 15 cells left (the last target was a glass pane at `[74,70,21]`, `safe_stand_position_not_found attemptedStandPositions=0`), 409 failed attempts, 13,546 ticks, scaffolds fully removed. Visually a complete cabin on its foundation; the slope itself was handled. |
 
 Open questions: why stand-position search yields zero candidates for window panes on the high side of a slope (suspect the escape guard); whether clearance should be derived from `terrain.obstacles` by the program instead of authored; and designer drift from the brief (the first draft used white concrete despite a material list).
+
+
+### Window panes: placement prediction ignored derived connections (2026-10-09)
+
+Root cause of the window-pane failures above: a designed `glass_pane` carries `east=false,west=false,...`, but the game connects a pane to the walls beside it. The executor's placement-state prediction and post-placement confirmation compared exact states, so no stance ever predicted the designed state and every candidate failed line of sight (`safe_stand_position_not_found`, 0 candidates). Placement prediction, confirmation and the construction state read now treat fence, pane, iron-bar and wall connection properties as derived (`BlueprintIntegrity.statesMatch`). Placement failures also report how many stand candidates survive each filter (`supports`, `standableChecks`, `lineOfSight`, `viableStands`).
+
+`scripts/terrain-trial` replays one trial (navigate, supply, optionally design, construct, poll) and writes `metrics.json`/`work.json`. Same sandy-slope cabin (rev 11, origin `[60,65,20]`, Survival, supplied materials):
+
+| Run | Result | Ticks | Failed attempts | Travel | Scaffolds |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Before (fresh world) | 282 placed, 15 left | 13,546 | 409 | n/a | 48 |
+| After, replay on the half-built world | 9 placed, 7 left | 715 | 9 | n/a | 0 |
+| After, fresh world | 293 placed, 3 left | 4,206 | 1 | 289 | 5 |
+| After, second fresh world | 293 placed, 3 left | 4,358 | 1 | 296 | 8 |
+
+The last 3 cells are foundation cells in a pit (for example `[72,66,21]`: sand and placed cobblestone on four sides, the one open side above). Its attempt fails with `target_not_visible`, `supports=5`, `lineOfSight=0`: the faces it could click are only visible from stances that are themselves foundation cells. A most-constrained-first ordering tweak (fill cells with the most closed sides first) did not change the outcome (same 3 cells, 4,358 ticks) and was reverted. Open: place pit cells before their rims, or add a bounded cut-and-restore access repair for enclosed foundation cells.
