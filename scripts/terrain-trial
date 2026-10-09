@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "wrapper/build/install/airicraft/bin/airicraft"
 GIVE = {"minecraft:cobblestone": 160, "minecraft:oak_planks": 220, "minecraft:glass_pane": 16, "minecraft:oak_door": 2,
         "minecraft:oak_stairs": 8, "minecraft:torch": 8, "minecraft:iron_axe": 1, "minecraft:iron_pickaxe": 1,
-        "minecraft:iron_shovel": 1, "minecraft:dirt": 32, "minecraft:bread": 16}
+        "minecraft:iron_shovel": 1, "minecraft:dirt": 32, "minecraft:white_concrete": 64, "minecraft:bread": 16}
 
 def tool(name, args, timeout=300):
     out = subprocess.run([str(CLI), "agent", "tools", "call", "--name", name, "--arguments", json.dumps(args)],

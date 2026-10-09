@@ -244,7 +244,7 @@ public final class BlueprintService {
                         default -> throw new IllegalArgumentException("gameMode must be creative or survival");
                     };
                     // Driver-only test setup: top up the inventory so Survival runs need no offline save edits.
-                    if(a.has("give")){for(var entry:a.getAsJsonObject("give").entrySet()){
+                    if(a.has("give")){player.getInventory().clearContent();for(var entry:a.getAsJsonObject("give").entrySet()){
                         var item=net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(net.minecraft.resources.ResourceLocation.parse(entry.getKey()));
                         if(item==net.minecraft.world.item.Items.AIR)throw new IllegalArgumentException("unknown_item: "+entry.getKey());
                         int remaining=entry.getValue().getAsInt();

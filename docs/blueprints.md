@@ -30,7 +30,7 @@ Annotate circulation surfaces rather than furniture footprints. The compiler ret
 
 `commit` requires an exact revision and origin. It currently spawns the draft's cells directly and is limited to creative worlds named `Blueprint-*`. `verify` checks those committed cells against the world. Unspecified cells remain untouched: moving/removing geometry in a later draft does not automatically undo an earlier commit. Use explicit Clearance or separate test sites for those changes. The separate `construct_blueprint` tool below performs normal movement and placement; supplied-material Survival qualifications are listed below.
 
-`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are Codex-driver-only diagnostics (test setup and camera positioning). `prepare` accepts `gameMode: "creative"` (default) or `"survival"`, preserves inventory (optionally topped up with `give: {"minecraft:oak_planks": 128}`), and sets peaceful daytime in a `Blueprint-*` scratch world. Survival construction still consumes supplied materials; direct-block `commit` remains Creative-only. The normal planner delegates drafting and linting to its designer and can inspect, commit and verify without external-driver mode. The dashboard exposes none of these mutation operations.
+`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are Codex-driver-only diagnostics (test setup and camera positioning). `prepare` accepts `gameMode: "creative"` (default) or `"survival"`, preserves inventory (or, with `give: {"minecraft:oak_planks": 128}`, replaced by exactly that kit), and sets peaceful daytime in a `Blueprint-*` scratch world. Survival construction still consumes supplied materials; direct-block `commit` remains Creative-only. The normal planner delegates drafting and linting to its designer and can inspect, commit and verify without external-driver mode. The dashboard exposes none of these mutation operations.
 
 ## Validation
 
@@ -1782,3 +1782,16 @@ Root cause of the window-pane failures above: a designed `glass_pane` carries `e
 | After, second fresh world | 293 placed, 3 left | 4,358 | 1 | 296 | 8 |
 
 The last 3 cells are foundation cells in a pit (for example `[72,66,21]`: sand and placed cobblestone on four sides, the one open side above). Its attempt fails with `target_not_visible`, `supports=5`, `lineOfSight=0`: the faces it could click are only visible from stances that are themselves foundation cells. A most-constrained-first ordering tweak (fill cells with the most closed sides first) did not change the outcome (same 3 cells, 4,358 ticks) and was reverted. Open: place pit cells before their rims, or add a bounded cut-and-restore access repair for enclosed foundation cells.
+
+### Program-derived site clearing (2026-10-09)
+
+`Blueprint` now takes the sampled `terrain.obstacles` and adds air cells (owner `derived_clearance`, a soft owner) for every obstacle block inside the columns the blueprint touches plus one block of walking room, up to the highest built cell. Existing cells always win; canopy above the roof is left alone. The designer no longer has to author `SiteClearance` for the building's own volume. `prepare` with `give` now replaces the inventory with that kit (repeated trials used to fill it and fail with `inventory_full`).
+
+Forest slope (origin `[0,71,32]`, oak cabin rev 6, 893 cells), run on a world that already held part of an earlier attempt, so the numbers are not comparable cell for cell:
+
+| Attempt | Result |
+|---|---|
+| Run 1 (9 min) | 173 placed, 19 failed attempts (earlier run: 352), 69 scaffolds placed / 53 removed, then `construction_no_feasible_target` with 298 cells left after a `break_aim_timeout` while removing a scaffold at `[11,72,36]`. |
+| Run 2 (resume) | 0 placed, 36 scaffolds placed / 30 removed, `construction_no_feasible_target` with 304 left and 22 scaffold blocks still owed. |
+
+Open: clearing is no longer what blocks the forest. The remaining cells are upper walls and roof, and the access search finds no scaffold route that survives a failed cleanup (the program gives up with repair debt outstanding).
