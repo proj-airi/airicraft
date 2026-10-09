@@ -729,7 +729,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			}
 			else if (request.type() == WorldTaskType.PLACE_BLOCK) {
 				return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, approachReason.detail()
-					+ " safe_stand_position_not_found attemptedStandPositions=" + attemptedPlacementStandPositions.size()));
+					+ " safe_stand_position_not_found attemptedStandPositions=" + attemptedPlacementStandPositions.size()
+					+ " " + standSearchDiagnostic));
 			}
 			else {
 				navigationGoal = new GoalPosition(target.getX(), target.getY(), target.getZ(), false);
@@ -952,6 +953,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		return navigationFacade.navigationGoalReached(navigationGoal);
 	}
 
+	private String standSearchDiagnostic = "";
+
 	private Optional<GoalPosition> interactionStandPosition(
 		Minecraft minecraft,
 		LocalPlayer player,
@@ -967,12 +970,14 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		BlockPos current = player.blockPosition();
         var standable=new java.util.HashMap<BlockPos,Boolean>();
+        int[] stages={0,0,0}; // supports, standable candidates, candidates that also see a support face
         List<BlockPos> candidates=placement
-            ? placementStandsAcrossSupports(placementSupports(minecraft,target,placementFacePreference),support->
-                viablePlacementStandCandidates(target,support.supportPos(),current,excludedPlacementStands,
-                    candidate->standable.computeIfAbsent(candidate,p->isStandable(minecraft,p)),
+            ? placementStandsAcrossSupports(placementSupports(minecraft,target,placementFacePreference),support->{
+                stages[0]++;
+                return viablePlacementStandCandidates(target,support.supportPos(),current,excludedPlacementStands,
+                    candidate->{boolean ok=standable.computeIfAbsent(candidate,p->isStandable(minecraft,p));if(ok)stages[1]++;return ok;},
                     candidate->true, // Reach is evaluated for each sampled face point below.
-                    candidate->placementStandHasLineOfSight(minecraft,player,candidate,support)),current)
+                    candidate->{boolean ok=placementStandHasLineOfSight(minecraft,player,candidate,support);if(ok)stages[2]++;return ok;});},current)
             : interactionStandCandidates(target,hitTarget.supportPos());
         if(placement && constructionBounds!=null && !candidates.isEmpty()) {
             var b=constructionBounds;
@@ -982,12 +987,18 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
                 new ai.moeru.airicraft.blueprint.ConstructionEscape.Position(p.getX(),p.getY(),p.getZ()),Integer.MAX_VALUE));
         }
 		if (placement) {
-			return candidates.stream()
+			int viable = candidates.size();
+			int[] permitted = {0};
+			var chosen = candidates.stream()
                 .filter(candidate->constructionBounds==null
                     || ai.moeru.airicraft.blueprint.MinecraftConstructionEscape.permitsFrom(
                         minecraft,target,constructionBounds,expectedPlacementState,candidate))
+				.peek(candidate -> permitted[0]++)
 				.findFirst()
 				.map(candidate -> new GoalPosition(candidate.getX(), candidate.getY(), candidate.getZ(), true));
+			// permitted stops at the first hit; it only distinguishes "none survived the escape guard" from "none viable".
+			standSearchDiagnostic = "supports=" + stages[0] + " standableChecks=" + stages[1] + " lineOfSight=" + stages[2] + " viableStands=" + viable + " escapeGuarded=" + (constructionBounds != null) + " permittedFirst=" + permitted[0];
+			return chosen;
 		}
 		GoalPosition best = null;
 		double bestDistance = Double.MAX_VALUE;
@@ -1364,7 +1375,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private boolean placementMatchesExpected(BlockState state) {
-		return expectedPlacementState == null ? placementConfirmed(state) : expectedPlacementState.equals(state);
+		return expectedPlacementState == null ? placementConfirmed(state) : ai.moeru.airicraft.blueprint.BlueprintIntegrity.statesMatch(expectedPlacementState, state);
 	}
 
 	/** Predict only; actual placement always uses the normal interaction manager. */
@@ -1400,7 +1411,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 				}
 			};
 		}
-		return expectedPlacementState.equals(item.getBlock().getStateForPlacement(context));
+		return ai.moeru.airicraft.blueprint.BlueprintIntegrity.statesMatch(expectedPlacementState, item.getBlock().getStateForPlacement(context));
 	}
 
 	static boolean placementConfirmed(BlockState state) {

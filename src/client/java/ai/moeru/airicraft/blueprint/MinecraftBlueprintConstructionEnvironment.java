@@ -60,7 +60,10 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
     private BlockPos position(BlueprintConstructionProgram.Cell cell){return new BlockPos(cell.x(),cell.y(),cell.z());}
     private void requireWorld(){if(client.level!=world || client.player==null)throw new IllegalStateException("construction_world_changed");}
     @Override public String state(BlueprintConstructionProgram.Cell cell) {
-        requireWorld();var pos=position(cell);return world.hasChunkAt(pos)?Blueprint.stateText(world.getBlockState(pos)):"unknown_unloaded";
+        requireWorld();var pos=position(cell);if(!world.hasChunkAt(pos))return "unknown_unloaded";
+        var actual=world.getBlockState(pos);
+        // Pane/fence/wall connections follow neighbors; report the designed state when only those differ so the cell counts as done.
+        return BlueprintIntegrity.statesMatch(Blueprint.parseState(cell.state()),actual)?cell.state():Blueprint.stateText(actual);
     }
     @Override public boolean structuralSupport(BlueprintConstructionProgram.Cell cell){
         requireWorld();return Blueprint.parseState(cell.state()).isCollisionShapeFullBlock(world,position(cell));

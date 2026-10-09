@@ -37,4 +37,13 @@ class BlueprintDiagnosticsTest {
         assertTrue(error.getMessage().startsWith("missing_component_id"),error.getMessage());
         assertTrue(error.getMessage().contains("WalkableArea"),error.getMessage());
     }
+    @Test void paneConnectionsAreDerivedButOtherStateIsNot(){
+        var pane=net.minecraft.world.level.block.Blocks.GLASS_PANE.defaultBlockState();
+        var connected=pane.setValue(net.minecraft.world.level.block.IronBarsBlock.EAST,true).setValue(net.minecraft.world.level.block.IronBarsBlock.WEST,true);
+        assertTrue(BlueprintIntegrity.statesMatch(pane,connected));
+        assertFalse(BlueprintIntegrity.statesMatch(pane,connected.setValue(net.minecraft.world.level.block.IronBarsBlock.WATERLOGGED,true)));
+        var stairs=net.minecraft.world.level.block.Blocks.OAK_STAIRS.defaultBlockState();
+        assertFalse(BlueprintIntegrity.statesMatch(stairs,stairs.setValue(net.minecraft.world.level.block.StairBlock.FACING,net.minecraft.core.Direction.EAST)));
+        assertTrue(BlueprintIntegrity.statesMatch(stairs,stairs));
+    }
 }
