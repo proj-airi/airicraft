@@ -9,6 +9,9 @@ import java.util.concurrent.CompletableFuture;
 public interface PlannerToolProvider {
 	String id();
 
+	/** Cancel provider-owned background work on planner reset or shutdown. */
+	default void reset() {}
+
 	default boolean dynamicTools() { return false; }
 
 	default boolean available() {

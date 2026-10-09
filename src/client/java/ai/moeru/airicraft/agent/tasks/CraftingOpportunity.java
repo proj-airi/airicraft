@@ -51,7 +51,21 @@ public record CraftingOpportunity(
 
 	static String recipeIdSegment(String itemId) {
 		String display = displayItemId(itemId).toLowerCase(java.util.Locale.ROOT);
-		return display.replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
+		// Recipe enumeration calls this frequently. Collapse separators without
+		// compiling patterns and allocating matchers for every candidate.
+		var segment = new StringBuilder(display.length());
+		boolean separator = false;
+		for (int i = 0; i < display.length(); i++) {
+			char c = display.charAt(i);
+			if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+				if (separator && !segment.isEmpty()) segment.append('_');
+				segment.append(c);
+				separator = false;
+			} else {
+				separator = true;
+			}
+		}
+		return segment.toString();
 	}
 
 	private static String formatInputSummary(List<String> inputItemIds) {

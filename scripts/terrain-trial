@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Drive one blueprint construction trial against a running driver-mode client and record metrics.
+
+Prerequisites: a client launched with scripts/codex-driver on a Blueprint-* world, AIRICRAFT_BRIDGE_STATE_FILE set
+if isolated, and the wrapper built (./gradlew wrapper:installDist). Experimental; the flow, not the numbers, is the contract.
+
+  scripts/terrain-trial --site 60 65 20 --blueprint-id <saved id> --out run/blueprint-evidence/trials/slope
+  scripts/terrain-trial --site 60 65 20 --brief "A small oak cabin ..." --out ...
+"""
+import argparse, json, os, re, subprocess, sys, time, urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CLI = ROOT / "wrapper/build/install/airicraft/bin/airicraft"
+GIVE = {"minecraft:cobblestone": 160, "minecraft:oak_planks": 220, "minecraft:glass_pane": 16, "minecraft:oak_door": 2,
+        "minecraft:oak_stairs": 8, "minecraft:torch": 8, "minecraft:iron_axe": 1, "minecraft:iron_pickaxe": 1,
+        "minecraft:iron_shovel": 1, "minecraft:dirt": 32, "minecraft:white_concrete": 64, "minecraft:bread": 16}
+
+def tool(name, args, timeout=300):
+    out = subprocess.run([str(CLI), "agent", "tools", "call", "--name", name, "--arguments", json.dumps(args)],
+                         capture_output=True, text=True, timeout=timeout).stdout
+    m = re.search(r"^result: (.*)$", out, re.M)
+    if not m:
+        raise RuntimeError(f"{name}: {out.strip()[-300:]}")
+    return m.group(1)
+
+def work(work_id):
+    raw = tool("inspect_work", {"workId": work_id})
+    return json.loads(raw[raw.index("{"):])
+
+def wait_job(work_id, limit=600):
+    end = time.time() + limit
+    while time.time() < end:
+        state = work(work_id).get("state")
+        if state not in ("QUEUED", "RUNNING"):
+            return state
+        time.sleep(5)
+    return "TIMEOUT"
+
+def design(brief, site, token, port, limit=1200):
+    # design_blueprint outlives the CLI call timeout; start it detached and poll the dashboard.
+    subprocess.Popen([str(CLI), "agent", "tools", "call", "--name", "design_blueprint", "--arguments",
+                      json.dumps({"brief": brief, "site": site})], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    end = time.time() + limit
+    while time.time() < end:
+        time.sleep(15)
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/blueprint", headers={"Authorization": f"Bearer {token}"})
+        d = json.load(urllib.request.urlopen(req, timeout=20))
+        status = d["designer"].get("status")
+        if status not in ("running", None, "idle"):
+            return status
+    return "TIMEOUT"
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--site", nargs=3, type=int, required=True, metavar=("X", "Y", "Z"))
+    p.add_argument("--blueprint-id")
+    p.add_argument("--brief")
+    p.add_argument("--dashboard-token", help="viewer token from the client log (needed with --brief)")
+    p.add_argument("--dashboard-port", type=int, default=8765)
+    p.add_argument("--out", required=True)
+    p.add_argument("--max-minutes", type=int, default=45)
+    a = p.parse_args()
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    x, y, z = a.site
+    metrics = {"site": a.site, "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    tool("navigate_to", {"x": x - 2, "y": y, "z": z - 2, "exactY": False})
+    time.sleep(2)
+    tool("blueprint", {"op": "prepare", "gameMode": "survival", "give": GIVE})
+    if a.brief:
+        metrics["design_status"] = design(a.brief, a.site, a.dashboard_token, a.dashboard_port)
+        listed = json.loads(tool("blueprint", {"op": "list"}))
+        blueprint_id = max(listed, key=lambda e: e["revision"])["id"]
+    else:
+        blueprint_id = a.blueprint_id
+    for attempt in range(4):  # the first load after a client start can still bump the revision
+        tool("blueprint", {"op": "load", "blueprintId": blueprint_id})
+        draft = json.loads(tool("blueprint", {"op": "get"}))
+        started = json.loads(tool("construct_blueprint", {"revision": draft["revision"], "x": x, "y": y, "z": z})
+                             .split(": ", 1)[1])
+        if started.get("accepted"):
+            break
+        time.sleep(5)
+    else:
+        raise RuntimeError(f"construct_blueprint rejected: {started}")
+    metrics.update(blueprintId=blueprint_id, revision=draft["revision"], cells=draft["cellCount"], materials=draft["materials"])
+    op = started["workId"]; metrics["workId"] = op
+    deadline = time.time() + a.max_minutes * 60
+    while time.time() < deadline:
+        time.sleep(30)
+        w = work(op)
+        if w.get("state") not in ("RUNNING", "QUEUED"):
+            break
+    d = w.get("details", {})
+    prog = d.get("progress", {})
+    program = prog.get("program", prog)
+    metrics.update(state=w.get("state"), reason=d.get("reason", ""),
+                   elapsedTicks=prog.get("elapsedTicks", d.get("elapsedTicks")),
+                   **{k: program.get(k) for k in ("placed", "remainingCells", "totalCells", "failedAttempts",
+                                                  "distanceTravelled", "scaffoldsPlaced", "scaffoldsRemoved", "repairPlans")})
+    (out / "metrics.json").write_text(json.dumps(metrics, indent=1))
+    (out / "work.json").write_text(json.dumps(w, indent=1))
+    print(json.dumps(metrics, indent=1))
+
+if __name__ == "__main__":
+    sys.exit(main())

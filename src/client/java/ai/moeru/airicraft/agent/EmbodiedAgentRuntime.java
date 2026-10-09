@@ -2871,6 +2871,30 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return "Tool result for run_policy: " + new com.google.gson.Gson().toJson(work.summary());
 	}
 
+	private String startBlueprintConstruction(PlannerToolCall call) {
+		requireLivingPlayerForAction();
+		if (survivalReflexRuntime.snapshot().holdId()!=null) throw new IllegalStateException("work_in_safety_hold");
+		if (policyActive() || activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
+		var args=call.arguments();var client=Minecraft.getInstance();
+		var origin=new BlockPos(args.get("x").getAsInt(),args.get("y").getAsInt(),args.get("z").getAsInt());
+		var cells=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
+		var environment=new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client,cells);
+        ai.moeru.airicraft.blueprint.BlueprintConstructionProgram program;
+        try { program=new ai.moeru.airicraft.blueprint.BlueprintConstructionProgram(cells,environment); }
+        catch(RuntimeException error){environment.close();throw error;}
+		policyChildren.clear();
+		var host=new ToolPolicyHost(this::dispatchPolicyTool,this::describePolicyTool,workHistory::find,this::cancelPolicyChildren,()->new ContainerPolicyHost(client));
+		var handle=ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION,java.util.UUID.randomUUID().toString());
+		policyWork=handle;
+		policyRuntime=new ai.moeru.airicraft.policy.PolicyRuntime(program,host,outcome->{
+			var details=new LinkedHashMap<String,Object>();details.put("blueprint",args.deepCopy());details.put("reason",outcome.reason());details.put("result",outcome.result());details.put("effects",outcome.effects());details.put("progress",program.progress());details.put("elapsedTicks",outcome.elapsedTicks());
+			recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.valueOf(outcome.state()),"construct_blueprint","FINISHED",false,tickCount,details));
+		},Math.max(12000,Math.min(240000,cells.size()*300)),ai.moeru.airicraft.blueprint.BlueprintConstructionProgram.effectLimit(cells.size()));
+		var work=new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,"construct_blueprint","CONSTRUCTION",true,tickCount,Map.of("blueprint",args.deepCopy(),"cells",cells.size()));
+		recordWork(work);dialogueRuntime.observeAcceptedWork(work);
+		return "Tool result for construct_blueprint: "+new com.google.gson.Gson().toJson(work.summary());
+	}
+
 	private boolean policyActive() { return policyRuntime != null && policyRuntime.active(); }
 
 	private void cancelPolicy(String reason) {
@@ -2884,7 +2908,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			|| survivalReflexRuntime.snapshot().state() == SurvivalReflexState.ACTIVE) cancelPolicy("safety_interruption");
 		else if (workHistory.list().stream().anyMatch(work -> work.foreground() && !work.state().terminal()
 			&& !work.handle().equals(policyWork) && !policyOwns(work.handle()))) cancelPolicy("actuator_ownership_changed");
-		else policyRuntime.tick();
+		else {
+            policyRuntime.tick();
+            if(policyRuntime.active() && tickCount%20==0)workHistory.find(policyWork).ifPresent(work->{
+                var details=new LinkedHashMap<String,Object>(work.details());details.put("progress",policyRuntime.progress());
+                recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(work.handle(),work.parentWorkId(),work.state(),work.label(),work.phase(),work.foreground(),tickCount,details));
+            });
+        }
 	}
 
 	private com.google.gson.JsonElement describePolicyTool(String name) {
@@ -3207,6 +3237,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return switch (normalizedToolName) {
 			case "inspect_work", "list_work", "cancel_work", "resume_work" -> executeWorkTool(toolCall);
 			case "run_policy" -> "TOOL_UNAVAILABLE: run_policy disabled";
+			case "construct_blueprint" -> startBlueprintConstruction(toolCall);
 			case PlannerToolCatalog.RESUME_TASK -> {
 				String holdId = stringArg(args, "holdId").orElseThrow(() -> new IllegalArgumentException("holdId is required"));
 				SurvivalReflexSnapshot reflex = resumeSafetyHold(holdId, "planner_tool");
@@ -4104,6 +4135,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		String itemId = stringArg(args, "itemId").orElseThrow(() -> new IllegalArgumentException("itemId is required"));
 		String rootFacePreference = stringArg(args, "facePreference").orElse("auto");
 		String rootRequiredTargetMaterial = stringArg(args, "requireCurrentTargetMaterial").orElse("air_or_replaceable");
+        ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds escape=null;
+        if(args.has("escapeBounds")) {
+            var e=args.getAsJsonArray("escapeBounds");
+            escape=new ai.moeru.airicraft.blueprint.ConstructionEscape.Bounds(e.get(0).getAsInt(),e.get(1).getAsInt(),e.get(2).getAsInt(),e.get(3).getAsInt(),e.get(4).getAsInt(),e.get(5).getAsInt());
+        }
 		if (hasTargets(args)) {
 			ArrayList<BlockPlacementStepArgs.Target> targets = new ArrayList<>();
 			for (JsonElement element : args.getAsJsonArray("targets")) {
@@ -4114,17 +4150,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				targets.add(new BlockPlacementStepArgs.Target(
 					parseTargetPosition(target),
 					stringArg(target, "facePreference").orElse(rootFacePreference),
-					stringArg(target, "requireCurrentTargetMaterial").orElse(rootRequiredTargetMaterial)
+					stringArg(target, "requireCurrentTargetMaterial").orElse(rootRequiredTargetMaterial),
+					stringArg(target, "expectedState").orElse(stringArg(args, "expectedState").orElse(null))
 				));
 			}
-			return new BlockPlacementStepArgs(itemId, targets);
+			return new BlockPlacementStepArgs(itemId, targets, escape, args.has("tower") && args.get("tower").getAsBoolean());
 		}
-		return new BlockPlacementStepArgs(
-			itemId,
-			parseTargetPosition(args),
-			rootFacePreference,
-			rootRequiredTargetMaterial
-		);
+		return new BlockPlacementStepArgs(itemId, List.of(new BlockPlacementStepArgs.Target(
+			parseTargetPosition(args), rootFacePreference, rootRequiredTargetMaterial,
+			stringArg(args, "expectedState").orElse(null))), escape, args.has("tower") && args.get("tower").getAsBoolean());
 	}
 
 	private static BlockUseStepArgs parseBlockUseArgs(JsonObject args) {

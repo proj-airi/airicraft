@@ -25,6 +25,7 @@ public final class DashboardObservationStore {
 		"debug_timeline", 12000,
 		"decision_state", 12001,
 		"llm_call", 2048,
+        "blueprint_designer", 4096,
 		"log", 8192,
 		"visual_frame", 601,
 		"session_started", 128,
@@ -195,6 +196,7 @@ public final class DashboardObservationStore {
 			}
 		}
 		List<DashboardObservation> selected = new ArrayList<>(events);
+        for(var observation:retained)if(observation.type().equals("blueprint_designer")&&observation.serverTickId()<=tick&&!selected.contains(observation))selected.add(observation);
 		selected.addAll(baseline.values());
 		Set<Long> references = new java.util.HashSet<>();
 		for (var observation : selected) collectContextReferences(JsonParser.parseString(observation.payloadJson()), references);

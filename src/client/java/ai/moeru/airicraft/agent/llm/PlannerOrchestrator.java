@@ -1310,6 +1310,7 @@ public final class PlannerOrchestrator {
 	}
 
 	public void reset() {
+		toolRegistry.resetProviders();
 		decisionWorldSessionId = null;
 		incorporatedDecisionEventSequence = 0;
 		cancelPendingTool();
@@ -1319,6 +1320,7 @@ public final class PlannerOrchestrator {
 	}
 
 	public void shutdown() {
+		toolRegistry.resetProviders();
 		cancelPendingTool();
 		sessionCoordinator.shutdown();
 		compactionService.shutdown();

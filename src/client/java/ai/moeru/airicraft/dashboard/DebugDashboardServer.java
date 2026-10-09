@@ -44,6 +44,7 @@ public final class DebugDashboardServer {
 
 	private final DashboardObservationStore store;
 	private final Path logPath;
+	private final java.util.function.Supplier<String> blueprintSnapshot;
 	private final java.util.function.Supplier<Map<String, Object>> reportEnvironment;
 	private final java.util.function.Supplier<List<String>> reportSecrets;
 	private final Object reportLock = new Object();
@@ -61,11 +62,20 @@ public final class DebugDashboardServer {
 		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"), reportEnvironment, reportSecrets);
 	}
 
+	public DebugDashboardServer(DashboardObservationStore store, java.util.function.Supplier<Map<String, Object>> reportEnvironment, java.util.function.Supplier<List<String>> reportSecrets, java.util.function.Supplier<String> blueprintSnapshot) {
+		this(store, FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log"), reportEnvironment, reportSecrets, blueprintSnapshot);
+	}
+
 	DebugDashboardServer(DashboardObservationStore store, Path logPath) {
 		this(store, logPath, () -> Map.of("availability", "unavailable"), List::of);
 	}
 
 	DebugDashboardServer(DashboardObservationStore store, Path logPath, java.util.function.Supplier<Map<String, Object>> reportEnvironment, java.util.function.Supplier<List<String>> reportSecrets) {
+		this(store,logPath,reportEnvironment,reportSecrets,()->"{\"available\":false}");
+	}
+
+	DebugDashboardServer(DashboardObservationStore store, Path logPath, java.util.function.Supplier<Map<String, Object>> reportEnvironment, java.util.function.Supplier<List<String>> reportSecrets, java.util.function.Supplier<String> blueprintSnapshot) {
+		this.blueprintSnapshot=blueprintSnapshot;
 		this.store = store;
 		this.logPath = logPath;
 		this.reportEnvironment = reportEnvironment;
@@ -110,6 +120,11 @@ public final class DebugDashboardServer {
 		candidate.createContext("/", this::handleIndex);
 		candidate.createContext("/app.css", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/app.css", "text/css; charset=utf-8"));
 		candidate.createContext("/app.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/app.js", "text/javascript; charset=utf-8"));
+		candidate.createContext("/blueprint.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/blueprint.js", "text/javascript; charset=utf-8"));
+		candidate.createContext("/blueprint-designer.js", exchange -> handleResource(exchange, "/assets/airicraft/dashboard/blueprint-designer.js", "text/javascript; charset=utf-8"));
+		candidate.createContext("/api/blueprint", exchange -> {
+			if (authorizeGet(exchange)) writeText(exchange, 200, "application/json; charset=utf-8", blueprintSnapshot.get());
+		});
 		candidate.createContext("/api/bootstrap", this::handleBootstrap);
 		candidate.createContext("/api/observations", this::handleObservations);
 		candidate.createContext("/api/stream", this::handleStream);

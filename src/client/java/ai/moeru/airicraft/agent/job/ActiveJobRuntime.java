@@ -413,7 +413,7 @@ public final class ActiveJobRuntime {
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
 			case ENSURE_BLOCKS_IN_INVENTORY -> tickEnsureBlocksInInventory(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, tick);
-			case FOLLOW_PLAYER, NAVIGATE_TO -> tickGoalJob(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
+			case FOLLOW_PLAYER, NAVIGATE_TO -> tickGoalJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case IDLE -> ActiveJob.idle();
 		};
 		if (activeJob.type() != ActiveJobType.COLLECT_RESOURCE) {
@@ -829,10 +829,12 @@ public final class ActiveJobRuntime {
 
 	private static ActiveJob tickGoalJob(
 		ActiveJob job,
+		WorldTaskRequest desiredPrimitiveTask,
 		TaskExecutionSnapshot primitiveExecution,
 		boolean actuationAllowed,
 		long tick
 	) {
+		if (!primitiveExecutionMatches(desiredPrimitiveTask, primitiveExecution)) return job;
 		if (!actuationAllowed || primitiveExecution.state() == TaskExecutionState.PAUSED_BY_SESSION_GATE || primitiveExecution.state() == TaskExecutionState.PAUSED_BY_REFLEX) {
 			return updated(job, ActiveJobStatus.BLOCKED, "session_gate", null, job.collectedCount(), tick);
 		}

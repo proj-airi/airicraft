@@ -1,3 +1,5 @@
+import { renderBlueprintDesigner } from './blueprint-designer.js';
+import { renderBlueprint } from './blueprint.js';
 const state = {
   token: new URLSearchParams(location.hash.slice(1)).get('token') || '',
   observations: [],
@@ -208,6 +210,8 @@ function reconcileChildren(parent, next) {
 }
 
 function render() {
+  if(state.view==='blueprint-designer'){renderBlueprintDesigner(el('content'),{observations:state.observations.filter(o=>o.type==='blueprint_designer'&&o.sequence<=state.selectedSequence),replay:state.replay||!state.live});return;}
+  if(state.view==='blueprint'){renderBlueprint(el('content'),{api,replay:state.replay||!state.live});return;}
   const snapshot = snapshotAtCursor();
   if (!snapshot && state.view !== 'timeline' && state.view !== 'logs' && state.view !== 'raw' && state.view !== 'transcript' && state.view !== 'compactions') {
     updateContent(`<div class="empty-state"><div class="loader"></div><h2>Waiting for the first runtime snapshot</h2><p>Transitions and transcripts will appear as soon as Airicraft emits them.</p></div>`);
@@ -630,7 +634,8 @@ async function seekRecording(tick) {
       if (['runtime_snapshot', 'decision_state', 'visual_frame', 'llm_call'].includes(entry.type)) baseline.set(entry.type, entry);
       else if (entry.serverTickId >= tick - 100) { events.push(entry); if (events.length > 50) events.shift(); }
     }
-    const entries = [...events, ...baseline.values()].sort((a, b) => a.sequence - b.sequence);
+    const designer = state.replayIndex.filter(entry=>entry.type==='blueprint_designer'&&entry.serverTickId<=tick).slice(-4096);
+    const entries = [...new Map([...events,...baseline.values(),...designer].map(e=>[e.sequence,e])).values()].sort((a, b) => a.sequence - b.sequence);
     const observations = await Promise.all(entries.map(async entry => {
       const record = JSON.parse(await state.replayFile.slice(entry.offset, entry.end).text());
       if (record.type === 'visual_frame') delete record.payload.imageBase64;

@@ -8,6 +8,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MoveExecutorsTest {
 	private static final MovementPolicy POLICY = MovementPolicy.defaults().noEdits();
 
+    @Test
+    void ascentDoesNotJumpAgainAfterLandingOnDestinationEdge() {
+        MapTerrain terrain = new MapTerrain(CellInfo.AIR, new Box(100, -57, 30, 105, -49, 39));
+        terrain.set(103, -55, 34, AsciiTerrain.STONE);
+        terrain.set(103, -54, 35, AsciiTerrain.STONE);
+        terrain.set(103, -51, 35, AsciiTerrain.STONE);
+        var from = new GridPos(103, -54, 34);
+        var to = new GridPos(103, -53, 35);
+        var step = new Moves(terrain, POLICY).stepBetween(from, to);
+        var context = new StepContext(step, null);
+        context.live = new Moves(terrain, POLICY);
+        context.policy = POLICY;
+        // Live tick 6665: supported by the destination edge, but centre still in z=34.
+        context.body = new BodyState(103.506, -53, 34.959, -0.0784, true, false, false, false, 6665);
+        var landing = MoveExecutors.ASCEND.tick(context);
+        assertFalse(landing.intent().jump(), "continue horizontally instead of hitting the roof again");
+        assertTrue(landing.intent().moveZ() > 0);
+        // Still jump from the lower platform; do not disable the legitimate ascent.
+        context.body = new BodyState(103.613, -54, 34.545, -0.0784, true, false, false, false, 6658);
+        assertTrue(MoveExecutors.ASCEND.tick(context).intent().jump());
+    }
+
+    @Test
+    void ascentWaitsUntilBodyClearsRoofBehindTheLaunchCell() {
+        MapTerrain terrain = new MapTerrain(CellInfo.AIR, new Box(100, -57, 30, 105, -49, 39));
+        terrain.set(103, -55, 34, AsciiTerrain.STONE);
+        terrain.set(103, -54, 35, AsciiTerrain.STONE);
+        terrain.set(103, -52, 33, AsciiTerrain.STONE);
+        terrain.set(103, -51, 35, AsciiTerrain.STONE);
+        var step = new Moves(terrain, POLICY).stepBetween(new GridPos(103, -54, 34), new GridPos(103, -53, 35));
+        var context = new StepContext(step, null);
+        context.live = new Moves(terrain, POLICY);
+        context.policy = POLICY;
+        // Tick 1516: centre has entered z=34, but its 0.6-wide body overlaps z=33.
+        context.body = new BodyState(103.7, -54, 34.128, -0.0784, true, false, false, true, 1516);
+        var underRoof = MoveExecutors.ASCEND.tick(context).intent();
+        assertFalse(underRoof.jump());
+        assertTrue(underRoof.moveZ() > 0, "walk out from under the trailing roof before jumping");
+        context.body = new BodyState(103.651, -54, 34.571, -0.0784, true, false, false, false, 1519);
+        assertTrue(MoveExecutors.ASCEND.tick(context).intent().jump());
+    }
+
 	@Test
 	void sneaksWhenMomentumWouldCarryTheBodyOffACliff() {
 		MapTerrain terrain = ledge();

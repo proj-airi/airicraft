@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 /** Bounded guest execution for effect generators and snapshot queries; no Java objects cross the boundary. */
-public final class GraalPolicyInvocation implements AutoCloseable {
+public final class GraalPolicyInvocation implements PolicyRuntime.Program {
 	public static final int MAX_SOURCE_CHARS = 32_768;
 	public static final int MAX_VALUE_CHARS = 16_384;
 	private static final int MAX_QUERY_SNAPSHOT_CHARS = 2_097_152;

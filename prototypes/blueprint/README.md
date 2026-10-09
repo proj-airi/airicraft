@@ -1,0 +1,179 @@
+# Semantic blueprint prototype
+
+Throwaway experiment on `codex/blueprint-prototype`. The question is whether composing named semantic objects, retaining block provenance, and separating draft from realization makes building easier.
+
+## Runtime migration
+
+The interactive Python playground is retired. Blueprint state and execution now live in the Java mod; use the existing debug dashboard's read-only **Blueprint** tab. See [the current integration guide](../../docs/blueprints.md).
+
+This directory retains historical model outputs, evidence reports and offline regression/experiment harnesses only. They are not required to run or view blueprints. The offline compiler remains a synthetic fixture, not a Minecraft engine simulation. Run `python3 prototypes/blueprint/check-walkable.py` (and the other `check-*.py` probes) for lightweight rule regression checks.
+
+## Authoring
+
+Define `function design(input)` returning a component tree. The built-in constructors are in `src/main/resources/blueprint/components.js`; `house.js` is the two-story example. Ordinary JavaScript functions can define reusable components, and arrays/loops compose repeated instances.
+
+- Coordinates are integer local block coordinates. Front is negative Z. Sizes are counts, not inclusive endpoints.
+- `Room.interior` is usable width, height, depth; walls add one block on each side. Its floor is local y=0.
+- Every node has a sibling-unique `id`. Its full path identifies the instance. Parent translations and quarter-turn rotations transform descendants and block states together.
+- A component's nested children can replace its volume. Door/window children therefore carve their host wall with explicit provenance. Other overlaps fail unless the new component names an allowed `replaces` path (or list). Explicit sibling overrides currently require their targets to occur earlier in the tree; a dependency resolver is future work.
+- `Clearance` emits owned air. Missing cells leave the world untouched.
+- `Room` exports named entrance/above anchors in inspection output. General anchor attachment and a layout constraint solver are not implemented.
+- `get` exposes the entire component tree and final cell map. `explain` returns owner, ancestry, contributor history, and block state. World-coordinate explanation refers to the last committed revision and compares actual state.
+- Initialization from terrain samples a 16×16 height field plus the top three blocks of each column. These cells are observed context, not design output. The example raises its datum above the sample and emits foundation blocks down to the sampled ground. This is not a complete terrain voxel import or cave/vegetation solver.
+
+## Creative realization
+
+Commit pins a draft revision and world origin, validates all cells are nearby and loaded, then sets server blocks directly in a creative `Blueprint-*` integrated world. It reports how many exact states match. `verify` checks them again later. This deliberately bypasses movement, materials and survival construction.
+
+Direct tool use:
+
+```sh
+wrapper/build/install/airicraft/bin/airicraft agent tools call \
+  --name blueprint --arguments '{"op":"get"}' --verbose
+```
+
+`draft` takes `source`; `commit` takes `revision` and `origin:[x,y,z]`; `explain` takes `position` and optionally `world:true`; `sample` takes a world `origin`. `view` takes `position`, optional `yaw` and `pitch`, and positions the creative player for screenshots. Use `camera screenshot --output <path>` for actual Minecraft evidence.
+
+## Deliberate prototype limits
+
+One in-memory draft and last commit per world session in the shared mod service; leaving the world or restarting loses provenance. Agent reload preserves the session. World blocks remain saved. No undo, save/import format, commit diff, removal of old unspecified cells, multi-client editing, general layout solver, or survival executor. Recompiling a smaller design does not erase remnants of an earlier commit. Terrain snapshots are not automatically refreshed; resample before adapting to a changed site. Sampling invalidates the old draft, requiring recompilation. `op: save` flushes the scratch world to disk. Limit 8,192 cells, 512 components and 24 nested levels. Commit uses direct state writes with neighbor notifications suppressed; this is suitable for static geometry experiments, not proof of redstone/physics correctness.
+
+## Live experiment — 2026-09-30
+
+Driven through `scripts/codex-driver`, with `codexDriverActive: true`, normal optional integrations enabled, and the embedded planner suppressed.
+
+| Check | Observed result |
+| --- | --- |
+| Superflat house, origin `[0,-60,0]` | 66 components; 1,007 specified cells; 0 mismatches after commit |
+| Visual checks | Exterior, ground-floor staircase/headroom opening, and upper floor inspected from real client screenshots |
+| Door at world `[5,-58,0]` | Owner `village.house.ground.front.entrance.upper`; wall retained in contribution history; actual state matched |
+| Stairwell at local `[7,4,3]` | Owned air from `village.house.upper.floor.stairwell`; floor retained as contributor |
+| Repeated component rotations | Independent `east`/`west` instances produced correctly rotated door states and separate paths |
+| Unrelated overlap / stale revision | Both rejected; failed compilation preserved previous draft |
+| Draft isolation | A different repeated-door draft left the committed house at 0 mismatches |
+| Terrain resampling | Invalidated the draft; attempting to commit its former revision returned `no_draft` |
+| Terrain house, origin `[40,70,54]` | Same source; floor at world y=69, sampled footprint surface y=65–68; 92 foundation blocks; 67 components and 1,099 specified cells; 0 mismatches |
+| Foundation world query | World `[50,68,62]` resolved to `village.foundation`, matching cobblestone |
+| Persistence | Terrain scratch world explicitly saved with server acknowledgement |
+
+Runtime evidence (ignored local files) is under `run/blueprint-evidence/`: draft JSON, exact state verification, provenance responses, probe results, before/after and interior screenshots. The first normal-world sample was water; its screenshot and material observations informed choosing a dry sand footprint. This experiment establishes height-based foundations on that site, not general terrain suitability or access planning.
+
+The terrain and superflat worlds retain these earlier builds. Minecraft was subsequently stopped at the user's request to reduce MacBook load; that historical offline playground has since been replaced by the mod-owned dashboard.
+
+**Verdict:** semantic composition and block provenance work together in live Minecraft. Explicit owned air is useful for both openings and inspection. Terrain should stay distinguishable from authored blocks. Next design work should address attachment/constraint resolution, terrain suitability (including fluids/vegetation), access to elevated entrances, and durable identity/provenance before treating this as production construction tooling.
+
+
+## Extensible advisory rules
+
+Rules are ordinary JavaScript defining `function check(ctx)`. `lint` uses bundled `entrance-access` and `room-lighting` rules unless given `rules:[{id,source}]`; custom rules are supplied through the blueprint control tool. Rules receive a detached draft/site snapshot, run independently, and cannot block commits. Results pin the draft revision and contain per-rule status, component paths, coordinates and evidence. Click a finding to select its component and highlight its coordinates.
+
+```js
+function check(ctx) {
+  for (const room of ctx.components({type:'Room'})) {
+    const windows = ctx.components({type:'Window'})
+      .filter(w => w.path.startsWith(room.path + '.'));
+    if (!windows.length) ctx.warn({component:room.path,
+      positions:[room.origin], message:'No windows here; is that intentional?'});
+  }
+}
+```
+
+Available queries: `components({type})`, `cells(component)`, `block([x,y,z])`, `access.entrance(component)`, `lighting.darkWalkingSurfaces(component, threshold)`. Emit `warn`, `info`, or `unverified(component, reason)`. No package imports or host/network calls. Rules have stable IDs, at most 12 per request and 48 findings per rule; one rule failure does not cancel the others. Live execution uses the existing bounded Graal query runtime; offline uses bounded workers.
+
+Component `guidance` merges over parent guidance. `Room` explicitly defaults its lighting guidance to `expected`; use `guidance:{lighting:'dark'}` on a mob chamber, while maintenance rooms keep `expected`. `minLight` changes the advisory threshold (default 8). Tag walk-in exterior doors with `guidance:{access:'walk'}`. Suppress chosen rules on a component/subtree with `disabledRules:['rule-id']` and `suppressionReason:'intentional design'`; suppressed findings remain inspectable in results. A semantic parent component can carry custom guidance for custom rules.
+
+Entrance advice checks a short straight approach with a 0.6×1.8 body and <=0.6 step, assuming wooden doors can open. It does not prove circulation between rooms or floors. Lighting is an approximate artificial-light flood fill, omitting skylight, external boundary light and partial-block occlusion; it is not a mob-spawning guarantee. Unsupported/incomplete geometry is reported as unverified where queried. These are style helpers, not validity constraints or automatic fixes.
+
+Run the lightweight probes with `python3 prototypes/blueprint/check-offline.py`. They cover absent/fixed steps, dark/illuminated rooms, intentional darkness, scoped suppression, timeout/host-access failure isolation, unchanged drafts and component provenance. Results are saved under ignored `run/blueprint-evidence/rule-probes/`. Java integration compiled before switching offline; the new lint operations have not been exercised inside Minecraft.
+
+## Model experiment
+
+`model-tasks.json` fixes three exploratory tasks. `model-trial.py` calls the configured provider/model remotely and uses local offline `design`, `lint`, and `inspect` tools. It does not invoke the embedded planner prompt/scheduler or place blocks. Credentials are read from the existing config and never logged. Full model responses, compiler diagnostics and generated sources stay under ignored `run/blueprint-evidence/`; existing trial directories are never overwritten. No manual source repair is performed.
+
+```sh
+BLUEPRINT_TRIAL_ID=my-trial BLUEPRINT_MODEL_TOKENS=16384 \
+  python3 prototypes/blueprint/model-trial.py
+```
+
+Sampling uses provider defaults, with 8 turns and 3 design submissions per task. The HTTP timeout defaults to 240 seconds; `BLUEPRINT_REQUEST_TIMEOUT` can set 1–600 seconds, independently of the configured runtime. This is an interface usability probe, not a benchmark or proof of normal planner performance. See `model-report.md` for observed results and limitations. Set `BLUEPRINT_REASONING=none` to reproduce the separate non-reasoning arm; leave unset for provider defaults. The `examples/` sources are unchanged trial outputs, exposed by named UI buttons; the report distinguishes earlier failures from later reasoning-enabled repairs. `rules/empty-geometry.js` is a post-hoc example extension, not part of the original bundled model feedback.
+
+## Semantic common-sense rules
+
+The default JS bundle now also includes:
+
+- `room-coverage`: every column in a Room's declared interior should have a full-width covering block above it. Upper floors, flat ceilings, glass skylights and sloped roofs can provide coverage. It checks final geometry, so an incomplete roof cannot pass on its bounding box alone. `guidance:{coverage:'open'}` marks an intentional open space. Unsupported cover shapes produce an unverified result.
+- `stair-access`: a straight bottom-half stair flight should have support, sufficient headroom and a landing at its top height. The inferred center lane uses a 0.6×1.8 body. Turning/custom flights are unverified, and this does not prove a full room-to-room route. Inherited `guidance:{access:'decorative'}` on an enclosing Assembly exempts a decorative staircase; scoped `disabledRules` also works.
+- `component-semantics`: Door/Window/Room/Staircase/GableRoof labels should actually emit blocks, and ignored Room constructor fields should be made visible. For example, `Room.children` is unsupported; use documented slots or sibling components with explicit replacement intent. These findings stay advisory, including when malformed authoring is suspected.
+
+Rule inputs now expose a Room's declared `interior` dimensions, constructor `ignoredFields`, and `ctx.position(component, localPosition)` for transformed coordinates. These facts are separate from final voxel ownership, so a fully furnished interior or an overridden component cannot erase the original semantic expectation.
+
+`python3 prototypes/blueprint/check-semantics.py` checks complete/holey/rotated roofs, intentional open spaces, uncertain block shapes, scoped suppression, ignored fields, empty components, and blocked/repaired stair headroom. It also replays the saved Qwen failure cases. Coverage catches 18 uncovered upper-room columns in the earlier two-story trial; widening its roof clears that advice. The rule found an insufficient headroom opening in our hand-authored house too; the example's stairwell now starts one block earlier. This correction was tested offline only.
+
+## Variety trials and independent review
+
+See [variety-report.md](variety-report.md) for bridge, warehouse, courtyard and watchtower judgments. The former editor exposed all four as `Qwen trial · variety-*` buttons; their sources remain in the examples directory. These are unchanged model outputs with known defects; the watchtower run was interrupted by a provider rate limit. No Minecraft process is needed.
+
+A fresh exploratory batch can use:
+
+```sh
+BLUEPRINT_TRIAL_ID=my-variety-trial \
+BLUEPRINT_TASKS_FILE=prototypes/blueprint/variety-tasks.json \
+BLUEPRINT_REASONING=low BLUEPRINT_MODEL_TOKENS=32768 \
+BLUEPRINT_REQUEST_TIMEOUT=480 BLUEPRINT_MAX_DESIGNS=5 BLUEPRINT_MAX_TURNS=12 \
+  python3 prototypes/blueprint/model-trial.py
+python3 prototypes/blueprint/review-variety.py run/blueprint-evidence/my-variety-trial
+```
+
+The review script is specific to these fixed briefs and applies separate post-hoc geometry probes. It is not a general structure linter or Minecraft movement simulation. The report documents its assumptions, rule blind spots, original failed attempts and retry policy.
+
+## Entrances, connected routes, and protected edges
+
+`Entrance` creates an open entrance (Clearance geometry) with walk-access intent, so an archway gets the same local advice as a Door. Existing geometry can instead declare `guidance:{role:'entrance',access:'walk'}`. The check still covers only a short approach; declare a `WalkRoute` to check the whole intended connection.
+
+```js
+Assembly({id:'site',children:[
+  Solid({id:'deck',at:[0,0,0],size:[9,1,3],material:'oak_planks'}),
+  Guardrail({id:'northRail',surface:'site.deck',edge:'minZ',children:[
+    Solid({id:'blocks',at:[0,1,-1],size:[9,1,1],material:'oak_planks'})
+  ]}),
+  WalkRoute({id:'crossing',from:[-2,0,1],to:[10,0,1],
+    bounds:[[-3,0,-2],[11,3,4]],width:.6})
+])
+```
+
+These are semantic component declarations, not execution instructions. `WalkRoute` emits no blocks. `Guardrail` relates its children to an exact surface component path. All advice remains ordinary replaceable JavaScript (`connected-route.js`, `guardrail-protection.js`), with scoped suppression and no commit gate.
+
+- Route endpoints are integer **feet** coordinates in the route component's local frame; X/Z refer to voxel centers. A cube at y=0 has walking surface y=1. Bounds are inclusive local coordinates and rotate with the component. Width defaults to 0.6 blocks, with 1.8-block body height.
+- The route helper searches a half-block grid with at most 0.5-block steps, four horizontal directions and a midpoint collision sweep. It checks support/headroom, including straight stair shapes, within explicit bounds. It does not simulate Minecraft movement, jumping, diagonals, dynamic doors or arbitrary partial-block navigation. Narrow paths can be missed by the sampled graph. A negative result is a bounded advisory finding, never a global impossibility claim.
+- A successful route includes its witness in `result.assessments`; an unsuccessful one includes endpoint positions and nearby blocker coordinates/owners. Frontier blockers are examples, not a minimal causal cut. Unknown shapes are considered only in the body/support volume. A second optimistic search distinguishes possible routes through unknown geometry from failures established despite uncertainty. Each search is capped at 16,000 visited states; budget exhaustion is unverified. Capture limits still apply, and search bounds extending beyond captured geometry can remain unverified.
+- Guardrails use a surface's final cells, transformed into its local frame. `edge` is `minX`, `maxX`, `minZ` or `maxZ`; `height` defaults to one block above the edge's walking surface. Current advice certifies full-width cube barriers along an extreme edge. Fences, bars, irregular/interior boundaries and partial collision shapes are not certified; this is not a general fall-safety solver.
+- Every bundled rule reports applicability: checked subject count or **no applicable subjects**. Older custom rules remain compatible and show **applicability not reported** unless they call `ctx.track()` and `ctx.checked(component)`. A checked subject may still produce unverified findings; zero findings does not certify an entire structure.
+- Custom rules can use `ctx.access.connected(component)`, `ctx.protection(component)` and `ctx.checked(component, assessment)` to expose their own results. The component guidance uses the same `route` and `guardrail` data that these constructors emit.
+
+The historical fixtures include `Advice demo · advice-bridge-before` (unchanged Qwen geometry plus explicit review relationships) and `advice-bridge-after` (human repair). The former reports a failed connection and two flush-rail warnings; adding approach stairs and raising rails clears all three. The repaired bridge **retains its y=1 deck**, so it still does not meet the original brief's requested y=0 datum. These examples demonstrate the selected advice, not full brief compliance. Original `variety-*` trial sources remain unchanged.
+
+Run `python3 prototypes/blueprint/check-relations.py` for route/step repair, rotation, width, blocked endpoints and provenance, local uncertainty, guardrail repair, semantic entrances, applicability, suppression and saved Qwen warehouse/courtyard/watchtower replay. The replay adds explicit route declarations without changing geometry. Shared JS is registered for both offline and live lint, but this iteration is validated only in the offline worker/editor; Minecraft and Java builds remain off.
+
+## Walkable support surfaces
+
+`WalkableArea` is a blueprint-only annotation on the **support blocks**, with no emitted cells:
+
+```js
+Floor({id:'floor',size:[7,1,5],material:'stone_bricks'});
+WalkableArea({id:'aisle',surface:'workshop.floor',
+  blocks:[[3,0,0],[3,0,1],[3,0,2],[3,0,3],[3,0,4]]});
+```
+
+Compose those components under `Assembly({id:'workshop',children:[...]})`. `surface` is an exact component path. `blocks` selects integer support-block coordinates in **that referenced component's local frame**, independently of the annotation's own transform. Omit `blocks` to select the referenced volume's entire declared top layer. Composite surfaces, such as a Staircase, require explicit support-block coordinates. Selections are bounded to 1–1024 blocks; invalid references/selections remain unverified advice.
+
+The compiler preserves `volumeSize` separately from final cell ownership. Removing or overwriting a floor therefore does not erase its intended walkable selection. The `walkable-area` JS rule checks final collision geometry at each selected support block:
+
+- No collision support: missing-support warning, including any component that replaced it.
+- Obstruction within **two blocks vertically above an exposed support face**: clearance warning with blocker coordinates, owner, support coordinate and clearance volume.
+- Unknown, fluid or incomplete support geometry: unverified, without hiding independently known obstructions.
+
+For a full floor block at y=0, y=1 and y=2 must be clear. The exposed collision tops of slabs and stair treads are measured at their actual heights; lower and upper stair treads are checked separately. The offline fixture now recognizes ordinary bottom/top/double slabs. Partial-footprint surfaces remain conservative/unverified. This rule checks vertical clearance over selected surfaces, not player-width clearance or route connectivity: keep `WalkRoute` for required connections. Annotate circulation surfaces rather than furniture footprints. The two-block style recommendation is intentionally stricter than the route helper's 1.8-block body.
+
+The historical fixture `advice-walkable-before` and `advice-walkable-after` demos mark only a workshop's center aisle. The original beam leaves one block above it; raising the beam clears both the surface warning and the required aisle connection. These are human-authored demos. Original Qwen designs remain unchanged.
+
+`python3 prototypes/blueprint/check-walkable.py` verifies support removal, low/two-high ceilings, subset selection, ownership, rotation, slab/stair heights, uncertainty, suppression and annotation-only geometry. Shared rules and volume metadata are wired into the live compiler, but validation for this iteration remains offline; no Minecraft launch or Java build was performed.

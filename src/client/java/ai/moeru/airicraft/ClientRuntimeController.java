@@ -82,6 +82,8 @@ public final class ClientRuntimeController {
 			AttentionRuleSource.load(), ai.moeru.airicraft.agent.perception.SalienceRuleSource.load());
 		this.agentRuntime.updateIdleIdeasConfig(IdleIdeasLoader.load());
 		this.dashboardObservationStore = new DashboardObservationStore(config.debugDashboard().historyByteBudget());
+        ai.moeru.airicraft.blueprint.BlueprintService.instance().designerRecorder(event ->
+            dashboardObservationStore.append("blueprint_designer",dashboardObservationStore.latestTick(),System.currentTimeMillis(),event));
 		this.dashboardObservationCollector = new DashboardObservationCollector(
 			dashboardObservationStore,
 			() -> {
@@ -92,7 +94,7 @@ public final class ClientRuntimeController {
 					: dashboard;
 			}
 		);
-		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment, this::diagnosticSecrets);
+		this.debugDashboardServer = new DebugDashboardServer(dashboardObservationStore, this::diagnosticEnvironment, this::diagnosticSecrets, ai.moeru.airicraft.blueprint.BlueprintService.instance()::dashboardSnapshot);
 		this.bridgeServer = new ModBridgeServer(
 			this::highlightManager,
 			this::agentRuntime,
@@ -216,6 +218,7 @@ public final class ClientRuntimeController {
 	}
 
 	public void onWorldLeave() {
+		ai.moeru.airicraft.blueprint.BlueprintService.instance().worldLeft();
 		automaticPlaytest.worldLeft("world_left");
 		worldCameraService.clear();
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.clear();
@@ -231,6 +234,7 @@ public final class ClientRuntimeController {
 
 	public void onClientTick(Minecraft minecraft) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(minecraft);
+        ai.moeru.airicraft.blueprint.BlueprintService.instance().tick(minecraft);
 		if (!automaticPlaytest.freezing()) {
 			navigationFacade.releaseIfIdle(minecraft);
 			currentAgentRuntime().onClientTick(minecraft);

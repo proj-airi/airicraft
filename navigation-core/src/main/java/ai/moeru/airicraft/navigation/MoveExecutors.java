@@ -40,7 +40,17 @@ final class MoveExecutors {
 		BodyState body = context.body;
 		Point target = centreOf(context.step.to());
 		boolean close = context.distanceToEnd() < 1.15;
-		boolean jump = body.inWater() || body.onGround() && (body.horizontalCollision() || close) && !context.atEnd();
+		// The body can land on the destination edge before its centre enters that cell.
+        // Re-jumping then only hits low ceilings. Use the actual landing surface height,
+        // including slabs, to distinguish an unfinished rise from horizontal centring.
+        GridPos destination = context.step.to();
+        context.live.probe(destination.x(), destination.y(), destination.z());
+        double landingHeight = context.live.probeBase();
+        if (!Double.isFinite(landingHeight)) landingHeight = destination.y();
+        boolean needsJump = landingHeight - body.y() > Moves.STEP;
+        boolean jump = body.inWater() || body.onGround() && needsJump
+            && (body.horizontalCollision() || close) && !context.atEnd()
+            && context.live.jumpLaunchClear(body);
 		MotorIntent intent = toward(context, target, jump, false, false);
 		return finish(context, intent, context.atEnd() && body.onGround());
 	};

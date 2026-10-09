@@ -286,7 +286,8 @@ public final class DiagnosticReport {
 				+ "usage.promptTokens usage.completionTokens usage.totalTokens";
 			case "semantic_event" -> "seqNo tick timestampMs type payload.failureCode payload.code payload.reasonCode payload.state payload.taskId payload.jobId";
 			case "debug_timeline" -> "entryId tick timestampMs domain action correlation.jobId correlation.taskId correlation.callId payload.failureCode payload.state";
-			case "observation_gap" -> "reason originalType estimatedBytes stream requestedAfter oldestAvailable";
+			case "blueprint_designer" -> "runId blueprintId model kind at truncated";
+            case "observation_gap" -> "reason originalType estimatedBytes stream requestedAfter oldestAvailable";
 			case "session_started" -> "reason";
 			default -> null;
 		};

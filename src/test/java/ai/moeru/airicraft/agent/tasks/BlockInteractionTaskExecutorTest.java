@@ -19,6 +19,59 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BlockInteractionTaskExecutorTest {
+    @Test
+    void overheadPlacementReachUsesActualEyeHeightRatherThanFeetOrVoxelCenter() {
+        assertTrue(BlockInteractionTaskExecutor.withinInteractionRange(BlockPos.ZERO, 1.62, new Vec3(2.5, 5.0, 0.5)));
+        assertFalse(BlockInteractionTaskExecutor.withinInteractionRange(BlockPos.ZERO, 1.62, new Vec3(0.5, 0.0, 4.9)));
+        // Sneaking must be evaluated from its lower eyes, not a standing-eye approximation.
+        var highFace = new Vec3(0.5, 6.0, 0.5);
+        assertTrue(BlockInteractionTaskExecutor.withinInteractionRange(BlockPos.ZERO, 1.62, highFace));
+        assertFalse(BlockInteractionTaskExecutor.withinInteractionRange(BlockPos.ZERO, 1.27, highFace));
+    }
+
+    @Test void unsafePlacementApproachMustUseAValidatedStanceRatherThanDirectMovement(){
+        assertFalse(BlockInteractionTaskExecutor.allowsDirectInteractionApproach(
+            new BlockInteractionTaskExecutor.InteractionApproachReason(
+                BlockInteractionTaskExecutor.InteractionApproachReason.Kind.PLACEMENT_BLOCKS_ESCAPE,
+                "placement_would_block_escape")));
+    }
+    @Test void constructionStancesPreferShortWalkingRouteToNearbyPositionBehindWall() {
+        var behindWall=new BlockPos(2,0,0);var direct=new BlockPos(0,0,3);var fallback=new BlockPos(0,1,0);
+        var costs=java.util.Map.of(behindWall,8,direct,3);
+        assertEquals(List.of(direct,behindWall,fallback),BlockInteractionTaskExecutor.preferShortRoutes(
+            List.of(fallback,behindWall,direct),p->costs.getOrDefault(p,Integer.MAX_VALUE)));
+        assertEquals(List.of(fallback,behindWall,direct),BlockInteractionTaskExecutor.preferShortRoutes(
+            List.of(fallback,behindWall,direct),p->Integer.MAX_VALUE));
+    }
+    @Test void placementSearchUsesSideSupportWhenBelowSupportHasNoReachableStance() {
+        var current=new BlockPos(99,-55,34);var inside=new BlockPos(100,-55,34);
+        var checked=new java.util.ArrayList<String>();
+        var result=BlockInteractionTaskExecutor.placementStandsAcrossSupports(List.of("below","west"),support->{
+            checked.add(support);return support.equals("west")?List.of(inside):List.of();
+        },current);
+        assertEquals(List.of("below","west"),checked);
+        assertEquals(List.of(inside),result);
+    }
+    @Test void placementStancesFromMultipleFacesAreDeduplicatedAndPreferNoClimb() {
+        var current=new BlockPos(0,0,0);var level=new BlockPos(2,0,0);var high=new BlockPos(0,1,0);
+        assertEquals(List.of(level,high),BlockInteractionTaskExecutor.placementStandsAcrossSupports(List.of(1,2),s->List.of(high,level),current));
+    }
+
+	@Test void upperFloorEdgeCanUseVisibleGroundStanceThreeBlocksBelowTarget() {
+		var target = new BlockPos(96, -56, 36);
+		var stand = new BlockPos(96, -59, 37);
+		assertEquals(List.of(stand), BlockInteractionTaskExecutor.viablePlacementStandCandidates(
+			target, target.north(), new BlockPos(97, -56, 35), Set.of(),
+			stand::equals, p -> true, p -> true));
+	}
+	@Test void stairTopSupportsCenteredPlacementStance() {
+		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(
+			new AABB(0, 0, 0, 1, .5, 1), new AABB(0, .5, .5, 1, 1, 1))));
+		assertTrue(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, 1, 1, 1))));
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, 1, .5, 1))), "A bottom slab does not support integer-height feet");
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of(new AABB(0, 0, 0, .1, 1, 1))), "Support must overlap the player's footprint");
+		assertFalse(BlockInteractionTaskExecutor.hasStandingSupport(List.of()));
+	}
 	@Test
 	void roofLipCanBeClickedBelowItsOccludedFaceCenter() {
 		BlockPos support = new BlockPos(0, 136, 4);
@@ -35,6 +88,22 @@ class BlockInteractionTaskExecutorTest {
 			return hit != null && hit.getBlockPos().equals(support) && hit.getDirection() == Direction.SOUTH;
 		});
 		assertTrue(selected.isPresent(), "A visible part of the roof face must not require climbing onto the roof");
+	}
+
+	@Test
+	void placementSearchKeepsSamplingWhenVisibleCenterProducesWrongState() {
+		var support = new BlockPos(228, -60, 32);
+		var center = new Vec3(228.5, -59, 32.5);
+		var checked = new java.util.ArrayList<Vec3>();
+		var chosen = BlockInteractionTaskExecutor.selectPlacementHitPoint(support, Direction.UP,
+			point -> true,
+			point -> { checked.add(point); return point.x > center.x; });
+		assertTrue(chosen.isPresent());
+		assertEquals(center, checked.getFirst());
+		assertTrue(chosen.get().x > center.x, "A visible face center is insufficient when a directional state requires an edge click");
+		assertTrue(BlockInteractionTaskExecutor.selectPlacementHitPoint(support, Direction.UP,
+			point -> point.x <= center.x, point -> point.x > center.x).isEmpty(),
+			"Visibility and state prediction must agree on the same click point");
 	}
 
 	@Test

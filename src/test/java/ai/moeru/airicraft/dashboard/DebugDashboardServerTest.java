@@ -20,11 +20,31 @@ class DebugDashboardServerTest {
 	Path temporaryDirectory;
 
 	@Test
+	void blueprintSnapshotIsAuthenticatedReadOnlyAndDetachedFromWorldWork() throws Exception {
+		var snapshot = new java.util.concurrent.atomic.AtomicReference<>("{\"available\":false}");
+		var server = new DebugDashboardServer(new DashboardObservationStore(1024 * 1024), temporaryDirectory.resolve("latest.log"), () -> Map.of(), java.util.List::of, snapshot::get);
+		server.start(new DebugDashboardConfig(true, freePort(), 1, 1024 * 1024));
+		try {
+			String base = "http://127.0.0.1:" + server.status().port();
+			String token = server.status().primaryUrl().split("#token=")[1];
+			assertEquals(401, send(base + "/api/blueprint", null).statusCode());
+			assertEquals("{\"available\":false}", send(base + "/api/blueprint", token).body());
+			snapshot.set("{\"available\":true,\"revision\":7,\"cells\":[]}");
+			assertEquals(7, JsonParser.parseString(send(base + "/api/blueprint", token).body()).getAsJsonObject().get("revision").getAsInt());
+			var request = HttpRequest.newBuilder(URI.create(base + "/api/blueprint")).header("Authorization", "Bearer " + token).POST(HttpRequest.BodyPublishers.ofString("{}")).build();
+			assertEquals(405, HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).statusCode());
+			assertEquals(200, send(base + "/blueprint.js", null).statusCode());
+			assertEquals(200, send(base + "/blueprint-designer.js", null).statusCode());
+		} finally { server.stop(); }
+	}
+
+	@Test
 	void servesStaticUiAndKeepsObservationApisBehindTheViewerToken() throws Exception {
 		int port = freePort();
 		DashboardObservationStore store = new DashboardObservationStore(1024L * 1024L);
 		store.startSession("test", 0L, 100L);
 		store.append("llm_call", 5L, 150L, Map.of("requestBody", "full prompt", "rawResponseBody", "full response"));
+        store.append("blueprint_designer",5L,151L,Map.of("runId","worker-1","kind","assistant","text","separate designer reply"));
 		DebugDashboardServer server = new DebugDashboardServer(store, temporaryDirectory.resolve("latest.log"));
 		server.start(new DebugDashboardConfig(true, port, 1, 1024L * 1024L));
 		try {
@@ -42,9 +62,11 @@ class DebugDashboardServerTest {
 			assertEquals(401, unauthorized.statusCode());
 			assertEquals(200, bootstrap.statusCode());
 			assertTrue(JsonParser.parseString(bootstrap.body()).getAsJsonObject().has("sessionId"));
-			assertEquals(2, JsonParser.parseString(observations.body()).getAsJsonObject().getAsJsonArray("observations").size());
+			assertEquals(3, JsonParser.parseString(observations.body()).getAsJsonObject().getAsJsonArray("observations").size());
 			assertTrue(export.body().contains("full prompt"));
 			assertTrue(export.body().contains("full response"));
+            assertTrue(export.body().contains("blueprint_designer"));
+            assertTrue(export.body().contains("separate designer reply"));
 		}
 		finally {
 			server.stop();
