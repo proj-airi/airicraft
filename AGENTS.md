@@ -219,6 +219,7 @@
 - World-bound read/action commands still return `world_not_loaded` when no world is active.
 - `airicraft worlds join` and `airicraft servers join` return `already_in_world` if a world is already loaded.
 - `airicraft servers list` can still safely enumerate saved servers while out of world.
+- `airicraft servers join` opens a normal login connection, never a server transfer (`SavedServerService.startLogin` passes no `TransferState`), so it can join LAN-opened worlds, which reject transfers with `transfers_disabled`. To join a LAN world from a second client, add its address to that client's saved server list.
 - Highlights support:
   - persistent by default
   - optional timeout

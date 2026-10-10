@@ -1,6 +1,7 @@
 package ai.moeru.airicraft;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.multiplayer.TransferState;
@@ -48,13 +49,11 @@ public final class SavedServerService {
 		}
 
 		runOnClientThread(minecraft, () -> {
-			ConnectScreen.startConnecting(
+			startLogin(
+				ConnectScreen::startConnecting,
 				minecraft.screen != null ? minecraft.screen : new TitleScreen(),
 				minecraft,
-				ServerAddress.parseString(entry.serverInfo.ip),
-				entry.serverInfo,
-				false,
-				new TransferState(Map.of())
+				entry.serverInfo
 			);
 			return null;
 		});
@@ -66,6 +65,32 @@ public final class SavedServerService {
 		payload.put("address", entry.serverInfo.ip);
 		payload.put("serverType", serverTypeName(entry.serverInfo));
 		return payload;
+	}
+
+	/**
+	 * Starts a normal login connection to a saved server.
+	 *
+	 * <p>The transfer state argument must be {@code null}. A non-null value tells
+	 * Minecraft that the connection is a server transfer: {@code ConnectScreen}
+	 * then calls {@code Connection.initiateServerboundPlayConnection(..., transferred = true)},
+	 * which sends the {@code TRANSFER} handshake intent. Servers that do not accept
+	 * transfers, including every LAN-opened integrated server, reject it with
+	 * {@code multiplayer.disconnect.transfers_disabled}.
+	 */
+	static void startLogin(ServerConnector connector, Screen parent, Minecraft minecraft, ServerData serverData) {
+		connector.connect(parent, minecraft, ServerAddress.parseString(serverData.ip), serverData, false, null);
+	}
+
+	@FunctionalInterface
+	interface ServerConnector {
+		void connect(
+			Screen parent,
+			Minecraft minecraft,
+			ServerAddress address,
+			ServerData serverData,
+			boolean quickPlay,
+			TransferState transferState
+		);
 	}
 
 	private ServerEntry findServer(String serverId) {
