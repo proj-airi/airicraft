@@ -116,11 +116,17 @@ public record WakeTranscript(JsonObject data) {
 			}
 			return new JsonPrimitive(text.replaceAll("call_observe_\\d+", "call_observe_N")
 				.replaceAll("[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", "<uuid>")
+				.replaceAll(READABLE_ID, "$1-N")
 				.replaceAll("@r\\d+", "@rN").replaceAll("\\b1[0-9]{12}\\b", "<ms>")
 				.replaceAll("\\d{4}-\\d{2}-\\d{2}T[0-9:.]+Z", "<time>"));
 		}
 		return element.deepCopy();
 	}
+	/** ReadableIds counters are process-wide, so their numbers depend on which tests ran first. */
+	private static final String READABLE_ID = "\\b(" + java.util.stream.Stream.concat(
+		java.util.stream.Stream.of("delegation", "graph", "goal", "hold", "op", "smelting", "smelt-confirm", "blueprint"),
+		java.util.Arrays.stream(ai.moeru.airicraft.agent.job.ActiveJobType.values()).map(ai.moeru.airicraft.agent.work.ReadableIds::kind))
+		.collect(java.util.stream.Collectors.joining("|")) + ")-\\d+\\b";
 	public static String sha(String value) {
 		try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
 		catch (Exception e) { throw new AssertionError(e); }

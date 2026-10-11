@@ -22,7 +22,7 @@
           "Session mode is currently singleplayer LAN host.",
           "There is no primary interaction player right now.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "DELEGATED TASK: {\"controllerContext\":\"Stay safe\",\"currentFacts\":{\"decisionContext\":{\"actuatorOwner\":\"idle\",\"current\":{},\"decisionOwner\":\"thinking\",\"observations\":{\"events\":[],\"latestSeqNo\":0,\"oldestSeqNo\":1,\"truncated\":false},\"serverTick\":2,\"tick\":1,\"worldSessionId\":\"world\"},\"plannerGoal\":\"No planner goal.\",\"tick\":1,\"workIdle\":false},\"delegationId\":\"\\u003cuuid\\u003e\",\"guidanceDuringHandoff\":[],\"successCriteria\":\"Describe hazards\",\"task\":\"Inspect cave\"}"
+          "DELEGATED TASK: {\"controllerContext\":\"Stay safe\",\"currentFacts\":{\"decisionContext\":{\"actuatorOwner\":\"idle\",\"current\":{},\"decisionOwner\":\"thinking\",\"observations\":{\"events\":[],\"latestSeqNo\":0,\"oldestSeqNo\":1,\"truncated\":false},\"serverTick\":2,\"tick\":1,\"worldSessionId\":\"world\"},\"plannerGoal\":\"No planner goal.\",\"tick\":1,\"workIdle\":false},\"delegationId\":\"delegation-N\",\"guidanceDuringHandoff\":[],\"successCriteria\":\"Describe hazards\",\"task\":\"Inspect cave\"}"
         ],
         "serverTick": 2,
         "stateBaseline": true,
