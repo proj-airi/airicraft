@@ -236,9 +236,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         if(!repairQueue.isEmpty() || target==null) {
             if(repairQueue.isEmpty()) {
                 // Walls and floors that sit inside a hillside, and planned air (clearance) that holds a tree, have nothing to place over or are not yet empty.
-                // Dig the nearest one out; the ledger keeps the intended block owed. Blocks the build itself added (ledger entries) are cleaned up by teardown, not dug.
+                // Dig the nearest one out; the ledger keeps the intended block owed. Scaffolds the build added inside planned air (ledger entries) are cleaned up by teardown, not dug.
                 var dig=pending.stream().filter(c->!c.state().contains("half=upper") && environment.blocked(c)
-                    && !ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z()))
+                    && !(c.air() && ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
                 if(dig!=null && (!onlyCleanup || dig.air())){
