@@ -14,7 +14,10 @@ public final class BlueprintDesigner {
         + "Iterate draft, inspect, lint and repair. Never place blocks or operate gameplay. "
         + "Call one blueprint tool at a time. Finish with a short design summary and honest unresolved limitations. "
         + "A failed draft leaves the previous revision; do not claim a rejected change succeeded. "
-        + "Lint is advisory: explain intentional exceptions; never suppress warnings merely to get a clean result.";
+        + "Lint is advisory: explain intentional exceptions; never suppress warnings merely to get a clean result. "
+        + "Modded blocks are allowed: give the exact state in a Solid material, for example namespace:block[axis=z]; use only property names the block really has. "
+        + "Directional or rotating blocks (shafts, wheels, machines) may choose their facing from adjacent blocks when placed, so not every facing is attainable in every layout. "
+        + "Keep connected rotating parts on one shared axis, and if construction fails with placement_state_requires_different_approach for a block, redraft it with the opposite facing.";
     public interface Model { PlannerResponse generate(LlmConversation conversation) throws Exception; }
     public interface Tools { String call(JsonObject arguments) throws Exception; }
     public record Result(String status, String summary, JsonObject draft, JsonObject lint, int turns) {}
