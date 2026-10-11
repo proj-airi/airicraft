@@ -83,7 +83,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
                         if(a.get("op").getAsString().equals("lint"))a.add("origin",anchor);
                         boolean draftOp=a.get("op").getAsString().equals("draft");String current;
                         synchronized(this){current=blueprintId;}
-                        if(draftOp){if(current==null)a.addProperty("newBlueprint",true);else a.addProperty("blueprintId",current);}
+                        if(draftOp){if(current==null)a.addProperty("newBlueprint",token);else a.addProperty("blueprintId",current);}
                         String reply=invoke(token,a);
                         if(draftOp&&current==null&&!reply.startsWith("TOOL_ERROR:")){var saved=JsonParser.parseString(reply).getAsJsonObject();if(saved.has("blueprintId"))synchronized(this){blueprintId=saved.get("blueprintId").getAsString();}}
                         return reply;
