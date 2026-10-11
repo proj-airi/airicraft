@@ -28,6 +28,7 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
     private BlueprintConstructionProgram.Cell repairTarget;
     @Override public BlueprintConstructionProgram.Cell repairTarget(){var next=repairTarget;repairTarget=null;return next;}
     @Override public ConstructionEscape.Position repairDestination(){var next=repairDestination;repairDestination=null;return next;}
+    @Override public String repairNote(){return repairDiagnostic.toString();}
     private net.minecraft.world.phys.Vec3 previousPosition;
     private double travelled;
     private com.google.gson.JsonObject repairDiagnostic=new com.google.gson.JsonObject();
@@ -133,6 +134,28 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
             if(!stack.isEmpty() && net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(cell.item()))return true;
         }
         return false;
+    }
+    @Override public boolean blocked(BlueprintConstructionProgram.Cell cell) {
+        requireWorld();var pos=position(cell);
+        if(!world.hasChunkAt(pos))return false;
+        var actual=world.getBlockState(pos);
+        return !actual.isAir() && !actual.canBeReplaced() && world.getFluidState(pos).isEmpty()
+            && !BlueprintIntegrity.statesMatch(Blueprint.parseState(cell.state()),actual);
+    }
+    @Override public ConstructionEscape.Position digStance(BlueprintConstructionProgram.Cell cell) {
+        requireWorld();var target=position(cell);var center=net.minecraft.world.phys.Vec3.atCenterOf(target);
+        var player=client.player.position();ConstructionEscape.Position best=null;double bestDistance=Double.MAX_VALUE;
+        for(int dx=-3;dx<=3;dx++)for(int dz=-3;dz<=3;dz++)for(int dy=-4;dy<=1;dy++) {
+            var feet=target.offset(dx,dy,dz);
+            if(feet.equals(target)||feet.above().equals(target))continue;
+            if(!world.hasChunkAt(feet))continue;
+            if(!world.getBlockState(feet).getCollisionShape(world,feet).isEmpty()||!world.getBlockState(feet.above()).getCollisionShape(world,feet.above()).isEmpty())continue;
+            if(world.getBlockState(feet.below()).getCollisionShape(world,feet.below()).isEmpty()||!world.getFluidState(feet).isEmpty())continue;
+            if(new net.minecraft.world.phys.Vec3(feet.getX()+.5,feet.getY()+1.62,feet.getZ()+.5).distanceTo(center)>4.0)continue;
+            double d=player.distanceToSqr(feet.getX()+.5,feet.getY(),feet.getZ()+.5);
+            if(d<bestDistance){bestDistance=d;best=new ConstructionEscape.Position(feet.getX(),feet.getY(),feet.getZ());}
+        }
+        return best;
     }
     @Override public boolean eligible(BlueprintConstructionProgram.Cell cell) {
         requireWorld();var pos=position(cell);

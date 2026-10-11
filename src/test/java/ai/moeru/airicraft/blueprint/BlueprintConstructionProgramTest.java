@@ -40,6 +40,40 @@ class BlueprintConstructionProgramTest {
         }
         return OK;
     }
+    @Test void cellsInsideTerrainAreDugOutThenPlaced(){
+        class Hill extends World {
+            Hill(){states.put(0,"minecraft:dirt");}
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return !states.containsKey(c.y());}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return "minecraft:dirt".equals(states.get(c.y()));}
+        }
+        var world=new Hill();
+        var program=new BlueprintConstructionProgram(List.of(cell(0)),world);
+        var tools=new ArrayList<String>();
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        for(int i=0;i<12 && !step.get("done").getAsBoolean();i++){
+            var name=tool(step);tools.add(name);
+            var args=step.getAsJsonObject("value").getAsJsonObject("arguments").getAsJsonObject("args");
+            if(name.equals("break_blocks"))world.states.remove(0);
+            if(name.equals("place_block"))world.states.put(args.get("y").getAsInt(),"minecraft:stone");
+            step=program.resume(OK).join().getAsJsonObject();
+        }
+        assertTrue(step.get("done").getAsBoolean(),tools.toString());
+        assertTrue(tools.indexOf("break_blocks")>=0 && tools.indexOf("break_blocks")<tools.indexOf("place_block"),tools.toString());
+    }
+    @Test void unreachableDigStanceIsAFailedAttemptNotFatal(){
+        class Hill extends World {
+            Hill(){states.put(0,"minecraft:dirt");}
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return !states.containsKey(c.y());}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return "minecraft:dirt".equals(states.get(c.y()));}
+            public ConstructionEscape.Position digStance(BlueprintConstructionProgram.Cell c){return new ConstructionEscape.Position(2,0,0);}
+        }
+        var program=new BlueprintConstructionProgram(List.of(cell(0)),new Hill());
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        assertEquals("navigate_to",tool(step));
+        // The stance cannot be reached: the program must keep going (here it has nothing else to try and reports that, not a stance error).
+        var error=assertThrows(java.util.concurrent.CompletionException.class,()->program.resume(FAIL).join());
+        assertTrue(error.getCause().getMessage().startsWith("construction_no_feasible_target"),error.getCause().getMessage());
+    }
     @Test void failedRepairReportsApproachBeforeReplanningAndSuccessfulEditClearsIt(){
         class FeedbackWorld extends RepairWorld {
             final FailedRepairApproaches rejected=new FailedRepairApproaches();

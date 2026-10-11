@@ -15,6 +15,10 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         String state(Cell cell);
         boolean eligible(Cell cell);
         default boolean hasMaterial(Cell cell){return true;}
+        /** The cell holds a solid block it cannot be placed over (terrain, vegetation) and that must be dug out first. */
+        default boolean blocked(Cell cell){return false;}
+        /** A standable position within reach of the cell, or null when none is known. */
+        default ConstructionEscape.Position digStance(Cell cell){return null;}
         default boolean canToggle(Cell cell){return false;}
         /** Whether this cell is a load-bearing solid for lower-support ordering. */
         default boolean structuralSupport(Cell cell){return !cell.air();}
@@ -29,6 +33,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         /** Ranking hint only: placements still require the ordinary executor checks. */
         default int continuationCount(Cell placed,List<Cell> remaining) { return 0; }
         default ConstructionEscape.Position repairDestination() { return null; }
+        /** Non-consuming summary of the last repair search, for failure messages. */
+        default String repairNote() { return ""; }
         default Map<ConstructionEscape.Position,ConstructionRepairLedger.Debt> restoredDebt(){return Map.of();}
         default CompletableFuture<Void> persistDebt(Map<ConstructionEscape.Position,ConstructionRepairLedger.Debt> debt){return CompletableFuture.completedFuture(null);}
         default List<AccessRepairSearch.Edit> repairPlan(List<Cell> cells) { return List.of(); }
@@ -110,8 +116,12 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             boolean ok=result.isJsonObject() && result.getAsJsonObject().has("ok") && result.getAsJsonObject().get("ok").getAsBoolean();
             if(moving) {
                 moving=false;
-                if(!ok)throw new IllegalStateException("repair_stance_unreachable");
-                return inspectTarget();
+                // An unreachable dig stance is one failed attempt (handled below like a failed removal), not the end of the build.
+                if(!ok && repairEdit!=null && digs.contains(repairEdit.position()))inspected=true;
+                else {
+                    if(!ok)throw new IllegalStateException("repair_stance_unreachable");
+                    return inspectTarget();
+                }
             }
             if(!inspected && ok) {
                 inspected=true;
@@ -121,7 +131,7 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                     return effect("use_block",args);
                 }
                 if(repairEdit!=null) {
-                    if(!repairEdit.before().equals(environment.state(target)))throw new IllegalStateException("repair_precondition_changed");
+                    if(!beforeStillHolds(repairEdit,target))throw new IllegalStateException("repair_precondition_changed at="+target.key()+" expected="+repairEdit.before()+" actual="+environment.state(target));
                     var intended=cells.stream().filter(c->c.key().equals(target.key())).findFirst();
                     ledger.beforeEdit(repairEdit.position(),intended.map(Cell::state).orElse(repairEdit.before()),intended.map(Cell::owner).orElse("temporary_access"),target.state());
                     if(target.air()) {
@@ -186,9 +196,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         // Door closing waits until teardown, but it does not need an access-repair search.
         boolean onlyCleanup=!ledger.entries().isEmpty()
             && pending.stream().allMatch(c->c.air() || environment.canToggle(c));
-        if(repairPlans==0) {repairPlans++;repairPlansWithoutProgress++;repairQueue.addAll(environment.repairPlan(cells,true));}
+        if(repairPlans==0) {repairPlans++;repairPlansWithoutProgress++;planRepair(true);}
         if(!onlyCleanup && consecutiveFailures>=3 && repairQueue.isEmpty() && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS) {
-            consecutiveFailures=0;repairPlans++;repairPlansWithoutProgress++;repairQueue.addAll(environment.repairPlan(cells,false));
+            consecutiveFailures=0;repairPlans++;repairPlansWithoutProgress++;planRepair(false);
         }
         if(pending.isEmpty() && ledger.entries().isEmpty()) {
             var value=new JsonObject();value.addProperty("placed",placed);value.addProperty("retries",failures);value.addProperty("verifiedCells",cells.size());
@@ -215,7 +225,7 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             && accessProbeRevision!=geometryRevision && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS){
             accessProbeRevision=geometryRevision;
             repairPlans++;repairPlansWithoutProgress++;
-            repairQueue.addAll(environment.repairPlan(cells,false));
+            planRepair(false);
         }
         if(target==null && repairQueue.isEmpty() && ledger.entries().isEmpty()
             && !pending.isEmpty() && pending.stream().allMatch(environment::canToggle)) {
@@ -224,8 +234,19 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             adjusting=target!=null;
         }
         if(!repairQueue.isEmpty() || target==null) {
+            if(repairQueue.isEmpty() && !onlyCleanup) {
+                // Walls and floors that sit inside a hillside have nothing to place over. Dig the nearest one out; the ledger keeps the intended block as owed.
+                var dig=pending.stream().filter(c->!c.air() && !c.state().contains("half=upper") && environment.blocked(c)
+                    && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
+                    .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
+                if(dig!=null){
+                    digs.add(new ConstructionEscape.Position(dig.x(),dig.y(),dig.z()));
+                    repairQueue.add(new AccessRepairSearch.Edit(new ConstructionEscape.Position(dig.x(),dig.y(),dig.z()),environment.state(dig),"minecraft:air",1.0,environment.digStance(dig)));
+                    planLog.addLast("dig "+dig.key());if(planLog.size()>6)planLog.removeFirst();
+                }
+            }
             if(repairQueue.isEmpty()) {
-                if(!onlyCleanup && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS){repairPlans++;repairPlansWithoutProgress++;repairQueue.addAll(environment.repairPlan(cells,false));}
+                if(!onlyCleanup && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS){repairPlans++;repairPlansWithoutProgress++;planRepair(false);}
                 // Owned teardown is finite and must outlive the speculative access budget.
                 // Failed removals are retried only after verified geometry progress.
                 if(repairQueue.isEmpty() && !ledger.entries().isEmpty()){
@@ -234,11 +255,17 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                     if(!cleanupDebt.isEmpty())repairQueue.addAll(environment.cleanupPlan(cells,cleanupDebt));
                 }
             }
-            if(repairQueue.isEmpty())throw new IllegalStateException("construction_no_feasible_target remaining="+pending.size()+" deferred="+deferred.size()+" repairDebt="+ledger.entries().size()+" last="+lastFailure);
+            if(repairQueue.isEmpty()){
+                var lowest=pending.stream().filter(c->!c.air()).sorted(Comparator.comparingInt(Cell::y).thenComparing(Cell::key)).limit(4)
+                    .map(c->c.key()+"{"+c.item()+(unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z())?" below_unfinished":"")
+                        +(environment.eligible(c)?" eligible":" not_eligible")+(immediate.contains(c)?" immediate":"")+(deferred.containsKey(c)?" deferred":"")+"}").toList();
+                throw new IllegalStateException("construction_no_feasible_target remaining="+pending.size()+" eligible="+eligible.size()+" deferred="+deferred.size()+" repairDebt="+ledger.entries().size()
+                    +" repairPlansWithoutProgress="+repairPlansWithoutProgress+" lowestPending="+lowest+" recentPlans="+planLog+" last="+lastFailure);
+            }
             repairEdit=repairQueue.removeFirst();var p=repairEdit.position();
             selectionReason="access_repair_or_cleanup";
             target=new Cell(p.x(),p.y(),p.z(),repairEdit.after(),repairEdit.after().split("\\[")[0],"temporary_access");
-            if(!repairEdit.before().equals(environment.state(target)))throw new IllegalStateException("repair_precondition_changed");
+            if(!beforeStillHolds(repairEdit,target))throw new IllegalStateException("repair_precondition_changed at="+target.key()+" expected="+repairEdit.before()+" actual="+environment.state(target));
             if(repairEdit.stance()!=null) {
                 moving=true;var stance=repairEdit.stance();var args=new JsonObject();args.addProperty("x",stance.x());args.addProperty("y",stance.y());args.addProperty("z",stance.z());args.addProperty("exactY",true);
                 return effect("navigate_to",args);
@@ -246,6 +273,22 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         }
         if(repairEdit==null && (selectionReason.equals("current_stance") || selectionReason.equals("local_frontier")))localSelections++;
         return inspectTarget();
+    }
+    /** Leaves and similar blocks change properties (decay distance) on their own; a removal only needs the same block id. */
+    private boolean beforeStillHolds(AccessRepairSearch.Edit edit,Cell at) {
+        var actual=environment.state(at);
+        if(edit.before().equals(actual))return true;
+        // A block that already vanished (decayed leaf) makes the removal a failed attempt, which is retried, not a fatal change.
+        return edit.after().equals("minecraft:air") && ((digs.contains(edit.position()) && actual.equals("minecraft:air")) || edit.before().split("\\[")[0].equals(actual.split("\\[")[0]));
+    }
+    private final Set<ConstructionEscape.Position> digs=new HashSet<>();
+    private final ArrayDeque<String> planLog=new ArrayDeque<>();
+    private void planRepair(boolean initial) {
+        var plan=environment.repairPlan(cells,initial);
+        repairQueue.addAll(plan);
+        var note=environment.repairNote();
+        planLog.addLast("#"+repairPlans+" edits="+plan.size()+(note.isEmpty()?"":" "+(note.length()>240?note.substring(0,240):note)));
+        if(planLog.size()>6)planLog.removeFirst();
     }
     private Cell selectTarget(List<Cell> eligible,Set<Cell> immediate,Comparator<Cell> ordering,List<Cell> pending){
         // Keep retries gated by verified geometry progress. Within each work area,
