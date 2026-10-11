@@ -24,7 +24,7 @@ public final class BlueprintService {
     private Map<String,Integer> surface;
     private BlockPos terrainOrigin;
     private ServerLevel terrainWorld;
-    private String draftWorld;
+    private String draftWorld,draftDimension;
     private static String library() {
         try(var in=BlueprintService.class.getResourceAsStream("/blueprint/components.js")) {
             return new String(Objects.requireNonNull(in).readAllBytes(),StandardCharsets.UTF_8);
@@ -85,7 +85,7 @@ public final class BlueprintService {
         dashboardDesignJson=null;dashboardTailJson=null;
         store=null;restored=false;draftId=null;lastCommitId=null;storageError=null;savedDesigns.clear();committedPlans.clear();integrity.clear();resetScan();
         ownerServer=null;draft=null;committed=null;source=null;lastLint=null;revision=0;committedRevision=0;
-        committedOrigin=null;committedWorld=null;terrain=null;surface=null;terrainOrigin=null;terrainWorld=null;draftWorld=null;
+        committedOrigin=null;committedWorld=null;terrain=null;surface=null;terrainOrigin=null;terrainWorld=null;draftWorld=null;draftDimension=null;
     }
     // Serialize control operations, including asynchronous Graal evaluations. HTTP viewers
     // only read the immutable published string; they never call this control interface.
@@ -134,7 +134,8 @@ public final class BlueprintService {
     public synchronized List<BlueprintConstructionProgram.Cell> constructionCells(Minecraft client,int expectedRevision,BlockPos origin) {
         requireDraft();
         if(client.player==null || client.level==null || client.getSingleplayerServer()==null || ownerServer!=client.getSingleplayerServer()
-            || !client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toString().equals(draftWorld))throw new IllegalStateException("construction_world_changed");
+            || !client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toString().equals(draftWorld)
+            || (draftDimension!=null && !draftDimension.equals(client.level.dimension().location().toString())))throw new IllegalStateException("construction_world_changed");
         if(revision!=expectedRevision)throw new IllegalStateException("blueprint_revision_changed");
         var result=new ArrayList<BlueprintConstructionProgram.Cell>();
         for(var cell:draft.cells.values()) {
@@ -173,10 +174,10 @@ public final class BlueprintService {
                     .thenApplyAsync(tree->{
                         if(client.getSingleplayerServer()!=server||expectedGeneration!=generation)throw new IllegalStateException("world_changed");
                         if(terrainWorld!=null&&terrainWorld!=server.getLevel(client.level.dimension()))throw new IllegalStateException("terrain_world_changed");
-                        Blueprint next=new Blueprint(tree.getAsJsonObject(),surface);
+                        Blueprint next=new Blueprint(tree.getAsJsonObject(),surface,terrain==null||!terrain.has("obstacles")?null:readObstacles(terrainRecord()));
                         String nextId=a.has("blueprintId")?a.get("blueprintId").getAsString():(draftId==null?UUID.randomUUID().toString():draftId);
                         if(!savedDesigns.containsKey(nextId)&&savedDesigns.size()>=32)throw new IllegalStateException("saved_blueprint_limit_32");
-                        draft=next;draftId=nextId;revision++;draftWorld=worldKey;source=a.get("source").getAsString();lastLint=null;
+                        draft=next;draftId=nextId;revision++;draftWorld=worldKey;draftDimension=client.level.dimension().location().toString();source=a.get("source").getAsString();lastLint=null;
                         var record=savedDesigns.computeIfAbsent(draftId,id->{var r=new JsonObject();r.addProperty("id",id);return r;});
                         record.add("draft",captureDesign(client.level.dimension().location().toString(),terrainOrigin));
                         return JSON.toJson(draft.snapshot(revision));
@@ -193,7 +194,7 @@ public final class BlueprintService {
                 if(op.equals("load")){
                     String id=a.get("blueprintId").getAsString();var record=savedDesigns.get(id);if(record==null)throw new IllegalArgumentException("unknown_blueprint_id");
                     var d=record.getAsJsonObject("draft");if(savedWorld(server,d)!=world)throw new IllegalArgumentException("blueprint_dimension_mismatch");
-                    var next=new Blueprint(d.getAsJsonObject("tree"),readSurface(d),readObstacles(d));draft=next;draftId=id;source=d.get("source").getAsString();revision++;d.addProperty("revision",revision);d.getAsJsonObject("snapshot").addProperty("revision",revision);draftWorld=worldKey;lastLint=null;
+                    var next=new Blueprint(d.getAsJsonObject("tree"),readSurface(d),readObstacles(d));draft=next;draftId=id;source=d.get("source").getAsString();revision++;d.addProperty("revision",revision);d.getAsJsonObject("snapshot").addProperty("revision",revision);draftWorld=worldKey;draftDimension=d.get("dimension").getAsString();draftDimension=d.get("dimension").getAsString();lastLint=null;
                     surface=readSurface(d);terrain=d.has("terrain")?d.getAsJsonObject("terrain"):null;terrainOrigin=d.has("origin")?Blueprint.vector(d.get("origin")):null;terrainWorld=terrainOrigin==null?null:world;
                     lastCommitId=record.has("committed")?id:null;committed=committedPlans.get(id);
                     if(committed!=null){var c=record.getAsJsonObject("committed");committedRevision=c.get("revision").getAsInt();committedOrigin=Blueprint.vector(c.get("origin"));committedWorld=savedWorld(server,c);}else{committedRevision=0;committedOrigin=null;committedWorld=null;}
@@ -331,6 +332,7 @@ public final class BlueprintService {
         out.add("snapshot",JSON.toJsonTree(draft.snapshot(revision)));
         return out;
     }
+    private JsonObject terrainRecord() {var o=new JsonObject();o.add("terrain",terrain);return o;}
     private static Map<String,List<String>> readObstacles(JsonObject data) {
         if(!data.has("terrain")||!data.getAsJsonObject("terrain").has("obstacles"))return null;
         var result=new LinkedHashMap<String,List<String>>();
@@ -359,7 +361,7 @@ public final class BlueprintService {
             if(data.has("activeId")&&!data.get("activeId").isJsonNull()){
                 draftId=data.get("activeId").getAsString();var d=savedDesigns.get(draftId).getAsJsonObject("draft");
                 draft=new Blueprint(d.getAsJsonObject("tree"),readSurface(d),readObstacles(d));source=d.get("source").getAsString();revision=data.get("revision").getAsInt();
-                draftWorld=server.getWorldPath(LevelResource.ROOT).toString();surface=readSurface(d);terrain=d.has("terrain")?d.getAsJsonObject("terrain"):null;
+                draftWorld=server.getWorldPath(LevelResource.ROOT).toString();draftDimension=d.has("dimension")?d.get("dimension").getAsString():null;surface=readSurface(d);terrain=d.has("terrain")?d.getAsJsonObject("terrain"):null;
                 terrainOrigin=d.has("origin")?Blueprint.vector(d.get("origin")):null;terrainWorld=terrainOrigin==null?null:savedWorld(server,d);
             }
             if(data.has("lastCommitId")&&!data.get("lastCommitId").isJsonNull()){

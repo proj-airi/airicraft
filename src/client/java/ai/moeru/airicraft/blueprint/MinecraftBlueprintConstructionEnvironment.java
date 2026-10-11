@@ -139,6 +139,7 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
         requireWorld();var pos=position(cell);
         if(!world.hasChunkAt(pos))return false;
         var actual=world.getBlockState(pos);
+        if(!actual.isAir() && world.getFluidState(pos).isEmpty() && cell.air())return true; // planned air: anything solid or a plant is in the way
         return !actual.isAir() && !actual.canBeReplaced() && world.getFluidState(pos).isEmpty()
             && !BlueprintIntegrity.statesMatch(Blueprint.parseState(cell.state()),actual);
     }

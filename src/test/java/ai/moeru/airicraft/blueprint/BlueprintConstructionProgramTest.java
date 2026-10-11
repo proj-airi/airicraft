@@ -74,6 +74,26 @@ class BlueprintConstructionProgramTest {
         var error=assertThrows(java.util.concurrent.CompletionException.class,()->program.resume(FAIL).join());
         assertTrue(error.getCause().getMessage().startsWith("construction_no_feasible_target"),error.getCause().getMessage());
     }
+    @Test void plannedAirHoldingATreeIsBrokenAndNotRestored(){
+        class Grove extends World {
+            Grove(){states.put(0,"minecraft:oak_log");}
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return false;}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return states.containsKey(c.y()) && c.air();}
+        }
+        var world=new Grove();
+        var air=new BlueprintConstructionProgram.Cell(0,0,0,"minecraft:air","minecraft:air","house.clear");
+        var program=new BlueprintConstructionProgram(List.of(air),world);
+        var tools=new ArrayList<String>();
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        for(int i=0;i<10 && !step.get("done").getAsBoolean();i++){
+            tools.add(tool(step));
+            if(tool(step).equals("break_blocks"))world.states.remove(0);
+            step=program.resume(OK).join().getAsJsonObject();
+        }
+        assertTrue(step.get("done").getAsBoolean(),tools.toString());
+        assertTrue(tools.contains("break_blocks"),tools.toString());
+        assertFalse(tools.contains("place_block"),tools.toString());
+    }
     @Test void failedRepairReportsApproachBeforeReplanningAndSuccessfulEditClearsIt(){
         class FeedbackWorld extends RepairWorld {
             final FailedRepairApproaches rejected=new FailedRepairApproaches();

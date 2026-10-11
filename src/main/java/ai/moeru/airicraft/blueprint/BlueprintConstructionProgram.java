@@ -234,12 +234,14 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             adjusting=target!=null;
         }
         if(!repairQueue.isEmpty() || target==null) {
-            if(repairQueue.isEmpty() && !onlyCleanup) {
-                // Walls and floors that sit inside a hillside have nothing to place over. Dig the nearest one out; the ledger keeps the intended block as owed.
-                var dig=pending.stream().filter(c->!c.air() && !c.state().contains("half=upper") && environment.blocked(c)
+            if(repairQueue.isEmpty()) {
+                // Walls and floors that sit inside a hillside, and planned air (clearance) that holds a tree, have nothing to place over or are not yet empty.
+                // Dig the nearest one out; the ledger keeps the intended block owed. Blocks the build itself added (ledger entries) are cleaned up by teardown, not dug.
+                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && environment.blocked(c)
+                    && !ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z()))
                     && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
-                if(dig!=null){
+                if(dig!=null && (!onlyCleanup || dig.air())){
                     digs.add(new ConstructionEscape.Position(dig.x(),dig.y(),dig.z()));
                     repairQueue.add(new AccessRepairSearch.Edit(new ConstructionEscape.Position(dig.x(),dig.y(),dig.z()),environment.state(dig),"minecraft:air",1.0,environment.digStance(dig)));
                     planLog.addLast("dig "+dig.key());if(planLog.size()>6)planLog.removeFirst();
