@@ -66,7 +66,7 @@
         "phase": "RUNNING",
         "state": "QUEUED",
         "updatedTick": 2,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:mine-blocks-N"
       },
       "seqNo": 4,
       "tick": 2,
@@ -121,7 +121,7 @@
         "phase": "RUNNING",
         "state": "RUNNING",
         "updatedTick": 3,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:mine-blocks-N"
       },
       "seqNo": 6,
       "tick": 3,
@@ -186,7 +186,7 @@
               "phase": "RUNNING",
               "state": "QUEUED",
               "updatedTick": 2,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:mine-blocks-N"
             },
             "seqNo": 4,
             "tick": 2,
@@ -208,7 +208,7 @@
               "phase": "RUNNING",
               "state": "RUNNING",
               "updatedTick": 3,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:mine-blocks-N"
             },
             "seqNo": 6,
             "tick": 3,

@@ -49,10 +49,10 @@
         "createdTick": 1,
         "creationOrder": 0,
         "cursor": 0,
-        "executionId": "action-graph-<uuid>",
+        "executionId": "graph-N",
         "executionPhase": "PLANNING",
         "failureCode": "",
-        "foregroundExecutionId": "action-graph-<uuid>",
+        "foregroundExecutionId": "graph-N",
         "goal": {
           "countAtLeast": 1,
           "fact": "inventory.item",
@@ -84,7 +84,7 @@
     },
     {
       "payload": {
-        "executionId": "action-graph-<uuid>",
+        "executionId": "graph-N",
         "goal": "inventory.item|itemId=minecraft:bread|countAtLeast>=1"
       },
       "seqNo": 6,
@@ -110,7 +110,7 @@
         "phase": "RESOLVING",
         "state": "QUEUED",
         "updatedTick": 1,
-        "workId": "GRAPH:action-graph-<uuid>"
+        "workId": "GRAPH:graph-N"
       },
       "seqNo": 7,
       "tick": 2,

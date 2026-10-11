@@ -48,7 +48,7 @@
         "phase": "IDLE",
         "state": "QUEUED",
         "updatedTick": 1,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:navigate-to-N"
       },
       "seqNo": 3,
       "tick": 1,
@@ -92,7 +92,7 @@
         "phase": "RUNNING",
         "state": "QUEUED",
         "updatedTick": 1,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:navigate-to-N"
       },
       "seqNo": 5,
       "tick": 2,
@@ -115,7 +115,7 @@
           "y": 64,
           "z": 8
         },
-        "taskId": "job-<uuid>",
+        "taskId": "navigate-to-N",
         "terminationCause": "CALCULATION_FAILED"
       },
       "seqNo": 6,
@@ -152,7 +152,7 @@
         "phase": "FAILED",
         "state": "RUNNING",
         "updatedTick": 3,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:navigate-to-N"
       },
       "seqNo": 7,
       "tick": 3,
@@ -195,7 +195,7 @@
         "phase": "FAILED",
         "state": "FAILED",
         "updatedTick": 4,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:navigate-to-N"
       },
       "seqNo": 9,
       "tick": 4,
@@ -235,7 +235,7 @@
               "phase": "IDLE",
               "state": "QUEUED",
               "updatedTick": 1,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:navigate-to-N"
             },
             "seqNo": 3,
             "tick": 1,
@@ -256,7 +256,7 @@
               "phase": "RUNNING",
               "state": "QUEUED",
               "updatedTick": 1,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:navigate-to-N"
             },
             "seqNo": 5,
             "tick": 2,
@@ -279,7 +279,7 @@
                 "y": 64,
                 "z": 8
               },
-              "taskId": "job-<uuid>",
+              "taskId": "navigate-to-N",
               "terminationCause": "CALCULATION_FAILED"
             },
             "seqNo": 6,
@@ -294,7 +294,7 @@
               "phase": "FAILED",
               "state": "RUNNING",
               "updatedTick": 3,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:navigate-to-N"
             },
             "seqNo": 7,
             "tick": 3,
@@ -365,7 +365,7 @@
               "phase": "FAILED",
               "state": "FAILED",
               "updatedTick": 4,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:navigate-to-N"
             },
             "seqNo": 9,
             "tick": 4,

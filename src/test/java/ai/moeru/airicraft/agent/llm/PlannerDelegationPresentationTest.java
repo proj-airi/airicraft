@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlannerDelegationPresentationTest {
-	@Test void delegatedSystemTriggersKeepIdentityInFieldsAndShortenOnlyTheModelView() {
+	@Test void delegatedSystemTriggersKeepIdentityInFieldsAndModelView() {
 		var delegation = new PlannerDelegation();
 		delegation.delegate("mine iron", "obtain one ingot", "avoid lava");
 		var assignment = delegation.startPrompt(Map.of("health", 19.375), 0);
@@ -18,8 +18,9 @@ class PlannerDelegationPresentationTest {
 		assertEquals(id, message.fields().getAsJsonObject().get("delegationId").getAsString());
 		var refs = new PlannerReferences();
 		String presented = refs.presentMessages(LlmConversation.of(List.of(message))).get(0).getAsJsonObject().get("content").getAsString();
-		assertTrue(presented.contains(refs.present(id)));
-		assertFalse(presented.contains(id));
+		// Delegation ids are already short, so the model sees them as they are; no @r reference is needed.
+		assertEquals(id, refs.present(id));
+		assertTrue(presented.contains(id));
 		assertTrue(presented.contains("19.4"));
 		assertEquals(id, message.fields().getAsJsonObject().get("delegationId").getAsString());
 
@@ -30,7 +31,6 @@ class PlannerDelegationPresentationTest {
 			.withWake(WakeRef.reason("delegation"));
 		String nextPresented = refs.presentMessages(LlmConversation.of(PlannerTriggerBatch.of(List.of(next)).toObservedMessages()))
 			.get(0).getAsJsonObject().get("content").getAsString();
-		assertTrue(nextPresented.contains(refs.present(id)));
-		assertFalse(nextPresented.contains(id));
+		assertTrue(nextPresented.contains(id));
 	}
 }
