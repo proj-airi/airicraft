@@ -1817,3 +1817,12 @@ Forest world, search centred on the dense-forest cabin site: the best candidates
 | 3 (an unreachable repair stance is now one failed attempt) | still running after 9 min: 22 placed, 31 left, 101 failed attempts. |
 
 Takeaway: choosing a flat clear site removes the terrain problems, but digging the ground under a floor and the scaffold search still make even a flat build slow. A design with a foundation or a floor at ground level (no dig) would avoid the dig entirely; the designer should be told the ground height.
+
+### Planner-path trial (2026-10-11)
+
+First run of the real planner (glm-5-3-flash, `plannerReasoningEffort: low`, normal client in `Blueprint-Terrain2`, creative world) asked in chat to build a small oak cabin near the player.
+
+- **Design:** the planner called `design_blueprint` itself and got a 504-cell cabin at `[41,68,48]` (it did not call `survey`). It then crafted planks and called `construct_blueprint`, which stopped at once with `construction_material_missing itemId=minecraft:oak_log` (the design wanted 12 logs and only planks had been crafted). The planner mined 12 logs, which is the right recovery.
+- **Stall 1 (fixed):** after that the planner never made another request. The compaction call sent `reasoning_effort: "none"` and GLM Flash answers HTTP 400 (it cannot disable reasoning), so every compaction failed once the 143-message conversation grew. The client now retries once at the configured effort and remembers that for the session (`OpenAiCompatibleLlmBackendTest.compactionRetriesAtConfiguredEffortWhenProviderRejectsNone`).
+- **Second run, with the fix:** the planner used the blueprint tool and `construct_blueprint`, then about five minutes later called `continue`, `report_to_me`, `inspect_work` and finally `clear_queue`, which cancelled the construction (`planner_clear_queue`), and went off on an unrelated errand ("carrying like 128 dirt, should dump some before cave trip"). Nothing was built. The planner prompt for blueprints now says construction takes minutes, not to clear the queue for it, to wait until `inspect_work` is terminal, and to use `survey` to choose a site. This changes `systemSha` in every wake golden and nothing else.
+- **Not yet shown:** a planner-driven build running to a terminal state. The designer prompt also now tells it to set floors on or just above the highest ground (Foundation below), to avoid digging floors into soil.
