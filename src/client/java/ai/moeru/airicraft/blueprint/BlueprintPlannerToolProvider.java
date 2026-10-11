@@ -34,16 +34,16 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
                 propForProvider("site",Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3)),
                 propForProvider("revise",stringForProvider("Existing blueprintId, when revising."))),List.of("brief","site")));
         if(driver)result.addAll(new BlueprintToolProvider().openAiTools());
-        else result.add(toolForProvider("blueprint","Inspect or realize the current design. list discovers saved designs; load selects blueprintId for inspection/revision. get returns compact metadata and findings; explain traces a local position; commit requires exact revision and origin and is creative Blueprint-* only; verify checks placed blocks. Author through design_blueprint. No blocks are placed during design.",
-            propertiesForProvider(propForProvider("op",Map.of("type","string","enum",List.of("get","list","load","explain","commit","verify"))),
-                propForProvider("blueprintId",stringForProvider("Saved ID for load; list discovers saved designs.")),propForProvider("revision",Map.of("type","integer")),propForProvider("origin",vector()),propForProvider("position",vector())),List.of("op")));
+        else result.add(toolForProvider("blueprint","Inspect or realize the current design. list discovers saved designs; load selects blueprintId for inspection/revision. get returns compact metadata and findings; explain traces a local position; commit requires exact revision and origin and is creative Blueprint-* only; verify checks placed blocks. survey ranks nearby building sites by slope, tree cover and water (origin is the search centre; optional radius, width, depth). Author through design_blueprint. No blocks are placed during design.",
+            propertiesForProvider(propForProvider("op",Map.of("type","string","enum",List.of("get","list","load","explain","commit","verify","survey"))),
+                propForProvider("blueprintId",stringForProvider("Saved ID for load; list discovers saved designs.")),propForProvider("revision",Map.of("type","integer")),propForProvider("origin",vector()),propForProvider("position",vector()),propForProvider("radius",Map.of("type","integer")),propForProvider("width",Map.of("type","integer")),propForProvider("depth",Map.of("type","integer"))),List.of("op")));
         return result;
     }
     private static Map<String,Object> vector(){return Map.of("type","array","items",Map.of("type","integer"),"minItems",3,"maxItems",3);}
     @Override public CompletableFuture<String> execute(PlannerToolCall call){
         if(call.name().equals("design_blueprint"))return start(call.arguments());
         String op=call.arguments().has("op")?call.arguments().get("op").getAsString():"";
-        if(!driver&&!Set.of("get","list","load","explain","commit","verify").contains(op))return CompletableFuture.completedFuture("TOOL_ERROR: use design_blueprint for authoring");
+        if(!driver&&!Set.of("get","list","load","explain","commit","verify","survey").contains(op))return CompletableFuture.completedFuture("TOOL_ERROR: use design_blueprint for authoring");
         return service.execute(call.arguments()).thenApply(r->{
             if(!r.startsWith("TOOL_ERROR:")&&Set.of("get","load").contains(op)){
                 var d=JsonParser.parseString(r).getAsJsonObject();synchronized(this){if(d.has("blueprintId")&&!d.get("blueprintId").isJsonNull())blueprintId=d.get("blueprintId").getAsString();if(d.has("origin"))site=d.getAsJsonArray("origin");}

@@ -1803,3 +1803,17 @@ Diagnosis of the forest stall: `construction_no_feasible_target` now reports the
 Fix: when no cell is eligible, the program digs out the nearest `blocked` cell (a solid non-replaceable block that is not the planned one) from a reachable stance (`digStance`), keeping the intended block owed in the ledger. Leaf decay between selection and removal is tolerated, and an unreachable dig stance counts as one failed attempt.
 
 Forest slope, same blueprint, on a world still holding earlier scaffolds (not a clean start): the build no longer stalls with zero placements; one run reached 115 placed / 282 left, but only after 26,500 ticks, 285 failed attempts and about 100 scaffold blocks of repair debt, and it was still running. Mostly `break_blocks` failures (`target_out_of_range`, `break_aim_timeout`) and unreachable dig stances. Open: dig and scaffold cost on a dense forest is too high to call usable; the next lever is choosing a clearer site (step 4) rather than tuning the repair search further.
+
+### Site selection: `blueprint survey` (2026-10-11)
+
+New read-only op, also exposed to the planner: `survey` ranks candidate footprints (default 12x12, search radius 24, max 48, step 4) around `origin` by ground range (x3), felled-tree blocks (x0.5) and water columns (x8, unusable above a quarter of the footprint), plus a small distance penalty. It returns the best five with the mean ground height as `origin` y. The scorer is a pure class (`SiteScore`) with unit tests. Adding the op to the planner schema changed `toolsSha` in every wake golden (nothing else).
+
+Forest world, search centred on the dense-forest cabin site: the best candidates were nearly flat and tree-free 30 blocks away (`[34,68,52]`, ground range 1, 0 tree blocks), against the forest site's 178 obstacle columns. A glm-designed 7x7 oak cabin (400 cells) at that spot:
+
+| Attempt | Result |
+|---|---|
+| 1 | 170 placed, 35 left, 17,500 ticks, 205 failed attempts, of which 177 were `break_aim_timeout` while digging out the ground under the floor. |
+| 2 (after dig stances had to see the block and not stand on it) | 0 aim timeouts, 5 placed, 30 left, then stopped on `repair_stance_unreachable` (fatal for any repair edit). |
+| 3 (an unreachable repair stance is now one failed attempt) | still running after 9 min: 22 placed, 31 left, 101 failed attempts. |
+
+Takeaway: choosing a flat clear site removes the terrain problems, but digging the ground under a floor and the scaffold search still make even a flat build slow. A design with a foundation or a floor at ground level (no dig) would avoid the dig entirely; the designer should be told the ground height.

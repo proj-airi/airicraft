@@ -151,7 +151,12 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
             if(!world.hasChunkAt(feet))continue;
             if(!world.getBlockState(feet).getCollisionShape(world,feet).isEmpty()||!world.getBlockState(feet.above()).getCollisionShape(world,feet.above()).isEmpty())continue;
             if(world.getBlockState(feet.below()).getCollisionShape(world,feet.below()).isEmpty()||!world.getFluidState(feet).isEmpty())continue;
-            if(new net.minecraft.world.phys.Vec3(feet.getX()+.5,feet.getY()+1.62,feet.getZ()+.5).distanceTo(center)>4.0)continue;
+            if(feet.below().equals(target))continue;
+            var eye=new net.minecraft.world.phys.Vec3(feet.getX()+.5,feet.getY()+1.62,feet.getZ()+.5);
+            if(eye.distanceTo(center)>4.0)continue;
+            // The stance must actually see the block: the first thing the sight line hits has to be the target itself.
+            var hit=world.clip(new net.minecraft.world.level.ClipContext(eye,center,net.minecraft.world.level.ClipContext.Block.OUTLINE,net.minecraft.world.level.ClipContext.Fluid.NONE,client.player));
+            if(hit.getType()!=net.minecraft.world.phys.HitResult.Type.BLOCK||!hit.getBlockPos().equals(target))continue;
             double d=player.distanceToSqr(feet.getX()+.5,feet.getY(),feet.getZ()+.5);
             if(d<bestDistance){bestDistance=d;best=new ConstructionEscape.Position(feet.getX(),feet.getY(),feet.getZ());}
         }

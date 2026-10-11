@@ -218,6 +218,41 @@ public final class BlueprintService {
                     rememberTerrain(t,heights,origin,world);
                     return JSON.toJson(Map.of("terrain",t,"cells",sampled,"note","Observed terrain context, never committed as design blocks; 16x16 height field and top three layers."));
                 }
+                if(op.equals("survey")) {
+                    // Read-only: rank candidate building footprints around a centre by slope, tree cover and water so a site is chosen on purpose.
+                    BlockPos center=Blueprint.vector(a,"origin",player.blockPosition());
+                    int radius=Math.min(48,a.has("radius")?a.get("radius").getAsInt():24),width=Math.max(4,Math.min(32,a.has("width")?a.get("width").getAsInt():12)),depth=Math.max(4,Math.min(32,a.has("depth")?a.get("depth").getAsInt():12)),step=Math.max(2,a.has("step")?a.get("step").getAsInt():4);
+                    if(!center.closerThan(player.blockPosition(),96))throw new IllegalArgumentException("survey_too_far");
+                    record Column(int ground,int trees,boolean wet) { }
+                    var columns=new HashMap<Long,Column>();
+                    var found=new ArrayList<Map<String,Object>>();
+                    for(int dx=-radius;dx<=radius;dx+=step)for(int dz=-radius;dz<=radius;dz+=step) {
+                        int ox=center.getX()+dx,oz=center.getZ()+dz;
+                        int[][] heights=new int[width][depth],trees=new int[width][depth];boolean[][] wet=new boolean[width][depth];boolean loaded=true;
+                        for(int x=0;x<width&&loaded;x++)for(int z=0;z<depth&&loaded;z++) {
+                            int wx=ox+x,wz=oz+z;long key=(((long)wx)<<32)^(wz&0xffffffffL);
+                            if(!world.hasChunkAt(new BlockPos(wx,center.getY(),wz))){loaded=false;break;}
+                            var column=columns.get(key);
+                            if(column==null) {
+                                int top=world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,wx,wz)-1;
+                                int y=top;for(int guard=0;guard<48&&y>world.getMinY();guard++){var below=world.getBlockState(new BlockPos(wx,y,wz));if(!growth(below)&&!(y<top&&below.isAir()))break;y--;}
+                                int count=0;for(int dy=1;dy<=16;dy++)if(growth(world.getBlockState(new BlockPos(wx,y+dy,wz))))count++;
+                                column=new Column(y,count,!world.getFluidState(new BlockPos(wx,y,wz)).isEmpty());columns.put(key,column);
+                            }
+                            heights[x][z]=column.ground();trees[x][z]=column.trees();wet[x][z]=column.wet();
+                        }
+                        if(!loaded)continue;
+                        var result=SiteScore.score(heights,trees,wet);
+                        if(!result.usable())continue;
+                        double distance=Math.sqrt(dx*dx+dz*dz);
+                        var entry=new LinkedHashMap<String,Object>();
+                        entry.put("origin",List.of(ox,(int)Math.round(result.meanHeight()),oz));entry.put("score",Math.round((result.score()+distance*0.1)*10)/10.0);
+                        entry.put("groundRange",result.range());entry.put("treeBlocks",result.obstacleBlocks());entry.put("wetColumns",result.wetColumns());
+                        found.add(entry);
+                    }
+                    found.sort(Comparator.comparingDouble(e->(Double)e.get("score")));
+                    return JSON.toJson(Map.of("footprint",List.of(width,depth),"candidates",found.subList(0,Math.min(5,found.size())),"note","Lower score is better (slope x3, tree blocks x0.5, water x8, small distance penalty). origin y is the mean ground height; run sample at the chosen origin before designing."));
+                }
                 if(op.equals("explain")) {
                     boolean worldCoordinates=a.has("world")&&a.get("world").getAsBoolean();
                     BlockPos p=Blueprint.vector(a.get("position"));

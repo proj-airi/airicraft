@@ -116,8 +116,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             boolean ok=result.isJsonObject() && result.getAsJsonObject().has("ok") && result.getAsJsonObject().get("ok").getAsBoolean();
             if(moving) {
                 moving=false;
-                // An unreachable dig stance is one failed attempt (handled below like a failed removal), not the end of the build.
-                if(!ok && repairEdit!=null && digs.contains(repairEdit.position()))inspected=true;
+                // An unreachable repair stance (dig, scaffold or cleanup) is one failed attempt (handled below like a failed removal), not the end of the build.
+                if(!ok && repairEdit!=null)inspected=true;
                 else {
                     if(!ok)throw new IllegalStateException("repair_stance_unreachable");
                     return inspectTarget();
