@@ -41,6 +41,9 @@ class ReferenceAttentionPolicyTest {
 				Delivery.NONE, Urgency.LOW, AttentionStage.CONSTITUTION, "constitution.reset_command"),
 			new Row("controller chat ignores distance", "social.local_controller_spoke", Map.of(), IDLE, AttentionEvidence.NONE,
 				Delivery.IMMEDIATE, Urgency.DIRECT, AttentionStage.CONSTITUTION, "constitution.direct_chat"),
+			// createAiriCommandTrigger
+			new Row("AIRI command wakes even when evaluation is suppressed", "social.airi_commanded", Map.of(), state(true, false, false, null, false),
+				AttentionEvidence.NONE, Delivery.IMMEDIATE, Urgency.DIRECT, AttentionStage.CONSTITUTION, "constitution.airi_command"),
 			// createReflexResolvedTrigger
 			new Row("reflex resolved", "reflex.resolved", Map.of(), state(false, false, true, null, false), AttentionEvidence.NONE,
 				Delivery.IMMEDIATE, Urgency.CRITICAL, AttentionStage.CONSTITUTION, "constitution.safety_handoff"),

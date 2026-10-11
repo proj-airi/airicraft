@@ -1,5 +1,6 @@
 package ai.moeru.airicraft;
 
+import ai.moeru.airicraft.airi.AiriLinkConfig;
 import ai.moeru.airicraft.dashboard.DebugDashboardConfig;
 import net.fabricmc.loader.api.FabricLoader;
 import org.yaml.snakeyaml.DumperOptions;
@@ -81,8 +82,22 @@ public final class AiricraftConfigLoader {
 			readBoolean(root, "suppressAutoPauseOnFocusLost", defaults.suppressAutoPauseOnFocusLost(), strict),
 			readInt(root, "blockInteractionDelayTicks", defaults.blockInteractionDelayTicks()),
 			readInt(root, "cameraLerpDefaultTicks", defaults.cameraLerpDefaultTicks()),
-			readDebugDashboardConfig(root, defaults.debugDashboard())
+			readDebugDashboardConfig(root, defaults.debugDashboard()),
+			readAiriLinkConfig(root, defaults.airi(), strict)
 		);
+	}
+
+	private static AiriLinkConfig readAiriLinkConfig(Map<String, Object> root, AiriLinkConfig defaults, boolean strict) {
+		Map<String, Object> airi = childMap(root, "airi");
+		AiriLinkConfig parsed = new AiriLinkConfig(
+			readBoolean(airi, "enabled", defaults.enabled(), strict),
+			readString(airi, "url", defaults.url()),
+			readString(airi, "token", defaults.token())
+		);
+		if (!AiriLinkConfig.isWebSocketUrl(parsed.url())) {
+			throw new IllegalArgumentException("airi.url must start with ws:// or wss://");
+		}
+		return parsed;
 	}
 
 	private static DebugDashboardConfig readDebugDashboardConfig(
@@ -187,6 +202,13 @@ public final class AiricraftConfigLoader {
 			return number.intValue();
 		}
 		return Integer.parseInt(String.valueOf(value));
+	}
+
+	private static String readString(Map<String, Object> root, String fieldName, String fallback) {
+		if (root == null || !root.containsKey(fieldName) || root.get(fieldName) == null) {
+			return fallback;
+		}
+		return String.valueOf(root.get(fieldName));
 	}
 
 	private static boolean readBoolean(Map<String, Object> root, String fieldName, boolean fallback, boolean strict) {

@@ -126,6 +126,7 @@ public final class EventCatalog {
 			// social
 			new EventTypeSpec("social.item_offered", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.item_offered", true, PlannerTriggerType.SYSTEM, false)),
 			new EventTypeSpec("social.local_controller_spoke", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.local_controller_spoke", false, PlannerTriggerType.CHAT, true)),
+			new EventTypeSpec("social.airi_commanded", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.airi_commanded", false, PlannerTriggerType.CHAT, true)),
 			new EventTypeSpec("social.player_addressed_agent", false, EventFamily.PERCEPT, Set.of("ChatIngestService", "EmbodiedAgentRuntime"), EventVisibility.DIAGNOSTIC, new EventRoutingProfile("social.player_addressed_agent", false, PlannerTriggerType.CHAT, true)),
 			new EventTypeSpec("social.player_joined_game", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_joined_game", true, null, false)),
 			new EventTypeSpec("social.player_joined_nearby", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime", "NearbyPlayerTracker"), EventVisibility.PLANNER, new EventRoutingProfile("social.player_joined_nearby", true, null, false)),

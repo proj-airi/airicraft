@@ -34,6 +34,26 @@ class AiricraftConfigLoaderTest {
 	}
 
 	@Test
+	void theAiriLinkIsOffByDefaultAndReadsItsBlock() {
+		assertFalse(AiricraftConfig.defaults().airi().enabled());
+		assertEquals("ws://127.0.0.1:6121/ws", AiricraftConfig.defaults().airi().url());
+
+		AiricraftConfig parsed = AiricraftConfigLoader.fromMapStrict(Map.of(
+			"airi", Map.of("enabled", true, "url", "ws://127.0.0.1:7000/ws", "token", " secret ")
+		), AiricraftConfig.defaults());
+
+		assertTrue(parsed.airi().enabled());
+		assertEquals("ws://127.0.0.1:7000/ws", parsed.airi().url());
+		assertEquals("secret", parsed.airi().token());
+	}
+
+	@Test
+	void anAiriUrlThatIsNotAWebSocketIsRejected() {
+		assertThrows(IllegalArgumentException.class, () -> AiricraftConfigLoader.fromMapStrict(
+			Map.of("airi", Map.of("url", "http://127.0.0.1:6121")), AiricraftConfig.defaults()));
+	}
+
+	@Test
 	void anObsoleteNavigationBackendKeyIsIgnored() {
 		Map<String, Object> obsolete = Map.of("navigation", Map.of("backend", "navigationFacade"));
 

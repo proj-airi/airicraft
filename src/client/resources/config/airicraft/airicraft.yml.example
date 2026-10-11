@@ -31,3 +31,10 @@ debugDashboard:
   visualCaptureEnabled: true
   # Completed server ticks between samples. 20 = at most 1 fps, 40 = 0.5 fps.
   visualCaptureIntervalTicks: 20
+
+# Link to the AIRI desktop app. The mod joins AIRI's channel server as the module "airicraft".
+airi:
+  enabled: false
+  url: ws://127.0.0.1:6121/ws
+  # The channel server token from AIRI's settings. The link does not connect without it.
+  token: ""

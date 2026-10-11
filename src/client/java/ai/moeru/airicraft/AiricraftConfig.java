@@ -1,5 +1,6 @@
 package ai.moeru.airicraft;
 
+import ai.moeru.airicraft.airi.AiriLinkConfig;
 import ai.moeru.airicraft.dashboard.DebugDashboardConfig;
 
 public record AiricraftConfig(
@@ -9,7 +10,8 @@ public record AiricraftConfig(
 	boolean suppressAutoPauseOnFocusLost,
 	int blockInteractionDelayTicks,
 	int cameraLerpDefaultTicks,
-	DebugDashboardConfig debugDashboard
+	DebugDashboardConfig debugDashboard,
+	AiriLinkConfig airi
 ) {
 	public static final int DEFAULT_BLOCK_INTERACTION_DELAY_TICKS = 2;
 	public static final int DEFAULT_CAMERA_LERP_DEFAULT_TICKS = 0;
@@ -22,7 +24,8 @@ public record AiricraftConfig(
 			true,
 			DEFAULT_BLOCK_INTERACTION_DELAY_TICKS,
 			DEFAULT_CAMERA_LERP_DEFAULT_TICKS,
-			DebugDashboardConfig.defaults()
+			DebugDashboardConfig.defaults(),
+			AiriLinkConfig.defaults()
 		);
 	}
 
@@ -30,6 +33,7 @@ public record AiricraftConfig(
 		blockInteractionDelayTicks = Math.max(0, blockInteractionDelayTicks);
 		cameraLerpDefaultTicks = Math.max(0, cameraLerpDefaultTicks);
 		debugDashboard = debugDashboard == null ? DebugDashboardConfig.defaults() : debugDashboard;
+		airi = airi == null ? AiriLinkConfig.defaults() : airi;
 	}
 
 	public AiricraftConfig(
@@ -47,7 +51,8 @@ public record AiricraftConfig(
 			suppressAutoPauseOnFocusLost,
 			blockInteractionDelayTicks,
 			cameraLerpDefaultTicks,
-			DebugDashboardConfig.defaults()
+			DebugDashboardConfig.defaults(),
+			AiriLinkConfig.defaults()
 		);
 	}
 

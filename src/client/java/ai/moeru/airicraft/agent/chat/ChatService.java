@@ -4,14 +4,19 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class ChatService {
 	public static final int MAX_CHAT_MESSAGE_LENGTH = 220;
 	private static final int RECENT_SENT_CHAT_LIMIT = 8;
+	private static final int SENT_LINE_LIMIT = 16;
 
 	private long lastChatTick = -1L;
 	private String lastChatText;
 	private final ArrayDeque<SentChat> recentSentChats = new ArrayDeque<>();
+	private final ArrayDeque<String> sentLines = new ArrayDeque<>();
+	private long sentLineCount;
 
 	public boolean send(Minecraft minecraft, String text, long tick) {
 		if (minecraft == null || text == null || text.isBlank()) {
@@ -32,7 +37,20 @@ public final class ChatService {
 		lastChatTick = tick;
 		lastChatText = sanitizedText;
 		rememberSentChat(sanitizedText, tick);
+		rememberSentLine(sanitizedText);
 		return true;
+	}
+
+	/** How many lines this service has sent. The count only grows, so a reader can ask for the lines after its last count. */
+	public long sentLineCount() {
+		return sentLineCount;
+	}
+
+	/** The lines sent after the given count, oldest first. Only the last {@value #SENT_LINE_LIMIT} lines are kept. */
+	public List<String> linesSentAfter(long count) {
+		int missing = (int) Math.min(sentLines.size(), Math.max(0L, sentLineCount - count));
+		List<String> lines = new ArrayList<>(sentLines);
+		return List.copyOf(lines.subList(lines.size() - missing, lines.size()));
 	}
 
 	public boolean isRecentSentChat(String text, long currentTick, long maxAgeTicks) {
@@ -96,6 +114,15 @@ public final class ChatService {
 		lastChatTick = -1L;
 		lastChatText = null;
 		recentSentChats.clear();
+		sentLines.clear();
+	}
+
+	void rememberSentLine(String text) {
+		sentLineCount++;
+		sentLines.addLast(text);
+		while (sentLines.size() > SENT_LINE_LIMIT) {
+			sentLines.removeFirst();
+		}
 	}
 
 	void rememberSentChat(String text, long tick) {

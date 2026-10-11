@@ -1,0 +1,7 @@
+-d
+/tmp/claude-0/-home-claude/bbda2889-42f2-59ac-bddb-19ffdb73e5fc/scratchpad/out2
+-cp
+/opt/apache-maven-3.9.11/lib/gson-2.13.1.jar:/opt/apache-maven-3.9.11/lib/slf4j-api-1.7.36.jar:/tmp/claude-0/-home-claude/bbda2889-42f2-59ac-bddb-19ffdb73e5fc/scratchpad/lib/junit-console.jar
+-sourcepath
+src/client/java:src/main/java:/tmp/claude-0/-home-claude/bbda2889-42f2-59ac-bddb-19ffdb73e5fc/scratchpad/stub
+src/client/java/ai/moeru/airicraft/agent/llm/PlannerPromptPolicy.java

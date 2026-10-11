@@ -12,6 +12,7 @@ import java.util.Map;
 
 public final class PlannerPromptPolicy {
 	private static final String SYSTEM_PROMPT_TEMPLATE = "/prompts/planner-system.md";
+	private static final String AIRI_BODY_PROMPT_TEMPLATE = "/prompts/planner-airi-body.md";
 	private static final String COMPACTION_PROMPT_TEMPLATE = "/prompts/planner-compaction.md";
 	private static final String COMPACTION_PROMPT_TEMPLATE_TEXT = readTemplate(COMPACTION_PROMPT_TEMPLATE);
 
@@ -28,6 +29,21 @@ public final class PlannerPromptPolicy {
 
 	/** A null character prompt renders the built-in character without an in-game name. */
 	public static String systemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry, String characterPrompt) {
+		return systemPrompt(visionMode, toolRegistry, characterPrompt, PlannerMode.STANDALONE);
+	}
+
+	/** The standalone prompt, plus the AIRI body section in {@link PlannerMode#AIRI_BODY}. */
+	public static String systemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry, String characterPrompt,
+		PlannerMode plannerMode) {
+		String standalone = standaloneSystemPrompt(visionMode, toolRegistry, characterPrompt);
+		if (plannerMode != PlannerMode.AIRI_BODY) {
+			return standalone;
+		}
+		return standalone.stripTrailing() + "\n\n" + renderTemplate(AIRI_BODY_PROMPT_TEMPLATE, readTemplate(AIRI_BODY_PROMPT_TEMPLATE),
+			Map.of("airi", DialogueSpeakerLabels.AIRI));
+	}
+
+	private static String standaloneSystemPrompt(PlannerVisionMode visionMode, PlannerToolRegistry toolRegistry, String characterPrompt) {
 		PlannerToolRegistry effectiveToolRegistry = toolRegistry == null ? PlannerToolRegistry.empty() : toolRegistry;
 		String visionInstruction = "If visual information is needed, use take_a_look when it is in your tool schema.";
 		String character = characterPrompt == null ? CharacterPrompt.render(CharacterCard.defaults(), null) : characterPrompt;
