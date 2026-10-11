@@ -1795,3 +1795,11 @@ Forest slope (origin `[0,71,32]`, oak cabin rev 6, 893 cells), run on a world th
 | Run 2 (resume) | 0 placed, 36 scaffolds placed / 30 removed, `construction_no_feasible_target` with 304 left and 22 scaffold blocks still owed. |
 
 Open: clearing is no longer what blocks the forest. The remaining cells are upper walls and roof, and the access search finds no scaffold route that survives a failed cleanup (the program gives up with repair debt outstanding).
+
+### Cells inside terrain and trees were never eligible (2026-10-11)
+
+Diagnosis of the forest stall: `construction_no_feasible_target` now reports the lowest pending cells with their flags. All 287 pending cells were `not_eligible`: wall and floor cells on the uphill side sit inside soil, logs and leaves, so there was nothing to place them over. The repair search kept building dirt towers toward them, never placed a real cell, then tore the towers down until its plan budget ran out.
+
+Fix: when no cell is eligible, the program digs out the nearest `blocked` cell (a solid non-replaceable block that is not the planned one) from a reachable stance (`digStance`), keeping the intended block owed in the ledger. Leaf decay between selection and removal is tolerated, and an unreachable dig stance counts as one failed attempt.
+
+Forest slope, same blueprint, on a world still holding earlier scaffolds (not a clean start): the build no longer stalls with zero placements; one run reached 115 placed / 282 left, but only after 26,500 ticks, 285 failed attempts and about 100 scaffold blocks of repair debt, and it was still running. Mostly `break_blocks` failures (`target_out_of_range`, `break_aim_timeout`) and unreachable dig stances. Open: dig and scaffold cost on a dense forest is too high to call usable; the next lever is choosing a clearer site (step 4) rather than tuning the repair search further.
