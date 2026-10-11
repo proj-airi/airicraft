@@ -14,7 +14,9 @@ public final class BlueprintDesigner {
         + "Iterate draft, inspect, lint and repair. Never place blocks or operate gameplay. "
         + "Call one blueprint tool at a time. Finish with a short design summary and honest unresolved limitations. "
         + "A failed draft leaves the previous revision; do not claim a rejected change succeeded. "
-        + "Lint is advisory: explain intentional exceptions; never suppress warnings merely to get a clean result.";
+        + "Lint is advisory: explain intentional exceptions; never suppress warnings merely to get a clean result. "
+        + "On natural terrain, input.terrain.surface[x,z] is the local ground height: set the floor at or just above the highest ground under the footprint (use Foundation to fill below it) "
+        + "so floors and walls sit on the ground instead of inside it, and clear only the building's own volume.";
     public interface Model { PlannerResponse generate(LlmConversation conversation) throws Exception; }
     public interface Tools { String call(JsonObject arguments) throws Exception; }
     public record Result(String status, String summary, JsonObject draft, JsonObject lint, int turns) {}

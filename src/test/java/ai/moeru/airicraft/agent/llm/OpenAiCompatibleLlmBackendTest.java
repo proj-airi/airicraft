@@ -520,6 +520,39 @@ class OpenAiCompatibleLlmBackendTest {
 	}
 
 	@Test
+	void compactionRetriesAtConfiguredEffortWhenProviderRejectsNone() throws Exception {
+		var bodies = new java.util.concurrent.CopyOnWriteArrayList<String>();
+		com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
+		server.createContext("/chat/completions", exchange -> {
+			String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+			bodies.add(body);
+			boolean rejected = body.contains("\"reasoning_effort\":\"none\"");
+			byte[] bytes = (rejected ? "{\"message\":\"reasoning_effort \\\"none\\\" is not supported: model cannot disable reasoning\"}" : plaintextResponse("{}")).getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().add("Content-Type", "application/json");
+			exchange.sendResponseHeaders(rejected ? 400 : 200, bytes.length);
+			exchange.getResponseBody().write(bytes);
+			exchange.close();
+		});
+		server.setExecutor(Executors.newSingleThreadExecutor());
+		server.start();
+		try {
+			OpenAiCompatibleChatClient chatClient = new OpenAiCompatibleChatClient(
+				config(server.getAddress().getPort(), false).forRole("thinker", "low"),
+				ai.moeru.airicraft.agent.observability.NoopObservability.INSTANCE,
+				PlannerToolRegistry.empty(), "test:compaction");
+			var conversation = LlmConversation.of(List.of(LlmChatMessage.user("COMPACTION TASK:", LlmMessageKind.TASK)));
+			chatClient.complete(conversation, LlmRequestOptions.compaction());
+			chatClient.complete(conversation, LlmRequestOptions.compaction());
+			assertEquals(3, bodies.size(), "first call retries once, the second goes straight to the configured effort");
+			assertTrue(bodies.get(0).contains("\"reasoning_effort\":\"none\""));
+			assertTrue(bodies.get(1).contains("\"reasoning_effort\":\"low\""));
+			assertTrue(bodies.get(2).contains("\"reasoning_effort\":\"low\""));
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
 	void chatClientCompactionKeepsJsonResponseFormatAndOmitsTools() throws Exception {
 		AtomicReference<String> bodyRef = new AtomicReference<>();
 		try (TestServer server = TestServer.start(bodyRef, plaintextResponse("{}"))) {
