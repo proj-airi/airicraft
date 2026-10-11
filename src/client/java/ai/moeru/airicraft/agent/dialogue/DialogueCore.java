@@ -11,6 +11,9 @@ import java.util.Map;
 
 public final class DialogueCore {
 	static final int DEGRADED_FAILURE_THRESHOLD = 3;
+	/** First degraded cooldown (30 s); each further period without a successful turn doubles it, up to 10 min. */
+	static final long DEGRADED_COOLDOWN_TICKS = 600L;
+	static final long MAX_DEGRADED_COOLDOWN_TICKS = 12_000L;
 	public static final String RESET_COMMAND = "@agent reset";
 
 	private DialogueCore() {
@@ -69,6 +72,7 @@ public final class DialogueCore {
 			: visibleResponses.get(visibleResponses.size() - 1);
 		DialogueState nextState = state
 			.withConsecutiveFailureCount(0)
+			.withDegradedRecovery(0, -1L)
 			.withLastResponse(response)
 			.withPendingReply(visibleResponses.stream().anyMatch(DialogueCore::hasVisibleText), visibleResponses.isEmpty() ? null : "planner_success");
 		return new DialogueTransition(nextState, visibleResponses.isEmpty() ? List.of(response) : visibleResponses, List.copyOf(effects));
@@ -125,11 +129,17 @@ public final class DialogueCore {
 
 		int consecutiveFailureCount = state.consecutiveFailureCount() + 1;
 		boolean degraded = state.degraded();
+		int degradedEntries = state.degradedEntries();
+		long degradedRecoverTick = state.degradedRecoverTick();
 		if (consecutiveFailureCount >= DEGRADED_FAILURE_THRESHOLD && !degraded) {
 			degraded = true;
+			degradedEntries++;
+			long cooldown = degradedCooldownTicks(degradedEntries);
+			degradedRecoverTick = tick + cooldown;
 			effects.add(DialogueEffect.appendSemanticEvent("planner.degraded_entered", Map.of(
 				"failureType", failureType.name(),
-				"consecutiveFailureCount", consecutiveFailureCount
+				"consecutiveFailureCount", consecutiveFailureCount,
+				"retryAfterTicks", cooldown
 			)));
 			visibleResponses.add(new DialogueResponse(
 				resetGuidance.message(messages),
@@ -153,9 +163,37 @@ public final class DialogueCore {
 			.withLastFailureTick(tick)
 			.withConsecutiveFailureCount(consecutiveFailureCount)
 			.withDegraded(degraded)
+			.withDegradedRecovery(degradedEntries, degradedRecoverTick)
 			.withLastResponse(lastResponse)
 			.withPendingReply(lastResponse != null && hasVisibleText(lastResponse), pendingReplyReason);
 		return new DialogueTransition(nextState, List.copyOf(visibleResponses), List.copyOf(effects));
+	}
+
+	static long degradedCooldownTicks(int degradedEntries) {
+		long cooldown = DEGRADED_COOLDOWN_TICKS;
+		for (int i = 1; i < degradedEntries && cooldown < MAX_DEGRADED_COOLDOWN_TICKS; i++) cooldown *= 2;
+		return Math.min(cooldown, MAX_DEGRADED_COOLDOWN_TICKS);
+	}
+
+	/** The tick counter restarts with a new world, so a deadline further away than any cooldown has also passed. */
+	static boolean degradedCooldownElapsed(DialogueState state, long tick) {
+		long recoverTick = state.degradedRecoverTick();
+		return state.degraded() && recoverTick >= 0L
+			&& (tick >= recoverTick || recoverTick - tick > MAX_DEGRADED_COOLDOWN_TICKS);
+	}
+
+	/**
+	 * Ends a degraded period whose cooldown has passed, so the next wake reaches the provider again. The failure
+	 * count stays one short of the threshold: one more failure re-enters degraded mode with a longer cooldown.
+	 */
+	public static DialogueTransition onDegradedCooldownElapsed(DialogueState state, long tick) {
+		if (!degradedCooldownElapsed(state, tick)) return new DialogueTransition(state, List.of(), List.of());
+		DialogueState nextState = state
+			.withDegraded(false)
+			.withConsecutiveFailureCount(Math.min(state.consecutiveFailureCount(), DEGRADED_FAILURE_THRESHOLD - 1))
+			.withDegradedRecovery(state.degradedEntries(), -1L);
+		return new DialogueTransition(nextState, List.of(), List.of(DialogueEffect.appendSemanticEvent("planner.degraded_cleared",
+			Map.of("reason", "cooldown_elapsed", "degradedEntries", state.degradedEntries()))));
 	}
 
 	public static DialogueTransition onPlannerDegradedBlocked(DialogueState state, String senderName, boolean directChatTrigger,

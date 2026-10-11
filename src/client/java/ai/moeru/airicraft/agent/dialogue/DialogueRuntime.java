@@ -684,6 +684,10 @@ public final class DialogueRuntime {
 			}
 		}
 
+		// A degraded planner recovers on its own once the cooldown passes; '@agent reset' only shortens the wait.
+		if (DialogueCore.degradedCooldownElapsed(state, tick))
+			applyTransition(DialogueCore.onDegradedCooldownElapsed(state, tick), tick, eventBuffer);
+
 		if (pollPolicyContinuation(tick, eventBuffer)) return null;
 
 		activePlanner().tickToolQueue();

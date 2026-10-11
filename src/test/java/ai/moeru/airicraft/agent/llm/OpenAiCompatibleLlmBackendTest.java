@@ -148,6 +148,28 @@ class OpenAiCompatibleLlmBackendTest {
 		}
 	}
 
+	@Test void gatewayErrorsAreRetryableWhilePaymentAndRequestErrorsStayTerminal() throws Exception {
+		for (int status : new int[]{502, 503, 504, 500, 408, 402, 404}) {
+			var server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
+			server.createContext("/chat/completions", exchange -> {
+				exchange.getRequestBody().readAllBytes();
+				byte[] bytes = "{\"error\":{\"message\":\"upstream\"}}".getBytes(StandardCharsets.UTF_8);
+				exchange.sendResponseHeaders(status, bytes.length);
+				exchange.getResponseBody().write(bytes);
+				exchange.close();
+			});
+			server.start();
+			try {
+				var backend = new OpenAiCompatibleLlmBackend(config(server.getAddress().getPort(), false));
+				var error = assertThrows(LlmBackendException.class, () -> backend.generate(
+					LlmConversation.of(List.of(LlmChatMessage.user("Continue.", LlmMessageKind.USER_TURN)))));
+				assertEquals(status == 402 || status == 404 ? LlmFailureType.PROVIDER_ERROR : LlmFailureType.PROVIDER_UNAVAILABLE,
+					error.failureType(), "HTTP " + status);
+				assertTrue(error.getMessage().contains("HTTP " + status));
+			} finally { server.stop(0); }
+		}
+	}
+
 	@Test void discardingAGenerationClosesItsStreamAndLeavesTheWorkerUninterrupted() throws Exception {
 		var server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
 		var firstLine = new java.util.concurrent.CountDownLatch(1);

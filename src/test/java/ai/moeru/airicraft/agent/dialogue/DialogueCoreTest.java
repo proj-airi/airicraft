@@ -59,6 +59,50 @@ class DialogueCoreTest {
 	}
 
 	@Test
+	void degradedModeEndsAfterACooldownThatGrowsUntilATurnSucceeds() {
+		DialogueState state = DialogueState.initial().withConsecutiveFailureCount(2);
+		state = failAt(state, 100L);
+		assertTrue(state.degraded());
+		assertEquals(100L + DialogueCore.DEGRADED_COOLDOWN_TICKS, state.degradedRecoverTick());
+
+		DialogueTransition early = DialogueCore.onDegradedCooldownElapsed(state, 100L + DialogueCore.DEGRADED_COOLDOWN_TICKS - 1);
+		assertTrue(early.state().degraded());
+		assertTrue(early.effects().isEmpty());
+
+		DialogueTransition recovered = DialogueCore.onDegradedCooldownElapsed(state, 100L + DialogueCore.DEGRADED_COOLDOWN_TICKS);
+		assertFalse(recovered.state().degraded());
+		assertTrue(recovered.visibleResponses().isEmpty());
+		assertEquals("planner.degraded_cleared", ((DialogueEffect.AppendSemanticEvent) recovered.effects().get(0)).type());
+
+		// One more failure after recovery re-enters degraded mode, with twice the cooldown.
+		state = failAt(recovered.state(), 1_000L);
+		assertTrue(state.degraded());
+		assertEquals(1_000L + 2 * DialogueCore.DEGRADED_COOLDOWN_TICKS, state.degradedRecoverTick());
+		for (int entry = 3; entry < 12; entry++)
+			state = failAt(DialogueCore.onDegradedCooldownElapsed(state, state.degradedRecoverTick()).state(), 0L);
+		assertEquals(DialogueCore.MAX_DEGRADED_COOLDOWN_TICKS, state.degradedRecoverTick());
+
+		DialogueState healthy = DialogueCore.onPlannerSuccess(DialogueCore.onDegradedCooldownElapsed(state, state.degradedRecoverTick()).state(),
+			new PlannerResponse("Back.", new PlannerIntent("reply_only", null, null)), 20_000L).state();
+		assertEquals(0, healthy.consecutiveFailureCount());
+		assertEquals(0, healthy.degradedEntries());
+		healthy = failAt(failAt(failAt(healthy, 20_001L), 20_002L), 20_003L);
+		assertEquals(20_003L + DialogueCore.DEGRADED_COOLDOWN_TICKS, healthy.degradedRecoverTick());
+	}
+
+	@Test
+	void aRestartedTickCounterDoesNotStrandDegradedMode() {
+		DialogueState state = failAt(DialogueState.initial().withConsecutiveFailureCount(2), 50_000L);
+		assertTrue(DialogueCore.onDegradedCooldownElapsed(state, 50_001L).state().degraded());
+		assertFalse(DialogueCore.onDegradedCooldownElapsed(state, 5L).state().degraded());
+	}
+
+	private static DialogueState failAt(DialogueState state, long tick) {
+		return DialogueCore.onPlannerFailure(state, LlmFailureType.PROVIDER_ERROR, "Provider returned HTTP 502", false, tick,
+			DialogueCore.ResetGuidance.MANUAL).state();
+	}
+
+	@Test
 	void thirdFailureEntersDegradedAndEmitsSemanticEffects() {
 		DialogueState state = DialogueState.initial()
 			.withConsecutiveFailureCount(2);

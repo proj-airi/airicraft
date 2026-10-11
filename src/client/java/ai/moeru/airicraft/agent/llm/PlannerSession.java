@@ -11,6 +11,7 @@ final class PlannerSession {
 	private LlmConversation conversation;
 	private int attemptCount;
 	private int consecutiveFailureCount;
+	private int transientFailureCount;
 	private long retryReadyAtMs = -1L;
 
 	PlannerSession(long generation, PlannerContextSnapshot contextSnapshot) {
@@ -99,8 +100,15 @@ final class PlannerSession {
 		return consecutiveFailureCount;
 	}
 
+	/** Counts provider-side failures (timeouts, gateway errors) separately from repairable model output. */
+	int recordTransientFailure() {
+		transientFailureCount++;
+		return transientFailureCount;
+	}
+
 	void clearConsecutiveFailures() {
 		consecutiveFailureCount = 0;
+		transientFailureCount = 0;
 	}
 
 	void clearRetry() {

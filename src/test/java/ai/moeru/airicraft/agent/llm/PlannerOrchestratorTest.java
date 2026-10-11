@@ -2114,6 +2114,30 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
+	void gatewayErrorsRetryWithGrowingBackoffBeforeTheTurnFails() {
+		RecordingBackend backend = new RecordingBackend();
+		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("UTC"));
+		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, 3, clock);
+		orchestrator.submit(requestAt(10L, 1_000L, "Alice", "Mine the iron."));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		long[] backoffs = {250L, 1_000L, 4_000L, 16_000L};
+		for (int attempt = 0; attempt < backoffs.length; attempt++) {
+			backend.fail(attempt, LlmFailureType.PROVIDER_UNAVAILABLE, "Provider returned HTTP 502");
+			awaitRetryPending(orchestrator, Duration.ofSeconds(1));
+			clock.advanceMillis(backoffs[attempt] - 1);
+			assertNull(orchestrator.poll());
+			assertEquals(attempt + 1, backend.callCount());
+			clock.advanceMillis(1L);
+			awaitBackendCallCount(orchestrator, backend, attempt + 2, Duration.ofSeconds(1));
+		}
+		backend.fail(backoffs.length, LlmFailureType.PROVIDER_UNAVAILABLE, "Provider returned HTTP 502");
+		PlannerExecutionResult result = awaitResult(orchestrator);
+		assertEquals(LlmFailureType.PROVIDER_UNAVAILABLE, result.failureType());
+		assertEquals(backoffs.length + 1, result.attempt());
+		orchestrator.shutdown();
+	}
+
+	@Test
 	void repeatedRateLimitsWaitWithoutFailingOrChangingTheFrozenConversation() {
 		RecordingBackend backend = new RecordingBackend();
 		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("UTC"));

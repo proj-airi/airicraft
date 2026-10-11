@@ -76,7 +76,7 @@ public final class OpenAiCompatibleChatClient {
 		Objects.requireNonNull(conversation, "conversation");
 		Objects.requireNonNull(options, "options");
 		if (!config.isConfigured()) {
-			throw new LlmBackendException(LlmFailureType.PROVIDER_UNAVAILABLE, "LLM provider is not configured");
+			throw LlmBackendException.permanent(LlmFailureType.PROVIDER_UNAVAILABLE, "LLM provider is not configured", null);
 		}
 
 		URI uri;
@@ -145,8 +145,14 @@ public final class OpenAiCompatibleChatClient {
 		String message = providerErrorMessage(response.statusCode(), response.body());
 		long retryAfter = response.statusCode() == 429
 			? retryAfterMillis(response.headers().firstValue("Retry-After").orElse(null), java.time.Instant.now()) : 0L;
-		observability.recordFailure(Context.current(), LlmFailureType.PROVIDER_ERROR.name(), message, null);
-		return new LlmBackendException(LlmFailureType.PROVIDER_ERROR, message, null, retryAfter);
+		LlmFailureType type = transientStatus(response.statusCode()) ? LlmFailureType.PROVIDER_UNAVAILABLE : LlmFailureType.PROVIDER_ERROR;
+		observability.recordFailure(Context.current(), type.name(), message, null);
+		return new LlmBackendException(type, message, null, retryAfter);
+	}
+
+	/** Gateway and overload statuses: the same request can succeed on a later attempt, so the session retries it. */
+	static boolean transientStatus(int statusCode) {
+		return statusCode == 408 || statusCode == 425 || (statusCode >= 500 && statusCode != 501 && statusCode != 505);
 	}
 
 	static long retryAfterMillis(String header, java.time.Instant now) {
@@ -173,7 +179,7 @@ public final class OpenAiCompatibleChatClient {
 			return URI.create(baseUrl + "/" + path);
 		}
 		catch (IllegalArgumentException exception) {
-			throw new LlmBackendException(LlmFailureType.PROVIDER_UNAVAILABLE, "Invalid LLM provider URL", exception);
+			throw LlmBackendException.permanent(LlmFailureType.PROVIDER_UNAVAILABLE, "Invalid LLM provider URL", exception);
 		}
 	}
 

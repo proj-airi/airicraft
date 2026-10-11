@@ -12,8 +12,15 @@ public record PlannerExecutionResult(
 	int attempt,
 	PlannerSessionPhase phase,
 	boolean stale,
-	long retryAfterMillis
+	long retryAfterMillis,
+	boolean retryable
 ) {
+	public PlannerExecutionResult(PlannerRequest request, PlannerResponse response, LlmUsageSnapshot usage,
+		LlmFailureType failureType, String failureMessage, long generation, int attempt, PlannerSessionPhase phase, boolean stale,
+		long retryAfterMillis) {
+		this(request, response, usage, failureType, failureMessage, generation, attempt, phase, stale, retryAfterMillis, true);
+	}
+
 	public PlannerExecutionResult(PlannerRequest request, PlannerResponse response, LlmUsageSnapshot usage,
 		LlmFailureType failureType, String failureMessage, long generation, int attempt, PlannerSessionPhase phase, boolean stale) {
 		this(request, response, usage, failureType, failureMessage, generation, attempt, phase, stale, 0L);
