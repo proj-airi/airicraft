@@ -40,13 +40,13 @@ import ai.moeru.airicraft.agent.tasks.TaskTerminalEvent;
 import ai.moeru.airicraft.agent.tasks.TaskTerminationCause;
 import ai.moeru.airicraft.agent.tasks.WorldTaskRequest;
 import ai.moeru.airicraft.agent.tasks.WorldEvidence;
+import ai.moeru.airicraft.agent.work.ReadableIds;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 
 public final class ActiveJobRuntime {
 	private final CollectResourceTaskHandler collectResourceTaskHandler = new CollectResourceTaskHandler();
@@ -246,7 +246,7 @@ public final class ActiveJobRuntime {
 	public void submitTask(TaskSpec spec, int currentResourceCount, String source, long tick) {
 		Objects.requireNonNull(spec, "spec");
 		activeJob = new ActiveJob(
-			newJobId(),
+			newJobId(ActiveJobType.COLLECT_RESOURCE),
 			ActiveJobType.COLLECT_RESOURCE,
 			ActiveJobStatus.QUEUED,
 			null,
@@ -1238,41 +1238,41 @@ public final class ActiveJobRuntime {
 			case NAVIGATE_TO -> ActiveJobType.NAVIGATE_TO;
 			case MINE_BLOCKS -> ActiveJobType.MINE_BLOCKS;
 		};
-		return fromDirectGoal(newJobId(), goal, type, source, response.tick());
+		return fromDirectGoal(newJobId(type), goal, type, source, response.tick());
 	}
 
 	private static ActiveJob fromProposal(ActiveJobProposal proposal, int currentResourceCount, String source, long tick) {
 		return switch (proposal.type()) {
 			case FOLLOW_PLAYER -> fromDirectGoal(
-				newJobId(),
+				newJobId(proposal.type()),
 				new GoalSnapshot(GoalType.FOLLOW_PLAYER, proposal.targetPlayer(), null, null, tick, source),
 				ActiveJobType.FOLLOW_PLAYER,
 				source,
 				tick
 			);
 			case NAVIGATE_TO -> fromDirectGoal(
-				newJobId(),
+				newJobId(proposal.type()),
 				new GoalSnapshot(GoalType.NAVIGATE_TO, null, proposal.position(), null, tick, source),
 				ActiveJobType.NAVIGATE_TO,
 				source,
 				tick
 			);
 			case MINE_BLOCKS -> fromDirectGoal(
-				newJobId(),
+				newJobId(proposal.type()),
 				new GoalSnapshot(GoalType.MINE_BLOCKS, null, null, proposal.mineSpec(), tick, source),
 				ActiveJobType.MINE_BLOCKS,
 				source,
 				tick
 			);
 			case ENSURE_BLOCKS_IN_INVENTORY -> fromDirectGoal(
-				newJobId(),
+				newJobId(proposal.type()),
 				new GoalSnapshot(GoalType.MINE_BLOCKS, null, null, proposal.mineSpec(), tick, source),
 				ActiveJobType.ENSURE_BLOCKS_IN_INVENTORY,
 				source,
 				tick
 			);
 			case COLLECT_RESOURCE -> new ActiveJob(
-				newJobId(),
+				newJobId(proposal.type()),
 				ActiveJobType.COLLECT_RESOURCE,
 				ActiveJobStatus.QUEUED,
 				null,
@@ -1287,23 +1287,23 @@ public final class ActiveJobRuntime {
 				null,
 				tick
 			);
-			case CRAFT_RECIPE -> fromCraftRecipeStep(newJobId(), proposal.craftRecipe(), source, tick);
-			case DROP_ITEMS -> fromDropItemsStep(newJobId(), proposal.dropItems(), source, tick);
-			case SMELT_ITEMS -> fromSmeltItemsStep(newJobId(), proposal.smeltItems(), source, tick);
-			case COLLECT_SMELTED_ITEMS -> fromCollectSmeltedItemsStep(newJobId(), proposal.collectSmeltedItems(), source, tick);
-			case ATTACK_ENTITY -> fromEntityInteractionStep(newJobId(), ActiveJobType.ATTACK_ENTITY, proposal.entityInteraction(), source, tick);
-			case USE_ENTITY -> fromEntityInteractionStep(newJobId(), ActiveJobType.USE_ENTITY, proposal.entityInteraction(), source, tick);
-			case PLACE_BLOCK -> fromBlockPlacementStep(newJobId(), proposal.blockPlacement(), source, tick);
-			case USE_BLOCK -> fromBlockUseStep(newJobId(), proposal.blockUse(), source, tick);
-			case BREAK_BLOCKS -> fromBlockBreakStep(newJobId(), proposal.blockBreak(), source, tick);
-			case LURE_ENTITIES -> new ActiveJob(newJobId(), ActiveJobType.LURE_ENTITIES, ActiveJobStatus.QUEUED,
+			case CRAFT_RECIPE -> fromCraftRecipeStep(newJobId(proposal.type()), proposal.craftRecipe(), source, tick);
+			case DROP_ITEMS -> fromDropItemsStep(newJobId(proposal.type()), proposal.dropItems(), source, tick);
+			case SMELT_ITEMS -> fromSmeltItemsStep(newJobId(proposal.type()), proposal.smeltItems(), source, tick);
+			case COLLECT_SMELTED_ITEMS -> fromCollectSmeltedItemsStep(newJobId(proposal.type()), proposal.collectSmeltedItems(), source, tick);
+			case ATTACK_ENTITY -> fromEntityInteractionStep(newJobId(proposal.type()), ActiveJobType.ATTACK_ENTITY, proposal.entityInteraction(), source, tick);
+			case USE_ENTITY -> fromEntityInteractionStep(newJobId(proposal.type()), ActiveJobType.USE_ENTITY, proposal.entityInteraction(), source, tick);
+			case PLACE_BLOCK -> fromBlockPlacementStep(newJobId(proposal.type()), proposal.blockPlacement(), source, tick);
+			case USE_BLOCK -> fromBlockUseStep(newJobId(proposal.type()), proposal.blockUse(), source, tick);
+			case BREAK_BLOCKS -> fromBlockBreakStep(newJobId(proposal.type()), proposal.blockBreak(), source, tick);
+			case LURE_ENTITIES -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.LURE_ENTITIES, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, proposal.lureEntities());
-			case TEND_CROPS -> new ActiveJob(newJobId(), ActiveJobType.TEND_CROPS, ActiveJobStatus.QUEUED,
+			case TEND_CROPS -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.TEND_CROPS, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, proposal.cropTending());
-			case RETURN_TO_SURFACE -> fromReturnToSurfaceStep(newJobId(), proposal.returnToSurface(), source, tick);
-			case ASK_USER -> fromAskUserStep(newJobId(), new AskUserStepArgs(proposal.askPrompt()), source, tick);
+			case RETURN_TO_SURFACE -> fromReturnToSurfaceStep(newJobId(proposal.type()), proposal.returnToSurface(), source, tick);
+			case ASK_USER -> fromAskUserStep(newJobId(proposal.type()), new AskUserStepArgs(proposal.askPrompt()), source, tick);
 			case IDLE -> ActiveJob.idle();
 		};
 	}
@@ -1543,8 +1543,8 @@ public final class ActiveJobRuntime {
 		return new MissionSpec(ledger.missionId(), ledger.missionType(), ledger.goalText());
 	}
 
-	private static String newJobId() {
-		return "job-" + UUID.randomUUID();
+	private static String newJobId(ActiveJobType type) {
+		return ReadableIds.next(ReadableIds.kind(type));
 	}
 
 	private static String nonEmpty(String value, String fallback) {

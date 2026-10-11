@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.llm.goal;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import java.io.IOException;
@@ -51,11 +52,11 @@ public final class PlannerGoalStore {
 	public Goal set(String objective, String constraints, String criteria) throws IOException {
 		requireWorld();
 		if (unresolved()) throw new IllegalArgumentException("goal_active: change or finish the current goal first");
-		return replace(new Goal(UUID.randomUUID().toString(), objective, Status.ACTIVE, "", constraints, criteria, null, Map.of()));
+		return replace(new Goal(nextGoalId(), objective, Status.ACTIVE, "", constraints, criteria, null, Map.of()));
 	}
 	public Goal change(String id, String objective, String reason) throws IOException {
 		requireCurrent(id);
-		return replace(new Goal(UUID.randomUUID().toString(), objective, Status.ACTIVE, checked(reason, "reason"), goal.constraints(), goal.completionCriteria(), null, goal.decisions()));
+		return replace(new Goal(nextGoalId(), objective, Status.ACTIVE, checked(reason, "reason"), goal.constraints(), goal.completionCriteria(), null, goal.decisions()));
 	}
 	public Goal finish(String id, Status status, String outcome) throws IOException {
 		requireCurrent(id);
@@ -80,6 +81,13 @@ public final class PlannerGoalStore {
 		Decision old = notes.get(name);
 		notes.put(name, new Decision(checked(decision, "decision"), checked(reason, "reason"), old == null ? "" : old.reason()));
 		return save(copy(goal.status(), goal.outcome(), goal.blocker(), notes));
+	}
+	/** Short ids the planner can copy back; saved goals keep their ids, so numbering continues after them. */
+	private String nextGoalId() {
+		var taken = new ArrayList<String>();
+		for (Goal previous : previousGoals) taken.add(previous.id());
+		if (goal != null) taken.add(goal.id());
+		return ReadableIds.nextAfter("goal", taken);
 	}
 	private Goal copy(Status status, String outcome, Blocker blocker, Map<String,Decision> decisions) {
 		return new Goal(goal.id(), goal.objective(), status, outcome, goal.constraints(), goal.completionCriteria(), blocker, decisions);

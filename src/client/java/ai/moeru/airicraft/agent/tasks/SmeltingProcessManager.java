@@ -1,12 +1,12 @@
 package ai.moeru.airicraft.agent.tasks;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 public final class SmeltingProcessManager {
 	private static final long CONFIRMATION_TTL_TICKS = 20L * 60L;
@@ -251,7 +251,7 @@ public final class SmeltingProcessManager {
 				"confirmationRequired state=" + state.name() + " station=" + stationText(observation) + " slots=" + slotSummary(observation)
 			);
 		}
-		String processId = "smelt-process-" + UUID.randomUUID();
+		String processId = ReadableIds.next("smelting");
 		SmeltingOption option = registeredOption(request.optionId());
 		int expectedOutputCount = option == null ? request.inputQuantity() : Math.max(1, option.outputCount()) * request.inputQuantity();
 		if (option != null) {
@@ -548,7 +548,7 @@ public final class SmeltingProcessManager {
 	}
 
 	private String createConfirmation(String actionKind, String requestedId, int quantity, SmeltingStationObservation observation, long tick) {
-		String token = "smelt-confirm-" + UUID.randomUUID();
+		String token = ReadableIds.next("smelt-confirm");
 		confirmations.put(token, new Confirmation(
 			token,
 			actionKind,

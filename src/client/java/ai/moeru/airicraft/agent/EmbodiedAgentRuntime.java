@@ -2848,7 +2848,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		policyChildren.clear();
 		var host = new ToolPolicyHost(this::dispatchPolicyTool, this::describePolicyTool, workHistory::find,
 			this::cancelPolicyChildren, () -> new ContainerPolicyHost(Minecraft.getInstance()));
-		var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, java.util.UUID.randomUUID().toString());
+		var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, ai.moeru.airicraft.agent.work.ReadableIds.next("op"));
 		String source = call.arguments().get("source").getAsString();
 		var input = call.arguments().get("input").deepCopy();
 		policyRuntime = new ai.moeru.airicraft.policy.PolicyRuntime(source, input, host, outcome -> {
@@ -2884,7 +2884,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
         catch(RuntimeException error){environment.close();throw error;}
 		policyChildren.clear();
 		var host=new ToolPolicyHost(this::dispatchPolicyTool,this::describePolicyTool,workHistory::find,this::cancelPolicyChildren,()->new ContainerPolicyHost(client));
-		var handle=ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION,java.util.UUID.randomUUID().toString());
+		var handle=ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION,ai.moeru.airicraft.agent.work.ReadableIds.next("op"));
 		policyWork=handle;
 		policyRuntime=new ai.moeru.airicraft.policy.PolicyRuntime(program,host,outcome->{
 			var details=new LinkedHashMap<String,Object>();details.put("blueprint",args.deepCopy());details.put("reason",outcome.reason());details.put("result",outcome.result());details.put("effects",outcome.effects());details.put("progress",program.progress());details.put("elapsedTicks",outcome.elapsedTicks());
@@ -3113,7 +3113,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				dialogueRuntime.observeAcceptedWork(work);
 			} else if (accepted) {
 				var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION,
-					java.util.UUID.randomUUID().toString());
+					ai.moeru.airicraft.agent.work.ReadableIds.next("op"));
 				var work = new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", eating
 					? ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING : ai.moeru.airicraft.agent.work.WorkSnapshot.State.SUCCEEDED,
 					call.name(), eating ? "EATING" : "RETURNED", eating, tickCount,

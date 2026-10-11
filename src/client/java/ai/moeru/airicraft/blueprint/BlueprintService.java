@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.blueprint;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.*;
 import net.minecraft.client.Minecraft;
@@ -175,12 +176,13 @@ public final class BlueprintService {
                         if(client.getSingleplayerServer()!=server||expectedGeneration!=generation)throw new IllegalStateException("world_changed");
                         if(terrainWorld!=null&&terrainWorld!=server.getLevel(client.level.dimension()))throw new IllegalStateException("terrain_world_changed");
                         Blueprint next=new Blueprint(tree.getAsJsonObject(),surface,terrain==null||!terrain.has("obstacles")?null:readObstacles(terrainRecord()));
-                        String nextId=a.has("blueprintId")?a.get("blueprintId").getAsString():(draftId==null?UUID.randomUUID().toString():draftId);
+                        String nextId=a.has("blueprintId")?a.get("blueprintId").getAsString():(draftId==null||a.has("newBlueprint")?ReadableIds.nextAfter("blueprint",savedDesigns.keySet()):draftId);
                         if(!savedDesigns.containsKey(nextId)&&savedDesigns.size()>=32)throw new IllegalStateException("saved_blueprint_limit_32");
                         draft=next;draftId=nextId;revision++;draftWorld=worldKey;draftDimension=client.level.dimension().location().toString();source=a.get("source").getAsString();lastLint=null;
                         var record=savedDesigns.computeIfAbsent(draftId,id->{var r=new JsonObject();r.addProperty("id",id);return r;});
                         record.add("draft",captureDesign(client.level.dimension().location().toString(),terrainOrigin));
-                        return JSON.toJson(draft.snapshot(revision));
+                        var snapshot=draft.snapshot(revision);snapshot.put("blueprintId",draftId);
+                        return JSON.toJson(snapshot);
                     },client::execute);
             }
             // Capture player identity and dimension on the client thread, then touch server state on its owner thread.

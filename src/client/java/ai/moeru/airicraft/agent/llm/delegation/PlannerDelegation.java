@@ -1,12 +1,12 @@
 package ai.moeru.airicraft.agent.llm.delegation;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /** Client-thread owned handoff. Model sessions and gameplay executors remain outside it. */
@@ -25,7 +25,7 @@ public final class PlannerDelegation {
 	}
 
 	private static final class Work {
-		final String id = UUID.randomUUID().toString();
+		final String id = ReadableIds.next("delegation");
 		final String task;
 		final String successCriteria;
 		final String controllerContext;

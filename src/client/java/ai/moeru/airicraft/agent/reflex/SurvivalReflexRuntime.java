@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.reflex;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.AgentConfig;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
@@ -389,7 +390,7 @@ public final class SurvivalReflexRuntime {
 		combatStalemate = null;
 		resetSecurityProgress();
 		InterruptedWork work = interruptedWork == null ? InterruptedWork.none() : interruptedWork;
-		String holdId = work.hasInterruptedWork() ? UUID.randomUUID().toString() : null;
+		String holdId = work.hasInterruptedWork() ? ReadableIds.next("hold") : null;
 		snapshot = new SurvivalReflexSnapshot(
 			SurvivalReflexState.ACTIVE, cause, action, nextEpoch, holdId, work.jobId(), work.actionExecutionId(),
 			threatSnapshots(threats), player.getHealth(), player.getMaxHealth(), player.getAirSupply(), player.getMaxAirSupply(),
@@ -1044,7 +1045,7 @@ public final class SurvivalReflexRuntime {
 			return null;
 		}
 		return existingHoldId == null || existingHoldId.isBlank()
-			? UUID.randomUUID().toString()
+			? ReadableIds.next("hold")
 			: existingHoldId;
 	}
 
