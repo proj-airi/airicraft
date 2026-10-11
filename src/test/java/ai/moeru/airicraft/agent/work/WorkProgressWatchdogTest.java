@@ -11,6 +11,24 @@ class WorkProgressWatchdogTest {
 	private WorkProgressWatchdog.Sample sample(double x, double progress, boolean input) {
 		return new WorkProgressWatchdog.Sample(x, 135, 0, Map.of("block:1", progress), input);
 	}
+	private static int soft(List<WorkProgressWatchdog.Notice> found) { return (int) found.stream().filter(n -> !n.hard()).count(); }
+	@Test void continuingForeverStillHardFailsOnceAfterThreeWindows() {
+		var watchdog = new WorkProgressWatchdog(10);
+		int hard = 0, softCount = 0;
+		for (int i = 0; i < 100; i++) {
+			var found = watchdog.observe(List.of(work), sample(0, 0, false), true);
+			for (var n : found) { if (n.hard()) { hard++; assertEquals(30, n.stalledTicks()); assertEquals(31, i + 1); } else softCount++; }
+			if (!found.isEmpty() && !found.getFirst().hard()) watchdog.continueTrying();
+		}
+		assertEquals(1, hard);
+		assertTrue(softCount >= 1);
+	}
+	@Test void progressClearsHardCounter() {
+		var watchdog = new WorkProgressWatchdog(10);
+		for (int i = 0; i < 25; i++) watchdog.observe(List.of(work), sample(0, 0, false), true);
+		watchdog.observe(List.of(work), sample(0, 0.5, true), true);
+		for (int i = 0; i < 25; i++) assertTrue(watchdog.observe(List.of(work), sample(0, 0.5, false), true).stream().noneMatch(WorkProgressWatchdog.Notice::hard));
+	}
 	@Test void waitingForAimNotifiesOnceWithoutChangingRunningWork() {
 		var watchdog = new WorkProgressWatchdog(10);
 		for (int i=0;i<10;i++) assertTrue(watchdog.observe(List.of(work), sample(0,0,false), true).isEmpty());
@@ -19,19 +37,19 @@ class WorkProgressWatchdogTest {
 		assertEquals("no_input", notices.getFirst().reason());
 		assertEquals(work.handle().id(), notices.getFirst().workId());
 		assertEquals(WorkSnapshot.State.RUNNING, work.state());
-		for (int i=0;i<30;i++) assertTrue(watchdog.observe(List.of(work), sample(0,0,false), true).isEmpty());
+		for (int i=0;i<15;i++) assertTrue(watchdog.observe(List.of(work), sample(0,0,false), true).isEmpty());
 	}
 	@Test void oscillatingMovementAndInputDoNotCountAsProgress() {
 		var watchdog = new WorkProgressWatchdog(10);
 		int notices=0;
-		for(int i=0;i<40;i++) notices += watchdog.observe(List.of(work),sample(i%2*2,0,true),true).size();
+		for(int i=0;i<40;i++) notices += soft(watchdog.observe(List.of(work),sample(i%2*2,0,true),true));
 		assertEquals(1,notices);
 	}
 	@Test void stationaryMiningProgressPreventsAlertButRestartingSameDamageDoesNot() {
 		var watchdog = new WorkProgressWatchdog(10);
 		for(int i=0;i<40;i++) assertTrue(watchdog.observe(List.of(work),sample(0,i/100.0,true),true).isEmpty());
 		int notices=0;
-		for(int i=0;i<40;i++) notices += watchdog.observe(List.of(work),sample(0,(i%10)/100.0,true),true).size();
+		for(int i=0;i<40;i++) notices += soft(watchdog.observe(List.of(work),sample(0,(i%10)/100.0,true),true));
 		assertEquals(1,notices);
 	}
 	@Test void pausedTimeDoesNotConsumeBudgetAndContinueGrantsGrace() {
@@ -39,7 +57,7 @@ class WorkProgressWatchdogTest {
 		for(int i=0;i<6;i++) watchdog.observe(List.of(work),sample(0,0,false),true);
 		for(int i=0;i<100;i++) assertTrue(watchdog.observe(List.of(work),sample(0,0,false),false).isEmpty());
 		int notices=0;
-		for(int i=0;i<5;i++) notices += watchdog.observe(List.of(work),sample(0,0,false),true).size();
+		for(int i=0;i<5;i++) notices += soft(watchdog.observe(List.of(work),sample(0,0,false),true));
 		assertEquals(1,notices);
 		watchdog.continueTrying();
 		for(int i=0;i<9;i++) assertTrue(watchdog.observe(List.of(work),sample(0,0,false),true).isEmpty());
@@ -54,7 +72,7 @@ class WorkProgressWatchdogTest {
 		for(int i=0;i<20;i++) {
 			var found=watchdog.observe(List.of(parent,child,wait),sample(0,0,false),true);
 			for(var notice:found) assertEquals(child.handle().id(),notice.workId());
-			notices+=found.size();
+			notices+=soft(found);
 		}
 		assertEquals(1,notices);
 	}

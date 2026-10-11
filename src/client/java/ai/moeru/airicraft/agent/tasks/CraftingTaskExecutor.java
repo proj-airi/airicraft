@@ -371,6 +371,15 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 			return waitForWorkbench(request, player, "crafting_table_open_failed");
 		}
 
+		if (phase == CraftPhase.PLACING_INPUTS || phase == CraftPhase.WAITING_FOR_RESULT || phase == CraftPhase.WAITING_FOR_TAKE) {
+			// The table screen closed mid-craft; nothing reopens it from here, so waiting would never end.
+			waitTicks++;
+			if (waitTicks > WAIT_TIMEOUT_TICKS) {
+				return WorkbenchReadiness.failed(TaskFailure.of(TaskFailureCode.TRANSIENT, "crafting_screen_closed phase=" + phase));
+			}
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_screen_closed_wait");
+		}
+
 		return WorkbenchReadiness.notReadyState();
 	}
 

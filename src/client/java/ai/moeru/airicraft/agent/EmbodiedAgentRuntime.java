@@ -1013,6 +1013,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			? new ai.moeru.airicraft.agent.work.WorkSnapshot(w.handle(), w.parentWorkId(),
 				ai.moeru.airicraft.agent.work.WorkSnapshot.State.WAITING, w.label(), w.phase(), w.foreground(), w.updatedTick(), w.details()) : w).toList();
 		for (var notice : workProgressWatchdog.observe(work, sample, enabled)) {
+			if (notice.hard()) {
+				failStalledWork(notice, player.getX(), player.getY(), player.getZ());
+				continue;
+			}
 			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", Map.of(
 				"reason", "work_stalled", "workId", notice.workId(), "evidence", notice.reason(),
 				"stalledActiveTicks", notice.stalledTicks(), "position", Map.of("x", player.getX(), "y", player.getY(), "z", player.getZ()),
@@ -1021,6 +1025,37 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					+ "Use continue to grant another observation window; this notice does not cancel or fail work."), EventCause.work(notice.workId()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
+	}
+
+	/** A stall that outlives several observation windows is cancelled, then the planner is woken with attention priority. */
+	private void failStalledWork(ai.moeru.airicraft.agent.work.WorkProgressWatchdog.Notice notice, double x, double y, double z) {
+		var current = workHistory.find(new ai.moeru.airicraft.agent.work.WorkHandle(notice.workId()));
+		var root = current;
+		while (root.isPresent() && !root.get().parentWorkId().isBlank())
+			root = workHistory.find(new ai.moeru.airicraft.agent.work.WorkHandle(root.get().parentWorkId()));
+		String label = current.map(ai.moeru.airicraft.agent.work.WorkSnapshot::label).orElse("unknown");
+		String phase = current.map(ai.moeru.airicraft.agent.work.WorkSnapshot::phase).orElse("");
+		String outcome;
+		if (root.isEmpty()) outcome = "work_already_gone";
+		else {
+			var args = new com.google.gson.JsonObject();
+			args.addProperty("workId", root.get().handle().id());
+			args.addProperty("reason", "work_stalled_no_progress");
+			try {
+				String result = executeWorkTool(new PlannerToolCall("watchdog-" + notice.workId(), "cancel_work", args, null));
+				outcome = result.startsWith("TOOL_ERROR:") ? result : "cancelled";
+			} catch (RuntimeException failure) {
+				outcome = "TOOL_ERROR: " + failure.getMessage();
+			}
+		}
+		var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", Map.of(
+			"reason", "work_stalled_cancelled", "workId", notice.workId(), "evidence", notice.reason(),
+			"stalledActiveTicks", notice.stalledTicks(), "label", label, "phase", phase, "outcome", outcome,
+			"position", Map.of("x", x, "y", y, "z", z),
+			"message", "Work " + notice.workId() + " (" + label + (phase.isBlank() ? "" : ", " + phase) + ") made no observed progress for "
+				+ notice.stalledTicks() + " active ticks and was cancelled (" + outcome + "). Inspect the world and choose a different approach."),
+			EventCause.work(notice.workId()));
+		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
 	private void observeSlowMining(Minecraft minecraft) {

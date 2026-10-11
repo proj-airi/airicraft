@@ -7,18 +7,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** Advisory observer. Executors retain ownership; input activity alone is not progress. */
+/**
+ * Progress observer. Executors retain ownership; input activity alone is not progress.
+ * A first notice is advisory; work that stays stalled for {@code HARD_FACTOR} windows gets one
+ * hard notice, which the runtime turns into a cancel so nothing can hang forever.
+ */
 public final class WorkProgressWatchdog {
 	public static final int DEFAULT_STALL_TICKS = 200;
+	public static final int HARD_FACTOR = 3;
 	private static final int HISTORY_LIMIT = 256;
 	public record Sample(double x, double y, double z, Map<String, Double> progress, boolean input) {}
-	public record Notice(String workId, String reason, int stalledTicks) {}
+	public record Notice(String workId, String reason, int stalledTicks, boolean hard) {}
 	private record Cell(long x, long y, long z) {}
 	private static final class Episode {
 		final LinkedHashMap<Cell, Boolean> cells = new LinkedHashMap<>();
 		final LinkedHashMap<String, Double> highWater = new LinkedHashMap<>();
 		int ticks;
+		int total;
 		boolean notified;
+		boolean hardNotified;
 		boolean input;
 	}
 	private final Map<String, Episode> episodes = new HashMap<>();
@@ -53,13 +60,23 @@ public final class WorkProgressWatchdog {
 			trim(episode.highWater);
 			if (progress) {
 				episode.ticks = 0;
+				episode.total = 0;
 				episode.notified = false;
+				episode.hardNotified = false;
 				episode.input = false;
-			} else if (episode.ticks < stallTicks) episode.ticks++;
+			} else {
+				if (episode.ticks < stallTicks) episode.ticks++;
+				if (episode.total < Integer.MAX_VALUE) episode.total++;
+			}
 			episode.input |= sample.input();
+			if (episode.total >= stallTicks * HARD_FACTOR && !episode.hardNotified) {
+				episode.hardNotified = true;
+				notices.add(new Notice(w.handle().id(), episode.input ? "input_without_progress" : "no_input", episode.total, true));
+				continue;
+			}
 			if (episode.ticks >= stallTicks && !episode.notified) {
 				episode.notified = true;
-				notices.add(new Notice(w.handle().id(), episode.input ? "input_without_progress" : "no_input", episode.ticks));
+				notices.add(new Notice(w.handle().id(), episode.input ? "input_without_progress" : "no_input", episode.ticks, false));
 			}
 		}
 		return List.copyOf(notices);
