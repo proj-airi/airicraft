@@ -436,7 +436,9 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		BlockState current = minecraft.level.getBlockState(pending.target());
 		if (placementConfirmed(current)) {
 			pendingPlacementConfirmation = null;
-			return completeTarget(tick, request, pending.successMessage()
+			// The immediate message described the block before the server confirmed it; report the confirmed state.
+			return completeTarget(tick, request, pending.successMessage().replaceFirst(" afterBlockState=\\S*", "")
+				+ " afterBlockState=" + blockStateProperties(current)
 				+ " confirmedBlockId=" + blockId(current)
 				+ " confirmationTicks=" + (tick - pending.startedTick()));
 		}

@@ -4,6 +4,7 @@ import ai.moeru.airicraft.modded.ItemGroups;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.fabricmc.fabric.api.event.lifecycle.v1.CommonLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -31,8 +32,15 @@ public final class ClientItemGroups {
 	private ClientItemGroups() {
 	}
 
+	private static final java.util.concurrent.atomic.AtomicInteger TAG_RELOADS = new java.util.concurrent.atomic.AtomicInteger();
+	private static final java.util.concurrent.atomic.AtomicBoolean LISTENING = new java.util.concurrent.atomic.AtomicBoolean();
+
 	/** Installs the live tag source and the user's override file; safe to call again on reload. */
 	public static void install() {
+		if (LISTENING.compareAndSet(false, true)) {
+			// Data-pack reloads and server tag syncs rebind tags without replacing the level.
+			CommonLifecycleEvents.TAGS_LOADED.register((registries, client) -> TAG_RELOADS.incrementAndGet());
+		}
 		ItemGroups.install(new RegistryTags(), loadExtras(
 			FabricLoader.getInstance().getConfigDir().resolve("airicraft").resolve("item-groups.json")));
 	}
@@ -62,7 +70,7 @@ public final class ClientItemGroups {
 		}
 	}
 
-	/** Item tags as synced to the client; the generation follows the loaded level, which tags are bound to. */
+	/** Item tags as synced to the client; the generation follows the loaded level and the tag binding. */
 	private static final class RegistryTags implements ItemGroups.TagSource {
 		@Override
 		public Set<String> members(String tagId) {
@@ -80,7 +88,10 @@ public final class ClientItemGroups {
 		@Override
 		public Object generation() {
 			Minecraft minecraft = Minecraft.getInstance();
-			return minecraft == null || minecraft.level == null ? "none" : System.identityHashCode(minecraft.level);
+			if (minecraft == null || minecraft.level == null) {
+				return "none";
+			}
+			return List.of(System.identityHashCode(minecraft.level), TAG_RELOADS.get());
 		}
 	}
 }
