@@ -1002,6 +1002,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (gameMode.isDestroying() && target != null)
 				metrics.put("block:" + target.asLong(), (double) gameMode.destroyProgress);
 		}
+		// A stationary collector waiting on a furnace advances with each item cooked.
+		if (player.containerMenu instanceof net.minecraft.world.inventory.AbstractFurnaceMenu furnace)
+			metrics.put("furnace:output", (double) furnace.getSlot(2).getItem().getCount());
 		if (minecraft.crosshairPickEntity instanceof net.minecraft.world.entity.LivingEntity target)
 			metrics.put("damage:" + target.getStringUUID(), -(double) target.getHealth());
 		var input = player.input == null ? net.minecraft.world.entity.player.Input.EMPTY : player.input.keyPresses;
