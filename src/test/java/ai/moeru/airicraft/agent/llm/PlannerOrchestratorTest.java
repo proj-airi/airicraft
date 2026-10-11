@@ -731,6 +731,38 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
+	void aTransportRetryDoesNotUseUpTheChatRepair() {
+		RecordingBackend backend = new RecordingBackend();
+		MutableClock clock = new MutableClock(Instant.ofEpochMilli(1_000L), ZoneId.of("UTC"));
+		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY, 3, clock);
+
+		orchestrator.submit(baseRequest(null));
+		backend.awaitCalls(1, Duration.ofSeconds(1));
+		backend.fail(0, LlmFailureType.PROVIDER_UNAVAILABLE, "Provider returned HTTP 502");
+		awaitRetryPending(orchestrator, Duration.ofSeconds(1));
+		clock.advanceMillis(250L);
+		awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(1));
+
+		backend.succeed(1, new PlannerResponse(
+			List.of(new PlannerChatMessage("x".repeat(PlannerChatContract.MAX_MESSAGE_LENGTH + 1), 0)),
+			new PlannerIntent("reply_only", null, null),
+			null
+		));
+		awaitBackendCallCount(orchestrator, backend, 3, Duration.ofSeconds(1));
+		assertTrue(conversationText(backend.conversation(2)).contains("CHAT MESSAGE FORMAT REMINDER"));
+
+		backend.succeed(2, new PlannerResponse(
+			List.of(new PlannerChatMessage("Short now.", 0)),
+			new PlannerIntent("reply_only", null, null),
+			null
+		));
+		PlannerExecutionResult result = awaitResult(orchestrator);
+		assertEquals("Short now.", result.response().replyText());
+		assertEquals(3, result.attempt());
+		orchestrator.shutdown();
+	}
+
+	@Test
 	void secondInvalidChatMessagePlanIsContractedAndAccepted() {
 		RecordingBackend backend = new RecordingBackend();
 		PlannerOrchestrator orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), PlannerVisionMode.EXTERNAL_SUMMARY);

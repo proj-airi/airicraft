@@ -243,6 +243,7 @@ public final class PlannerSessionCoordinator {
 				|| activeSession.generation() != generation
 				|| !activeSession.replaceable()
 				|| activeSession.conversation() == null
+				|| !activeSession.takeChatRepair()
 		) {
 			return false;
 		}

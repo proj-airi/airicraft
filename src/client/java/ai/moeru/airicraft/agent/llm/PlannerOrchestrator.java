@@ -875,7 +875,7 @@ public final class PlannerOrchestrator {
 		}
 		String failureMessage = chatValidation.valid() ? sayValidation.message() : chatValidation.message();
 		// A long say line is shortened locally; it must not regenerate an otherwise valid gameplay decision.
-		if (!chatValidation.valid() && result.attempt() <= 1 && scheduleChatRepairRetry(result, failureMessage)) {
+		if (!chatValidation.valid() && scheduleChatRepairRetry(result, failureMessage)) {
 			return null;
 		}
 		PlannerResponse contractedResponse = contractVisibleChat(result.response());
