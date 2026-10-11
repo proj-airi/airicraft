@@ -226,6 +226,7 @@ public final class ClientRuntimeController {
 
 	public void onWorldLeave() {
 		ai.moeru.airicraft.blueprint.BlueprintService.instance().worldLeft();
+		episodeStream = null;
 		automaticPlaytest.worldLeft("world_left");
 		worldCameraService.clear();
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.clear();
@@ -239,9 +240,35 @@ public final class ClientRuntimeController {
 
 	public CameraController cameraController() { return cameraController; }
 
+	private ai.moeru.airicraft.agent.recording.EpisodeStream episodeStream;
+	private boolean episodeStreamFailed;
+	private int episodeStreamCountdown;
+
+	/** Experimental, opt-in: persists events and timeline per world for the offline episoder. */
+	private void tickEpisodeStream(Minecraft minecraft) {
+		if (episodeStreamFailed || !ai.moeru.airicraft.agent.recording.EpisodeStream.enabled()) return;
+		if (--episodeStreamCountdown > 0) return;
+		episodeStreamCountdown = 20;
+		var server = minecraft.getSingleplayerServer();
+		if (server == null || minecraft.level == null) return;
+		try {
+			if (episodeStream == null) {
+				episodeStream = new ai.moeru.airicraft.agent.recording.EpisodeStream(
+					server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT));
+			}
+			var runtime = currentAgentRuntime();
+			episodeStream.drain(runtime::recentEvents, runtime::debugTimeline, java.time.Instant.now().toString());
+		}
+		catch (java.io.IOException | RuntimeException exception) {
+			episodeStreamFailed = true;
+			Airicraft.LOGGER.warn("Episode stream disabled after a write failure; game execution is unaffected", exception);
+		}
+	}
+
 	public void onClientTick(Minecraft minecraft) {
 		ai.moeru.airicraft.agent.memory.WorldPlacePreservation.tick(minecraft);
         ai.moeru.airicraft.blueprint.BlueprintService.instance().tick(minecraft);
+		tickEpisodeStream(minecraft);
 		if (!automaticPlaytest.freezing()) {
 			navigationFacade.releaseIfIdle(minecraft);
 			currentAgentRuntime().onClientTick(minecraft);
