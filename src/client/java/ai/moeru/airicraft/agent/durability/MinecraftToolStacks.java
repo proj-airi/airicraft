@@ -39,29 +39,37 @@ public final class MinecraftToolStacks {
 	}
 
 	/**
-	 * The {@link ToolWear#shortfall} warning for breaking {@code blocksNeeded} of {@code blockIds}, counting every tool that
-	 * can harvest at least one of the blocks that drop nothing without the correct tool. Blocks a bare hand harvests never warn.
+	 * The {@link ToolWear#shortfall} warning for breaking {@code blocksNeeded} of {@code blockIds}. Each block that drops
+	 * nothing without the correct tool is judged on the tools that can harvest it, and the one with the least tool life
+	 * left decides, since the job may have to mine only that block. Blocks a bare hand harvests never warn, and a block no
+	 * carried tool can harvest is left to the job's own failure.
 	 */
 	public static Optional<String> miningShortfall(Inventory inventory, List<String> blockIds, int blocksNeeded) {
-		var states = new ArrayList<BlockState>();
+		Optional<String> tightest = Optional.empty();
+		int tightestUses = Integer.MAX_VALUE;
 		for (String blockId : blockIds) {
 			ResourceLocation id = ResourceLocation.tryParse(blockId);
 			if (id == null) continue;
 			var block = BuiltInRegistries.BLOCK.getOptional(id);
 			if (block.isEmpty()) continue;
 			BlockState state = block.get().defaultBlockState();
-			if (state.requiresCorrectToolForDrops()) states.add(state);
+			if (!state.requiresCorrectToolForDrops()) continue;
+			var eligible = new ArrayList<ToolStack>();
+			boolean unbreakable = false;
+			for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+				ItemStack stack = inventory.getItem(slot);
+				if (stack.isEmpty() || !stack.isCorrectToolForDrops(state)) continue;
+				if (!stack.isDamageableItem()) unbreakable = true;
+				else eligible.add(new ToolStack(slot, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), kind(stack),
+					stack.getMaxDamage() - stack.getDamageValue(), stack.getMaxDamage()));
+			}
+			int uses = eligible.stream().mapToInt(ToolStack::remaining).sum();
+			var warning = ToolWear.shortfall(eligible, unbreakable, blocksNeeded);
+			if (warning.isPresent() && uses < tightestUses) {
+				tightestUses = uses;
+				tightest = warning.map(text -> blockId + ": " + text);
+			}
 		}
-		if (states.isEmpty()) return Optional.empty();
-		var eligible = new ArrayList<ToolStack>();
-		boolean unbreakable = false;
-		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-			ItemStack stack = inventory.getItem(slot);
-			if (stack.isEmpty() || states.stream().noneMatch(stack::isCorrectToolForDrops)) continue;
-			if (!stack.isDamageableItem()) unbreakable = true;
-			else eligible.add(new ToolStack(slot, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), kind(stack),
-				stack.getMaxDamage() - stack.getDamageValue(), stack.getMaxDamage()));
-		}
-		return ToolWear.shortfall(eligible, unbreakable, blocksNeeded);
+		return tightest;
 	}
 }
