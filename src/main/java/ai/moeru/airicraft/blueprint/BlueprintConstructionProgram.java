@@ -192,6 +192,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         // Resource failures cannot be repaired by changing geometry. Check before
         // any access search, and again after every child effect consumes inventory.
         var checkedItems=new HashSet<String>();
+        for(var cell:pending)if(!cell.air() && cell.item().equals("minecraft:air") && !cell.state().contains("half=upper") && !environment.canToggle(cell))
+            throw new IllegalStateException("construction_unplaceable_block state="+cell.state()+" target="+cell.key()+" reason=block_has_no_item; redesign without it");
         for(var cell:pending)if(!cell.air() && !cell.state().contains("half=upper")
             && !environment.canToggle(cell) && checkedItems.add(cell.item()) && !environment.hasMaterial(cell))
             throw new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key()+" shortfall="+shortfallText(shortfall(pending)));
@@ -393,7 +395,7 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
     }
     private Map<String,Integer> shortfall(List<Cell> pending){
         var needed=new java.util.TreeMap<String,Integer>();
-        for(var cell:pending)if(!cell.air() && !cell.state().contains("half=upper") && !environment.canToggle(cell))needed.merge(cell.item(),1,Integer::sum);
+        for(var cell:pending)if(!cell.air() && !cell.item().equals("minecraft:air") && !cell.state().contains("half=upper") && !environment.canToggle(cell))needed.merge(cell.item(),1,Integer::sum);
         var missing=new java.util.LinkedHashMap<String,Integer>();
         needed.forEach((item,count)->{long have=environment.materialCount(item);if(have<count)missing.put(item,(int)(count-have));});
         return missing;
