@@ -12,8 +12,8 @@ import java.util.TreeSet;
  * world change, an event gap, a refresh after compaction, an observation the model asked for itself, and at least
  * every {@link #BASELINE_EVERY_OBSERVATIONS} observations or {@link #BASELINE_EVERY_TICKS} ticks carry the full
  * {@code current} state. Every other one carries {@code currentChanges}: inventory deltas with resulting totals,
- * vitals as before and after, a block-position move, and a JSON Patch for the rest. Velocity and sub-block movement
- * are not reported as changes. A baseline is also sent whenever the changes are larger than the state.
+ * vitals as before and after, a block-position move, and a JSON Patch for the rest. Velocity, sub-block movement and
+ * timestamps ({@code tick}, {@code *Tick}) are not reported as changes. A baseline is also sent whenever the changes are larger than the state.
  * <p>
  * The presenter holds only presentation state; canonical observations stay intact in history and the recorder.
  */
@@ -168,7 +168,18 @@ public final class ObservationPresenter {
 			copy.getAsJsonObject("physical").remove("position");
 			copy.getAsJsonObject("physical").remove("velocity");
 		}
+		removeTimes(copy);
 		return copy;
+	}
+
+	/** Timestamps are read as ages at the next full state; a tick that only moved on is not a change. Durations stay. */
+	private static void removeTimes(JsonElement value) {
+		if (value.isJsonArray()) for (JsonElement item : value.getAsJsonArray()) removeTimes(item);
+		if (!value.isJsonObject()) return;
+		JsonObject object = value.getAsJsonObject();
+		object.entrySet().removeIf(entry -> entry.getValue().isJsonPrimitive() && entry.getValue().getAsJsonPrimitive().isNumber()
+			&& !entry.getKey().endsWith("PerTick") && (entry.getKey().equals("tick") || entry.getKey().endsWith("Tick")));
+		for (var entry : object.entrySet()) removeTimes(entry.getValue());
 	}
 
 	private static JsonObject object(JsonObject parent, String key) {

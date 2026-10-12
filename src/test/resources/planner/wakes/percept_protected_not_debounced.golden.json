@@ -143,7 +143,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -165,7 +165,7 @@
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
       "prefix": {
-        "systemSha": "d923bcf4d64b3add038145be082f39a3e5c1d0bf7c8c364b2d22a00a48e76d92",
+        "systemSha": "4c846f606b518fd6d3a613d96fa44f2fc4b0c4a390fbeb195a3a1057faa41434",
         "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
       },
       "tick": 4
