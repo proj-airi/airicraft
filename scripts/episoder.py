@@ -202,6 +202,35 @@ def build_episode(seg, model, url):
     return episode
 
 
+ICONS = {"succeeded": "✅", "failed": "❌", "abandoned": "⛔", "ongoing": "⏳", "interrupted": "⏸️", "unclear": "❔"}
+
+
+def _bullets(heading, items):
+    return f"**{heading}**\n" + "\n".join(f"- {item}" for item in items) + "\n\n" if items else ""
+
+
+def render_markdown(episodes):
+    """A human-readable timeline: a table at a glance, then one section per episode."""
+    out = ["# Episodes\n", "## At a glance\n", "| # | Ticks | Outcome | Episode |", "|---|---|---|---|"]
+    for e in episodes:
+        first, last = e["tickRange"]
+        out.append(f"| {e['id']} | {first}–{last} | {ICONS.get(e['outcome'], '')} {e['outcome']} | {e['title']} |")
+    out.append("\n## Episodes\n")
+    for e in episodes:
+        first, last = e["tickRange"]
+        out.append(f"### {e['id']}. {e['title']} {ICONS.get(e['outcome'], '')}\n")
+        out.append(f"*Ticks {first}–{last} · {e['outcome']} · raw: {e['sources'][0]} → {e['sources'][1]}*\n")
+        if e.get("attempted"):
+            out.append(f"**Attempted:** {e['attempted']}\n")
+        if e.get("why"):
+            out.append(f"**Why:** {e['why']}\n")
+        out.append(_bullets("Facts (from the log)", e.get("facts", [])))
+        out.append(_bullets("Inferred (not verified)", e.get("inferred", [])))
+        out.append(_bullets("People said", e.get("people_said", [])))
+        out.append(_bullets("Open loops", e.get("open_loops", [])))
+    return "\n".join(out)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_dir")
@@ -230,6 +259,10 @@ def main(argv=None):
             handle.flush()
             print(f"[{index + 1}/{len(segments)}] {episode.get('title')} -> {episode.get('outcome')}", file=sys.stderr)
     os.replace(out + ".tmp", out)
+    with open(out, encoding="utf-8") as handle:
+        episodes = [json.loads(line) for line in handle if line.strip()]
+    with open(os.path.splitext(out)[0] + ".md", "w", encoding="utf-8") as handle:
+        handle.write(render_markdown(episodes))
     print(out)
     return 0
 

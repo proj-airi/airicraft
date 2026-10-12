@@ -55,6 +55,12 @@ class EpisoderTest(unittest.TestCase):
         self.assertIn("x5", segment[1]["text"])
         self.assertNotIn("abc123", segment[0]["text"])
 
+    def test_markdown_has_table_and_sections(self):
+        text = episoder.render_markdown([{"id": 0, "tickRange": [1, 2], "outcome": "failed", "title": "Mining failed",
+                                          "why": "no_path", "facts": ["a"], "sources": ["x:1", "x:2"]}])
+        self.assertIn("| 0 | 1–2 | ❌ failed | Mining failed |", text)
+        self.assertIn("**Why:** no_path", text)
+
     def test_parse_json_tolerates_prose(self):
         self.assertEqual(episoder.parse_json('sure: {"a": 1} done'), {"a": 1})
 

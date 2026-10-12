@@ -31,4 +31,4 @@ Observations:
   at ticks about 33,000, 44,000 and 46,000.
 
 Not yet measured: whether a planner using these episodes repeats fewer mistakes, and how many tokens an index costs.
-Samples: `/mnt/project-files/episodic-memory/` (episodes plus the raw inputs).
+Samples: `/mnt/project-files/episodic-memory/` (readable `iron-pickaxe-episodes.md`, the JSONL, and the raw inputs). `episoder.py` writes the `.md` next to the JSONL.
