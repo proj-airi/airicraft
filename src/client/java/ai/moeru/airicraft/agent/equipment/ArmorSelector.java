@@ -20,6 +20,8 @@ public final class ArmorSelector {
 	/**
 	 * @param slot          equipment slot name: head, chest, legs or feet
 	 * @param inventorySlot backing inventory index, or -1 for the piece currently worn
+	 * @param toughness     armor toughness plus one per level of the Protection enchantment, which reduces
+	 *                      damage about as much as one armor point
 	 * @param remaining     remaining durability; Integer.MAX_VALUE for unbreakable pieces
 	 * @param locked        worn piece that cannot come off (curse of binding), or a cursed carried piece
 	 */
@@ -53,7 +55,8 @@ public final class ArmorSelector {
 		List<Swap> swaps = new ArrayList<>();
 		for (Piece candidate : best.values()) {
 			Piece current = worn.get(candidate.slot());
-			if (current != null && (current.locked() || protection(candidate) <= protection(current))) continue;
+			// A worn zero-armor wearable (elytra, carved pumpkin) was put on for its use; leave it.
+			if (current != null && (current.locked() || current.armor() <= 0 || protection(candidate) <= protection(current))) continue;
 			swaps.add(new Swap(candidate.slot(), candidate.inventorySlot(), candidate.itemId(), current == null ? null : current.itemId()));
 		}
 		return List.copyOf(swaps);

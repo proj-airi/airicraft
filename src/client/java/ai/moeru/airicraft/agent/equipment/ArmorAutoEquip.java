@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -91,6 +92,9 @@ public final class ArmorAutoEquip {
 			if (attribute.value() == Attributes.ARMOR.value()) totals[0] += modifier.amount();
 			else if (attribute.value() == Attributes.ARMOR_TOUGHNESS.value()) totals[1] += modifier.amount();
 		});
+		for (var enchantment : stack.getEnchantments().entrySet()) {
+			if (enchantment.getKey().is(Enchantments.PROTECTION)) totals[1] += enchantment.getIntValue();
+		}
 		int remaining = stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : Integer.MAX_VALUE;
 		boolean locked = EnchantmentHelper.has(stack, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE);
 		return new ArmorSelector.Piece(slot.getName(), inventorySlot, itemId(stack), totals[0], totals[1], remaining, locked);

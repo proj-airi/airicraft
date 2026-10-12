@@ -58,6 +58,23 @@ class ArmorSelectorTest {
 	}
 
 	@Test
+	void leavesAWornElytraOrPumpkinOn() {
+		assertTrue(ArmorSelector.choose(List.of(
+			worn("chest", "minecraft:elytra", 0),
+			carried("chest", 9, "minecraft:iron_chestplate", 6, 0, 240),
+			worn("head", "minecraft:carved_pumpkin", 0),
+			carried("head", 10, "minecraft:iron_helmet", 2, 0, 165))).isEmpty());
+	}
+
+	@Test
+	void protectionEnchantmentCountsAgainstAPlainUpgrade() {
+		// Iron with Protection IV scores 6 + 4, as much as plain diamond's 8 armor + 2 toughness.
+		assertTrue(ArmorSelector.choose(List.of(
+			new ArmorSelector.Piece("chest", -1, "minecraft:iron_chestplate", 6, 4, 200, false),
+			carried("chest", 9, "minecraft:diamond_chestplate", 8, 2, 528))).isEmpty());
+	}
+
+	@Test
 	void prefersTheLessWornOfTwoEqualPieces() {
 		var swaps = ArmorSelector.choose(List.of(
 			carried("feet", 20, "minecraft:iron_boots", 2, 0, 40),

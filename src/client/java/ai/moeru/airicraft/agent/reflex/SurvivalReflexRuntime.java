@@ -590,6 +590,8 @@ public final class SurvivalReflexRuntime {
 	/** A melee threat close enough to hit back from the water, unless air is too low to stay and fight. */
 	private ResolvedThreat wetMeleeThreat(LocalPlayer player, List<ResolvedThreat> threats) {
 		boolean lowAir = player.isUnderWater() && player.getAirSupply() < config.lowAirTicks();
+		// The combat path that tracks fuses doesn't run during recovery; read them live here.
+		updateCreeperEscape(threats);
 		if (lowAir || escapingCreeper != null) return null;
 		ResolvedThreat threat = threats.isEmpty() ? null : focusedThreat(threats);
 		return threat != null && shouldFightWhileWet(threat.distance(), threat.lineOfSight(), isRangedThreat(threat.entity()))
