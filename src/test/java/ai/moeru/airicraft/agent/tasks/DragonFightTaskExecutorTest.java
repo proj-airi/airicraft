@@ -34,7 +34,7 @@ class DragonFightTaskExecutorTest {
 		f.env.melee = DragonFightTaskExecutor.MeleeResult.OUT_OF_REACH;
 		f.tick(1);
 		assertEquals(f.env.perch, f.nav.goals.getLast());
-		assertEquals(1, f.nav.radius);
+		assertEquals(0, f.nav.radius, "exactly into reach");
 		f.env.melee = DragonFightTaskExecutor.MeleeResult.HIT;
 		f.tick(3);
 		assertFalse(f.nav.active, "standing still while swinging");
@@ -152,6 +152,24 @@ class DragonFightTaskExecutorTest {
 		assertTrue(stuck.events.getFirst().message().startsWith("no_progress"));
 	}
 
+	@Test void routesBridgeFromTheArrivalPlatformButOnlyWalkOnTheIsland() {
+		Fixture f = new Fixture();
+		f.env.bow = false;
+		f.env.onEndStone = false;
+		f.env.feet = new Vec3(100.5, 49, 0.5);
+		f.tick(1);
+		assertEquals(NavigationOptions.DEFAULT, f.nav.options, "bridging off the obsidian platform");
+		f.env.onEndStone = true;
+		f.env.feet = new Vec3(40.5, 62, 0.5);
+		f.nav.events.add("CALC_FAILED");
+		f.tick(2);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options);
+		f.env.onEndStone = null; // mid-jump
+		f.nav.events.add("CALC_FAILED");
+		f.tick(2);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options);
+	}
+
 	@Test void anIsolatedArrivalPlatformFailsWithAReasonInsteadOfWaiting() {
 		Fixture f = new Fixture();
 		f.env.bow = false;
@@ -249,6 +267,7 @@ class DragonFightTaskExecutorTest {
 
 	private static final class Environment implements DragonFightTaskExecutor.Environment {
 		boolean inEnd = true, bow = true, drawing;
+		Boolean onEndStone = true;
 		float health = 20;
 		Vec3 feet = new Vec3(0.5, 64, 20.5);
 		DragonFightTaskExecutor.Dragon dragon = dragon(false, 200);
@@ -264,7 +283,7 @@ class DragonFightTaskExecutorTest {
 		int releases, flightTicks = 15;
 
 		public DragonFightTaskExecutor.Fight observe() {
-			return new DragonFightTaskExecutor.Fight(inEnd, feet, health, dragon, crystals, clouds, List.of(), bow);
+			return new DragonFightTaskExecutor.Fight(inEnd, feet, health, dragon, crystals, clouds, List.of(), bow, onEndStone);
 		}
 		public Optional<GoalPosition> escapePosition(DragonFightTaskExecutor.Fight fight, Vec3 avoid) { return Optional.of(escape); }
 		public Optional<GoalPosition> perchApproach(DragonFightTaskExecutor.Fight fight, DragonFightTaskExecutor.Dragon dragon) { return Optional.of(perch); }
@@ -288,8 +307,9 @@ class DragonFightTaskExecutorTest {
 		List<GoalPosition> goals = new ArrayList<>();
 		public boolean isLoaded() { return true; }
 		public void startFollow(String s) { fail("no following"); }
-		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); radius = 0; active = true; }
-		public void startNavigateNear(GoalPosition p, int r, NavigationOptions o) { goals.add(p); radius = r; active = true; }
+		NavigationOptions options;
+		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); radius = 0; active = true; options = o; }
+		public void startNavigateNear(GoalPosition p, int r, NavigationOptions o) { goals.add(p); radius = r; active = true; options = o; }
 		public boolean processActive() { return active; }
 		public void cancel() { active = false; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }

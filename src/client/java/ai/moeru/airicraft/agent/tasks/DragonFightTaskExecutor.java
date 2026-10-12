@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.tasks;
 
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
+import ai.moeru.airicraft.agent.navigation.NavigationOptions;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 import net.minecraft.world.phys.Vec3;
 
@@ -71,6 +72,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	/** The tick a stalled route was dropped; no route starts in the same tick, so the dispatcher's watchdog sees it end. */
 	private int navigationRestTick = -1;
 	private int calmTicks;
+	/** Last seen standing on the island; routes then walk only, never bridging out into the dragon's reach over the void. */
+	private boolean onIsland;
 
 	public DragonFightTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController camera) {
 		this(navigation, new MinecraftDragonFightEnvironment(camera));
@@ -106,6 +109,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		if (fight == null) return finish(false, "world_unavailable", TaskFailureCode.ENVIRONMENT_CHANGED);
 		if (!fight.inEnd()) return finish(false, "not_in_the_end", TaskFailureCode.INVALID_ACTION);
 		activeTicks++;
+		if (fight.onEndStone() != null) onIsland = fight.onEndStone();
 
 		Dragon dragon = fight.dragon();
 		if (dragon == null || !dragon.alive()) {
@@ -198,7 +202,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		Optional<GoalPosition> approach = environment.perchApproach(fight, dragon);
 		if (approach.isEmpty()) return;
 		if (navigationOwned && navigationGoal != null && squaredDistance(navigationGoal, approach.get()) > 4) stopNavigation();
-		navigate(approach.get(), 1);
+		navigate(approach.get(), 0);
 	}
 
 	/** Whether a crystal is being worked on; false when none can be shot. */
@@ -319,8 +323,9 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			stopNavigation();
 			NavigationRelease.release(navigation);
 			navigation.pollPathEvent();
-			if (radius > 0) navigation.startNavigateNear(goal, radius);
-			else navigation.startNavigate(goal);
+			NavigationOptions options = onIsland ? NavigationOptions.WALK_ONLY : NavigationOptions.DEFAULT;
+			if (radius > 0) navigation.startNavigateNear(goal, radius, options);
+			else navigation.startNavigate(goal, options);
 			navigationOwned = true;
 			navigationGoal = goal;
 			navigationTicks = 0;
@@ -377,6 +382,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		navigationStall.clear();
 		navigationRestTick = -1;
 		calmTicks = 0;
+		onIsland = false;
 	}
 
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason, TaskFailureCode failureCode) {
@@ -406,6 +412,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			Dragon dragon = fight.dragon();
 			detail += " dragonHealth=" + (dragon == null ? "unknown" : dragon.health())
 				+ " dragonPhase=" + (dragon == null ? "unknown" : dragon.phase())
+				+ (dragon == null || dragon.head() == null ? "" : String.format(java.util.Locale.ROOT, " headDistance=%.1f",
+					dragon.head().distanceTo(fight.feet().add(0.0D, 1.62D, 0.0D))))
 				+ " crystalsAlive=" + fight.crystals().size()
 				+ " caged=" + fight.crystals().stream().filter(Crystal::caged).count();
 		}
@@ -449,7 +457,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	/** A live end crystal. {@code position} is its base; a cage of iron bars stops arrows. */
 	record Crystal(String id, Vec3 position, boolean caged) {}
 	record Fight(boolean inEnd, Vec3 feet, float health, Dragon dragon, List<Crystal> crystals,
-		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows) {
+		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows, Boolean onEndStone) {
 		/** Farther from the exit portal than a perch can be reached from. */
 		boolean awayFromPortal() { return Math.hypot(feet.x, feet.z) > 24.0D; }
 	}

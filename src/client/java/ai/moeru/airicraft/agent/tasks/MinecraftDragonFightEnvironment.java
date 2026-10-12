@@ -76,7 +76,18 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				Entity::isAlive).stream()
 			.map(fireball -> new DragonHazards.Fireball(fireball.position(), fireball.getDeltaMovement())).toList();
 		return new DragonFightTaskExecutor.Fight(inEnd, player.position(), player.getHealth(), dragon, crystals, clouds, fireballs,
-			bowSlot(player) >= 0 && hasArrows(player));
+			bowSlot(player) >= 0 && hasArrows(player), footing(level, player));
+	}
+
+	/** Whether the player stands on the island's end stone; null in the air, where the last footing still holds. */
+	private static Boolean footing(ClientLevel level, LocalPlayer player) {
+		if (!player.onGround()) return null;
+		BlockPos feet = player.blockPosition();
+		for (BlockPos below = feet.below(); below.getY() >= feet.getY() - 2; below = below.below()) {
+			var state = level.getBlockState(below);
+			if (!state.getCollisionShape(level, below).isEmpty()) return state.is(Blocks.END_STONE);
+		}
+		return null;
 	}
 
 	private static DragonFightTaskExecutor.Dragon dragon(EnderDragon dragon) {
@@ -124,7 +135,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 		for (int dx = -3; dx <= 3; dx++) {
 			for (int dz = -3; dz <= 3; dz++) {
 				int x = below.getX() + dx, z = below.getZ() + dz;
-				Optional<Integer> y = ground(level, x, z, below.getY() - 6, below.getY() + 1);
+				Optional<Integer> y = islandGround(level, x, z, below.getY() - 6, below.getY() + 1);
 				if (y.isEmpty()) continue;
 				Vec3 spot = new Vec3(x + 0.5D, y.get(), z + 0.5D);
 				// Eyes must come within entity reach of the head box.
@@ -154,7 +165,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				double angle = Math.PI * 2.0D * i / 24;
 				int x = (int) Math.floor(target.x + Math.cos(angle) * distance);
 				int z = (int) Math.floor(target.z + Math.sin(angle) * distance);
-				Optional<Integer> y = ground(level, x, z, level.getMinY(), (int) target.y - 8);
+				Optional<Integer> y = islandGround(level, x, z, level.getMinY(), (int) target.y - 8);
 				if (y.isEmpty()) continue;
 				Vec3 spot = new Vec3(x + 0.5D, y.get(), z + 0.5D);
 				if (rejected.contains(goal(spot)) || spot.distanceTo(fight.feet()) > 96.0D) continue;
@@ -201,7 +212,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 			double angle = Math.PI * 2.0D * i / 16;
 			int x = PORTAL_X + (int) Math.round(Math.cos(angle) * 9);
 			int z = PORTAL_Z + (int) Math.round(Math.sin(angle) * 9);
-			Optional<Integer> y = ground(level, x, z, level.getMinY(), 120);
+			Optional<Integer> y = islandGround(level, x, z, level.getMinY(), 120);
 			if (y.isEmpty()) continue;
 			Vec3 spot = new Vec3(x + 0.5D, y.get(), z + 0.5D);
 			if (DragonHazards.insideCloud(spot, fight.clouds(), DragonHazards.CLOUD_MARGIN)) continue;
@@ -321,6 +332,14 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 
 	private static Vec3 target(DragonFightTaskExecutor.Crystal crystal) {
 		return crystal.position().add(0.0D, 1.0D, 0.0D);
+	}
+
+	/**
+	 * {@link #ground} on the island's own end stone. Pillar tops, the portal's bedrock and the player's own bridges
+	 * stand in the air, where one wing hit knocks the player into the void.
+	 */
+	private static Optional<Integer> islandGround(ClientLevel level, int x, int z, int minY, int maxY) {
+		return ground(level, x, z, minY, maxY).filter(y -> level.getBlockState(new BlockPos(x, y - 1, z)).is(Blocks.END_STONE));
 	}
 
 	/** The highest standing height at (x, z) between {@code minY} and {@code maxY}: solid below, room for the body. */
