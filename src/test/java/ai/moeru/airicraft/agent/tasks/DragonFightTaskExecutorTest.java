@@ -402,6 +402,9 @@ class DragonFightTaskExecutorTest {
 			return gone.contains(block) ? DragonFightTaskExecutor.BreakResult.GONE : DragonFightTaskExecutor.BreakResult.WORKING;
 		}
 		public void stopBreaking() {}
+		public Optional<GoalPosition> supportBelow() {
+			return Optional.of(new GoalPosition((int) Math.floor(feet.x), (int) Math.floor(feet.y) - 1, (int) Math.floor(feet.z), true));
+		}
 	}
 
 	private static final class Navigation implements NavigationFacade {

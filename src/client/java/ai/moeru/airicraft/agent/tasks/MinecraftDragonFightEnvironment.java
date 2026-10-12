@@ -193,6 +193,23 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 	}
 
 	@Override
+	public Optional<GoalPosition> supportBelow() {
+		LocalPlayer player = client().player;
+		ClientLevel level = client().level;
+		if (player == null || level == null || !player.onGround()) return Optional.empty();
+		AABB box = player.getBoundingBox();
+		int y = (int) Math.floor(box.minY - 1.0E-3D);
+		BlockPos straightBelow = new BlockPos(player.getBlockX(), y, player.getBlockZ());
+		if (!level.getBlockState(straightBelow).getCollisionShape(level, straightBelow).isEmpty())
+			return Optional.of(new GoalPosition(straightBelow.getX(), y, straightBelow.getZ(), true));
+		for (BlockPos pos : BlockPos.betweenClosed((int) Math.floor(box.minX), y, (int) Math.floor(box.minZ),
+				(int) Math.floor(box.maxX), y, (int) Math.floor(box.maxZ)))
+			if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty())
+				return Optional.of(new GoalPosition(pos.getX(), y, pos.getZ(), true));
+		return Optional.empty();
+	}
+
+	@Override
 	public void stopBreaking() {
 		if (breaking == null) return;
 		breaking = null;

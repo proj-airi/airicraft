@@ -44,6 +44,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	static final float CAGE_MIN_HEALTH = 14.0F;
 	static final int CAGE_CLIMB_TIMEOUT_TICKS = 1_500;
 	static final int CAGE_BLOCK_TIMEOUT_TICKS = 200;
+	/** The camera turns over a few ticks; a bar is only out of reach if it stays so. */
+	static final int CAGE_AIM_TICKS = 10;
 	static final int CAGE_ATTEMPTS = 3;
 	/** Building blocks beyond the climb itself, for navigation's own detours. */
 	static final int CAGE_SPARE_BLOCKS = 8;
@@ -93,7 +95,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private String cageTarget;
 	private CagePlan cagePlan;
 	private CageStage cageStage;
-	private int cageStageTicks, cageBlockTicks, cagesOpened;
+	private int cageStageTicks, cageBlockTicks, cagesOpened, roofBroken, roofSkipped;
 	private GoalPosition cageBlock;
 	private final Map<String, Integer> cageAttempts = new LinkedHashMap<>();
 	/** Why no cage can be opened, for the hand-back; null while one can. */
@@ -346,7 +348,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				} else if (!navigate(cagePlan.ground(), 0) || navigationTicks > NAVIGATION_TIMEOUT_TICKS) failCage(fight);
 			}
 			case CLIMB -> {
-				if (atSpot(fight.feet(), cagePlan.top())) {
+				if (atTop(fight.feet())) {
 					stopNavigation();
 					setCageStage(CageStage.BREAK);
 				} else if (!navigate(cagePlan.top(), 0, NavigationOptions.DEFAULT) || cageStageTicks > CAGE_CLIMB_TIMEOUT_TICKS) {
@@ -356,7 +358,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				}
 			}
 			case BREAK -> {
-				if (!atSpot(fight.feet(), cagePlan.top())) {
+				if (!atTop(fight.feet())) {
 					// Knocked off the top: whatever is left of the climb, go down and try again later.
 					environment.stopBreaking();
 					setCageStage(CageStage.DESCEND);
@@ -371,8 +373,11 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 					cageBlockTicks = 0;
 				}
 				BreakResult result = environment.breakBlock(cageBlock);
-				if (result == BreakResult.GONE || result == BreakResult.UNREACHABLE || ++cageBlockTicks > CAGE_BLOCK_TIMEOUT_TICKS) {
+				boolean unreachable = result == BreakResult.UNREACHABLE && cageBlockTicks >= CAGE_AIM_TICKS;
+				if (result == BreakResult.GONE || unreachable || ++cageBlockTicks > CAGE_BLOCK_TIMEOUT_TICKS) {
 					environment.stopBreaking();
+					if (result == BreakResult.GONE) roofBroken++;
+					else roofSkipped++;
 					cageBlock = null;
 				} else if (result == BreakResult.NO_TOOL) {
 					environment.stopBreaking();
@@ -390,9 +395,10 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 					} else failCage(fight);
 					return true;
 				}
-				GoalPosition below = new GoalPosition((int) Math.floor(fight.feet().x), (int) Math.floor(fight.feet().y - 1.0E-3D),
-					(int) Math.floor(fight.feet().z), true);
-				BreakResult result = environment.breakBlock(below);
+				// Off-centre, the body can stand on the pillar while the cell straight below is air.
+				Optional<GoalPosition> below = environment.supportBelow();
+				if (below.isEmpty()) return true; // falling onto the next block
+				BreakResult result = environment.breakBlock(below.get());
 				if (result == BreakResult.NO_TOOL) {
 					environment.stopBreaking();
 					cageUnavailable = "no tool to dig back down";
@@ -412,6 +418,12 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		}
 		cageUnavailable = environment.cageReadiness((int) Math.ceil(caged.position().y - fight.feet().y) + 4 + CAGE_SPARE_BLOCKS);
 		return cageUnavailable == null;
+	}
+
+	/** Standing on top of our pillar, eyes above the cage roof; a step lower, the near bars hide the far ones. */
+	private boolean atTop(Vec3 feet) {
+		GoalPosition top = cagePlan.top();
+		return horizontalDistance(feet, center(top)) <= 0.9D && feet.y >= top.y() - 0.05D && feet.y <= top.y() + 1.0D;
 	}
 
 	/** Above the ground the cage climb started from, on our own pillar. */
@@ -567,7 +579,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		cagePlan = null;
 		cageStage = null;
 		cageBlock = null;
-		cageStageTicks = cageBlockTicks = cagesOpened = 0;
+		cageStageTicks = cageBlockTicks = cagesOpened = roofBroken = roofSkipped = 0;
 		cageAttempts.clear();
 		cageUnavailable = null;
 	}
@@ -607,7 +619,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		detail += " crystalsDestroyed=" + crystalsDestroyed + " skipped=" + skippedCrystals.values()
 			+ " noShotFromHere=" + blockedCrystals.size() + " headHits=" + headHits
 			+ " arrowsShot=" + arrowsShot + " dodges=" + dodges + " cagesOpened=" + cagesOpened
-			+ (cageStage == null ? "" : " cageStage=" + cageStage) + " navigationGoal=" + navigationGoal + " activeTicks=" + activeTicks;
+			+ (cageStage == null ? "" : " cageStage=" + cageStage + " roofLeft=" + (cagePlan.roof().size() + (cageBlock == null ? 0 : 1)))
+			+ " roofBroken=" + roofBroken + " roofSkipped=" + roofSkipped + " navigationGoal=" + navigationGoal + " activeTicks=" + activeTicks;
 		snapshot = new TaskExecutionSnapshot(state, request.taskId(), null, "FightEnderDragon", detail, null, null);
 	}
 
@@ -684,6 +697,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		Optional<CagePlan> cagePlan(Fight fight, Crystal crystal);
 		/** Works on breaking one block from where the player stands. */
 		BreakResult breakBlock(GoalPosition block);
+		/** The block the player stands on, or empty while in the air. */
+		Optional<GoalPosition> supportBelow();
 		void stopBreaking();
 		void release();
 	}
