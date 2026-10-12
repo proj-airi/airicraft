@@ -172,7 +172,8 @@ public final class SurvivalReflexRuntime {
 			drowningDamageObserved = true;
 			return;
 		}
-		if (!observation.attackerLiving() || observation.attackerPlayer() || observation.attackerUuid() == null) {
+		if (!observation.attackerLiving() || observation.attackerPlayer() || observation.attackerUuid() == null
+			|| !reflexThreatType(observation.attackerEntityTypeId())) {
 			return;
 		}
 		observedThreats.put(observation.attackerUuid(), new ObservedThreat(
@@ -1118,7 +1119,7 @@ public final class SurvivalReflexRuntime {
 		return bestSlot;
 	}
 
-	static int combatItemRank(String itemId) {
+	public static int combatItemRank(String itemId) {
 		return switch (itemId == null ? "" : itemId) {
 			case "minecraft:netherite_sword" -> 0;
 			case "minecraft:diamond_sword" -> 1;
@@ -1431,7 +1432,8 @@ public final class SurvivalReflexRuntime {
 				|| mob.getTarget() != null && player.getUUID().equals(mob.getTarget().getUUID());
 			boolean visibleHostile = mob.getType().getCategory() == net.minecraft.world.entity.MobCategory.MONSTER
 				&& !(mob instanceof net.minecraft.world.entity.NeutralMob) && player.hasLineOfSight(mob);
-			if (!shouldDetectProactiveThreat(targetsUs || visibleHostile, mob.isAlive())
+			if (!reflexThreatType(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())
+				|| !shouldDetectProactiveThreat(targetsUs || visibleHostile, mob.isAlive())
 				|| !policy().observesMob(player.distanceTo(mob))) {
 				continue;
 			}
@@ -1504,6 +1506,14 @@ public final class SurvivalReflexRuntime {
 		catch (RuntimeException exception) {
 			recordActuatorFailure("maintain_drowning_safety_hold", exception, tick);
 		}
+	}
+
+	/**
+	 * The Ender Dragon is not a reflex threat: melee pursuit cannot reach a flying boss and would hold the
+	 * fight_ender_dragon task, which dodges its breath and hits its head when it perches.
+	 */
+	static boolean reflexThreatType(String entityTypeId) {
+		return !"minecraft:ender_dragon".equals(entityTypeId);
 	}
 
 	static boolean isRangedThreat(LivingEntity entity) {

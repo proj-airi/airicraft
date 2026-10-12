@@ -3611,6 +3611,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				applyPlannerJobTool(ActiveJobProposal.lureEntities(lure));
 				yield queuedActionToolResult("lure_entities", "destination=" + lure);
 			}
+			case PlannerToolCatalog.FIGHT_ENDER_DRAGON -> {
+				applyPlannerJobTool(ActiveJobProposal.fightEnderDragon());
+				yield queuedActionToolResult("fight_ender_dragon", "target=minecraft:ender_dragon");
+			}
 			case PlannerToolCatalog.TEND_CROPS -> {
 				var cropTending = ai.moeru.airicraft.agent.tasks.CropTendingStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.tendCrops(cropTending));
@@ -5203,7 +5207,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, ASK_USER -> false;
 		};
 	}
 
@@ -5447,7 +5451,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (type) {
 			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS -> true;
-			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES -> false;
+			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> false;
 		};
 	}
 

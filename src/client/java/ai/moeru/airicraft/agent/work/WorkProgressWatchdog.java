@@ -42,7 +42,9 @@ public final class WorkProgressWatchdog {
 		var notices = new ArrayList<Notice>();
 		for (var w : work) {
 			if (!w.foreground() || w.state() != WorkSnapshot.State.RUNNING || parents.contains(w.handle().id())
-				|| w.label().equals("ASK_USER") || w.label().equals("run_policy")) continue;
+				|| w.label().equals("ASK_USER") || w.label().equals("run_policy")
+				// Waiting for the dragon to perch is the fight; the task has its own no-progress deadline.
+				|| w.label().equals("FIGHT_ENDER_DRAGON")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			var cell = new Cell(Math.round(sample.x()), Math.round(sample.y()), Math.round(sample.z()));
