@@ -195,8 +195,18 @@ final class ToolFixtureService {
 		if (request != null && request.query() != null) {
 			for (Pos pos : request.query()) {
 				var blockState = level.getBlockState(new BlockPos(pos.x(), pos.y(), pos.z()));
-				blocks.add(Map.of("x", pos.x(), "y", pos.y(), "z", pos.z(), "block",
-					BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString(), "state", blockState.toString()));
+				Map<String, Object> entry = new LinkedHashMap<>();
+				entry.put("x", pos.x());
+				entry.put("y", pos.y());
+				entry.put("z", pos.z());
+				entry.put("block", BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString());
+				entry.put("state", blockState.toString());
+				// Mod machines keep their running state (for example a kinetic Speed) in block entity data.
+				String blockEntityData = blockEntityData(level, new BlockPos(pos.x(), pos.y(), pos.z()));
+				if (blockEntityData != null) {
+					entry.put("blockEntity", blockEntityData);
+				}
+				blocks.add(entry);
 			}
 		}
 		payload.put("blocks", blocks);
@@ -224,6 +234,16 @@ final class ToolFixtureService {
 		}
 		payload.put("drops", drops);
 		return payload;
+	}
+
+	/** Block entities are only reachable from the server thread; this fixture runs on another one. */
+	private static String blockEntityData(ServerLevel level, BlockPos pos) {
+		var server = level.getServer();
+		java.util.function.Supplier<String> read = () -> {
+			var blockEntity = level.getBlockEntity(pos);
+			return blockEntity == null ? null : blockEntity.saveWithFullMetadata(level.registryAccess()).toString();
+		};
+		return server.isSameThread() ? read.get() : server.submit(read).join();
 	}
 
 	private static void fill(ServerLevel level, BlockPos from, BlockPos to, Block block) {

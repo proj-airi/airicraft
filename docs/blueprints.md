@@ -1817,3 +1817,11 @@ Forest world, search centred on the dense-forest cabin site: the best candidates
 | 3 (an unreachable repair stance is now one failed attempt) | still running after 9 min: 22 placed, 31 left, 101 failed attempts. |
 
 Takeaway: choosing a flat clear site removes the terrain problems, but digging the ground under a floor and the scaffold search still make even a flat build slow. A design with a foundation or a floor at ground level (no dig) would avoid the dig entirely; the designer should be told the ground height.
+
+## Modded blocks (Create power line)
+
+A blueprint cell state may name any registered block, for example `create:shaft[axis=z]`; construction places it through `place_block` with `expectedState` and verifies the exact state. Live check on 2026-10-12 with Create Fly 1.21.8 (`examples/create-power-line.js`, flat arena, dirt and cobblestone supplied for scaffolding): water wheel, three shafts, mechanical press and a depot were built from scratch, the whole line ran at -8 RPM once a water source flowed beside the wheel, and an iron ingot on the depot became `create:iron_sheet`.
+
+- Create picks some facings from neighbouring kinetic blocks, so not every state is attainable at every point in the build order. An unattainable state fails with `placement_state_requires_different_approach` rather than placing a different block. In this layout the wheel is placed first and alone (`facing=south`), the press beside shafts (`facing=north`).
+- A press needs one empty block between its head and the depot or belt below it.
+- The evaluator's tool-fixture `state` query returns `blockEntity` data for queried blocks, so machine state (a kinetic `Speed`, a depot's held item) can be checked without a model.
