@@ -1684,6 +1684,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return dialogueRuntime.isDegraded();
 	}
 
+	public long providerOutageMillis() {
+		return dialogueRuntime.providerOutageMillis();
+	}
+
+	/** Lets a degraded planner recover while client ticks are held for the outage. */
+	public void pollProviderRecovery() {
+		dialogueRuntime.pollProviderRecovery(tickCount, eventBus);
+	}
+
 	public boolean plannerEnabled() {
 		return dialogueRuntime.plannerEnabled();
 	}

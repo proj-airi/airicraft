@@ -1930,6 +1930,8 @@ public final class ModBridgeServer {
 			response.put("plannerVisionMode", plannerSnapshot.plannerVisionMode());
 			response.put("observability", agentRuntime().observabilityDebugSnapshot());
 			response.put("degraded", agentRuntime().isDegraded());
+			response.put("providerOutageMillis", agentRuntime().providerOutageMillis());
+			response.put("providerOutagePaused", AiricraftClient.runtimeController().providerOutagePause().paused());
 			response.put("plannerJournal", agentRuntime().plannerShellJournal());
 			response.put("eventPolicy", eventPolicySummaryPayload());
 			return response;

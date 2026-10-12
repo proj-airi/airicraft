@@ -18,16 +18,12 @@ public abstract class MinecraftClientTickDebugMixin {
 	))
 	private boolean airicraft$gateClientTick(Minecraft minecraft) {
 		if (minecraft.level != null && AiricraftClient.runtimeController().automaticPlaytest().emptyHostPaused()) {
-			// Preserve UI and protocol maintenance without running gameplay or agent callbacks.
-			if (minecraft.getOverlay() == null) {
-				if (minecraft.screen != null) minecraft.screen.tick();
-				else {
-					if (minecraft.options.keyChat.consumeClick()) openChatScreen("");
-					else if (minecraft.options.keyCommand.consumeClick()) openChatScreen("/");
-				}
-			}
-			if (minecraft.getConnection() != null) minecraft.getConnection().getConnection().tick();
-			AiricraftClient.runtimeController().automaticPlaytest().maintainPausedHost(minecraft);
+			maintainHeldGame(minecraft);
+			return false;
+		}
+		// A provider outage holds the game until the degraded planner's cooldown ends; chat stays open for '@agent reset'.
+		if (minecraft.level != null && AiricraftClient.runtimeController().holdForProviderOutage(minecraft)) {
+			maintainHeldGame(minecraft);
 			return false;
 		}
 		// Tick debugging only applies in-world. Menus, the connect screen and
@@ -36,6 +32,19 @@ public abstract class MinecraftClientTickDebugMixin {
 			return true;
 		}
 		return AiricraftClient.runtimeController().clientTickDebugRuntime().beginClientTick();
+	}
+
+	// Preserve UI and protocol maintenance without running gameplay or agent callbacks.
+	private void maintainHeldGame(Minecraft minecraft) {
+		if (minecraft.getOverlay() == null) {
+			if (minecraft.screen != null) minecraft.screen.tick();
+			else {
+				if (minecraft.options.keyChat.consumeClick()) openChatScreen("");
+				else if (minecraft.options.keyCommand.consumeClick()) openChatScreen("/");
+			}
+		}
+		if (minecraft.getConnection() != null) minecraft.getConnection().getConnection().tick();
+		AiricraftClient.runtimeController().automaticPlaytest().maintainPausedHost(minecraft);
 	}
 
 	@ModifyExpressionValue(method = "runTick", at = @At(

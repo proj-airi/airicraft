@@ -159,7 +159,13 @@ class CodexFollowupTest(unittest.TestCase):
 
 
 class PlaytestPlannerDegradationTest(unittest.TestCase):
-    def test_open_ended_run_stops_gracefully_after_planner_degrades(self):
+    def test_outage_threshold(self):
+        self.assertFalse(playtest.planner_outage_exceeded({"degraded": True, "providerOutageMillis": 60_000}, 1800))
+        self.assertTrue(playtest.planner_outage_exceeded({"degraded": False, "providerOutageMillis": 1_800_000}, 1800))
+        self.assertTrue(playtest.planner_outage_exceeded({"degraded": True}, 0))
+        self.assertFalse(playtest.planner_outage_exceeded({"degraded": False}, 0))
+
+    def test_open_ended_run_stops_gracefully_after_a_long_provider_outage(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             world = root / "world"
@@ -168,13 +174,15 @@ class PlaytestPlannerDegradationTest(unittest.TestCase):
             profile = root / "recorder.jar"
             profile.touch()
             args = SimpleNamespace(world=world, output=root / "output", recorder_jar=str(profile),
-                                   objective="Survive", max_seconds=0, startup_timeout=10)
+                                   objective="Survive", max_seconds=0, startup_timeout=10, degraded_timeout=1800)
             bridge = SimpleNamespace(process_id=123)
             client = Mock()
             client.process.pid = 122
             client.process.poll.return_value = None
             client.line_queue.empty.return_value = True
-            agent_states = iter([{"degraded": False}, {"degraded": True}])
+            # A short degraded period recovers on its own; a 30-minute outage ends the run.
+            agent_states = iter([{"degraded": True, "providerOutageMillis": 30_000},
+                                 {"degraded": True, "providerOutageMillis": 1_800_000}])
             requests = []
 
             def bridge_json(connection, method, path, body=None):
@@ -224,7 +232,7 @@ class PlaytestFatalFailureTest(unittest.TestCase):
             profile = root / "recorder.jar"
             profile.touch()
             args = SimpleNamespace(world=world, output=root / "output", recorder_jar=str(profile),
-                                   objective="", max_seconds=0, startup_timeout=10)
+                                   objective="", max_seconds=0, startup_timeout=10, degraded_timeout=0)
             client = Mock()
             client.process.pid = 122
             client.process.poll.return_value = None
@@ -324,7 +332,7 @@ class PlaytestLiveDebugTest(unittest.TestCase):
             profile = root / "recorder.jar"
             profile.touch()
             args = SimpleNamespace(world=world, output=root / "output", recorder_jar=str(profile),
-                                   objective="Survive", max_seconds=2, startup_timeout=10)
+                                   objective="Survive", max_seconds=2, startup_timeout=10, degraded_timeout=1800)
             client = Mock()
             client.process.pid = 122
             client.process.poll.return_value = None

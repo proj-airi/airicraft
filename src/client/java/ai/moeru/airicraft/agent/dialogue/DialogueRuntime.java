@@ -343,6 +343,17 @@ public final class DialogueRuntime {
 		return state.degraded();
 	}
 
+	/** Ends a degraded period whose cooldown has passed; also runs while the game is paused for the outage. */
+	public void pollProviderRecovery(long tick, EventStream eventBuffer) {
+		if (DialogueCore.degradedCooldownElapsed(state, clock.millis()))
+			applyTransition(DialogueCore.onDegradedCooldownElapsed(state, clock.millis()), tick, eventBuffer);
+	}
+
+	/** Wall-clock time since the provider outage began (0 when the last turn succeeded or no outage). */
+	public long providerOutageMillis() {
+		return DialogueCore.outageMillis(state, clock.millis());
+	}
+
 	public boolean llmAvailable() {
 		return activePlanner().isConfigured();
 	}
@@ -685,8 +696,7 @@ public final class DialogueRuntime {
 		}
 
 		// A degraded planner recovers on its own once the cooldown passes; '@agent reset' only shortens the wait.
-		if (DialogueCore.degradedCooldownElapsed(state, tick))
-			applyTransition(DialogueCore.onDegradedCooldownElapsed(state, tick), tick, eventBuffer);
+		pollProviderRecovery(tick, eventBuffer);
 
 		if (pollPolicyContinuation(tick, eventBuffer)) return null;
 
@@ -695,7 +705,7 @@ public final class DialogueRuntime {
 		if (queuedTimeoutInjections > 0 && !activePlanner().hasInFlight()) {
 			queuedTimeoutInjections--;
 			applyTransition(DialogueCore.onPlannerFailure(state, LlmFailureType.TIMEOUT, "Injected LLM timeout",
-				pendingTimeoutVisibleReply, tick, resetGuidance(), messages), tick, eventBuffer);
+				pendingTimeoutVisibleReply, tick, clock.millis(), resetGuidance(), messages), tick, eventBuffer);
 			pendingTimeoutVisibleReply = false;
 			return null;
 		}
@@ -738,6 +748,7 @@ public final class DialogueRuntime {
 					result.failureMessage(),
 					timeoutVisibleReply,
 					tick,
+					clock.millis(),
 					resetGuidance(),
 					messages
 				),
