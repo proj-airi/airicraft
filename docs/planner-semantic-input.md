@@ -35,12 +35,14 @@ Health 20/20; food full; saturation 20; air full.
 Work and evidence use distinct statements. A receipt's acceptance never means physical completion:
 
 ```text
-Accepted; Work @r28; task SMELT_ITEMS; state QUEUED; phase IDLE; updated tick 3501; collected 0; result ...
+Accepted; Work @r28; task SMELT_ITEMS; state QUEUED; phase IDLE; updated just now; collected 0; result ...
 Current work:
-  Work @r28; task SMELT_ITEMS; state and phase RUNNING; updated tick 3501; message opening_furnace.
+  Work @r28; task SMELT_ITEMS; state and phase RUNNING; updated 2s ago; message opening_furnace.
 Evidence after 160 through 166.
-Event 166 at tick 3501: work.changed: same snapshot as current work @r28.
+Event 166, 2s ago: work.changed: same snapshot as current work @r28.
 ```
+
+Times are ages relative to the observation, never raw ticks: a `fooTick` field reads as `foo` with an age ("12s ago", "in 5s"), a `fooTicks` field as `foo` with a duration ("1.5s", "4m 10s"). A negative duration is a "no estimate" sentinel and reads as `unknown`. The server tick, world tick and wall-clock timestamps are left out. Work tool results carry `updatedTicksAgo` from the runtime, so retained work reads as "updated 8m 15s ago". Observation deltas leave out timestamps that only moved on, but keep durations that grew. Recordings, rules and the debug CLI keep raw ticks.
 
 The event alias is allowed only when the complete projected payload equals the current snapshot. Similar states, missing fields and earlier failures do not qualify.
 

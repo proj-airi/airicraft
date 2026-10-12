@@ -15,7 +15,7 @@ class PlannerInputTextTest {
 	@Test void inventoryCapacitySurvivesPlannerPresentation() {
 		String text = PlannerInputText.observation(Map.of("current", Map.of("inventoryCapacity",
 			Map.of("freeStorageSlots", 0, "pickupConstraint", "Only compatible non-full stacks can accept pickups"))));
-		assertTrue(text.contains("freeStorageSlots"));
+		assertTrue(text.contains("0 free storage slots"), text);
 		assertTrue(text.contains("Only compatible non-full stacks can accept pickups"));
 	}
 
@@ -46,7 +46,8 @@ class PlannerInputTextTest {
 				assertTrue(prose.contains(context.getAsJsonObject("current").getAsJsonObject("objective").get("objective").getAsString()));
 				for (var event : context.getAsJsonArray("events")) {
 					var e = event.getAsJsonObject();
-					assertTrue(prose.contains("Event " + e.get("seqNo") + " at tick " + e.get("tick") + ": " + e.get("type").getAsString()));
+					String when = PlannerInputText.ago(context.get("tick").getAsLong() - e.get("tick").getAsLong());
+					assertTrue(prose.contains("Event " + e.get("seqNo") + ", " + when + ": " + e.get("type").getAsString()), prose);
 				}
 			}
 		}
@@ -78,10 +79,17 @@ class PlannerInputTextTest {
 
 	@Test void unknownCurrentFactsEndTheirOwnLine() {
 		var payload = new java.util.LinkedHashMap<String, Object>();
-		payload.put("current", Map.of("reflexPolicy", Map.of("combatEnabled", true)));
+		payload.put("current", Map.of("futurePolicy", Map.of("combatEnabled", true)));
 		payload.put("toolQueue", Map.of("pending", java.util.List.of()));
 		String prose = PlannerInputText.observation(payload);
-		assertTrue(prose.contains("{\"reflexPolicy\":{\"combatEnabled\":true}}\nTool queue: "), prose);
+		assertTrue(prose.contains("{\"futurePolicy\":{\"combatEnabled\":true}}\nTool queue: "), prose);
+	}
+
+	@Test void armorPolicyReadsAsSettings() {
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("current", Map.of("armorPolicy", new java.util.LinkedHashMap<>(Map.of("enabled", true))));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("Armor policy: enabled true\n"), prose);
 	}
 
 	@Test void wakeLeadsTheObservationAndHintsAreLabelledRuntimeCoaching() {
@@ -151,4 +159,77 @@ class PlannerInputTextTest {
 		assertEquals(message.kind(), display.messages().getFirst().kind());
 	}
 
+
+	@Test void repeatedPickupsAndIdleDefaultsCollapse() {
+		var events = new java.util.ArrayList<Object>();
+		for (int seq = 5; seq <= 7; seq++) events.add(Map.of("seqNo", seq, "tick", 100 + seq, "type", "pickup.item_picked_up",
+			"payload", Map.of("itemId", "minecraft:dirt", "count", 1, "actor", "self")));
+		events.add(Map.of("seqNo", 8, "tick", 110, "type", "pickup.item_picked_up", "payload", Map.of("itemId", "minecraft:stone", "count", 2, "actor", "self")));
+		events.add(Map.of("seqNo", 10, "tick", 112, "type", "pickup.item_picked_up", "payload", Map.of("itemId", "minecraft:stone", "count", 1, "actor", "self")));
+		events.add(Map.of("seqNo", 11, "tick", 113, "type", "task.started", "payload", Map.of("missionId", "build:hut", "activeStepKind", "CRAFT_RECIPE")));
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("current", Map.of(
+			"physical", Map.of("grounded", true, "velocity", Map.of("x", 0.0, "y", -0.0784000015258789, "z", 0.0)),
+			"reflex", Map.of("state", "IDLE", "safetyEpoch", 0, "threats", java.util.List.of(), "health", 20.0, "maxHealth", 20.0,
+				"startedTick", -1, "lastDangerTick", -1, "breathableTicks", 0),
+			"travelRestrictions", new Gson().fromJson("{\"error\":\"\",\"userBounds\":null,\"strategyBounds\":null,\"coordinateMeaning\":\"inclusive cells\"}", JsonObject.class)));
+		payload.put("toolQueue", Map.of("pending", java.util.List.of(), "aborting", false));
+		payload.put("events", events);
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("Events 5-7 at ticks 105-107: pickup.item_picked_up x3: picked up 3 dirt in total; actor self"), prose);
+		assertTrue(prose.contains("Event 8 at tick 110: pickup.item_picked_up"), prose);
+		assertTrue(prose.contains("Event 10 at tick 112: pickup.item_picked_up"), prose);
+		assertTrue(prose.contains("Work JOB:build:hut"), prose);
+		assertTrue(prose.contains("Reflex: IDLE\n"), prose);
+		assertTrue(prose.contains("Travel restrictions: none\n"), prose);
+		assertTrue(prose.contains("Tool queue: empty."), prose);
+		assertFalse(prose.contains("velocity"), prose);
+	}
+
+	@Test void ticksBecomeAgesAndDurationsRelativeToTheObservation() {
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("worldSessionId", "w1");
+		payload.put("tick", 1000);
+		payload.put("serverTick", 5000);
+		payload.put("current", Map.of(
+			"work", java.util.List.of(Map.of("workId", "JOB:one", "state", "RUNNING", "updatedTick", 940)),
+			"reflex", Map.of("state", "ACTIVE", "safetyEpoch", 2, "startedTick", 960, "lastDangerTick", 1000, "breathableTicks", 30)));
+		payload.put("events", java.util.List.of(
+			Map.of("seqNo", 5, "tick", 400, "type", "task.notice", "payload", Map.of("reason", "slow_mining", "estimatedBreakTicks", 45, "retryAtTick", 1100)),
+			Map.of("seqNo", 6, "tick", 700, "type", "pickup.item_picked_up", "payload", Map.of("itemId", "minecraft:dirt", "count", 1, "actor", "self")),
+			Map.of("seqNo", 7, "tick", 760, "type", "pickup.item_picked_up", "payload", Map.of("itemId", "minecraft:dirt", "count", 1, "actor", "self"))));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.startsWith("World w1.\n"), prose);
+		assertFalse(prose.contains("5000"), prose);
+		assertTrue(prose.contains("Work JOB:one; state RUNNING; updated 3s ago."), prose);
+		assertTrue(prose.contains("Reflex: ACTIVE; safety epoch 2; started 2s ago; last danger just now; breathable for 1.5s\n"), prose);
+		assertTrue(prose.contains("Event 5, 30s ago: task.notice: "), prose);
+		assertTrue(prose.contains("\"estimatedBreak\":\"2.3s\""), prose);
+		assertTrue(prose.contains("\"retry\":\"in 5s\""), prose);
+		assertTrue(prose.contains("Events 6-7, from 15s ago to 12s ago: pickup.item_picked_up x2"), prose);
+		assertFalse(prose.contains("Tick"), prose);
+	}
+
+	@Test void durationsReadAsSecondsMinutesAndHours() {
+		assertEquals("just now", PlannerInputText.ago(0));
+		assertEquals("0.5s ago", PlannerInputText.ago(10));
+		assertEquals("in 1s", PlannerInputText.ago(-20));
+		assertEquals("12s", PlannerInputText.duration(240));
+		assertEquals("1m", PlannerInputText.duration(1200));
+		assertEquals("1m 5s", PlannerInputText.duration(1300));
+		assertEquals("1h 2m", PlannerInputText.duration(74_400));
+	}
+
+	@Test void toolResultsShowTheUpdateAgeInsteadOfTheTick() {
+		String prose = PlannerInputText.message("tool", "Tool result for inspect_work: {\"workId\":\"JOB:one\",\"state\":\"SUCCEEDED\",\"updatedTick\":100,\"updatedTicksAgo\":9900}");
+		assertTrue(prose.contains("updated 8m 15s ago"), prose);
+		assertFalse(prose.contains("100"), prose);
+	}
+
+	@Test void negativeDurationsAreUnknownNotZero() {
+		var payload = Map.<String, Object>of("tick", 50, "events", java.util.List.of(
+			Map.of("seqNo", 1, "tick", 50, "type", "task.notice", "payload", Map.of("reason", "slow_mining", "estimatedBreakTicks", -1))));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("\"estimatedBreak\":\"unknown\""), prose);
+	}
 }
