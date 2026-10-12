@@ -2953,13 +2953,14 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		try {
 			program = new ai.moeru.airicraft.portal.NetherPortalProgram(prepared.frame(),
 				new ai.moeru.airicraft.blueprint.BlueprintConstructionProgram(prepared.cells(), environment),
-				ai.moeru.airicraft.portal.MinecraftNetherPortal.world(client, prepared.frame()), prepared.igniter(), prepared.light());
+				ai.moeru.airicraft.portal.MinecraftNetherPortal.world(client, prepared.frame()), prepared.igniter(), prepared.light(), prepared.enter());
 		} catch (RuntimeException error) { environment.close(); throw error; }
 		policyChildren.clear();
 		var host = new ToolPolicyHost(this::dispatchPolicyTool, this::describePolicyTool, workHistory::find, this::cancelPolicyChildren, () -> new ContainerPolicyHost(client));
 		var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, ai.moeru.airicraft.agent.work.ReadableIds.next("op"));
 		var request = new LinkedHashMap<String, Object>(prepared.frame().describe());
-		request.put("siteChosen", prepared.siteChosen());
+		request.put("site", prepared.site());
+		request.put("enter", prepared.enter());
 		request.put("cornerItem", prepared.cornerItem());
 		request.put("light", prepared.light());
 		policyWork = handle;

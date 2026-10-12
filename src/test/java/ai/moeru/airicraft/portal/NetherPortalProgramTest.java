@@ -17,6 +17,9 @@ class NetherPortalProgramTest {
 	private static final class Sim implements BlueprintConstructionProgram.Environment, NetherPortalProgram.World {
 		final Map<ConstructionEscape.Position, String> blocks = new HashMap<>();
 		boolean validFrameLights = true, playerInOpening;
+		int walkTicksNeeded = 5, teleportAfterInside = 80, steps, insideSteps;
+		boolean stopped;
+		String dimension = "minecraft:overworld";
 		final List<String> tools = new ArrayList<>();
 
 		String at(ConstructionEscape.Position p) { return p.y() <= 63 ? "minecraft:stone" : blocks.getOrDefault(p, "minecraft:air"); }
@@ -38,6 +41,14 @@ class NetherPortalProgramTest {
 		@Override public ConstructionEscape.Position lightingStance() { return new ConstructionEscape.Position(1, 64, 2); }
 		@Override public boolean playerInOpening() { return playerInOpening; }
 		@Override public void close() { }
+		@Override public NetherPortalProgram.Entry enterStep() {
+			if (!dimension.equals("minecraft:overworld")) return NetherPortalProgram.Entry.DIMENSION_CHANGED;
+			if (++steps <= walkTicksNeeded) return NetherPortalProgram.Entry.MOVING;
+			if (++insideSteps >= teleportAfterInside) dimension = "minecraft:the_nether";
+			return NetherPortalProgram.Entry.INSIDE;
+		}
+		@Override public void stopMoving() { stopped = true; }
+		@Override public String dimension() { return dimension; }
 
 		JsonElement apply(JsonObject step) {
 			var call = step.getAsJsonObject("value").getAsJsonObject("arguments");
@@ -72,7 +83,7 @@ class NetherPortalProgramTest {
 		CompletableFuture<JsonElement> pending = program.resume(JsonNull.INSTANCE);
 		for (int i = 0; i < 2000; i++) {
 			int ticks = 0;
-			while (!pending.isDone() && ticks++ < 200) program.tick();
+			while (!pending.isDone() && ticks++ < 1000) program.tick();
 			var step = pending.join().getAsJsonObject();
 			if (step.get("done").getAsBoolean()) return step.getAsJsonObject("value");
 			// Fire burns out between ticks when the frame is invalid.
@@ -166,6 +177,67 @@ class NetherPortalProgramTest {
 		var result = run(program, sim);
 		assertEquals("built_unlit", result.get("portal").getAsString());
 		assertFalse(sim.tools.contains("use_block"));
+	}
+
+	private static NetherPortalProgram entering(Sim sim) {
+		return new NetherPortalProgram(FRAME, new BlueprintConstructionProgram(FRAME.constructionCells("minecraft:dirt", Map.of()), sim), sim,
+			"minecraft:flint_and_steel", true, true);
+	}
+
+	@Test void entersThePortalAndSucceedsOnTheDimensionChange() {
+		var sim = new Sim();
+		var program = entering(sim);
+		JsonObject result = null;
+		CompletableFuture<JsonElement> pending = program.resume(JsonNull.INSTANCE);
+		for (int i = 0; i < 2000 && result == null; i++) {
+			int ticks = 0;
+			while (!pending.isDone() && ticks++ < 1000) program.tick();
+			var step = pending.join().getAsJsonObject();
+			if (step.get("done").getAsBoolean()) result = step.getAsJsonObject("value");
+			else pending = program.resume(sim.apply(step));
+		}
+		assertNotNull(result, sim.tools.toString());
+		assertEquals("entered", result.get("portal").getAsString());
+		assertEquals("minecraft:overworld", result.get("fromDimension").getAsString());
+		assertEquals("minecraft:the_nether", result.get("dimension").getAsString());
+		assertTrue(result.get("leftArrivalPortal").getAsBoolean());
+		assertTrue(sim.stopped);
+		// The approach is a normal walk to the stance; the step into portal blocks is the program's own.
+		assertEquals("navigate_to", sim.tools.getLast());
+	}
+
+	@Test void enteringAnAlreadyLitPortalBuildsNothing() {
+		var sim = new Sim();
+		for (var slot : FRAME.slots()) sim.blocks.put(slot.position(), slot.role() == NetherPortalFrame.Role.INTERIOR
+			? "minecraft:nether_portal[axis=x]" : NetherPortalFrame.OBSIDIAN);
+		var result = run(entering(sim), sim);
+		assertEquals("entered", result.get("portal").getAsString());
+		assertEquals(List.of("navigate_to"), sim.tools);
+	}
+
+	@Test void standingInTheArrivalPortalWalksOutAndBackWithoutNavigation() {
+		var sim = new Sim();
+		for (var slot : FRAME.slots()) sim.blocks.put(slot.position(), slot.role() == NetherPortalFrame.Role.INTERIOR
+			? "minecraft:nether_portal[axis=x]" : NetherPortalFrame.OBSIDIAN);
+		sim.playerInOpening = true;
+		var result = run(entering(sim), sim);
+		assertEquals("entered", result.get("portal").getAsString());
+		assertTrue(sim.tools.isEmpty(), sim.tools.toString());
+	}
+
+	@Test void blockedWalkFailsInsteadOfWaitingForever() {
+		var sim = new Sim();
+		sim.walkTicksNeeded = Integer.MAX_VALUE;
+		var error = assertThrows(CompletionException.class, () -> run(entering(sim), sim));
+		assertTrue(error.getCause().getMessage().startsWith("portal_entry_blocked"), error.getCause().getMessage());
+		assertTrue(sim.stopped);
+	}
+
+	@Test void portalThatNeverTeleportsFails() {
+		var sim = new Sim();
+		sim.teleportAfterInside = Integer.MAX_VALUE;
+		var error = assertThrows(CompletionException.class, () -> run(entering(sim), sim));
+		assertTrue(error.getCause().getMessage().startsWith("portal_did_not_teleport"), error.getCause().getMessage());
 	}
 
 	@Test void lightingRequiresAnIgniter() {

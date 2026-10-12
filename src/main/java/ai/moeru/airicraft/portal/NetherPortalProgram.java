@@ -15,6 +15,13 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 	/** Ticks to wait for portal blocks after the igniter was used. */
 	static final int VERIFY_TICKS = 40;
 	static final int MAX_IGNITIONS = 2;
+	/** Walking from the stance into the opening takes well under a second; longer means something is in the way. */
+	static final int ENTRY_WALK_TICKS = 120;
+	/** Survival players teleport after 80 ticks inside the portal; allow for lag. */
+	static final int ENTRY_WAIT_TICKS = 300;
+	static final int ARRIVAL_LEAVE_TICKS = 100;
+
+	public enum Entry { MOVING, INSIDE, DIMENSION_CHANGED }
 
 	public interface World extends AutoCloseable {
 		/** Block state text at a loaded position, for example {@code minecraft:obsidian}. */
@@ -22,16 +29,34 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		/** Standing position from which the ignition cell is reachable and outside the opening, or null. */
 		ConstructionEscape.Position lightingStance();
 		boolean playerInOpening();
+		/** Walks one tick toward the opening, or holds still once inside. Must not read the old level after a dimension change. */
+		/** Standing position to walk into the opening from, nearest first; defaults to the lighting stance. */
+		default ConstructionEscape.Position entryStance() { return lightingStance(); }
+		default boolean playerNear(ConstructionEscape.Position position) { return false; }
+		/** Where the player is, for failure messages. */
+		default String playerPosition() { return "unknown"; }
+		default Entry enterStep() { throw new UnsupportedOperationException("portal_entry_unsupported"); }
+		/** After a dimension change, walks one tick out of the arrival portal; true once out (or when there is nothing safe to do). */
+		default boolean leaveArrivalStep() { return true; }
+		/** Releases movement taken by {@link #enterStep}. */
+		default void stopMoving() { }
+		default String dimension() { return ""; }
 		@Override void close();
 	}
 
-	private enum Phase { BUILD, STANCE, INSPECT, IGNITE, VERIFY, EXIT, DONE }
+	private enum Phase { BUILD, STANCE, INSPECT, IGNITE, VERIFY, EXIT, APPROACH, ENTER, DONE }
 
 	private final NetherPortalFrame frame;
 	private final PolicyRuntime.Program construction;
 	private final World world;
 	private final String igniterItem;
-	private final boolean light;
+	private final boolean light, enter;
+	private String litOutcome = "lit";
+	private String startDimension = "";
+	private CompletableFuture<JsonElement> entering;
+	private int walkTicks, insideTicks, leaveTicks;
+	private boolean arrived;
+	private ConstructionEscape.Position entryStance;
 	private Phase phase = Phase.BUILD;
 	private JsonElement constructionResult = JsonNull.INSTANCE;
 	private CompletableFuture<JsonElement> verifying;
@@ -40,11 +65,17 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 	private boolean closed;
 
 	public NetherPortalProgram(NetherPortalFrame frame, PolicyRuntime.Program construction, World world, String igniterItem, boolean light) {
+		this(frame, construction, world, igniterItem, light, false);
+	}
+
+	public NetherPortalProgram(NetherPortalFrame frame, PolicyRuntime.Program construction, World world, String igniterItem, boolean light, boolean enter) {
 		this.frame = Objects.requireNonNull(frame);
 		this.construction = Objects.requireNonNull(construction);
 		this.world = Objects.requireNonNull(world);
 		this.igniterItem = igniterItem;
 		this.light = light;
+		this.enter = enter;
+		if (enter && !light) throw new IllegalArgumentException("portal_entry_requires_light");
 		if (light && (igniterItem == null || igniterItem.isBlank())) throw new IllegalArgumentException("portal_igniter_missing");
 	}
 
@@ -53,10 +84,10 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		try {
 			return switch (phase) {
 				case BUILD -> {
-					if (result.isJsonNull() && lit()) yield CompletableFuture.completedFuture(finish("already_lit"));
-					yield construction.resume(result).thenApply(step -> {
+					if (result.isJsonNull() && lit()) yield afterLit("already_lit");
+					yield construction.resume(result).thenCompose(step -> {
 						var object = step.getAsJsonObject();
-						if (!object.get("done").getAsBoolean()) return step;
+						if (!object.get("done").getAsBoolean()) return CompletableFuture.completedFuture(step);
 						constructionResult = object.get("value").deepCopy();
 						return afterBuild();
 					});
@@ -74,8 +105,13 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 					verifying = new CompletableFuture<>();
 					yield verifying;
 				}
-				case EXIT -> CompletableFuture.completedFuture(finish("lit"));
-				case VERIFY, DONE -> throw new IllegalStateException("portal_unexpected_result phase=" + phase);
+				case EXIT -> CompletableFuture.completedFuture(finish(litOutcome));
+				case APPROACH -> {
+					if (!ok(result) && !world.playerNear(entryStance)) throw new IllegalStateException("portal_entry_stance_unreachable stance=" + key(entryStance)
+						+ " player=" + world.playerPosition() + " error=" + error(result));
+					yield startEntering();
+				}
+				case VERIFY, ENTER, DONE -> throw new IllegalStateException("portal_unexpected_result phase=" + phase);
 			};
 		} catch (RuntimeException error) {
 			return CompletableFuture.failedFuture(error);
@@ -84,14 +120,15 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 
 	@Override public void tick() {
 		if (phase == Phase.BUILD) construction.tick();
+		if (phase == Phase.ENTER) { tickEntering(); return; }
 		if (phase != Phase.VERIFY || verifying == null || verifying.isDone()) return;
 		var future = verifying;
 		try {
-			if (lit()) {
-				var stance = world.playerInOpening() ? world.lightingStance() : null;
-				if (stance != null) { phase = Phase.EXIT; future.complete(navigate(stance)); }
-				else future.complete(finish("lit"));
-			} else if (++verifyTicks >= VERIFY_TICKS) {
+			if (lit()) afterLit("lit").whenComplete((step, error) -> {
+				if (error != null) future.completeExceptionally(error);
+				else future.complete(step);
+			});
+			else if (++verifyTicks >= VERIFY_TICKS) {
 				if (ignitions < MAX_IGNITIONS) future.complete(inspect());
 				else future.completeExceptionally(new IllegalStateException("portal_not_lit" + diagnosis()));
 			}
@@ -112,16 +149,81 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		if (closed) return;
 		closed = true;
 		if (verifying != null && !verifying.isDone()) verifying.completeExceptionally(new IllegalStateException("portal_cancelled"));
-		try { construction.close(); } finally { world.close(); }
+		if (entering != null && !entering.isDone()) entering.completeExceptionally(new IllegalStateException("portal_cancelled"));
+		try { world.stopMoving(); construction.close(); } finally { world.close(); }
 	}
 
-	private JsonElement afterBuild() {
-		if (!light) return finish("built_unlit");
-		if (lit()) return finish("already_lit");
+	private CompletableFuture<JsonElement> afterBuild() {
+		if (!light) return CompletableFuture.completedFuture(finish("built_unlit"));
+		if (lit()) return afterLit("already_lit");
 		var stance = world.lightingStance();
-		if (stance == null) return inspect();
+		if (stance == null) return CompletableFuture.completedFuture(inspect());
 		phase = Phase.STANCE;
-		return navigate(stance);
+		return CompletableFuture.completedFuture(navigate(stance));
+	}
+
+	/** A lit portal: step out of it, or walk in when asked to travel. */
+	private CompletableFuture<JsonElement> afterLit(String outcome) {
+		litOutcome = outcome;
+		if (enter) {
+			entryStance = world.entryStance();
+			if (entryStance == null) throw new IllegalStateException("portal_entry_stance_not_found: no standing spot in front of or behind the opening" + diagnosis());
+			// Just arrived through this portal: navigation cannot start inside portal blocks, so step out and back in on foot.
+			if (world.playerInOpening()) return startEntering();
+			phase = Phase.APPROACH;
+			return CompletableFuture.completedFuture(navigate(entryStance));
+		}
+		var stance = world.lightingStance();
+		if (stance != null && world.playerInOpening()) {
+			phase = Phase.EXIT;
+			return CompletableFuture.completedFuture(navigate(stance));
+		}
+		return CompletableFuture.completedFuture(finish(outcome));
+	}
+
+	private CompletableFuture<JsonElement> startEntering() {
+		phase = Phase.ENTER;
+		startDimension = world.dimension();
+		walkTicks = 0;
+		insideTicks = 0;
+		entering = new CompletableFuture<>();
+		return entering;
+	}
+
+	private void tickEntering() {
+		if (entering == null || entering.isDone()) return;
+		try {
+			if (arrived) {
+				// Navigation cannot start inside portal blocks, so the arrival portal is left before reporting.
+				boolean out = world.leaveArrivalStep();
+				if (out || ++leaveTicks > ARRIVAL_LEAVE_TICKS) {
+					world.stopMoving();
+					var step = finish("entered");
+					step.getAsJsonObject("value").addProperty("leftArrivalPortal", out);
+					entering.complete(step);
+				}
+				return;
+			}
+			switch (world.enterStep()) {
+				case DIMENSION_CHANGED -> { arrived = true; leaveTicks = 0; }
+				case INSIDE -> {
+					if (++insideTicks > ENTRY_WAIT_TICKS) {
+						world.stopMoving();
+						entering.completeExceptionally(new IllegalStateException("portal_did_not_teleport insideTicks=" + insideTicks));
+					}
+				}
+				case MOVING -> {
+					if (++walkTicks > ENTRY_WALK_TICKS) {
+						world.stopMoving();
+						entering.completeExceptionally(new IllegalStateException("portal_entry_blocked: could not walk into the opening stance="
+							+ key(entryStance) + " player=" + world.playerPosition()));
+					}
+				}
+			}
+		} catch (RuntimeException error) {
+			world.stopMoving();
+			entering.completeExceptionally(error);
+		}
 	}
 
 	private JsonElement inspect() {
@@ -159,12 +261,16 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		return effect("navigate_to", args);
 	}
 
-	private JsonElement finish(String outcome) {
+	private JsonObject finish(String outcome) {
 		phase = Phase.DONE;
 		var value = new JsonObject();
 		value.addProperty("portal", outcome);
 		value.add("frame", new Gson().toJsonTree(frame.describe()));
 		value.addProperty("ignitions", ignitions);
+		if (outcome.equals("entered")) {
+			value.addProperty("fromDimension", startDimension);
+			value.addProperty("dimension", world.dimension());
+		}
 		value.add("construction", constructionResult.deepCopy());
 		var done = new JsonObject();
 		done.addProperty("done", true);
@@ -192,6 +298,8 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		String prefix = lastIgnitionError.isEmpty() ? "" : " lastIgnitionError=" + lastIgnitionError;
 		return prefix + (wrong.isEmpty() ? " frameCells=all_correct" : " wrongCells=" + String.join(";", wrong));
 	}
+
+	private static String key(ConstructionEscape.Position p) { return p == null ? "none" : p.x() + "," + p.y() + "," + p.z(); }
 
 	private static boolean ok(JsonElement result) {
 		return result != null && result.isJsonObject() && result.getAsJsonObject().has("ok") && result.getAsJsonObject().get("ok").getAsBoolean();

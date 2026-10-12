@@ -3,7 +3,6 @@ package ai.moeru.airicraft.portal;
 import ai.moeru.airicraft.blueprint.BlueprintConstructionProgram;
 import ai.moeru.airicraft.blueprint.ConstructionEscape;
 import java.util.*;
-import java.util.function.Predicate;
 
 /**
  * The smallest vanilla Nether portal: a 4 wide by 5 tall frame around a 2 by 3 opening.
@@ -67,6 +66,29 @@ public record NetherPortalFrame(int x, int y, int z, Axis axis) {
 				: new ConstructionEscape.Position(cell.x() + side, cell.y(), cell.z()));
 		}
 		return List.copyOf(stances);
+	}
+
+	/**
+	 * Feet positions from which a straight walk reaches the opening: one or two blocks in front
+	 * of or behind an opening column, standing on the bottom bar's level or one below it.
+	 */
+	public List<ConstructionEscape.Position> entryStanceCandidates() {
+		var stances = new ArrayList<ConstructionEscape.Position>();
+		for (int side : new int[]{1, -1, 2, -2}) for (int up : new int[]{1, 0}) for (int along : new int[]{1, 2}) {
+			var cell = at(along, up);
+			stances.add(axis == Axis.X ? new ConstructionEscape.Position(cell.x(), cell.y(), cell.z() + side)
+				: new ConstructionEscape.Position(cell.x() + side, cell.y(), cell.z()));
+		}
+		return List.copyOf(stances);
+	}
+
+	public List<ConstructionEscape.Position> entryStances(Terrain terrain) {
+		return entryStanceCandidates().stream().filter(p -> standable(terrain, p)).toList();
+	}
+
+	static boolean standable(Terrain terrain, ConstructionEscape.Position p) {
+		return terrain.clear(p) && terrain.clear(new ConstructionEscape.Position(p.x(), p.y() + 1, p.z()))
+			&& terrain.solidGround(new ConstructionEscape.Position(p.x(), p.y() - 1, p.z()));
 	}
 
 	/**
@@ -152,9 +174,6 @@ public record NetherPortalFrame(int x, int y, int z, Axis axis) {
 	}
 
 	public Optional<ConstructionEscape.Position> lightingStance(Terrain terrain) {
-		Predicate<ConstructionEscape.Position> standable = p -> terrain.clear(p)
-			&& terrain.clear(new ConstructionEscape.Position(p.x(), p.y() + 1, p.z()))
-			&& terrain.solidGround(new ConstructionEscape.Position(p.x(), p.y() - 1, p.z()));
-		return stanceCandidates().stream().filter(standable).findFirst();
+		return stanceCandidates().stream().filter(p -> standable(terrain, p)).findFirst();
 	}
 }
