@@ -3394,10 +3394,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: mine_blocks " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.mineBlocks(mineSpec));
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity());
 				yield queuedActionToolResult("mine_blocks", "blockIds=" + String.join(",", mineSpec.blockIds())
 					+ " quantity=" + mineSpec.quantity()
-					+ " allowUnilluminated=" + booleanArg(args, "allowUnilluminated").orElse(false))
-					+ toolWearWarning(mineSpec.blockIds(), mineSpec.quantity());
+					+ " allowUnilluminated=" + booleanArg(args, "allowUnilluminated").orElse(false));
 			}
 			case PlannerToolCatalog.ENSURE_BLOCKS_IN_INVENTORY -> {
 				GoalMineSpec mineSpec = goalMineSpec(
@@ -3427,8 +3427,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: ensure_blocks_in_inventory " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.ensureBlocksInInventory(mineSpec));
-				yield queuedActionToolResult("ensure_blocks_in_inventory", "blockIds=" + String.join(",", mineSpec.blockIds()) + " quantity=" + mineSpec.quantity())
-					+ toolWearWarning(mineSpec.blockIds(), mineSpec.quantity() - currentItemCount);
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity() - currentItemCount);
+				yield queuedActionToolResult("ensure_blocks_in_inventory", "blockIds=" + String.join(",", mineSpec.blockIds()) + " quantity=" + mineSpec.quantity());
 			}
 			case PlannerToolCatalog.COLLECT_RESOURCE -> {
 				TaskResourceKind resourceKind = resourceKindArg(args, "resourceKind");
@@ -3726,13 +3726,26 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			|| activeJob.status() == ActiveJobStatus.BLOCKED;
 	}
 
-	/** A tool-wear forecast appended to a mining receipt; the work is still queued. */
-	private static String toolWearWarning(List<String> blockIds, int blocksNeeded) {
+	/**
+	 * Mining work starts when its queued call runs, long before its receipt reaches the planner, so a tool-wear forecast
+	 * is a task.notice with attention at that moment. The work still runs.
+	 */
+	private void noticeToolWear(List<String> blockIds, int blocksNeeded) {
 		var minecraft = Minecraft.getInstance();
-		if (minecraft == null || minecraft.player == null) return "";
-		var player = minecraft.player;
-		return ai.moeru.airicraft.agent.durability.MinecraftToolStacks.miningShortfall(player.getInventory(), blockIds, blocksNeeded)
-			.map(warning -> " Tool wear: " + warning).orElse("");
+		if (minecraft == null || minecraft.player == null) return;
+		var warning = ai.moeru.airicraft.agent.durability.MinecraftToolStacks.miningShortfall(minecraft.player.getInventory(), blockIds, blocksNeeded);
+		if (warning.isEmpty()) return;
+		var job = activeJobRuntime.current();
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("reason", "tool_wear");
+		payload.put("blockIds", List.copyOf(blockIds));
+		payload.put("blocksNeeded", blocksNeeded);
+		payload.put("message", "Tool wear: " + warning.get() + " The work is running; this notice does not cancel it.");
+		var event = job == null || job.jobId() == null
+			? eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload)
+			: eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload,
+				EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
+		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
 	private static String queuedActionToolResult(String toolName, String details) {
