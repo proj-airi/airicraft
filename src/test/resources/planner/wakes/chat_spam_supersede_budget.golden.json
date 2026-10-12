@@ -167,7 +167,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -207,7 +207,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 6,
@@ -246,7 +246,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 8,
@@ -285,7 +285,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 10,

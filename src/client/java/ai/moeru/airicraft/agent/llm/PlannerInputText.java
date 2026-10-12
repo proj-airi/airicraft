@@ -40,12 +40,17 @@ public final class PlannerInputText {
 		JsonElement currentWork = current != null && current.isJsonObject() ? current.getAsJsonObject().get("work") : null;
 		if (current != null && current.isJsonObject()) {
 			Fields facts = new Fields(current.getAsJsonObject());
-			for (String key : List.of("session", "dimension", "objective", "inventory", "vitals", "physical", "reflex", "travelRestrictions", "work")) {
+			for (String key : List.of("session", "dimension", "objective", "inventory", "inventoryCapacity", "vitals", "physical", "reflex",
+				"reflexPolicy", "foodPolicy", "travelRestrictions", "work")) {
 				JsonElement value = facts.take(key);
 				if (value == null) continue;
 				out.append(switch (key) {
 					case "objective" -> "Objective: " + objective(value);
 					case "inventory" -> inventory(value);
+					case "inventoryCapacity" -> "Inventory space: " + inventoryCapacity(value);
+					case "reflexPolicy" -> "Reflex policy: " + settings(value);
+					case "foodPolicy" -> "Food policy: " + settings(value);
+					case "travelRestrictions" -> "Travel restrictions: " + travelRestrictions(value);
 					case "vitals" -> vitals(value);
 					case "physical" -> "Physical: " + physical(value);
 					case "reflex" -> "Reflex: " + reflex(value);
@@ -58,7 +63,7 @@ public final class PlannerInputText {
 			if (!extra.isEmpty()) out.append(extra).append('\n');
 		} else if (current != null) out.append("Current: ").append(text(current)).append('\n');
 		JsonElement queue = context.take("toolQueue");
-		if (queue != null) out.append("Tool queue: ").append(text(queue)).append('\n');
+		if (queue != null) out.append("Tool queue: ").append(toolQueue(queue)).append('\n');
 		JsonElement notices = context.take("notices");
 		if (notices != null && notices.isJsonArray()) for (var notice : notices.getAsJsonArray()) out.append("Notice: ").append(text(notice)).append('\n');
 		out.append(context.phrase("afterEventSequence", "Evidence after ")).append(context.phrase("throughEventSequence", " through ")).append(".\n");
@@ -67,7 +72,13 @@ public final class PlannerInputText {
 		JsonElement events = context.take("events");
 		if (events != null && events.isJsonArray()) {
 			if (events.getAsJsonArray().isEmpty()) out.append("No new events.\n");
-			for (var event : events.getAsJsonArray()) out.append(event(event, currentWork)).append('\n');
+			var list = events.getAsJsonArray().asList();
+			for (int i = 0; i < list.size();) {
+				int end = i + 1;
+				while (end < list.size() && samePickup(list.get(end - 1), list.get(end))) end++;
+				out.append(end - i > 1 ? pickups(list.subList(i, end)) : event(list.get(i), currentWork)).append('\n');
+				i = end;
+			}
 		} else if (events != null) out.append("Events: ").append(text(events)).append('\n');
 		JsonElement hints = context.take("hints");
 		if (hints != null && hints.isJsonArray()) for (var hint : hints.getAsJsonArray()) out.append(hint(hint)).append('\n');
@@ -103,6 +114,8 @@ public final class PlannerInputText {
 		JsonElement state = f.take("state"), phase = f.take("phase");
 		if (state != null && state.equals(phase)) parts.add("state and phase " + text(state));
 		else { if (state != null) parts.add("state " + text(state)); if (phase != null) parts.add("phase " + text(phase)); }
+		dropDuplicateMessage(f);
+		add(parts, f.phrase("failure", "failure "));
 		for (String key : List.of("updatedTick", "collected", "holdId", "message", "result"))
 			add(parts, f.phrase(key, switch (key) { case "updatedTick" -> "updated tick "; case "holdId" -> "hold "; default -> key + " "; }));
 		add(parts, f.rest());
@@ -217,6 +230,7 @@ public final class PlannerInputText {
 		if (!value.isJsonObject()) return text(value);
 		Fields f = new Fields(value.getAsJsonObject());
 		var parts = new ArrayList<String>();
+		for (String key : List.of("outcome", "constraints", "completionCriteria", "decisions")) dropEmpty(f, key);
 		for (String key : List.of("id", "status", "objective", "outcome", "constraints", "completionCriteria", "decisions"))
 			add(parts, f.phrase(key, switch (key) { case "id", "status" -> ""; case "objective" -> "pursue "; case "completionCriteria" -> "completion criteria "; default -> key + " "; }));
 		add(parts, f.rest());
@@ -227,6 +241,7 @@ public final class PlannerInputText {
 		if (!value.isJsonObject()) return text(value);
 		Fields f = new Fields(value.getAsJsonObject());
 		var parts = new ArrayList<String>();
+		if (resting(value.getAsJsonObject())) f.take("velocity");
 		for (String key : List.of("position", "velocity")) {
 			JsonElement vector = f.take(key);
 			if (vector != null) parts.add(key + " " + vector(vector));
@@ -250,6 +265,11 @@ public final class PlannerInputText {
 		if (!value.isJsonObject()) return text(value);
 		Fields f = new Fields(value.getAsJsonObject());
 		var parts = new ArrayList<String>();
+		// Health and air are on the vitals line; unset ticks and empty threat lists say nothing.
+		for (String key : List.of("health", "maxHealth", "air", "maxAir")) f.take(key);
+		for (String key : List.of("startedTick", "lastDangerTick")) dropIf(f, key, -1);
+		for (String key : List.of("safetyEpoch", "breathableTicks")) dropIf(f, key, 0);
+		dropEmpty(f, "threats");
 		add(parts, f.phrase("state", ""));
 		add(parts, f.phrase("safetyEpoch", "safety epoch "));
 		add(parts, f.phrase("threats", "threats "));
@@ -284,7 +304,9 @@ public final class PlannerInputText {
 		if (object.has("missionId") && object.has("activeStepKind")) {
 			Fields f = new Fields(object);
 			var parts = new ArrayList<String>();
-			add(parts, f.phrase("missionId", "Mission "));
+			JsonElement mission = f.take("missionId");
+			// A mission is its job; name it the way work is named everywhere else.
+			if (mission != null) parts.add("Work " + (text(mission).startsWith("JOB:") || text(mission).startsWith("@r") ? text(mission) : "JOB:" + text(mission)));
 			add(parts, f.phrase("state", "state "));
 			// Factor equal kinds without losing which roles share them.
 			var kinds = new java.util.LinkedHashMap<String, List<String>>();
@@ -293,7 +315,10 @@ public final class PlannerInputText {
 				if (kind != null) kinds.computeIfAbsent(text(kind), ignored -> new ArrayList<>()).add(key);
 			}
 			kinds.forEach((kind, roles) -> parts.add(String.join("/", roles) + " " + kind));
-			for (String key : List.of("activeStepId", "source", "resourceKind", "quantity", "collected", "remaining")) add(parts, f.phrase(key, key + " "));
+			if (!f.has("quantity")) { dropIf(f, "collected", 0); dropIf(f, "remaining", 0); }
+			dropDuplicateMessage(f);
+			add(parts, f.phrase("failure", "failure "));
+			for (String key : List.of("activeStepId", "source", "resourceKind", "quantity", "collected", "remaining", "message")) add(parts, f.phrase(key, key + " "));
 			add(parts, f.rest());
 			return String.join("; ", parts);
 		}
@@ -317,6 +342,109 @@ public final class PlannerInputText {
 			return String.join("; ", parts);
 		}
 		return text(value);
+	}
+
+	private static String inventoryCapacity(JsonElement value) {
+		if (!value.isJsonObject()) return text(value);
+		Fields f = new Fields(value.getAsJsonObject());
+		var parts = new ArrayList<String>();
+		JsonElement free = f.take("freeStorageSlots");
+		if (free != null) parts.add(text(free) + " free storage slots");
+		add(parts, f.phrase("pickupConstraint", ""));
+		add(parts, f.rest());
+		return String.join("; ", parts);
+	}
+
+	/** A flat settings object as "name value" pairs; nested values stay JSON. */
+	private static String settings(JsonElement value) {
+		if (!value.isJsonObject()) return text(value);
+		var parts = new ArrayList<String>();
+		for (var entry : value.getAsJsonObject().entrySet()) parts.add(entry.getKey() + " " + text(entry.getValue()));
+		return parts.isEmpty() ? "none" : String.join("; ", parts);
+	}
+
+	/** No restriction is "none"; the coordinate convention matters only when there are bounds to read. */
+	private static String travelRestrictions(JsonElement value) {
+		if (!value.isJsonObject()) return text(value);
+		Fields f = new Fields(value.getAsJsonObject());
+		dropEmpty(f, "error");
+		for (String key : List.of("userBounds", "strategyBounds")) if (f.has(key) && f.remaining.get(key).isJsonNull()) f.take(key);
+		JsonElement meaning = f.take("coordinateMeaning");
+		var parts = new ArrayList<String>();
+		add(parts, f.phrase("error", "error "));
+		String rest = f.rest();
+		if (parts.isEmpty() && rest.isEmpty()) return "none";
+		add(parts, rest);
+		if (meaning != null) parts.add("coordinates: " + text(meaning));
+		return String.join("; ", parts);
+	}
+
+	private static String toolQueue(JsonElement value) {
+		if (!value.isJsonObject()) return text(value);
+		Fields f = new Fields(value.getAsJsonObject());
+		if (f.has("aborting") && new JsonPrimitive(false).equals(f.remaining.get("aborting"))) f.take("aborting");
+		dropEmpty(f, "pending");
+		if (f.has("active") && f.remaining.get("active").isJsonNull()) f.take("active");
+		if (f.has("workId") && f.remaining.get("workId").isJsonNull()) f.take("workId");
+		if (f.remaining.isEmpty()) return "empty.";
+		return GSON.toJson(f.remaining);
+	}
+
+	/** On the ground with no horizontal motion, the reported velocity is only gravity. */
+	private static boolean resting(JsonObject physical) {
+		if (!new JsonPrimitive(true).equals(physical.get("grounded")) || !physical.has("velocity") || !physical.get("velocity").isJsonObject()) return false;
+		JsonObject v = physical.getAsJsonObject("velocity");
+		for (String axis : List.of("x", "y", "z")) {
+			if (!v.has(axis) || !v.get(axis).isJsonPrimitive() || !v.get(axis).getAsJsonPrimitive().isNumber()) return false;
+			if (Math.abs(v.get(axis).getAsDouble()) > (axis.equals("y") ? 0.1 : 0.0)) return false;
+		}
+		return true;
+	}
+
+	private static boolean samePickup(JsonElement first, JsonElement next) {
+		JsonObject a = pickupPayload(first), b = pickupPayload(next);
+		// Only adjacent sequence numbers merge, so the range names exactly the merged events.
+		return a != null && b != null && java.util.Objects.equals(a.get("itemId"), b.get("itemId"))
+			&& first.getAsJsonObject().get("seqNo").getAsLong() + 1 == next.getAsJsonObject().get("seqNo").getAsLong()
+			&& java.util.Objects.equals(a.get("actor"), b.get("actor"));
+	}
+
+	private static JsonObject pickupPayload(JsonElement event) {
+		if (!event.isJsonObject()) return null;
+		JsonObject e = event.getAsJsonObject();
+		if (!new JsonPrimitive("pickup.item_picked_up").equals(e.get("type")) || !e.has("payload") || !e.get("payload").isJsonObject()) return null;
+		JsonObject payload = e.getAsJsonObject("payload");
+		if (!payload.keySet().equals(java.util.Set.of("itemId", "count", "actor")) || !payload.get("count").isJsonPrimitive()
+			|| !payload.get("count").getAsJsonPrimitive().isNumber()) return null;
+		var keys = new java.util.HashSet<>(e.keySet());
+		keys.removeAll(List.of("seqNo", "tick", "type", "payload"));
+		return keys.isEmpty() && e.has("seqNo") && e.get("seqNo").isJsonPrimitive() && e.get("seqNo").getAsJsonPrimitive().isNumber() ? payload : null;
+	}
+
+	/** One line for a run of identical pickups, instead of one line per item. */
+	private static String pickups(List<JsonElement> run) {
+		JsonObject first = run.getFirst().getAsJsonObject(), last = run.getLast().getAsJsonObject();
+		long count = 0;
+		for (JsonElement event : run) count += pickupPayload(event).get("count").getAsLong();
+		JsonObject payload = pickupPayload(first);
+		return "Events " + text(first.get("seqNo")) + "-" + text(last.get("seqNo")) + " at ticks " + text(first.get("tick")) + "-" + text(last.get("tick"))
+			+ ": pickup.item_picked_up x" + run.size() + ": picked up " + count + " " + PlannerStateText.item(text(payload.get("itemId")))
+			+ " in total; actor " + text(payload.get("actor"));
+	}
+
+	private static void dropEmpty(Fields f, String key) {
+		JsonElement value = f.remaining.get(key);
+		if (value != null && text(value).equals("none")) f.take(key);
+	}
+
+	private static void dropIf(Fields f, String key, long unset) {
+		JsonElement value = f.remaining.get(key);
+		if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber() && value.getAsDouble() == unset) f.take(key);
+	}
+
+	/** A message that only repeats the failure code adds nothing. */
+	private static void dropDuplicateMessage(Fields f) {
+		if (f.has("failure") && f.has("message") && f.remaining.get("failure").equals(f.remaining.get("message"))) f.take("message");
 	}
 
 	private static String text(JsonElement value) {

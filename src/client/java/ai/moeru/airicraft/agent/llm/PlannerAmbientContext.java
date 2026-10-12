@@ -167,22 +167,24 @@ public record PlannerAmbientContext(
 	}
 
 	private static String renderEvidence(ai.moeru.airicraft.agent.tasks.WorldEvidence evidence) {
-		StringBuilder builder = new StringBuilder("{");
-		builder.append("dimension=").append(evidence.dimension());
-		builder.append(", position=").append(evidence.x()).append(',').append(evidence.y()).append(',').append(evidence.z());
-		builder.append(", equippedItemId=").append(evidence.equippedItemId());
-		builder.append(", inventoryCounts=").append(evidence.inventoryCounts());
-		if (!evidence.itemCounts().isEmpty()) {
-			builder.append(", itemCounts=").append(evidence.itemCounts());
-		}
-		if (!evidence.nearbyBlocks().isEmpty()) {
-			builder.append(", nearbyBlocks=").append(limitNearbyBlocks(evidence.nearbyBlocks()));
-		}
-		if (!evidence.availableCrafts().isEmpty()) {
-			builder.append(", availableCrafts=").append(renderAvailableCrafts(evidence.availableCrafts()));
-		}
-		builder.append('}');
-		return builder.toString();
+		var parts = new java.util.ArrayList<String>();
+		parts.add((evidence.dimension() == null ? "unknown dimension" : PlannerStateText.item(evidence.dimension()))
+			+ " at " + evidence.x() + "," + evidence.y() + "," + evidence.z());
+		if (evidence.equippedItemId() != null) parts.add("holding " + PlannerStateText.item(evidence.equippedItemId()));
+		// Zero counts for every tracked resource kind are noise; list only what is carried.
+		String carried = counts(evidence.inventoryCounts().entrySet().stream()
+			.filter(entry -> entry.getValue() != null && entry.getValue() != 0)
+			.map(entry -> java.util.Map.entry(entry.getKey().name().toLowerCase(java.util.Locale.ROOT), entry.getValue())).toList());
+		parts.add("tracked resources " + (carried.isEmpty() ? "none" : carried));
+		if (!evidence.itemCounts().isEmpty()) parts.add("items " + counts(evidence.itemCounts().entrySet().stream().toList()));
+		if (!evidence.nearbyBlocks().isEmpty()) parts.add("nearby blocks " + counts(limitNearbyBlocks(evidence.nearbyBlocks()).entrySet().stream().toList()));
+		if (!evidence.availableCrafts().isEmpty()) parts.add(renderAvailableCrafts(evidence.availableCrafts()));
+		return String.join("; ", parts) + ".";
+	}
+
+	private static String counts(java.util.List<? extends java.util.Map.Entry<String, Integer>> entries) {
+		return entries.stream().map(entry -> entry.getValue() + " " + PlannerStateText.item(entry.getKey()))
+			.collect(java.util.stream.Collectors.joining(", "));
 	}
 
 	private static String renderAvailableCrafts(java.util.List<ai.moeru.airicraft.agent.tasks.CraftingOpportunity> opportunities) {

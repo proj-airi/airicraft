@@ -314,7 +314,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "Direct action goal: Navigate to 12, 64, 8 with exact Y.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
