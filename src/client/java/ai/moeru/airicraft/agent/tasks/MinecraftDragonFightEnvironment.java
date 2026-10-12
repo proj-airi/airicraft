@@ -172,7 +172,8 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				if (DragonHazards.insideCloud(spot, fight.clouds(), DragonHazards.CLOUD_MARGIN)) continue;
 				// Walking matters more than the shot angle; closer to the player also keeps the path short.
 				double cost = spot.distanceTo(fight.feet()) + Math.abs(distance - 18) * 0.5D;
-				if (cost >= bestCost || !clearShot(level, player, spot.add(0.0D, player.getEyeHeight() - 0.1D, 0.0D), target)) continue;
+				if (cost >= bestCost || firingSolution(level, player, spot.add(0.0D, player.getEyeHeight() - 0.1D, 0.0D), target).isEmpty())
+					continue;
 				bestCost = cost;
 				best = spot;
 			}
@@ -180,13 +181,24 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 		return Optional.ofNullable(best).map(MinecraftDragonFightEnvironment::goal);
 	}
 
-	/** Whether the arrow's arc from {@code launch} reaches the crystal without meeting a block. */
-	private static boolean clearShot(ClientLevel level, LocalPlayer player, Vec3 launch, Vec3 target) {
+	/**
+	 * The arc from {@code launch} that reaches the crystal without meeting a block: the flat one, else the lob,
+	 * which comes down over the pillar's rim that the flat arc clips from close in.
+	 */
+	private static Optional<ArrowBallistics.Solution> firingSolution(ClientLevel level, LocalPlayer player, Vec3 launch, Vec3 target) {
 		double horizontal = Math.hypot(target.x - launch.x, target.z - launch.z);
-		var solution = ArrowBallistics.solve(horizontal, target.y - launch.y, ArrowBallistics.FULL_DRAW_SPEED);
-		if (solution.isEmpty()) return false;
+		double vertical = target.y - launch.y;
+		var flat = ArrowBallistics.solve(horizontal, vertical, ArrowBallistics.FULL_DRAW_SPEED);
+		if (flat.isPresent() && clearShot(level, player, launch, target, flat.get())) return flat;
+		return ArrowBallistics.solveHigh(horizontal, vertical, ArrowBallistics.FULL_DRAW_SPEED)
+			.filter(high -> clearShot(level, player, launch, target, high));
+	}
+
+	/** Whether the arrow on {@code solution} reaches the crystal without meeting a block. */
+	private static boolean clearShot(ClientLevel level, LocalPlayer player, Vec3 launch, Vec3 target, ArrowBallistics.Solution solution) {
+		double horizontal = Math.hypot(target.x - launch.x, target.z - launch.z);
 		double dirX = (target.x - launch.x) / horizontal, dirZ = (target.z - launch.z) / horizontal;
-		List<double[]> path = ArrowBallistics.path(solution.get().elevationDegrees(), horizontal, ArrowBallistics.FULL_DRAW_SPEED);
+		List<double[]> path = ArrowBallistics.path(solution.elevationDegrees(), horizontal, ArrowBallistics.FULL_DRAW_SPEED);
 		Vec3 previous = launch;
 		for (int i = 1; i < path.size(); i++) {
 			double[] point = path.get(i);
@@ -255,7 +267,9 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 		Vec3 launch = player.getEyePosition().subtract(0.0D, 0.1D, 0.0D);
 		Vec3 target = target(crystal);
 		double horizontal = Math.hypot(target.x - launch.x, target.z - launch.z);
-		var solution = ArrowBallistics.solve(horizontal, target.y - launch.y, ArrowBallistics.FULL_DRAW_SPEED);
+		ClientLevel level = minecraft.level;
+		if (level == null || horizontal < 1.0E-3D) return DragonFightTaskExecutor.AimResult.NO_SOLUTION;
+		var solution = firingSolution(level, player, launch, target);
 		if (solution.isEmpty()) return DragonFightTaskExecutor.AimResult.NO_SOLUTION;
 		double elevation = Math.toRadians(solution.get().elevationDegrees());
 		Vec3 direction = new Vec3((target.x - launch.x) / horizontal * Math.cos(elevation), Math.sin(elevation),

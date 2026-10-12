@@ -18,6 +18,7 @@ public final class ArrowBallistics {
 	private static final double MIN_ELEVATION = -80.0D;
 	private static final double MAX_ELEVATION = 80.0D;
 	private static final double SCAN_STEP = 0.5D;
+	private static final double STEEPEST_ELEVATION = 89.0D;
 
 	private ArrowBallistics() {
 	}
@@ -49,6 +50,33 @@ public final class ArrowBallistics {
 			}
 			previous = angle;
 			previousError = error;
+		}
+		return Optional.empty();
+	}
+
+	/**
+	 * The steeper arc, which comes down onto the target; it clears an edge just below a target on a pillar
+	 * that the flat arc would clip. Empty when out of range.
+	 */
+	public static Optional<Solution> solveHigh(double horizontal, double vertical, double speed) {
+		if (!(horizontal > 0.0D) || !(speed > 0.0D) || !Double.isFinite(vertical)) return Optional.empty();
+		// Nearly straight up never reaches the distance; scanning down, the first angle that arrives at or
+		// above the target brackets the high arc with the steeper one before it.
+		double previous = STEEPEST_ELEVATION;
+		if (heightError(previous, horizontal, vertical, speed) >= 0.0D) return Optional.empty();
+		for (double angle = previous - SCAN_STEP; angle >= MIN_ELEVATION; angle -= SCAN_STEP) {
+			if (!(heightError(angle, horizontal, vertical, speed) >= 0.0D)) {
+				previous = angle;
+				continue;
+			}
+			double low = angle, high = previous;
+			for (int i = 0; i < 40; i++) {
+				double middle = (low + high) / 2.0D;
+				if (heightError(middle, horizontal, vertical, speed) >= 0.0D) low = middle;
+				else high = middle;
+			}
+			double elevation = (low + high) / 2.0D;
+			return Optional.of(new Solution(elevation, ticksToReach(elevation, horizontal, speed)));
 		}
 		return Optional.empty();
 	}

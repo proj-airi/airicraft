@@ -35,6 +35,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	static final double CRYSTAL_VIEW_DISTANCE = 96.0D;
 	static final int MAX_APPROACH_FAILURES = 5;
 	static final double RETRY_BLOCKED_DISTANCE = 16.0D;
+	/** Waiting by the portal never moves 16 blocks; look for a shot at blocked crystals again after this long. */
+	static final int RETRY_BLOCKED_TICKS = 600;
 	/** Gives up on a route before the dispatcher's 100-tick stall watchdog would end the whole fight. */
 	static final long NAVIGATION_STALL_TICKS = 70;
 	/** Once dodging, finish the step before turning back, so hazards at the edge of the margin do not flap. */
@@ -62,7 +64,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private final Map<String, Integer> spotsTried = new LinkedHashMap<>();
 	private final Map<String, String> skippedCrystals = new LinkedHashMap<>();
 	/** Crystals with no clear shot from here; retried once the player has moved on. */
-	private final Map<String, Vec3> blockedCrystals = new LinkedHashMap<>();
+	private final Map<String, Blocked> blockedCrystals = new LinkedHashMap<>();
 	private int shotsFromSpot, drawTicks, arrowWaitTicks;
 	private boolean waitingSpotReached;
 	/** Failed routes toward the portal since the player last got anywhere. */
@@ -169,7 +171,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				progress = true;
 			}
 		}
-		blockedCrystals.values().removeIf(from -> horizontalDistance(fight.feet(), from) > RETRY_BLOCKED_DISTANCE);
+		blockedCrystals.values().removeIf(blocked -> horizontalDistance(fight.feet(), blocked.from()) > RETRY_BLOCKED_DISTANCE
+			|| activeTicks - blocked.tick() > RETRY_BLOCKED_TICKS);
 		if (progress) lastProgressTick = activeTicks;
 	}
 
@@ -231,7 +234,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			shotsFromSpot = 0;
 			if (shootingSpot == null) {
 				// Terrain may be unloaded or in the way from here; try again after moving.
-				blockedCrystals.put(target.id(), fight.feet());
+				blockedCrystals.put(target.id(), new Blocked(fight.feet(), activeTicks));
 				crystalTarget = null;
 				return true;
 			}
@@ -449,6 +452,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	@Override public void shutdown() { onWorldLeave(); }
 
 	enum Phase { WAIT, DODGE, PERCH, CRYSTAL }
+	private record Blocked(Vec3 from, int tick) {}
 	enum AimResult { NO_SOLUTION, AIMING, ALIGNED }
 	enum MeleeResult { OUT_OF_REACH, AIMING, COOLDOWN, HIT }
 

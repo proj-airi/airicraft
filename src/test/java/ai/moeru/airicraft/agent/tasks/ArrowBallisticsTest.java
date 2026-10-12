@@ -26,6 +26,22 @@ class ArrowBallisticsTest {
 		assertEquals((float) -solution.elevationDegrees(), solution.pitch());
 	}
 
+	@Test void theHighArcComesDownOntoTheTarget() {
+		for (double horizontal : new double[] {10, 18, 30}) {
+			for (double vertical : new double[] {12, 25, 40}) {
+				var flat = ArrowBallistics.solve(horizontal, vertical, ArrowBallistics.FULL_DRAW_SPEED).orElseThrow();
+				var high = ArrowBallistics.solveHigh(horizontal, vertical, ArrowBallistics.FULL_DRAW_SPEED).orElseThrow();
+				assertTrue(high.elevationDegrees() > flat.elevationDegrees() + 5, "h=" + horizontal + " v=" + vertical);
+				assertTrue(high.flightTicks() > flat.flightTicks());
+				assertEquals(0.0D, closestApproach(high.elevationDegrees(), horizontal, vertical), 0.05D,
+					"h=" + horizontal + " v=" + vertical);
+				var path = ArrowBallistics.path(high.elevationDegrees(), horizontal, ArrowBallistics.FULL_DRAW_SPEED);
+				assertTrue(path.getLast()[1] < path.get(path.size() - 2)[1], "descending at the target");
+			}
+		}
+		assertTrue(ArrowBallistics.solveHigh(150, 60, ArrowBallistics.FULL_DRAW_SPEED).isEmpty());
+	}
+
 	@Test void outOfRangeTargetsHaveNoSolution() {
 		assertTrue(ArrowBallistics.solve(150, 60, ArrowBallistics.FULL_DRAW_SPEED).isEmpty());
 		assertTrue(ArrowBallistics.solve(0, 10, ArrowBallistics.FULL_DRAW_SPEED).isEmpty());

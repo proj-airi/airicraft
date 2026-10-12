@@ -76,6 +76,20 @@ class DragonFightTaskExecutorTest {
 		assertEquals(new GoalPosition(40, 64, 0, true), f.nav.goals.getLast());
 	}
 
+	@Test void aBlockedCrystalIsRetriedAfterAWhileEvenWithoutMoving() {
+		Fixture f = new Fixture();
+		f.env.spot = Optional.empty();
+		f.env.feet = new Vec3(9.5, 64, 0.5); // at the waiting spot
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("noShotFromHere=1"), f.snapshotText());
+		f.tick(DragonFightTaskExecutor.RETRY_BLOCKED_TICKS);
+		assertEquals(1, f.env.spotRequests.size());
+		f.env.spot = Optional.of(SPOT_A);
+		f.tick(2);
+		assertEquals(2, f.env.spotRequests.size());
+		assertEquals(SPOT_A, f.nav.goals.getLast());
+	}
+
 	@Test void aCrystalUnloadedFarAwayIsNotCountedAsDestroyed() {
 		Fixture f = new Fixture();
 		f.env.bow = false;
