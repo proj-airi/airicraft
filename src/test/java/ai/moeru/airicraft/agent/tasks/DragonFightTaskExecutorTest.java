@@ -127,6 +127,9 @@ class DragonFightTaskExecutorTest {
 		f.tick(2);
 		assertEquals(CAGE_TOP, f.nav.goals.getLast());
 		assertEquals(NavigationOptions.DEFAULT, f.nav.options, "the climb places blocks");
+		f.env.feet = new Vec3(45.5, 83.7, 0.5); // jumping onto the last block, not placed yet
+		f.tick(1);
+		assertTrue(f.nav.active && f.snapshotText().contains("cageStage=CLIMB"), f.snapshotText());
 		f.env.feet = new Vec3(45.5, 84, 0.5);
 		f.env.clouds = List.of(new DragonHazards.Cloud(new Vec3(45, 84, 0), 3));
 		f.tick(1);

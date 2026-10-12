@@ -348,7 +348,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				} else if (!navigate(cagePlan.ground(), 0) || navigationTicks > NAVIGATION_TIMEOUT_TICKS) failCage(fight);
 			}
 			case CLIMB -> {
-				if (atTop(fight.feet())) {
+				// Exactly at the top height: standing on the last block, not passing it mid-jump before it is placed.
+				if (atTop(fight.feet()) && Math.abs(fight.feet().y - cagePlan.top().y()) < 0.02D) {
 					stopNavigation();
 					setCageStage(CageStage.BREAK);
 				} else if (!navigate(cagePlan.top(), 0, NavigationOptions.DEFAULT) || cageStageTicks > CAGE_CLIMB_TIMEOUT_TICKS) {
@@ -420,10 +421,10 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		return cageUnavailable == null;
 	}
 
-	/** Standing on top of our pillar, eyes above the cage roof; a step lower, the near bars hide the far ones. */
+	/** On top of our pillar, eyes above the cage roof; a step lower, the near bars hide the far ones. */
 	private boolean atTop(Vec3 feet) {
 		GoalPosition top = cagePlan.top();
-		return horizontalDistance(feet, center(top)) <= 0.9D && feet.y >= top.y() - 0.05D && feet.y <= top.y() + 1.0D;
+		return horizontalDistance(feet, center(top)) <= 0.9D && feet.y >= top.y() - 0.5D && feet.y <= top.y() + 1.5D;
 	}
 
 	/** Above the ground the cage climb started from, on our own pillar. */
