@@ -215,6 +215,7 @@ public final class PlannerShellFactory {
 			new ai.moeru.airicraft.blueprint.BlueprintPlannerToolProvider(config.llm(), Boolean.getBoolean("airicraft.codexDriver")),
 			new ai.moeru.airicraft.agent.llm.PolicyDocsToolProvider(),
 			rulesTools,
+			new ai.moeru.airicraft.agent.llm.SkillToolProvider(),
 			new WorldFeatureSearchToolProvider(worldFeatureSearchService, result -> effectiveWorldReadObserver.accept(result.observedPositions())),
 			PlaceMemoryToolProvider.forClient(),
 			new ai.moeru.airicraft.agent.memory.InteractionLogbookToolProvider(),
