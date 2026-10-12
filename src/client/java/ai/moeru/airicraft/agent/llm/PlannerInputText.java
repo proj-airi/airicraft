@@ -23,9 +23,15 @@ public final class PlannerInputText {
 	public static String observation(JsonObject payload) {
 		payload = PlannerFieldPresentation.project(payload, null, null).getAsJsonObject();
 		Fields context = new Fields(payload);
+		// Times are ages relative to this observation; without its tick the raw ticks stay.
+		Long now = number(context.take("tick"));
+		context.take("serverTick");
+		if (now != null) for (String key : List.of("current", "currentChanges", "notices", "events")) {
+			JsonElement value = context.remaining.get(key);
+			if (value != null) context.remaining.add(key, key.equals("events") ? eventTimes(value, now) : times(value, now));
+		}
 		StringBuilder out = new StringBuilder();
-		out.append(context.phrase("worldSessionId", "World ")).append(context.phrase("tick", "; client tick "))
-			.append(context.phrase("serverTick", "; server tick ")).append(".\n");
+		out.append(context.phrase("worldSessionId", "World ")).append(".\n");
 		out.append(context.phrase("decisionOwner", "Decisions: ")).append(context.phrase("actuatorOwner", "; actuation: ")).append(".\n");
 		JsonElement wake = context.take("wake");
 		if (wake != null) out.append("Woke for: ").append(wake(wake)).append('\n');
@@ -76,7 +82,7 @@ public final class PlannerInputText {
 			for (int i = 0; i < list.size();) {
 				int end = i + 1;
 				while (end < list.size() && samePickup(list.get(end - 1), list.get(end))) end++;
-				out.append(end - i > 1 ? pickups(list.subList(i, end)) : event(list.get(i), currentWork)).append('\n');
+				out.append(end - i > 1 ? pickups(list.subList(i, end), now) : event(list.get(i), currentWork, now)).append('\n');
 				i = end;
 			}
 		} else if (events != null) out.append("Events: ").append(text(events)).append('\n');
@@ -99,6 +105,10 @@ public final class PlannerInputText {
 	}
 
 	static String toolResult(String prefix, JsonObject object) {
+		// The runtime supplies the update's age; the raw tick means nothing without the clock.
+		object.remove("updatedTick");
+		Long age = number(object.remove("updatedTicksAgo"));
+		if (age != null) object.addProperty("updated", ago(age));
 		return prefix + work(object);
 	}
 
@@ -116,8 +126,8 @@ public final class PlannerInputText {
 		else { if (state != null) parts.add("state " + text(state)); if (phase != null) parts.add("phase " + text(phase)); }
 		dropDuplicateMessage(f);
 		add(parts, f.phrase("failure", "failure "));
-		for (String key : List.of("updatedTick", "collected", "holdId", "message", "result"))
-			add(parts, f.phrase(key, switch (key) { case "updatedTick" -> "updated tick "; case "holdId" -> "hold "; default -> key + " "; }));
+		for (String key : List.of("updated", "updatedTick", "collected", "holdId", "message", "result"))
+			add(parts, f.phrase(key, switch (key) { case "updated" -> "updated "; case "updatedTick" -> "updated tick "; case "holdId" -> "hold "; default -> key + " "; }));
 		add(parts, f.rest());
 		return String.join("; ", parts) + ".";
 	}
@@ -269,6 +279,7 @@ public final class PlannerInputText {
 		for (String key : List.of("health", "maxHealth", "air", "maxAir")) f.take(key);
 		for (String key : List.of("startedTick", "lastDangerTick")) dropIf(f, key, -1);
 		for (String key : List.of("safetyEpoch", "breathableTicks")) dropIf(f, key, 0);
+		if (new JsonPrimitive("0s").equals(f.remaining.get("breathable"))) f.take("breathable");
 		dropEmpty(f, "threats");
 		add(parts, f.phrase("state", ""));
 		add(parts, f.phrase("safetyEpoch", "safety epoch "));
@@ -277,6 +288,9 @@ public final class PlannerInputText {
 			String maximum = key.equals("health") ? "maxHealth" : "maxAir";
 			if (f.has(key) && f.has(maximum)) parts.add(key + " " + text(f.take(key)) + "/" + text(f.take(maximum)));
 		}
+		add(parts, f.phrase("started", "started "));
+		add(parts, f.phrase("lastDanger", "last danger "));
+		add(parts, f.phrase("breathable", "breathable for "));
 		add(parts, f.phrase("startedTick", "started tick "));
 		add(parts, f.phrase("lastDangerTick", "last danger tick "));
 		add(parts, f.phrase("breathableTicks", "breathable ticks "));
@@ -284,10 +298,12 @@ public final class PlannerInputText {
 		return String.join("; ", parts);
 	}
 
-	private static String event(JsonElement value, JsonElement currentWork) {
+	private static String event(JsonElement value, JsonElement currentWork, Long now) {
 		if (!value.isJsonObject()) return text(value);
 		Fields f = new Fields(value.getAsJsonObject());
-		String prefix = f.phrase("seqNo", "Event ") + f.phrase("tick", " at tick ") + f.phrase("type", ": ");
+		Long tick = now == null ? null : number(f.remaining.get("tick"));
+		if (tick != null) f.take("tick");
+		String prefix = f.phrase("seqNo", "Event ") + (tick == null ? f.phrase("tick", " at tick ") : ", " + ago(now - tick)) + f.phrase("type", ": ");
 		JsonElement payload = f.take("payload");
 		String body = payload == null ? "" : eventPayload(payload);
 		if (payload != null && payload.isJsonObject() && payload.getAsJsonObject().has("workId")
@@ -327,6 +343,7 @@ public final class PlannerInputText {
 			Fields f = new Fields(outer.take("observed").getAsJsonObject());
 			var parts = new ArrayList<String>();
 			for (String key : List.of("actor", "action", "worldTick", "timestampMs", "dimension")) add(parts, f.phrase(key, key + " "));
+			add(parts, f.phrase("at", ""));
 			if (f.has("x") && f.has("y") && f.has("z")) parts.add("at (" + text(f.take("x")) + "," + text(f.take("y")) + "," + text(f.take("z")) + ")");
 			for (String key : List.of("itemId", "count", "containerType", "containerEntityUuid")) add(parts, f.phrase(key, key + " "));
 			JsonElement contents = f.take("contents");
@@ -422,14 +439,93 @@ public final class PlannerInputText {
 	}
 
 	/** One line for a run of identical pickups, instead of one line per item. */
-	private static String pickups(List<JsonElement> run) {
+	private static String pickups(List<JsonElement> run, Long now) {
 		JsonObject first = run.getFirst().getAsJsonObject(), last = run.getLast().getAsJsonObject();
 		long count = 0;
 		for (JsonElement event : run) count += pickupPayload(event).get("count").getAsLong();
 		JsonObject payload = pickupPayload(first);
-		return "Events " + text(first.get("seqNo")) + "-" + text(last.get("seqNo")) + " at ticks " + text(first.get("tick")) + "-" + text(last.get("tick"))
+		Long from = number(first.get("tick")), to = number(last.get("tick"));
+		String when = now != null && from != null && to != null
+			? ", " + (ago(now - from).equals(ago(now - to)) ? ago(now - to) : "from " + ago(now - from) + " to " + ago(now - to))
+			: " at ticks " + text(first.get("tick")) + "-" + text(last.get("tick"));
+		return "Events " + text(first.get("seqNo")) + "-" + text(last.get("seqNo")) + when
 			+ ": pickup.item_picked_up x" + run.size() + ": picked up " + count + " " + PlannerStateText.item(text(payload.get("itemId")))
 			+ " in total; actor " + text(payload.get("actor"));
+	}
+
+	/** Event times are rendered by the event line; only their payloads are rewritten. */
+	private static JsonElement eventTimes(JsonElement events, long now) {
+		if (!events.isJsonArray()) return times(events, now);
+		var out = new JsonArray();
+		for (JsonElement event : events.getAsJsonArray()) {
+			if (!event.isJsonObject() || !event.getAsJsonObject().has("payload")) { out.add(event); continue; }
+			JsonObject copy = event.getAsJsonObject().deepCopy();
+			copy.add("payload", times(copy.get("payload"), now));
+			out.add(copy);
+		}
+		return out;
+	}
+
+	/**
+	 * Ticks as seconds: a {@code fooTick} becomes {@code foo} with an age ("12s ago"), a {@code fooTicks} becomes
+	 * {@code foo} with a duration ("3s"). Unset (negative) ticks and the server and wall clocks are left out.
+	 */
+	static JsonElement times(JsonElement value, long now) {
+		if (value.isJsonArray()) {
+			var out = new JsonArray();
+			for (JsonElement item : value.getAsJsonArray()) out.add(times(item, now));
+			return out;
+		}
+		if (!value.isJsonObject()) return value;
+		JsonObject object = value.getAsJsonObject();
+		// A JSON Patch keeps its pointer; only a duration's value reads as seconds.
+		if (object.has("path") && object.get("path").isJsonPrimitive() && object.get("path").getAsString().endsWith("Ticks")
+			&& number(object.get("value")) != null) {
+			JsonObject op = object.deepCopy();
+			op.addProperty("value", durationOrUnknown(number(object.get("value"))));
+			return op;
+		}
+		var out = new JsonObject();
+		for (var entry : object.entrySet()) {
+			String key = entry.getKey();
+			Long ticks = number(entry.getValue());
+			if (ticks == null || key.endsWith("PerTick")) out.add(key, times(entry.getValue(), now));
+			else if (List.of("serverTick", "worldTick", "timestampMs").contains(key)) continue;
+			else if (key.equals("tick") || key.endsWith("Tick")) {
+				if (ticks < 0) continue;
+				String stem = key.equals("tick") ? "at" : key.substring(0, key.length() - (key.endsWith("AtTick") ? 6 : 4));
+				out.addProperty(stem.isEmpty() || object.has(stem) ? key : stem, ago(now - ticks));
+			} else if (key.endsWith("Ticks") && key.length() > 5) {
+				String stem = key.substring(0, key.length() - 5);
+				out.addProperty(object.has(stem) ? key : stem, durationOrUnknown(ticks));
+			} else out.add(key, entry.getValue());
+		}
+		return out;
+	}
+
+	/** A negative duration is a sentinel for "no estimate", never an elapsed time. */
+	private static String durationOrUnknown(long ticks) {
+		return ticks < 0 ? "unknown" : duration(ticks);
+	}
+
+	static String ago(long ticks) {
+		if (ticks == 0) return "just now";
+		return ticks < 0 ? "in " + duration(-ticks) : duration(ticks) + " ago";
+	}
+
+	/** Twenty ticks a second: tenths under ten seconds, then whole seconds, minutes and hours. */
+	static String duration(long ticks) {
+		if (ticks < 200 && ticks % 20 != 0) return Math.round(ticks / 2.0) / 10.0 + "s";
+		long seconds = Math.round(ticks / 20.0);
+		if (seconds < 60) return seconds + "s";
+		if (seconds < 3600) return seconds / 60 + "m" + (seconds % 60 == 0 ? "" : " " + seconds % 60 + "s");
+		return seconds / 3600 + "h" + (seconds % 3600 / 60 == 0 ? "" : " " + seconds % 3600 / 60 + "m");
+	}
+
+	private static Long number(JsonElement value) {
+		if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) return null;
+		double number = value.getAsDouble();
+		return number == Math.rint(number) && !Double.isInfinite(number) ? (long) number : null;
 	}
 
 	private static void dropEmpty(Fields f, String key) {

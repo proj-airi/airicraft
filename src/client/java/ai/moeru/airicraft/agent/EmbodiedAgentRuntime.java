@@ -277,6 +277,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final WorldTaskExecutor worldTaskExecutor;
 	private final InventoryResourceCounter inventoryResourceCounter = new InventoryResourceCounter();
 	private final InventoryItemCounter inventoryItemCounter = new InventoryItemCounter();
+	private final ai.moeru.airicraft.agent.durability.ToolWear.Tracker toolWearTracker = new ai.moeru.airicraft.agent.durability.ToolWear.Tracker();
 	private final SurfaceMemory surfaceMemory = new SurfaceMemory();
 	private final SmeltingProcessManager smeltingProcessManager;
 	private final SmeltingPlannerService smeltingPlannerService = new SmeltingPlannerService();
@@ -604,6 +605,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		foodRuntime.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
+		toolWearTracker.reset();
 		seenPlayerNames.clear();
 	}
 
@@ -611,7 +613,19 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		try { tickClient(minecraft); }
 		finally { refreshWorkHistory(); }
 		observeWorkProgress(minecraft);
+		observeToolWear(minecraft);
 		tickPolicy();
+	}
+
+	/** Publishes tool.durability_low when the last tool of a kind runs low and tool.broken when one breaks. */
+	private void observeToolWear(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) {
+			toolWearTracker.reset();
+			return;
+		}
+		var events = toolWearTracker.update(ai.moeru.airicraft.agent.durability.MinecraftToolStacks.read(minecraft.player.getInventory()));
+		for (var event : events) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, event.type(), event.payload());
+		if (!events.isEmpty()) drainEventPipeline();
 	}
 
 	private void tickClient(Minecraft minecraft) {
@@ -964,6 +978,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				if (!stack.isEmpty()) inventory.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 			facts.put("inventory", inventory);
+			var toolDurability = ai.moeru.airicraft.agent.durability.ToolWear.present(
+				ai.moeru.airicraft.agent.durability.MinecraftToolStacks.read(minecraft.player.getInventory()));
+			if (!toolDurability.isEmpty()) facts.put("durability", toolDurability);
 			int freeStorageSlots = 0;
 			for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
 				if (minecraft.player.getInventory().getItem(slot).isEmpty()) freeStorageSlots++;
@@ -3180,7 +3197,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		provider.validateArguments(call.name(), call.arguments());
 		refreshWorkHistory();
 		if (call.name().equals("list_work")) return "Tool result for list_work: "
-			+ new com.google.gson.Gson().toJson(workHistory.list().stream().map(ai.moeru.airicraft.agent.work.WorkSnapshot::summary).toList());
+			+ new com.google.gson.Gson().toJson(workHistory.list().stream().map(work -> withUpdateAge(work.summary())).toList());
 		var requested = call.arguments().has("workId")
 			? workHistory.find(new ai.moeru.airicraft.agent.work.WorkHandle(call.arguments().get("workId").getAsString())) : workHistory.current();
 		if (requested.isEmpty()) return call.arguments().has("workId") ? "TOOL_ERROR: work_not_found"
@@ -3227,11 +3244,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			default -> throw new IllegalArgumentException("unknown_work_tool");
 		}
 		refreshWorkHistory();
-		var result = new LinkedHashMap<>(call.name().equals("inspect_work") ? workHistory.find(handle).orElseThrow().payload()
+		var result = withUpdateAge(call.name().equals("inspect_work") ? workHistory.find(handle).orElseThrow().payload()
 			: workHistory.find(handle).orElseThrow().summary());
 		if (!call.name().equals("inspect_work")) result.put("accepted", true);
 		if (call.name().equals("resume_work")) dialogueRuntime.observeAcceptedWork(workHistory.find(handle).orElseThrow());
 		return "Tool result for " + call.name() + ": " + new com.google.gson.Gson().toJson(result);
+	}
+
+	/** Retained work can be old; the planner reads how long ago it last changed, not a raw tick. */
+	private LinkedHashMap<String, Object> withUpdateAge(Map<String, Object> work) {
+		var result = new LinkedHashMap<>(work);
+		if (result.get("updatedTick") instanceof Number updated) result.put("updatedTicksAgo", Math.max(0L, tickCount - updated.longValue()));
+		return result;
 	}
 
 	private EmbodiedPlannerActionToolExecutor.ExecutionState plannerActionToolExecutionState() {
@@ -3377,6 +3401,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: mine_blocks " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.mineBlocks(mineSpec));
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity());
 				yield queuedActionToolResult("mine_blocks", "blockIds=" + String.join(",", mineSpec.blockIds())
 					+ " quantity=" + mineSpec.quantity()
 					+ " allowUnilluminated=" + booleanArg(args, "allowUnilluminated").orElse(false));
@@ -3409,6 +3434,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: ensure_blocks_in_inventory " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.ensureBlocksInInventory(mineSpec));
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity() - currentItemCount);
 				yield queuedActionToolResult("ensure_blocks_in_inventory", "blockIds=" + String.join(",", mineSpec.blockIds()) + " quantity=" + mineSpec.quantity());
 			}
 			case PlannerToolCatalog.COLLECT_RESOURCE -> {
@@ -3709,6 +3735,28 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return activeJob.status() == ActiveJobStatus.QUEUED
 			|| activeJob.status() == ActiveJobStatus.RUNNING
 			|| activeJob.status() == ActiveJobStatus.BLOCKED;
+	}
+
+	/**
+	 * Mining work starts when its queued call runs, long before its receipt reaches the planner, so a tool-wear forecast
+	 * is a task.notice with attention at that moment. The work still runs.
+	 */
+	private void noticeToolWear(List<String> blockIds, int blocksNeeded) {
+		var minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) return;
+		var warning = ai.moeru.airicraft.agent.durability.MinecraftToolStacks.miningShortfall(minecraft.player.getInventory(), blockIds, blocksNeeded);
+		if (warning.isEmpty()) return;
+		var job = activeJobRuntime.current();
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("reason", "tool_wear");
+		payload.put("blockIds", List.copyOf(blockIds));
+		payload.put("blocksNeeded", blocksNeeded);
+		payload.put("message", "Tool wear: " + warning.get() + " The work is running; this notice does not cancel it.");
+		var event = job == null || job.jobId() == null
+			? eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload)
+			: eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload,
+				EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
+		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
 	private static String queuedActionToolResult(String toolName, String details) {

@@ -43,6 +43,7 @@ public final class WakePresenter {
 			case "reflex.resolved" -> createReflexResolvedTrigger(event);
 			case "smelting.output_ready" -> createSmeltingOutputReadyTrigger(event);
 			case "task.blocked" -> createTaskBlockedTrigger(event);
+			case "tool.broken", "tool.durability_low" -> createToolWearTrigger(event);
 			case "action_graph.goal_suspended" -> createActionGraphSuspendedTrigger(event);
 			case "action_graph.goal_terminal" -> createActionGraphTerminalTrigger(event);
 			case "perception.block_noticed", "perception.item_noticed", "perception.entity_noticed", "perception.entity_lost",
@@ -317,6 +318,32 @@ public final class WakePresenter {
 			event.tick(),
 			event.timestampMs(),
 			"smelting_output:" + processId
+		);
+	}
+
+	private PlannerTrigger createToolWearTrigger(SemanticEvent event) {
+		Map<String, Object> payload = event.payload();
+		String itemId = stringPayloadValue(payload, "itemId");
+		String kind = stringPayloadValue(payload, "toolKind");
+		Float spares = floatPayloadValue(payload, "sparesOfKind");
+		if (itemId == null || kind == null || spares == null) {
+			return null;
+		}
+		boolean broken = "tool.broken".equals(event.type());
+		Float remaining = floatPayloadValue(payload, "remaining");
+		if (!broken && remaining == null) {
+			return null;
+		}
+		String message = broken
+			? "My " + itemId + " broke; " + formatDecimal(spares) + " other " + kind + " tools left."
+			: "My " + itemId + " is my last " + kind + " and has " + formatDecimal(remaining) + " uses left.";
+		return PlannerTrigger.autonomous(
+			PlannerTriggerType.SYSTEM,
+			"self",
+			message,
+			event.tick(),
+			event.timestampMs(),
+			(broken ? "tool_broken:" : "tool_low:") + itemId
 		);
 	}
 

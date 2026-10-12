@@ -35,12 +35,14 @@ Health 20/20; food full; saturation 20; air full.
 Work and evidence use distinct statements. A receipt's acceptance never means physical completion:
 
 ```text
-Accepted; Work @r28; task SMELT_ITEMS; state QUEUED; phase IDLE; updated tick 3501; collected 0; result ...
+Accepted; Work @r28; task SMELT_ITEMS; state QUEUED; phase IDLE; updated just now; collected 0; result ...
 Current work:
-  Work @r28; task SMELT_ITEMS; state and phase RUNNING; updated tick 3501; message opening_furnace.
+  Work @r28; task SMELT_ITEMS; state and phase RUNNING; updated 2s ago; message opening_furnace.
 Evidence after 160 through 166.
-Event 166 at tick 3501: work.changed: same snapshot as current work @r28.
+Event 166, 2s ago: work.changed: same snapshot as current work @r28.
 ```
+
+Times are ages relative to the observation, never raw ticks: a `fooTick` field reads as `foo` with an age ("12s ago", "in 5s"), a `fooTicks` field as `foo` with a duration ("1.5s", "4m 10s"). A negative duration is a "no estimate" sentinel and reads as `unknown`. The server tick, world tick and wall-clock timestamps are left out. Work tool results carry `updatedTicksAgo` from the runtime, so retained work reads as "updated 8m 15s ago". Observation deltas leave out timestamps that only moved on, but keep durations that grew. Recordings, rules and the debug CLI keep raw ticks.
 
 The event alias is allowed only when the complete projected payload equals the current snapshot. Similar states, missing fields and earlier failures do not qualify.
 
@@ -77,6 +79,14 @@ Live follow-up D161 passed iron-pickaxe but used more total tokens (3.05M versus
 The client infers the source and intent because vanilla item tracking does not synchronize the thrower. A newly observed item must be at most five client ticks old, within one block of exactly one living, non-spectating player's drop position (eye height minus 0.3), and moving in that player's facing direction toward Airicraft. Self-drops are excluded. The item must be within six horizontal blocks and 2.5 vertical blocks, moving horizontally at least 0.1 blocks/tick, with directional alignment at least 0.7 and a projected horizontal miss distance no greater than 1.5 blocks. These are conservative heuristics, not proof of a gift or a collision-free path.
 
 The first observation after world entry/reset establishes a baseline. Each loaded item UUID is evaluated once; stack metadata may arrive up to five ticks later without losing the original motion evidence. Payloads include likely player name/UUID, item entity UUID, item ID/count, current/spawn position, initial velocity, dimension, observation tick, and `inferred=true`. Overlapping players, delayed observations, and offers without clear horizontal motion may be missed. Other item sources with matching geometry can produce false positives. Multiplayer behavior still requires live validation.
+
+## Tool wear
+
+`current.durability` lists every damaged item in the inventory, armor and offhand slots with its slot and durability in 10% steps, switching to exact uses left once the item is low (at most a tenth of its maximum or 8 uses, whichever is more). The coarse steps keep a long mining job from changing the observation on every block.
+
+`tool.durability_low` is published when the last tool of a kind (pickaxe, axe, shovel, hoe, sword or shears, by item tag, so modded tools count) wears into the low band and no healthy tool of that kind is carried; it wakes the planner at `LOW`. `tool.broken` is published when a tool with at most 4 uses left disappears from its slot and its item count drops; it wakes at `NORMAL`, and its hint says when no tool of that kind is left. Both payloads carry `itemId`, `toolKind`, `slot`, `maximum` and `sparesOfKind`; the low event also carries `remaining`. Breaks are inferred from successive inventory readings, so dropping a nearly broken tool reads as a break.
+
+When `mine_blocks` or `ensure_blocks_in_inventory` starts and, for any requested block that needs a tool, the carried tools that can harvest that block have fewer uses left than the blocks still needed (the block with the least tool life left is named), a `task.notice` with `reason: tool_wear` is published with task attention. It is a notice rather than part of the receipt because queued receipts reach the planner only when the work ends. The job runs either way; blocks that drop items without a tool never warn, and Unbreaking is not counted.
 
 ## Combat resolution summaries
 
