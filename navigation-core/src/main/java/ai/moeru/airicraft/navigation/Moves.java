@@ -79,7 +79,7 @@ public final class Moves {
 		CellInfo feet = cell(x, y, z);
 		CellInfo head = cell(x, y + 1, z);
 		if (!feet.loaded() || !head.loaded()) return KIND_INVALID;
-		if (deadly(feet) || deadly(head)) return KIND_INVALID;
+		if (deadly(x, y, z, feet) || deadly(x, y + 1, z, head)) return KIND_INVALID;
 		boolean feetOpen = !feet.hasCollision(CENTER);
 		if (feet.fluid() == CellInfo.Fluid.WATER && feetOpen) {
 			if (!sweepFree(x, z, 1 << CENTER, y, y + HEIGHT)) return KIND_INVALID;
@@ -204,7 +204,7 @@ public final class Moves {
 			if (support.fullCube() && target.loaded() && target.replaceable() && target.fluid() != CellInfo.Fluid.LAVA
 				&& feet.fluid() == CellInfo.Fluid.NONE && policy.permitsEdit(tx, y - 1, tz)
 				&& sweepFree(x, z, sourceMask, y, y + HEIGHT) && sweepFree(tx, tz, destMask, y, y + HEIGHT)
-				&& !deadly(cell(tx, y + 1, tz)) && !deadly(feet)) {
+				&& !deadly(tx, y + 1, tz, cell(tx, y + 1, tz)) && !deadly(tx, y, tz, feet)) {
 				out.place(tx, y - 1, tz, x, y - 1, z);
 				// The motor places against our floor's side face from where it stands, then walks on.
 				out.set(MoveType.BRIDGE, tx, y, tz, Costs.WALK + policy.placePenalty());
@@ -398,9 +398,11 @@ public final class Moves {
 			CellInfo cell = cell(x, cy, z);
 			if (!cell.loaded()) return -1;
 			double lo = Math.max(0, (from - cy) * 16), hi = Math.min(16, (to - cy) * 16);
-			boolean blocked = !cell.freeInMask(mask, lo, hi) || deadly(cell);
-			if (!blocked) continue;
-			if (!deadly(cell) && policy.allowDoors() && cell.toggled() != null && cell.toggled().freeInMask(mask, lo, hi)) {
+			boolean hazard = deadly(x, cy, z, cell);
+			// A body hazard is walked around, never mined out of the way: the body could pass it, it just should not.
+			if (hazard) return -1;
+			if (cell.freeInMask(mask, lo, hi)) continue;
+			if (policy.allowDoors() && cell.toggled() != null && cell.toggled().freeInMask(mask, lo, hi)) {
 				if (out.addDoor(x, cy, z)) cost += Costs.DOOR;
 				continue;
 			}
@@ -415,7 +417,7 @@ public final class Moves {
 		if (tallBelow(x, first - 1, z, mask, from, to)) return false;
 		for (int cy = first; cy <= last; cy++) {
 			CellInfo cell = cell(x, cy, z);
-			if (!cell.loaded() || deadly(cell)) return false;
+			if (!cell.loaded() || deadly(x, cy, z, cell)) return false;
 			double lo = Math.max(0, (from - cy) * 16), hi = Math.min(16, (to - cy) * 16);
 			if (!cell.freeInMask(mask, lo, hi)) return false;
 		}
@@ -442,8 +444,9 @@ public final class Moves {
 		return true;
 	}
 
-	private static boolean deadly(CellInfo cell) {
-		return cell.fluid() == CellInfo.Fluid.LAVA || cell.hazard(HAZARD_BODY);
+	private boolean deadly(int x, int y, int z, CellInfo cell) {
+		if (cell.fluid() == CellInfo.Fluid.LAVA) return true;
+		return cell.hazard(HAZARD_BODY) && !policy.admitsHazard(x, y, z);
 	}
 
 	private CellInfo cell(int x, int y, int z) {

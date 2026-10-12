@@ -258,6 +258,7 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 				motor.release(minecraft);
 				return false;
 			}
+			policy = policy.withHazardEntries(hazardEntries(minecraft, body.feet()));
             var moves=new ai.moeru.airicraft.navigation.Moves(liveTerrain(minecraft),policy);
             var recovery=NavigationStartRecovery.intent(body,player.getBoundingBox(),
                 p->moves.probe(p.x(),p.y(),p.z())!=ai.moeru.airicraft.navigation.Moves.KIND_INVALID,
@@ -356,6 +357,20 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 			segmentsWithoutProgress = 0;
 		}
 		return true;
+	}
+
+	/**
+	 * Body hazards (cobweb, berry bush, portal) are avoided everywhere except where this request
+	 * explicitly ends, an exact cell or column, and where the body already stands, so it can leave.
+	 */
+	private List<ai.moeru.airicraft.navigation.Box> hazardEntries(Minecraft minecraft, GridPos feet) {
+		var cells = new java.util.ArrayList<ai.moeru.airicraft.navigation.Box>();
+		cells.add(new ai.moeru.airicraft.navigation.Box(feet.x(), feet.y(), feet.z(), feet.x(), feet.y() + 1, feet.z()));
+		if (goal instanceof Goal.Block block)
+			cells.add(new ai.moeru.airicraft.navigation.Box(block.x(), block.y(), block.z(), block.x(), block.y() + 1, block.z()));
+		else if (goal instanceof Goal.XZ column)
+			cells.add(new ai.moeru.airicraft.navigation.Box(column.x(), minecraft.level.getMinY(), column.z(), column.x(), minecraft.level.getMaxY(), column.z()));
+		return cells;
 	}
 
 	private void record(SearchResult result, GridPos start) {
