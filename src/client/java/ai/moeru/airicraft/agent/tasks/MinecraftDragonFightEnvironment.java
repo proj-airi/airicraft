@@ -79,7 +79,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				Entity::isAlive).stream()
 			.map(fireball -> new DragonHazards.Fireball(fireball.position(), fireball.getDeltaMovement())).toList();
 		return new DragonFightTaskExecutor.Fight(inEnd, player.position(), player.getHealth(), dragon, crystals, clouds, fireballs,
-			bowSlot(player) >= 0 && hasArrows(player), footing(level, player));
+			bowSlot(player) >= 0 && hasArrows(player), footing(level, player), player.onGround());
 	}
 
 	/** Whether the player stands on the island's end stone; null in the air, where the last footing still holds. */

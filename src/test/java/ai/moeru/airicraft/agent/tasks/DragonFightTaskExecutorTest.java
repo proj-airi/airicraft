@@ -125,10 +125,17 @@ class DragonFightTaskExecutorTest {
 		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options);
 		f.env.feet = new Vec3(45.5, 62, 0.5);
 		f.tick(2);
-		assertEquals(CAGE_TOP, f.nav.goals.getLast());
-		assertEquals(NavigationOptions.DEFAULT, f.nav.options, "the climb places blocks");
-		f.env.feet = new Vec3(45.5, 83.7, 0.5); // jumping onto the last block, not placed yet
+		assertEquals(CAGE_GROUND, f.nav.goals.getLast(), "waits at the foot while the dragon flies");
+		assertTrue(f.snapshotText().contains("cageStage=CLIMB"), f.snapshotText());
+		f.env.dragon = dragon(true, 200);
 		f.tick(1);
+		assertEquals(CAGE_TOP, f.nav.goals.getLast(), "climbs while it perches, instead of going for the head");
+		assertEquals(NavigationOptions.DEFAULT, f.nav.options, "the climb places blocks");
+		f.env.dragon = dragon(false, 200); // takes off: the climb goes on
+		f.env.feet = new Vec3(45.5, 84.001, 0.5); // passing the top mid-jump, the last block not placed yet
+		f.env.onGround = false;
+		f.tick(1);
+		f.env.onGround = true;
 		assertTrue(f.nav.active && f.snapshotText().contains("cageStage=CLIMB"), f.snapshotText());
 		f.env.feet = new Vec3(45.5, 84, 0.5);
 		f.env.clouds = List.of(new DragonHazards.Cloud(new Vec3(45, 84, 0), 3));
@@ -158,6 +165,9 @@ class DragonFightTaskExecutorTest {
 		f.env.crystals = List.of(crystal("c", 42, true));
 		f.env.feet = new Vec3(45.5, 62, 0.5);
 		f.tick(2);
+		f.env.dragon = dragon(true, 200);
+		f.tick(1);
+		f.env.dragon = dragon(false, 200);
 		f.env.feet = new Vec3(45.5, 84, 0.5);
 		f.tick(2);
 		f.env.feet = new Vec3(44.5, 75, 0.5); // knocked against the pillar, still high
@@ -167,7 +177,9 @@ class DragonFightTaskExecutorTest {
 		f.tick(1);
 		assertFalse(f.snapshotText().contains("cageStage="), "attempt over: " + f.snapshotText());
 		f.tick(1);
-		assertEquals(CAGE_TOP, f.nav.goals.getLast(), "climbs again from where it landed");
+		f.env.dragon = dragon(true, 200);
+		f.tick(1);
+		assertEquals(CAGE_TOP, f.nav.goals.getLast(), "climbs again at the next perch");
 	}
 
 	@Test void aCrystalUnloadedFarAwayIsNotCountedAsDestroyed() {
@@ -362,6 +374,7 @@ class DragonFightTaskExecutorTest {
 	private static final class Environment implements DragonFightTaskExecutor.Environment {
 		boolean inEnd = true, bow = true, drawing;
 		Boolean onEndStone = true;
+		boolean onGround = true;
 		float health = 20;
 		Vec3 feet = new Vec3(0.5, 64, 20.5);
 		DragonFightTaskExecutor.Dragon dragon = dragon(false, 200);
@@ -377,7 +390,7 @@ class DragonFightTaskExecutorTest {
 		int releases, flightTicks = 15;
 
 		public DragonFightTaskExecutor.Fight observe() {
-			return new DragonFightTaskExecutor.Fight(inEnd, feet, health, dragon, crystals, clouds, List.of(), bow, onEndStone);
+			return new DragonFightTaskExecutor.Fight(inEnd, feet, health, dragon, crystals, clouds, List.of(), bow, onEndStone, onGround);
 		}
 		public Optional<GoalPosition> escapePosition(DragonFightTaskExecutor.Fight fight, Vec3 avoid) { return Optional.of(escape); }
 		public Optional<GoalPosition> perchApproach(DragonFightTaskExecutor.Fight fight, DragonFightTaskExecutor.Dragon dragon) { return Optional.of(perch); }

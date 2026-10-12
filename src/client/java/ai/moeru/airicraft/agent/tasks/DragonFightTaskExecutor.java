@@ -97,6 +97,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private CageStage cageStage;
 	private int cageStageTicks, cageBlockTicks, cagesOpened, roofBroken, roofSkipped;
 	private GoalPosition cageBlock;
+	/** The climb has started; it goes on even if the dragon takes off, since stopping halfway is no safer. */
+	private boolean climbing;
 	private final Map<String, Integer> cageAttempts = new LinkedHashMap<>();
 	/** Why no cage can be opened, for the hand-back; null while one can. */
 	private String cageUnavailable;
@@ -170,6 +172,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		// Up on our own pillar there is nowhere to dodge to and no perch to reach: finish the cage first.
 		if (cageTarget != null && (elevated(fight) || cageStage == CageStage.DESCEND)) workCage(fight);
 		else if (threatened || settlingDodge(fight)) dodge(fight, dragon);
+		// A perch is the climb's window: the dragon sits on the portal instead of strafing the pillar.
+		else if (cageTarget != null && cageStage == CageStage.CLIMB && dragon != null && dragon.perched()) workCage(fight);
 		else if (dragon != null && dragon.perched()) meleeHead(fight, dragon);
 		else if (!shootCrystal(fight) && !workCage(fight)) waitNearPortal(fight);
 		if (approachFailures >= MAX_APPROACH_FAILURES)
@@ -348,11 +352,21 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				} else if (!navigate(cagePlan.ground(), 0) || navigationTicks > NAVIGATION_TIMEOUT_TICKS) failCage(fight);
 			}
 			case CLIMB -> {
-				// Exactly at the top height: standing on the last block, not passing it mid-jump before it is placed.
-				if (atTop(fight.feet()) && Math.abs(fight.feet().y - cagePlan.top().y()) < 0.02D) {
+				Dragon dragon = fight.dragon();
+				if (!climbing && dragon != null && !dragon.perched()) {
+					// Wait at the foot of the climb for the next perch; a wing hit up there is a long fall.
+					if (!atSpot(fight.feet(), cagePlan.ground())) navigate(cagePlan.ground(), 0);
+					cageStageTicks = 0;
+					return true;
+				}
+				// Standing on the last block, not passing the top height mid-jump before it is placed.
+				if (atTop(fight.feet()) && fight.onGround() && Math.abs(fight.feet().y - cagePlan.top().y()) < 0.02D) {
 					stopNavigation();
 					setCageStage(CageStage.BREAK);
-				} else if (!navigate(cagePlan.top(), 0, NavigationOptions.DEFAULT) || cageStageTicks > CAGE_CLIMB_TIMEOUT_TICKS) {
+					return true;
+				}
+				climbing = true;
+				if (!navigate(cagePlan.top(), 0, NavigationOptions.DEFAULT) || cageStageTicks > CAGE_CLIMB_TIMEOUT_TICKS) {
 					stopNavigation();
 					if (elevated(fight)) setCageStage(CageStage.DESCEND);
 					else failCage(fight);
@@ -449,6 +463,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 
 	private void setCageStage(CageStage stage) {
 		cageStage = stage;
+		climbing = false;
 		cageStageTicks = 0;
 		cageBlock = null;
 	}
@@ -672,7 +687,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	/** A live end crystal. {@code position} is its base; a cage of iron bars stops arrows. */
 	record Crystal(String id, Vec3 position, boolean caged) {}
 	record Fight(boolean inEnd, Vec3 feet, float health, Dragon dragon, List<Crystal> crystals,
-		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows, Boolean onEndStone) {
+		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows, Boolean onEndStone,
+		boolean onGround) {
 		/** Farther from the exit portal than a perch can be reached from. */
 		boolean awayFromPortal() { return Math.hypot(feet.x, feet.z) > 24.0D; }
 	}
