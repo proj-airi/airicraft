@@ -75,7 +75,7 @@ public final class PlannerInputText {
 			var list = events.getAsJsonArray().asList();
 			for (int i = 0; i < list.size();) {
 				int end = i + 1;
-				while (end < list.size() && samePickup(list.get(i), list.get(end))) end++;
+				while (end < list.size() && samePickup(list.get(end - 1), list.get(end))) end++;
 				out.append(end - i > 1 ? pickups(list.subList(i, end)) : event(list.get(i), currentWork)).append('\n');
 				i = end;
 			}
@@ -306,7 +306,7 @@ public final class PlannerInputText {
 			var parts = new ArrayList<String>();
 			JsonElement mission = f.take("missionId");
 			// A mission is its job; name it the way work is named everywhere else.
-			if (mission != null) parts.add("Work " + (text(mission).contains(":") || text(mission).startsWith("@r") ? text(mission) : "JOB:" + text(mission)));
+			if (mission != null) parts.add("Work " + (text(mission).startsWith("JOB:") || text(mission).startsWith("@r") ? text(mission) : "JOB:" + text(mission)));
 			add(parts, f.phrase("state", "state "));
 			// Factor equal kinds without losing which roles share them.
 			var kinds = new java.util.LinkedHashMap<String, List<String>>();
@@ -368,6 +368,7 @@ public final class PlannerInputText {
 		if (!value.isJsonObject()) return text(value);
 		Fields f = new Fields(value.getAsJsonObject());
 		dropEmpty(f, "error");
+		for (String key : List.of("userBounds", "strategyBounds")) if (f.has(key) && f.remaining.get(key).isJsonNull()) f.take(key);
 		JsonElement meaning = f.take("coordinateMeaning");
 		var parts = new ArrayList<String>();
 		add(parts, f.phrase("error", "error "));
@@ -402,7 +403,9 @@ public final class PlannerInputText {
 
 	private static boolean samePickup(JsonElement first, JsonElement next) {
 		JsonObject a = pickupPayload(first), b = pickupPayload(next);
+		// Only adjacent sequence numbers merge, so the range names exactly the merged events.
 		return a != null && b != null && java.util.Objects.equals(a.get("itemId"), b.get("itemId"))
+			&& first.getAsJsonObject().get("seqNo").getAsLong() + 1 == next.getAsJsonObject().get("seqNo").getAsLong()
 			&& java.util.Objects.equals(a.get("actor"), b.get("actor"));
 	}
 
@@ -415,7 +418,7 @@ public final class PlannerInputText {
 			|| !payload.get("count").getAsJsonPrimitive().isNumber()) return null;
 		var keys = new java.util.HashSet<>(e.keySet());
 		keys.removeAll(List.of("seqNo", "tick", "type", "payload"));
-		return keys.isEmpty() ? payload : null;
+		return keys.isEmpty() && e.has("seqNo") && e.get("seqNo").isJsonPrimitive() && e.get("seqNo").getAsJsonPrimitive().isNumber() ? payload : null;
 	}
 
 	/** One line for a run of identical pickups, instead of one line per item. */
