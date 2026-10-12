@@ -203,6 +203,8 @@
 - Each observe says why the planner woke (`observe.wake`: an event `seqNo`/type, or `goal_continuation`, `idle_think`, `delegation`, `evaluation`, `tool_queue_review`); the evidence is `observe.events` (types the catalog marks `PLANNER`) and `current`; per-event advice is `observe.hints` (`provenance: runtime_hint`). Event wakes, goal continuation, idle think and task wakes carry no prose; standing rules live in `prompts/planner-system.md` and tool descriptions.
 - Wake behavior is pinned by golden transcripts in `src/test/resources/planner/wakes/`. Update with `AIRICRAFT_UPDATE_WAKE_GOLDENS=1` (the update run deliberately fails), review every golden diff, then rerun without the variable.
 
+- Carried armor that protects more than what is worn is put on automatically (`agent/equipment/ArmorAutoEquip`, one piece per 20 ticks through the player's own inventory menu, so it waits while a container is open; `equipment.armor_equipped`). Zero-armor wearables (carved pumpkin, elytra) and binding-cursed pieces are left to the planner's `equip_item`.
+
 - Location memory uses one planner interface: `remember_place`, `recall_place`, `list_places`, `forget_place`. JourneyMap is authoritative when installed; `places.json` is used only without it. No import, mirroring, or silent fallback while JourneyMap loads.
 - Recall/forget accept exact name or stable ID; duplicate names require IDs. JourneyMap native and death waypoints are ordinary entries. Notes and preserved areas live in waypoint custom data.
 - New location-memory consumers use `LocationMemoryService`/`LocationMemoryBridge`; only the fallback provider accesses the local file store. Protection follows the selected backend and fails closed when its data is unavailable.

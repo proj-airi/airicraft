@@ -169,6 +169,15 @@
       "extraWake": null
     },
     {
+      "type": "equipment.armor_equipped",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "food.unavailable",
       "producers": [
         "EmbodiedAgentRuntime"
@@ -701,6 +710,15 @@
     },
     {
       "type": "reflex.movement_recovery",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.wet_fight",
       "producers": [
         "SurvivalReflexRuntime"
       ],

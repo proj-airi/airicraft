@@ -250,7 +250,7 @@ public final class PlannerToolCatalog {
 		builtInTool(CANCEL_SMELTING, false, tool(CANCEL_SMELTING, "Stop tracking an Airicraft-owned smelting process without reclaiming furnace contents.", properties(
 				prop("processId", string("Airicraft-owned process id to stop tracking."))
 			), List.of("processId")), PlannerToolCatalog::validateCancelSmeltingArguments),
-		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Armor is worn through normal item use; weapons and tools become the selected main-hand item.", properties(
+		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; use this only for a specific wearable such as a carved pumpkin.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(

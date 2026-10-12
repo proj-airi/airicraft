@@ -288,6 +288,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final MiningOpportunityPolicyState miningOpportunityPolicy;
 	private final MiningOpportunityJournal miningOpportunityJournal;
 	private final PlayerItemUseController playerItemUseController = new PlayerItemUseController();
+	private final ai.moeru.airicraft.agent.equipment.ArmorAutoEquip armorAutoEquip = new ai.moeru.airicraft.agent.equipment.ArmorAutoEquip();
 	private final FoodRuntime foodRuntime = new FoodRuntime();
 	private final SurvivalReflexRuntime.CombatEating combatEating = new SurvivalReflexRuntime.CombatEating() {
 		@Override public boolean needed(net.minecraft.client.player.LocalPlayer player) {
@@ -602,6 +603,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		survivalReflexRuntime.reset(Minecraft.getInstance());
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
+		armorAutoEquip.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();
@@ -666,6 +668,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		));
 		tickSurvivalReflex(minecraft);
 		tickIdleEating(minecraft);
+		tickArmor(minecraft);
 		drainEventPipeline();
 
 		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, minecraft);
@@ -1133,6 +1136,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		processSurvivalReflexEvents();
 	}
 
+	private void tickArmor(Minecraft minecraft) {
+		if (!sessionSnapshot.companionActuationAllowed() || sessionSnapshot.requiresRespawn()) return;
+		armorAutoEquip.tick(minecraft, tickCount).ifPresent(swap -> {
+			var payload = new LinkedHashMap<String, Object>();
+			payload.put("itemId", swap.itemId());
+			payload.put("equipmentSlot", swap.slot());
+			if (swap.replacedItemId() != null) payload.put("replacedItemId", swap.replacedItemId());
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "equipment.armor_equipped", payload);
+		});
+	}
+
 	private void tickIdleEating(Minecraft minecraft) {
 		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) return;
 		var player = minecraft.player;
@@ -1411,6 +1425,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		survivalReflexRuntime.reset(Minecraft.getInstance());
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
+		armorAutoEquip.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();
