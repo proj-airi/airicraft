@@ -90,6 +90,27 @@ class DragonFightTaskExecutorTest {
 		assertEquals(SPOT_A, f.nav.goals.getLast());
 	}
 
+	@Test void handsBackWhenOnlyCagedCrystalsKeepHealingTheDragon() {
+		Fixture f = new Fixture();
+		f.env.crystals = List.of(crystal("open", 30, false), crystal("caged", 5, true));
+		f.env.melee = DragonFightTaskExecutor.MeleeResult.HIT;
+		for (int perch = 0; perch < DragonFightTaskExecutor.CAGED_ONLY_PERCHES; perch++) {
+			f.env.dragon = dragon(true, 180);
+			f.tick(3);
+			f.env.dragon = dragon(false, 200);
+			f.tick(1);
+		}
+		assertTrue(f.events.isEmpty(), "an open crystal is still worth shooting");
+		f.env.crystals = List.of(crystal("caged", 5, true));
+		for (int perch = 0; perch < DragonFightTaskExecutor.CAGED_ONLY_PERCHES; perch++) {
+			f.env.dragon = dragon(true, 180);
+			f.tick(3);
+			f.env.dragon = dragon(false, 200);
+			f.tick(1);
+		}
+		assertTrue(f.events.getFirst().message().startsWith("caged_crystals; 1 end crystals"), f.events.toString());
+	}
+
 	@Test void aCrystalUnloadedFarAwayIsNotCountedAsDestroyed() {
 		Fixture f = new Fixture();
 		f.env.bow = false;

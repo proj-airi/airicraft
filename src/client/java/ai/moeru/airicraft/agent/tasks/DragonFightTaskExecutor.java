@@ -37,6 +37,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	static final double RETRY_BLOCKED_DISTANCE = 16.0D;
 	/** Waiting by the portal never moves 16 blocks; look for a shot at blocked crystals again after this long. */
 	static final int RETRY_BLOCKED_TICKS = 600;
+	/** Caged crystals heal the dragon back to full between perches; head hits alone cannot outpace them. */
+	static final int CAGED_ONLY_PERCHES = 2;
 	/** Gives up on a route before the dispatcher's 100-tick stall watchdog would end the whole fight. */
 	static final long NAVIGATION_STALL_TICKS = 70;
 	/** Once dodging, finish the step before turning back, so hazards at the edge of the margin do not flap. */
@@ -76,6 +78,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private int calmTicks;
 	/** Last seen standing on the island; routes then walk only, never bridging out into the dragon's reach over the void. */
 	private boolean onIsland;
+	private boolean wasPerched;
+	private int cagedOnlyPerches;
 
 	public DragonFightTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController camera) {
 		this(navigation, new MinecraftDragonFightEnvironment(camera));
@@ -123,6 +127,15 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		} else missingDragonTicks = 0;
 		if (dragon != null && dragon.dying()) return finish(true, "dragon_defeated", null);
 		observeProgress(fight);
+		boolean perched = dragon != null && dragon.perched();
+		if (wasPerched && !perched && !fight.crystals().isEmpty() && fight.crystals().stream().allMatch(Crystal::caged))
+			cagedOnlyPerches++;
+		wasPerched = perched;
+		if (cagedOnlyPerches >= CAGED_ONLY_PERCHES)
+			return finish(false, "caged_crystals; " + fight.crystals().size() + " end crystals inside iron-bar cages keep healing the dragon "
+				+ "and this task cannot reach them. Pillar up beside each caged pillar with building blocks, break the iron bars with a pickaxe, "
+				+ "destroy the crystal from a few blocks away (it explodes), get back down, then call fight_ender_dragon again",
+				TaskFailureCode.ENVIRONMENT_CHANGED);
 		if (fight.health() <= LOW_HEALTH)
 			return finish(false, "low_health health=" + fight.health() + "; eat or retreat out of reach of the dragon, then call fight_ender_dragon again",
 				TaskFailureCode.ENVIRONMENT_CHANGED);
@@ -386,6 +399,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		navigationRestTick = -1;
 		calmTicks = 0;
 		onIsland = false;
+		wasPerched = false;
+		cagedOnlyPerches = 0;
 	}
 
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason, TaskFailureCode failureCode) {
