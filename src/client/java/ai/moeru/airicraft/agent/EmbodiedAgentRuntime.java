@@ -3180,7 +3180,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		provider.validateArguments(call.name(), call.arguments());
 		refreshWorkHistory();
 		if (call.name().equals("list_work")) return "Tool result for list_work: "
-			+ new com.google.gson.Gson().toJson(workHistory.list().stream().map(ai.moeru.airicraft.agent.work.WorkSnapshot::summary).toList());
+			+ new com.google.gson.Gson().toJson(workHistory.list().stream().map(work -> withUpdateAge(work.summary())).toList());
 		var requested = call.arguments().has("workId")
 			? workHistory.find(new ai.moeru.airicraft.agent.work.WorkHandle(call.arguments().get("workId").getAsString())) : workHistory.current();
 		if (requested.isEmpty()) return call.arguments().has("workId") ? "TOOL_ERROR: work_not_found"
@@ -3227,11 +3227,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			default -> throw new IllegalArgumentException("unknown_work_tool");
 		}
 		refreshWorkHistory();
-		var result = new LinkedHashMap<>(call.name().equals("inspect_work") ? workHistory.find(handle).orElseThrow().payload()
+		var result = withUpdateAge(call.name().equals("inspect_work") ? workHistory.find(handle).orElseThrow().payload()
 			: workHistory.find(handle).orElseThrow().summary());
 		if (!call.name().equals("inspect_work")) result.put("accepted", true);
 		if (call.name().equals("resume_work")) dialogueRuntime.observeAcceptedWork(workHistory.find(handle).orElseThrow());
 		return "Tool result for " + call.name() + ": " + new com.google.gson.Gson().toJson(result);
+	}
+
+	/** Retained work can be old; the planner reads how long ago it last changed, not a raw tick. */
+	private LinkedHashMap<String, Object> withUpdateAge(Map<String, Object> work) {
+		var result = new LinkedHashMap<>(work);
+		if (result.get("updatedTick") instanceof Number updated) result.put("updatedTicksAgo", Math.max(0L, tickCount - updated.longValue()));
+		return result;
 	}
 
 	private EmbodiedPlannerActionToolExecutor.ExecutionState plannerActionToolExecutionState() {

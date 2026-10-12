@@ -105,8 +105,10 @@ public final class PlannerInputText {
 	}
 
 	static String toolResult(String prefix, JsonObject object) {
-		// A tool result is current as it is read; its update tick says nothing more.
+		// The runtime supplies the update's age; the raw tick means nothing without the clock.
 		object.remove("updatedTick");
+		Long age = number(object.remove("updatedTicksAgo"));
+		if (age != null) object.addProperty("updated", ago(age));
 		return prefix + work(object);
 	}
 
@@ -476,6 +478,13 @@ public final class PlannerInputText {
 		}
 		if (!value.isJsonObject()) return value;
 		JsonObject object = value.getAsJsonObject();
+		// A JSON Patch keeps its pointer; only a duration's value reads as seconds.
+		if (object.has("path") && object.get("path").isJsonPrimitive() && object.get("path").getAsString().endsWith("Ticks")
+			&& number(object.get("value")) != null) {
+			JsonObject op = object.deepCopy();
+			op.addProperty("value", durationOrUnknown(number(object.get("value"))));
+			return op;
+		}
 		var out = new JsonObject();
 		for (var entry : object.entrySet()) {
 			String key = entry.getKey();
@@ -488,10 +497,15 @@ public final class PlannerInputText {
 				out.addProperty(stem.isEmpty() || object.has(stem) ? key : stem, ago(now - ticks));
 			} else if (key.endsWith("Ticks") && key.length() > 5) {
 				String stem = key.substring(0, key.length() - 5);
-				out.addProperty(object.has(stem) ? key : stem, duration(ticks));
+				out.addProperty(object.has(stem) ? key : stem, durationOrUnknown(ticks));
 			} else out.add(key, entry.getValue());
 		}
 		return out;
+	}
+
+	/** A negative duration is a sentinel for "no estimate", never an elapsed time. */
+	private static String durationOrUnknown(long ticks) {
+		return ticks < 0 ? "unknown" : duration(ticks);
 	}
 
 	static String ago(long ticks) {

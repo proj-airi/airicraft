@@ -213,8 +213,16 @@ class PlannerInputTextTest {
 		assertEquals("1h 2m", PlannerInputText.duration(74_400));
 	}
 
-	@Test void toolResultsLeaveOutTheirUpdateTick() {
-		String prose = PlannerInputText.message("tool", "Tool result for inspect_work: {\"workId\":\"JOB:one\",\"state\":\"RUNNING\",\"updatedTick\":31948}");
-		assertFalse(prose.contains("31948"), prose);
+	@Test void toolResultsShowTheUpdateAgeInsteadOfTheTick() {
+		String prose = PlannerInputText.message("tool", "Tool result for inspect_work: {\"workId\":\"JOB:one\",\"state\":\"SUCCEEDED\",\"updatedTick\":100,\"updatedTicksAgo\":9900}");
+		assertTrue(prose.contains("updated 8m 15s ago"), prose);
+		assertFalse(prose.contains("100"), prose);
+	}
+
+	@Test void negativeDurationsAreUnknownNotZero() {
+		var payload = Map.<String, Object>of("tick", 50, "events", java.util.List.of(
+			Map.of("seqNo", 1, "tick", 50, "type", "task.notice", "payload", Map.of("reason", "slow_mining", "estimatedBreakTicks", -1))));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("\"estimatedBreak\":\"unknown\""), prose);
 	}
 }

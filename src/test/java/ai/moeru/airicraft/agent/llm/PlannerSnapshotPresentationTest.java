@@ -58,6 +58,12 @@ class PlannerSnapshotPresentationTest {
 		assertTrue(rendered.get(1).contains("State unchanged since the previous observation."), rendered.get(1));
 	}
 
+	@Test void aDurationThatGrewIsAChangeInSeconds() {
+		var rendered = present(snapshot("a", 1, padded("{\"reflex\":{\"state\":\"AWAITING_PLANNER\",\"breathableTicks\":20}}"), false),
+			snapshot("a", 2, padded("{\"reflex\":{\"state\":\"AWAITING_PLANNER\",\"breathableTicks\":40}}"), false));
+		assertTrue(rendered.get(1).contains("\"path\":\"/reflex/breathableTicks\",\"value\":\"2s\""), rendered.get(1));
+	}
+
 	@Test void pointerSegmentsAreEscaped() {
 		var rendered = present(snapshot("a", 1, padded("{\"a/b\":{\"c~d\":1}}"), false), snapshot("a", 2, padded("{\"a/b\":{\"c~d\":2}}"), false));
 		assertTrue(rendered.get(1).contains("\"path\":\"/a~1b/c~0d\""), rendered.get(1));
