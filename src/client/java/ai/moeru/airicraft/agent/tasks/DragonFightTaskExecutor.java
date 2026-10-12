@@ -25,12 +25,19 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	static final int FIGHT_TIMEOUT_TICKS = 24_000;
 	/** No crystal destroyed and no damage dealt for this long: the approach is not working. */
 	static final int NO_PROGRESS_TICKS = 6_000;
-	static final int DRAGON_MISSING_TICKS = 100;
+	static final int DRAGON_MISSING_TICKS = 600;
 	static final int FULL_DRAW_TICKS = 22;
 	static final int MAX_AIM_TICKS = 60;
 	static final int SHOTS_PER_SPOT = 3;
 	static final int SPOTS_PER_CRYSTAL = 3;
 	static final int NAVIGATION_TIMEOUT_TICKS = 600;
+	static final double CRYSTAL_VIEW_DISTANCE = 96.0D;
+	static final int MAX_APPROACH_FAILURES = 5;
+	static final double RETRY_BLOCKED_DISTANCE = 16.0D;
+	/** Gives up on a route before the dispatcher's 100-tick stall watchdog would end the whole fight. */
+	static final long NAVIGATION_STALL_TICKS = 70;
+	/** Once dodging, finish the step before turning back, so hazards at the edge of the margin do not flap. */
+	static final int DODGE_SETTLE_TICKS = 20;
 
 	private final NavigationFacade navigation;
 	private final Environment environment;
@@ -44,16 +51,26 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private GoalPosition navigationGoal;
 	private boolean navigationOwned;
 	private float lowestDragonHealth = Float.MAX_VALUE;
-	private int fewestCrystals = Integer.MAX_VALUE;
+	/** Crystals seen so far, by id; one that vanishes while its spot is in view was destroyed, not unloaded. */
+	private final Map<String, Vec3> knownCrystals = new LinkedHashMap<>();
 	private int crystalsDestroyed, headHits, arrowsShot, dodges;
 
 	private String crystalTarget;
 	private GoalPosition shootingSpot;
 	private final Set<GoalPosition> rejectedSpots = new HashSet<>();
 	private final Map<String, Integer> spotsTried = new LinkedHashMap<>();
-	private final Set<String> skippedCrystals = new HashSet<>();
+	private final Map<String, String> skippedCrystals = new LinkedHashMap<>();
+	/** Crystals with no clear shot from here; retried once the player has moved on. */
+	private final Map<String, Vec3> blockedCrystals = new LinkedHashMap<>();
 	private int shotsFromSpot, drawTicks, arrowWaitTicks;
 	private boolean waitingSpotReached;
+	/** Failed routes toward the portal since the player last got anywhere. */
+	private int approachFailures;
+	private Vec3 approachFailedFrom;
+	private final NavigationStallWatchdog navigationStall = new NavigationStallWatchdog(NAVIGATION_STALL_TICKS);
+	/** The tick a stalled route was dropped; no route starts in the same tick, so the dispatcher's watchdog sees it end. */
+	private int navigationRestTick = -1;
+	private int calmTicks;
 
 	public DragonFightTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController camera) {
 		this(navigation, new MinecraftDragonFightEnvironment(camera));
@@ -93,7 +110,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		Dragon dragon = fight.dragon();
 		if (dragon == null || !dragon.alive()) {
 			if (dragon != null || lowestDragonHealth <= 0.0F) return finish(true, "dragon_defeated", null);
-			if (++missingDragonTicks > DRAGON_MISSING_TICKS)
+			// The dragon circles far from the portal and drops out of entity range; that is not absence.
+			if (!fight.awayFromPortal() && ++missingDragonTicks > DRAGON_MISSING_TICKS)
 				return finish(false, "dragon_not_found; no living dragon is loaded nearby, walk toward the exit portal at x=0 z=0 first",
 					TaskFailureCode.MISSING_FACT);
 		} else missingDragonTicks = 0;
@@ -107,11 +125,23 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			return finish(false, "no_progress; no crystal destroyed and no damage dealt for " + NO_PROGRESS_TICKS + " ticks",
 				TaskFailureCode.ENVIRONMENT_CHANGED);
 
-		if (DragonHazards.threatened(fight.feet(), fight.clouds(), fight.fireballs())) dodge(fight, dragon);
+		boolean threatened = DragonHazards.threatened(fight.feet(), fight.clouds(), fight.fireballs());
+		calmTicks = threatened ? 0 : calmTicks + 1;
+		if (threatened || settlingDodge(fight)) dodge(fight, dragon);
 		else if (dragon != null && dragon.perched()) meleeHead(fight, dragon);
 		else if (!shootCrystal(fight)) waitNearPortal(fight);
+		if (approachFailures >= MAX_APPROACH_FAILURES)
+			return finish(false, "portal_unreachable; no walkable or bridgeable route toward the exit portal at x=0 z=0 from here. "
+				+ "Carry building blocks so navigation can bridge from the arrival platform, then call again", TaskFailureCode.MISSING_ITEM);
+		if (!navigationOwned) navigationStall.clear();
 		setSnapshot(TaskExecutionState.RUNNING, "fighting", fight);
 		return Optional.empty();
+	}
+
+	/** Whether to keep walking to the escape spot after the threat has passed. */
+	private boolean settlingDodge(Fight fight) {
+		return phase == Phase.DODGE && calmTicks < DODGE_SETTLE_TICKS && navigationOwned && navigationGoal != null
+			&& !atSpot(fight.feet(), navigationGoal) && !navigation.navigationGoalReached(navigationGoal);
 	}
 
 	private void observeProgress(Fight fight) {
@@ -120,14 +150,22 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			progress = lowestDragonHealth != Float.MAX_VALUE;
 			lowestDragonHealth = fight.dragon().health();
 		}
-		int alive = (int) fight.crystals().stream().count();
-		if (alive < fewestCrystals) {
-			if (fewestCrystals != Integer.MAX_VALUE) {
-				crystalsDestroyed += fewestCrystals - alive;
+		Set<String> alive = new HashSet<>();
+		for (Crystal crystal : fight.crystals()) {
+			alive.add(crystal.id());
+			knownCrystals.put(crystal.id(), crystal.position());
+		}
+		var vanished = knownCrystals.entrySet().iterator();
+		while (vanished.hasNext()) {
+			var known = vanished.next();
+			if (alive.contains(known.getKey())) continue;
+			vanished.remove();
+			if (horizontalDistance(fight.feet(), known.getValue()) <= CRYSTAL_VIEW_DISTANCE) {
+				crystalsDestroyed++;
 				progress = true;
 			}
-			fewestCrystals = alive;
 		}
+		blockedCrystals.values().removeIf(from -> horizontalDistance(fight.feet(), from) > RETRY_BLOCKED_DISTANCE);
 		if (progress) lastProgressTick = activeTicks;
 	}
 
@@ -138,7 +176,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			stopNavigation();
 		}
 		phase = Phase.DODGE;
-		if (navigationOwned && navigationGoal != null && navigationTicks < 60
+		if (navigationOwned && navigationGoal != null && (navigationTicks < 60 || calmTicks > 0)
 			&& !DragonHazards.threatened(center(navigationGoal), fight.clouds(), fight.fireballs())) {
 			navigate(navigationGoal, 0);
 			return;
@@ -175,7 +213,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			crystalTarget = null;
 			shootingSpot = null;
 			target = fight.crystals().stream()
-				.filter(c -> !c.caged() && !skippedCrystals.contains(c.id()))
+				.filter(c -> !c.caged() && !skippedCrystals.containsKey(c.id()) && !blockedCrystals.containsKey(c.id()))
 				.min(java.util.Comparator.comparingDouble(c -> horizontalDistance(fight.feet(), c.position())))
 				.orElse(null);
 			if (target == null) return false;
@@ -188,7 +226,9 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			shootingSpot = environment.shootingSpot(fight, target, rejectedSpots).orElse(null);
 			shotsFromSpot = 0;
 			if (shootingSpot == null) {
-				skip(target, "no_clear_shot");
+				// Terrain may be unloaded or in the way from here; try again after moving.
+				blockedCrystals.put(target.id(), fight.feet());
+				crystalTarget = null;
 				return true;
 			}
 		}
@@ -230,19 +270,30 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		}
 		phase = Phase.WAIT;
 		if (waitingSpotReached) return;
-		Optional<GoalPosition> spot = environment.waitingSpot(fight);
-		if (spot.isEmpty() || atSpot(fight.feet(), spot.get())) {
+		// Keep walking to the chosen spot; a step toward the portal is chosen afresh only after it ends.
+		Optional<GoalPosition> spot = navigationOwned && navigationGoal != null
+			? Optional.of(navigationGoal) : environment.waitingSpot(fight);
+		if (spot.isEmpty()) {
 			stopNavigation();
-			waitingSpotReached = true;
+			return;
+		}
+		if (atSpot(fight.feet(), spot.get())) {
+			stopNavigation();
+			waitingSpotReached = !fight.awayFromPortal();
 			return;
 		}
 		if (!navigate(spot.get(), 2) || navigationTicks > NAVIGATION_TIMEOUT_TICKS) {
 			stopNavigation();
-			waitingSpotReached = true;
+			waitingSpotReached = !fight.awayFromPortal();
+			if (fight.awayFromPortal()) {
+				if (approachFailedFrom == null || approachFailedFrom.distanceTo(fight.feet()) > 4.0D) approachFailures = 0;
+				approachFailedFrom = fight.feet();
+				approachFailures++;
+			}
 		}
 		else if (navigation.navigationGoalReached(spot.get())) {
 			stopNavigation();
-			waitingSpotReached = true;
+			waitingSpotReached = !fight.awayFromPortal();
 		}
 	}
 
@@ -255,7 +306,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private void skip(Crystal target, String reason) {
-		skippedCrystals.add(target.id());
+		skippedCrystals.put(target.id(), reason);
 		crystalTarget = null;
 		shootingSpot = null;
 		stopBow();
@@ -263,6 +314,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private boolean navigate(GoalPosition goal, int radius) {
+		if (navigationRestTick == activeTicks) return true;
 		if (!navigationOwned || !goal.equals(navigationGoal)) {
 			stopNavigation();
 			NavigationRelease.release(navigation);
@@ -275,6 +327,14 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		}
 		navigationTicks++;
 		String event = navigation.pollPathEvent().orElse("");
+		var progress = navigation.navigationProgress();
+		if (progress.isEmpty()) navigationStall.clear();
+		else if (navigationStall.observe(activeTicks, progress.get())) {
+			stopNavigation();
+			navigationStall.clear();
+			navigationRestTick = activeTicks;
+			return false;
+		}
 		return !event.contains("CALC_FAILED") && !event.equals("CANCELED");
 	}
 
@@ -302,7 +362,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		phase = Phase.WAIT;
 		activeTicks = lastProgressTick = missingDragonTicks = navigationTicks = 0;
 		lowestDragonHealth = Float.MAX_VALUE;
-		fewestCrystals = Integer.MAX_VALUE;
+		knownCrystals.clear();
+		blockedCrystals.clear();
 		crystalsDestroyed = headHits = arrowsShot = dodges = 0;
 		crystalTarget = null;
 		shootingSpot = null;
@@ -311,12 +372,17 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		skippedCrystals.clear();
 		shotsFromSpot = drawTicks = arrowWaitTicks = 0;
 		waitingSpotReached = false;
+		approachFailures = 0;
+		approachFailedFrom = null;
+		navigationStall.clear();
+		navigationRestTick = -1;
+		calmTicks = 0;
 	}
 
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason, TaskFailureCode failureCode) {
 		release();
 		String summary = reason + " crystalsDestroyed=" + crystalsDestroyed + " headHits=" + headHits + " arrowsShot=" + arrowsShot
-			+ " dodges=" + dodges + (skippedCrystals.isEmpty() ? "" : " crystalsSkipped=" + skippedCrystals.size());
+			+ " dodges=" + dodges + (skippedCrystals.isEmpty() ? "" : " crystalsSkipped=" + skippedCrystals.values());
 		terminal = new TaskTerminalEvent(request.taskId(), null, success ? TaskExecutionState.COMPLETED : TaskExecutionState.FAILED,
 			summary, success ? TaskTerminationCause.GOAL_REACHED : null, success ? null : failureCode);
 		return finishRelease();
@@ -335,13 +401,16 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private void setSnapshot(TaskExecutionState state, String reason, Fight fight) {
 		String detail = reason + " phase=" + phase;
 		if (fight != null) {
+			detail += String.format(java.util.Locale.ROOT, " feet=%.1f,%.1f,%.1f health=%.1f", fight.feet().x, fight.feet().y,
+				fight.feet().z, fight.health());
 			Dragon dragon = fight.dragon();
 			detail += " dragonHealth=" + (dragon == null ? "unknown" : dragon.health())
 				+ " dragonPhase=" + (dragon == null ? "unknown" : dragon.phase())
 				+ " crystalsAlive=" + fight.crystals().size()
 				+ " caged=" + fight.crystals().stream().filter(Crystal::caged).count();
 		}
-		detail += " crystalsDestroyed=" + crystalsDestroyed + " skipped=" + skippedCrystals.size() + " headHits=" + headHits
+		detail += " crystalsDestroyed=" + crystalsDestroyed + " skipped=" + skippedCrystals.values()
+			+ " noShotFromHere=" + blockedCrystals.size() + " headHits=" + headHits
 			+ " arrowsShot=" + arrowsShot + " dodges=" + dodges + " navigationGoal=" + navigationGoal + " activeTicks=" + activeTicks;
 		snapshot = new TaskExecutionSnapshot(state, request.taskId(), null, "FightEnderDragon", detail, null, null);
 	}
@@ -380,7 +449,10 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	/** A live end crystal. {@code position} is its base; a cage of iron bars stops arrows. */
 	record Crystal(String id, Vec3 position, boolean caged) {}
 	record Fight(boolean inEnd, Vec3 feet, float health, Dragon dragon, List<Crystal> crystals,
-		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows) {}
+		List<DragonHazards.Cloud> clouds, List<DragonHazards.Fireball> fireballs, boolean hasBowAndArrows) {
+		/** Farther from the exit portal than a perch can be reached from. */
+		boolean awayFromPortal() { return Math.hypot(feet.x, feet.z) > 24.0D; }
+	}
 
 	interface Environment {
 		/** Null when no world is loaded. */

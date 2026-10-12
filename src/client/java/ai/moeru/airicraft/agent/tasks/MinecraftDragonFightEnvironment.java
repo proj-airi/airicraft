@@ -83,7 +83,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 		EnderDragonPhase<?> phase = dragon.getPhaseManager().getCurrentPhase().getPhase();
 		boolean perched = phase == EnderDragonPhase.LANDING || dragon.getPhaseManager().getCurrentPhase().isSitting();
 		return new DragonFightTaskExecutor.Dragon(dragon.isAlive() && dragon.getHealth() > 0.0F, phase == EnderDragonPhase.DYING,
-			perched, dragon.getHealth(), phase.toString(), dragon.position(), dragon.head.getBoundingBox().getCenter());
+			perched, dragon.getHealth(), phase.toString().replaceAll(" \\(#\\d+\\)$", ""), dragon.position(), dragon.head.getBoundingBox().getCenter());
 	}
 
 	/** The two lowest pillars cage their crystal in iron bars; arrows cannot pass them. */
@@ -157,7 +157,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				Optional<Integer> y = ground(level, x, z, level.getMinY(), (int) target.y - 8);
 				if (y.isEmpty()) continue;
 				Vec3 spot = new Vec3(x + 0.5D, y.get(), z + 0.5D);
-				if (rejected.contains(goal(spot)) || spot.distanceTo(fight.feet()) > 64.0D) continue;
+				if (rejected.contains(goal(spot)) || spot.distanceTo(fight.feet()) > 96.0D) continue;
 				if (DragonHazards.insideCloud(spot, fight.clouds(), DragonHazards.CLOUD_MARGIN)) continue;
 				// Walking matters more than the shot angle; closer to the player also keeps the path short.
 				double cost = spot.distanceTo(fight.feet()) + Math.abs(distance - 18) * 0.5D;
@@ -211,7 +211,29 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 				best = spot;
 			}
 		}
-		return Optional.ofNullable(best).map(MinecraftDragonFightEnvironment::goal);
+		if (best != null) return Optional.of(goal(best));
+		return stepTowardPortal(level, fight.feet());
+	}
+
+	/**
+	 * Arriving on the obsidian platform 100 blocks out, the portal's chunks are not loaded yet: walk up to
+	 * 40 blocks toward it, to the nearest loaded ground around that point.
+	 */
+	private static Optional<GoalPosition> stepTowardPortal(ClientLevel level, Vec3 feet) {
+		double distance = Math.hypot(feet.x - PORTAL_X, feet.z - PORTAL_Z);
+		if (distance < 12.0D) return Optional.empty();
+		double step = Math.min(40.0D, distance - 9.0D);
+		double dirX = (PORTAL_X - feet.x) / distance, dirZ = (PORTAL_Z - feet.z) / distance;
+		for (double back = 0.0D; back < step; back += 4.0D) {
+			int cx = (int) Math.floor(feet.x + dirX * (step - back)), cz = (int) Math.floor(feet.z + dirZ * (step - back));
+			for (int dx = -3; dx <= 3; dx++) {
+				for (int dz = -3; dz <= 3; dz++) {
+					Optional<Integer> y = ground(level, cx + dx, cz + dz, (int) feet.y - 24, (int) feet.y + 24);
+					if (y.isPresent()) return Optional.of(new GoalPosition(cx + dx, y.get(), cz + dz, true));
+				}
+			}
+		}
+		return Optional.empty();
 	}
 
 	@Override

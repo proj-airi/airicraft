@@ -66,9 +66,40 @@ class DragonFightTaskExecutorTest {
 		f.tick(perShot * DragonFightTaskExecutor.SHOTS_PER_SPOT);
 		assertTrue(f.env.rejected.contains(SPOT_A), "three misses reject the spot");
 		f.tick(2);
-		assertTrue(f.snapshotText().contains("skipped=1"), f.snapshotText());
-		assertTrue(f.snapshotText().contains("phase=WAIT"), "nothing left to shoot: wait for a perch");
+		assertTrue(f.snapshotText().contains("noShotFromHere=1"), f.snapshotText());
+		assertTrue(f.snapshotText().contains("phase=WAIT"), "nothing left to shoot from here: wait for a perch");
 		assertEquals(f.env.waiting, f.nav.goals.getLast());
+		f.env.spot = Optional.of(new GoalPosition(40, 64, 0, true));
+		f.env.feet = new Vec3(-0.5, 64, 0.5);
+		f.tick(1);
+		assertEquals(List.of("near", "near", "near"), f.env.spotRequests, "retried after moving on");
+		assertEquals(new GoalPosition(40, 64, 0, true), f.nav.goals.getLast());
+	}
+
+	@Test void aCrystalUnloadedFarAwayIsNotCountedAsDestroyed() {
+		Fixture f = new Fixture();
+		f.env.bow = false;
+		f.env.crystals = List.of(crystal("near", 30, false), crystal("far", 200, false));
+		f.tick(1);
+		f.env.crystals = List.of(crystal("near", 30, false));
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("crystalsDestroyed=0"), f.snapshotText());
+		f.env.crystals = List.of();
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("crystalsDestroyed=1"), f.snapshotText());
+	}
+
+	@Test void walksTowardThePortalInStepsUntilCloseEnough() {
+		Fixture f = new Fixture();
+		f.env.bow = false;
+		f.env.feet = new Vec3(100.5, 49, 0.5);
+		f.env.waiting = new GoalPosition(60, 55, 0, true);
+		f.tick(1);
+		assertEquals(new GoalPosition(60, 55, 0, true), f.nav.goals.getLast());
+		f.env.feet = new Vec3(60.5, 55, 0.5);
+		f.env.waiting = new GoalPosition(20, 60, 0, true);
+		f.tick(2);
+		assertEquals(new GoalPosition(20, 60, 0, true), f.nav.goals.getLast(), "arriving at a step chooses the next one");
 	}
 
 	@Test void withoutABowItWaitsNearThePortal() {
@@ -108,6 +139,10 @@ class DragonFightTaskExecutorTest {
 
 		Fixture empty = new Fixture();
 		empty.env.dragon = null;
+		empty.env.feet = new Vec3(100.5, 49, 0.5);
+		empty.tick(DragonFightTaskExecutor.DRAGON_MISSING_TICKS + 1);
+		assertTrue(empty.events.isEmpty(), "far from the portal, a dragon out of range is not missing");
+		empty.env.feet = new Vec3(9.5, 64, 0.5);
 		empty.tick(DragonFightTaskExecutor.DRAGON_MISSING_TICKS + 1);
 		assertTrue(empty.events.getFirst().message().startsWith("dragon_not_found"));
 
@@ -117,6 +152,19 @@ class DragonFightTaskExecutorTest {
 		assertTrue(stuck.events.getFirst().message().startsWith("no_progress"));
 	}
 
+	@Test void anIsolatedArrivalPlatformFailsWithAReasonInsteadOfWaiting() {
+		Fixture f = new Fixture();
+		f.env.bow = false;
+		f.env.feet = new Vec3(100.5, 49, 0.5);
+		for (int i = 0; i < DragonFightTaskExecutor.MAX_APPROACH_FAILURES * 2 && f.events.isEmpty(); i++) {
+			f.tick(1);
+			f.nav.events.add("CALC_FAILED");
+			f.tick(1);
+		}
+		assertTrue(f.events.getFirst().message().startsWith("portal_unreachable"), f.events.toString());
+		assertEquals(TaskFailureCode.MISSING_ITEM, f.events.getFirst().failureCode());
+	}
+
 	@Test void damageToTheDragonCountsAsProgress() {
 		Fixture f = new Fixture();
 		f.env.bow = false;
@@ -124,6 +172,40 @@ class DragonFightTaskExecutorTest {
 		f.env.dragon = dragon(false, 150);
 		f.tick(100);
 		assertTrue(f.events.isEmpty());
+	}
+
+	@Test void aStuckRouteIsDroppedBeforeTheDispatcherWatchdogEndsTheFight() {
+		Fixture f = new Fixture();
+		f.nav.position = f.env.feet;
+		var dispatcherWatchdog = new NavigationStallWatchdog();
+		boolean dispatcherFired = false;
+		for (int i = 0; i < 400; i++) {
+			f.tick(1);
+			var progress = f.nav.navigationProgress();
+			if (progress.isEmpty()) dispatcherWatchdog.clear();
+			else dispatcherFired |= dispatcherWatchdog.observe(f.ticks, progress.get());
+		}
+		assertFalse(dispatcherFired, "the fight never stands still on a route long enough for PATH_STUCK");
+		assertTrue(f.env.rejected.contains(SPOT_A), "the stuck spot is rejected");
+		assertTrue(f.events.isEmpty());
+	}
+
+	@Test void aDodgeFinishesItsStepInsteadOfFlappingAtTheEdgeOfTheMargin() {
+		Fixture f = new Fixture();
+		f.env.feet = new Vec3(20.5, 64, 0.5);
+		f.env.clouds = List.of(new DragonHazards.Cloud(new Vec3(20, 64, 0), 5));
+		f.tick(1);
+		assertEquals(f.env.escape, f.nav.goals.getLast());
+		for (int i = 0; i < 6; i++) {
+			f.env.clouds = i % 2 == 0 ? List.of() : List.of(new DragonHazards.Cloud(new Vec3(20, 64, 0), 5));
+			f.tick(1);
+		}
+		assertTrue(f.snapshotText().contains("dodges=1"), f.snapshotText());
+		assertTrue(f.snapshotText().contains("phase=DODGE"));
+		f.env.clouds = List.of();
+		f.env.feet = new Vec3(30.5, 64, 10.5);
+		f.tick(1);
+		assertFalse(f.snapshotText().contains("phase=DODGE"), "back to work once the escape spot is reached");
 	}
 
 	@Test void cancellationReleasesNavigationAndTheBow() {
@@ -168,7 +250,7 @@ class DragonFightTaskExecutorTest {
 	private static final class Environment implements DragonFightTaskExecutor.Environment {
 		boolean inEnd = true, bow = true, drawing;
 		float health = 20;
-		Vec3 feet = new Vec3(0.5, 64, 30.5);
+		Vec3 feet = new Vec3(0.5, 64, 20.5);
 		DragonFightTaskExecutor.Dragon dragon = dragon(false, 200);
 		List<DragonFightTaskExecutor.Crystal> crystals = List.of(crystal("near", 30, false));
 		List<DragonHazards.Cloud> clouds = List.of();
@@ -212,7 +294,12 @@ class DragonFightTaskExecutorTest {
 		public void cancel() { active = false; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }
 		public Optional<Double> estimatedTicksToGoal() { return Optional.empty(); }
-		public Optional<String> pollPathEvent() { return Optional.empty(); }
+		Queue<String> events = new ArrayDeque<>();
+		public Optional<String> pollPathEvent() { return Optional.ofNullable(events.poll()); }
 		public boolean navigationGoalReached(GoalPosition p) { return false; }
+		Vec3 position;
+		public Optional<NavigationProgress> navigationProgress() {
+			return active && position != null ? Optional.of(new NavigationProgress(position.x, position.y, position.z, true, null, 0)) : Optional.empty();
+		}
 	}
 }
