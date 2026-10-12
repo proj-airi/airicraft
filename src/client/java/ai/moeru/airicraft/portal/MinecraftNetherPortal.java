@@ -78,14 +78,25 @@ public final class MinecraftNetherPortal {
 		int obsidian = counts.getOrDefault(NetherPortalFrame.OBSIDIAN, 0);
 		if (obsidian < obsidianNeeded)
 			throw new IllegalStateException("portal_material_missing itemId=" + NetherPortalFrame.OBSIDIAN + " have=" + obsidian + " need=" + obsidianNeeded);
-		String cornerItem = NetherPortalFrame.OBSIDIAN;
-		if (cornersNeeded > 0 && !lit) {
-			cornerItem = CORNER_FILLERS.stream().filter(id -> counts.getOrDefault(id, 0) >= cornersNeeded).findFirst()
-				.orElseGet(() -> obsidian >= obsidianNeeded + cornersNeeded ? NetherPortalFrame.OBSIDIAN : null);
-			if (cornerItem == null)
-				throw new IllegalStateException("portal_material_missing corners need " + cornersNeeded
-					+ " of any full block (cobblestone, dirt, stone...) or extra obsidian; have obsidian=" + obsidian + " need=" + obsidianNeeded);
+		// Each missing corner takes whichever filler is left, so two cobblestone and two dirt cover four corners.
+		var used = new java.util.LinkedHashSet<String>();
+		if (!lit) {
+			var left = new HashMap<>(counts);
+			left.put(NetherPortalFrame.OBSIDIAN, obsidian - obsidianNeeded);
+			var fillers = new java.util.ArrayList<>(CORNER_FILLERS);
+			fillers.add(NetherPortalFrame.OBSIDIAN);
+			for (var corner : frame.positions(NetherPortalFrame.Role.CORNER)) {
+				if (cornerStates.containsKey(corner)) continue;
+				String filler = fillers.stream().filter(id -> left.getOrDefault(id, 0) > 0).findFirst().orElse(null);
+				if (filler == null)
+					throw new IllegalStateException("portal_material_missing corners need " + cornersNeeded
+						+ " of any full block (cobblestone, dirt, stone...) or extra obsidian; have obsidian=" + obsidian + " need=" + obsidianNeeded);
+				left.merge(filler, -1, Integer::sum);
+				cornerStates.put(corner, filler);
+				used.add(filler);
+			}
 		}
+		String cornerItem = used.isEmpty() ? NetherPortalFrame.OBSIDIAN : String.join(",", used);
 		String igniter = IGNITERS.stream().filter(id -> counts.getOrDefault(id, 0) > 0).findFirst().orElse(null);
 		if (lit && igniter == null) igniter = IGNITERS.getFirst(); // Never used: a lit portal is not relit.
 		if (light && igniter == null) throw new IllegalStateException("portal_igniter_missing: carry minecraft:flint_and_steel or minecraft:fire_charge, or pass light=false");
@@ -94,7 +105,7 @@ public final class MinecraftNetherPortal {
 			for (var corner : frame.positions(NetherPortalFrame.Role.CORNER))
 				cornerStates.putIfAbsent(corner, Blueprint.stateText(level.getBlockState(block(corner))));
 		}
-		return new Prepared(frame, frame.constructionCells(cornerItem, cornerStates), igniter, light, enter, cornerItem, site);
+		return new Prepared(frame, frame.constructionCells(NetherPortalFrame.OBSIDIAN, cornerStates), igniter, light, enter, cornerItem, site);
 	}
 
 	/**
@@ -133,6 +144,12 @@ public final class MinecraftNetherPortal {
 		return Optional.ofNullable(best);
 	}
 
+	static boolean touchingPortal(ClientLevel level, AABB box) {
+		for (var pos : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ), BlockPos.containing(box.maxX, box.maxY, box.maxZ)))
+			if (level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.NETHER_PORTAL)) return true;
+		return false;
+	}
+
 	static AABB openingBox(NetherPortalFrame frame) {
 		var low = frame.at(1, 1);
 		var high = frame.at(2, 3);
@@ -156,7 +173,7 @@ public final class MinecraftNetherPortal {
 		return new NetherPortalProgram.World() {
 			private long walkTick;
 			private boolean started, leaving;
-			private int cooldownTicks, arrivalSearchTicks;
+			private int cooldownTicks;
 			private NetherPortalFrame arrival;
 			private final AABB openingBox = opening;
 			private void requireWorld() {
@@ -195,7 +212,8 @@ public final class MinecraftNetherPortal {
 				if (client.level != level || client.player != owner) return NetherPortalProgram.Entry.DIMENSION_CHANGED;
 				if (!started) {
 					started = true;
-					leaving = owner.getBoundingBox().intersects(openingBox);
+					// With nowhere to step out to, stay inside and let the portal fire.
+					leaving = owner.getBoundingBox().intersects(openingBox) && entryStance() != null;
 				}
 				if (leaving) {
 					// A portal only fires again after the player has left it.
@@ -230,19 +248,19 @@ public final class MinecraftNetherPortal {
 				var player = client.player;
 				var current = client.level;
 				if (player == null || current == null) return false;
-				if (arrival == null) {
-					arrival = nearbyLitPortal(current, player.blockPosition()).orElse(null);
-					// Destination chunks can arrive a few ticks after the player.
-					if (arrival == null) return ++arrivalSearchTicks > 40;
-				}
-				if (!player.getBoundingBox().intersects(openingBox(arrival))) {
+				// Out means no portal block touches the body, whatever portal it arrived in.
+				if (!touchingPortal(current, player.getBoundingBox())) {
 					movement.stop(client);
 					return true;
 				}
+				// Destination chunks can arrive a few ticks after the player. A portal that is not the
+				// minimal frame is never recognised; the program then reports leftArrivalPortal=false.
+				if (arrival == null) arrival = nearbyLitPortal(current, player.blockPosition()).orElse(null);
+				if (arrival == null) return false;
 				var feet = player.position();
 				var stance = arrival.entryStances(terrain(current)).stream()
 					.min(java.util.Comparator.comparingDouble(p -> feet.distanceToSqr(p.x() + .5, p.y(), p.z() + .5))).orElse(null);
-				if (stance == null) return true; // Nowhere safe to step; stay put rather than walk blind.
+				if (stance == null) return false; // Nowhere safe to step; stay put rather than walk blind.
 				camera.lookAt(client, new net.minecraft.world.phys.Vec3(stance.x() + .5, player.getEyeY(), stance.z() + .5));
 				camera.tick(client);
 				movement.moveForward(client, false, false, walkTick++);

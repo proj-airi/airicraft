@@ -29,14 +29,14 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		/** Standing position from which the ignition cell is reachable and outside the opening, or null. */
 		ConstructionEscape.Position lightingStance();
 		boolean playerInOpening();
-		/** Walks one tick toward the opening, or holds still once inside. Must not read the old level after a dimension change. */
 		/** Standing position to walk into the opening from, nearest first; defaults to the lighting stance. */
 		default ConstructionEscape.Position entryStance() { return lightingStance(); }
 		default boolean playerNear(ConstructionEscape.Position position) { return false; }
 		/** Where the player is, for failure messages. */
 		default String playerPosition() { return "unknown"; }
+		/** Walks one tick toward the opening, or holds still once inside. Must not read the old level after a dimension change. */
 		default Entry enterStep() { throw new UnsupportedOperationException("portal_entry_unsupported"); }
-		/** After a dimension change, walks one tick out of the arrival portal; true once out (or when there is nothing safe to do). */
+		/** After a dimension change, walks one tick out of the arrival portal; true only once no portal block touches the player. */
 		default boolean leaveArrivalStep() { return true; }
 		/** Releases movement taken by {@link #enterStep}. */
 		default void stopMoving() { }
@@ -105,7 +105,11 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 					verifying = new CompletableFuture<>();
 					yield verifying;
 				}
-				case EXIT -> CompletableFuture.completedFuture(finish(litOutcome));
+				case EXIT -> {
+					if (world.playerInOpening()) throw new IllegalStateException("portal_exit_failed: still inside the lit portal player="
+						+ world.playerPosition() + " error=" + (ok(result) ? "none" : error(result)));
+					yield CompletableFuture.completedFuture(finish(litOutcome));
+				}
 				case APPROACH -> {
 					if (!ok(result) && !world.playerNear(entryStance)) throw new IllegalStateException("portal_entry_stance_unreachable stance=" + key(entryStance)
 						+ " player=" + world.playerPosition() + " error=" + error(result));
@@ -166,10 +170,10 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 	private CompletableFuture<JsonElement> afterLit(String outcome) {
 		litOutcome = outcome;
 		if (enter) {
+			// Already inside (for example just arrived through it): step out and back in on foot, or wait if there is nowhere to step.
+			if (world.playerInOpening()) return startEntering();
 			entryStance = world.entryStance();
 			if (entryStance == null) throw new IllegalStateException("portal_entry_stance_not_found: no standing spot in front of or behind the opening" + diagnosis());
-			// Just arrived through this portal: navigation cannot start inside portal blocks, so step out and back in on foot.
-			if (world.playerInOpening()) return startEntering();
 			phase = Phase.APPROACH;
 			return CompletableFuture.completedFuture(navigate(entryStance));
 		}

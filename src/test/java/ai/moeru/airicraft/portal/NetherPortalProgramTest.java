@@ -16,7 +16,7 @@ class NetherPortalProgramTest {
 	/** Flat ground at y=63; a block can only be placed against an existing solid neighbour, like place_block. */
 	private static final class Sim implements BlueprintConstructionProgram.Environment, NetherPortalProgram.World {
 		final Map<ConstructionEscape.Position, String> blocks = new HashMap<>();
-		boolean validFrameLights = true, playerInOpening;
+		boolean validFrameLights = true, playerInOpening, navigationFails, noEntryStance, insideWhenLit;
 		int walkTicksNeeded = 5, teleportAfterInside = 80, steps, insideSteps;
 		boolean stopped;
 		String dimension = "minecraft:overworld";
@@ -40,6 +40,7 @@ class NetherPortalProgramTest {
 		@Override public String state(ConstructionEscape.Position position) { return at(position); }
 		@Override public ConstructionEscape.Position lightingStance() { return new ConstructionEscape.Position(1, 64, 2); }
 		@Override public boolean playerInOpening() { return playerInOpening; }
+		@Override public ConstructionEscape.Position entryStance() { return noEntryStance ? null : lightingStance(); }
 		@Override public void close() { }
 		@Override public NetherPortalProgram.Entry enterStep() {
 			if (!dimension.equals("minecraft:overworld")) return NetherPortalProgram.Entry.DIMENSION_CHANGED;
@@ -69,8 +70,15 @@ class NetherPortalProgramTest {
 					assertEquals("down", args.get("facePreference").getAsString());
 					boolean valid = FRAME.positions(NetherPortalFrame.Role.OBSIDIAN).stream().allMatch(p -> at(p).equals(NetherPortalFrame.OBSIDIAN))
 						&& FRAME.positions(NetherPortalFrame.Role.INTERIOR).stream().allMatch(p -> at(p).equals("minecraft:air"));
-					if (valid && validFrameLights) FRAME.positions(NetherPortalFrame.Role.INTERIOR).forEach(p -> blocks.put(p, "minecraft:nether_portal[axis=x]"));
+					if (valid && validFrameLights) {
+						FRAME.positions(NetherPortalFrame.Role.INTERIOR).forEach(p -> blocks.put(p, "minecraft:nether_portal[axis=x]"));
+						playerInOpening |= insideWhenLit;
+					}
 					else blocks.put(FRAME.ignitionCell(), "minecraft:fire[age=0]");
+				}
+				case "navigate_to" -> {
+					if (navigationFails) return JsonParser.parseString("{\"ok\":false,\"error\":\"no_path\"}");
+					playerInOpening = false;
 				}
 				default -> { }
 			}
@@ -165,10 +173,28 @@ class NetherPortalProgramTest {
 
 	@Test void stepsOutOfTheOpeningAfterLighting() {
 		var sim = new Sim();
-		sim.playerInOpening = true;
+		sim.insideWhenLit = true;
 		var result = run(program(sim, "minecraft:cobblestone", Map.of()), sim);
 		assertEquals("lit", result.get("portal").getAsString());
 		assertEquals("navigate_to", sim.tools.getLast());
+	}
+
+	@Test void failingToStepOutOfTheLitPortalFails() {
+		var sim = new Sim();
+		sim.insideWhenLit = true;
+		sim.navigationFails = true;
+		var error = assertThrows(CompletionException.class, () -> run(program(sim, "minecraft:cobblestone", Map.of()), sim));
+		assertTrue(error.getCause().getMessage().startsWith("portal_exit_failed"), error.getCause().getMessage());
+	}
+
+	@Test void standingInsideWithNoOutsideStanceStillEnters() {
+		var sim = new Sim();
+		for (var slot : FRAME.slots()) sim.blocks.put(slot.position(), slot.role() == NetherPortalFrame.Role.INTERIOR
+			? "minecraft:nether_portal[axis=x]" : NetherPortalFrame.OBSIDIAN);
+		sim.playerInOpening = true;
+		sim.noEntryStance = true;
+		var result = run(entering(sim), sim);
+		assertEquals("entered", result.get("portal").getAsString());
 	}
 
 	@Test void unlitBuildStopsAfterConstruction() {
