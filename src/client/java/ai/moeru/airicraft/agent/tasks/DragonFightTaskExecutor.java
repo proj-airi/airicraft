@@ -18,7 +18,8 @@ import java.util.Set;
  * Fights the Ender Dragon without waiting on the planner, whose turns are slower than the dragon.
  * Every tick, in order: step out of breath clouds and fireball impacts; when the dragon perches on the
  * exit portal, hit its head; otherwise shoot the end crystals that heal it, with a bow from the ground;
- * otherwise wait near the portal. Crystals that a cage or terrain hides from every reachable spot are
+ * otherwise open a caged crystal (pillar up beside it, break the roof bars, dig back down) so a lobbed arrow
+ * can reach it; otherwise wait near the portal. Crystals that terrain hides from every reachable spot are
  * skipped and reported. The task ends when the dragon dies, or hands back to the planner with a reason.
  */
 public final class DragonFightTaskExecutor implements WorldTaskExecutor {
@@ -39,6 +40,13 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	static final int RETRY_BLOCKED_TICKS = 600;
 	/** Caged crystals heal the dragon back to full between perches; head hits alone cannot outpace them. */
 	static final int CAGED_ONLY_PERCHES = 2;
+	/** Climbing beside a caged pillar is a long fall; start only with this much health. */
+	static final float CAGE_MIN_HEALTH = 14.0F;
+	static final int CAGE_CLIMB_TIMEOUT_TICKS = 1_500;
+	static final int CAGE_BLOCK_TIMEOUT_TICKS = 200;
+	static final int CAGE_ATTEMPTS = 3;
+	/** Building blocks beyond the climb itself, for navigation's own detours. */
+	static final int CAGE_SPARE_BLOCKS = 8;
 	/** Gives up on a route before the dispatcher's 100-tick stall watchdog would end the whole fight. */
 	static final long NAVIGATION_STALL_TICKS = 70;
 	/** Once dodging, finish the step before turning back, so hazards at the edge of the margin do not flap. */
@@ -80,6 +88,16 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private boolean onIsland;
 	private boolean wasPerched;
 	private int cagedOnlyPerches;
+
+	/** Opening a cage: climb a pillar of our own beside it, break the roof bars, dig back down. */
+	private String cageTarget;
+	private CagePlan cagePlan;
+	private CageStage cageStage;
+	private int cageStageTicks, cageBlockTicks, cagesOpened;
+	private GoalPosition cageBlock;
+	private final Map<String, Integer> cageAttempts = new LinkedHashMap<>();
+	/** Why no cage can be opened, for the hand-back; null while one can. */
+	private String cageUnavailable;
 
 	public DragonFightTaskExecutor(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController camera) {
 		this(navigation, new MinecraftDragonFightEnvironment(camera));
@@ -128,14 +146,15 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		if (dragon != null && dragon.dying()) return finish(true, "dragon_defeated", null);
 		observeProgress(fight);
 		boolean perched = dragon != null && dragon.perched();
-		if (wasPerched && !perched && !fight.crystals().isEmpty() && fight.crystals().stream().allMatch(Crystal::caged))
+		if (wasPerched && !perched && cageTarget == null && !fight.crystals().isEmpty()
+			&& fight.crystals().stream().allMatch(Crystal::caged) && !canOpenACage(fight))
 			cagedOnlyPerches++;
 		wasPerched = perched;
 		if (cagedOnlyPerches >= CAGED_ONLY_PERCHES)
 			return finish(false, "caged_crystals; " + fight.crystals().size() + " end crystals inside iron-bar cages keep healing the dragon "
-				+ "and this task cannot reach them. Pillar up beside each caged pillar with building blocks, break the iron bars with a pickaxe, "
-				+ "destroy the crystal from a few blocks away (it explodes), get back down, then call fight_ender_dragon again",
-				TaskFailureCode.ENVIRONMENT_CHANGED);
+				+ "and this task cannot open them: " + Objects.requireNonNullElse(cageUnavailable, "every attempt failed")
+				+ ". It opens a cage by pillaring up beside it with building blocks, breaking the roof bars with a pickaxe and digging "
+				+ "back down; fix that, then call fight_ender_dragon again", TaskFailureCode.ENVIRONMENT_CHANGED);
 		if (fight.health() <= LOW_HEALTH)
 			return finish(false, "low_health health=" + fight.health() + "; eat or retreat out of reach of the dragon, then call fight_ender_dragon again",
 				TaskFailureCode.ENVIRONMENT_CHANGED);
@@ -146,9 +165,11 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 
 		boolean threatened = DragonHazards.threatened(fight.feet(), fight.clouds(), fight.fireballs());
 		calmTicks = threatened ? 0 : calmTicks + 1;
-		if (threatened || settlingDodge(fight)) dodge(fight, dragon);
+		// Up on our own pillar there is nowhere to dodge to and no perch to reach: finish the cage first.
+		if (cageTarget != null && (elevated(fight) || cageStage == CageStage.DESCEND)) workCage(fight);
+		else if (threatened || settlingDodge(fight)) dodge(fight, dragon);
 		else if (dragon != null && dragon.perched()) meleeHead(fight, dragon);
-		else if (!shootCrystal(fight)) waitNearPortal(fight);
+		else if (!shootCrystal(fight) && !workCage(fight)) waitNearPortal(fight);
 		if (approachFailures >= MAX_APPROACH_FAILURES)
 			return finish(false, "portal_unreachable; no walkable or bridgeable route toward the exit portal at x=0 z=0 from here. "
 				+ "Carry building blocks so navigation can bridge from the arrival platform, then call again", TaskFailureCode.MISSING_ITEM);
@@ -282,6 +303,143 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		return true;
 	}
 
+	/** Whether a caged crystal is being opened; false when none can be. */
+	private boolean workCage(Fight fight) {
+		Crystal target = fight.crystals().stream().filter(c -> c.id().equals(cageTarget)).findFirst().orElse(null);
+		if (target == null) {
+			if (cageTarget != null && elevated(fight)) {
+				// Destroyed while we are up: still climb down.
+				if (cageStage != CageStage.DESCEND) {
+					environment.stopBreaking();
+					stopNavigation();
+					setCageStage(CageStage.DESCEND);
+				}
+			} else {
+				endCage();
+				if (!canOpenACage(fight)) return false;
+				target = fight.crystals().stream()
+					.filter(c -> c.caged() && cageAttempts.getOrDefault(c.id(), 0) < CAGE_ATTEMPTS)
+					.min(java.util.Comparator.comparingDouble(c -> horizontalDistance(fight.feet(), c.position())))
+					.orElse(null);
+				if (target == null) return false;
+				Optional<CagePlan> plan = environment.cagePlan(fight, target);
+				if (plan.isEmpty()) {
+					cageAttempts.put(target.id(), CAGE_ATTEMPTS);
+					return false;
+				}
+				cageTarget = target.id();
+				cagePlan = plan.get();
+				setCageStage(CageStage.APPROACH);
+			}
+		}
+		if (phase != Phase.CAGE) {
+			stopBow();
+			stopNavigation();
+		}
+		phase = Phase.CAGE;
+		cageStageTicks++;
+		switch (cageStage) {
+			case APPROACH -> {
+				if (atSpot(fight.feet(), cagePlan.ground())) {
+					stopNavigation();
+					setCageStage(CageStage.CLIMB);
+				} else if (!navigate(cagePlan.ground(), 0) || navigationTicks > NAVIGATION_TIMEOUT_TICKS) failCage(fight);
+			}
+			case CLIMB -> {
+				if (atSpot(fight.feet(), cagePlan.top())) {
+					stopNavigation();
+					setCageStage(CageStage.BREAK);
+				} else if (!navigate(cagePlan.top(), 0, NavigationOptions.DEFAULT) || cageStageTicks > CAGE_CLIMB_TIMEOUT_TICKS) {
+					stopNavigation();
+					if (elevated(fight)) setCageStage(CageStage.DESCEND);
+					else failCage(fight);
+				}
+			}
+			case BREAK -> {
+				if (!atSpot(fight.feet(), cagePlan.top())) {
+					// Knocked off the top: whatever is left of the climb, go down and try again later.
+					environment.stopBreaking();
+					setCageStage(CageStage.DESCEND);
+					return true;
+				}
+				if (cageBlock == null) {
+					if (cagePlan.roof().isEmpty()) {
+						setCageStage(CageStage.DESCEND);
+						return true;
+					}
+					cageBlock = cagePlan.roof().removeFirst();
+					cageBlockTicks = 0;
+				}
+				BreakResult result = environment.breakBlock(cageBlock);
+				if (result == BreakResult.GONE || result == BreakResult.UNREACHABLE || ++cageBlockTicks > CAGE_BLOCK_TIMEOUT_TICKS) {
+					environment.stopBreaking();
+					cageBlock = null;
+				} else if (result == BreakResult.NO_TOOL) {
+					environment.stopBreaking();
+					cageUnavailable = "no pickaxe to break the iron bars";
+					setCageStage(CageStage.DESCEND);
+				}
+			}
+			case DESCEND -> {
+				if (fight.feet().y <= cagePlan.ground().y() + 0.1D) {
+					environment.stopBreaking();
+					if (target == null || !target.caged()) {
+						cagesOpened++;
+						lastProgressTick = activeTicks;
+						endCage();
+					} else failCage(fight);
+					return true;
+				}
+				GoalPosition below = new GoalPosition((int) Math.floor(fight.feet().x), (int) Math.floor(fight.feet().y - 1.0E-3D),
+					(int) Math.floor(fight.feet().z), true);
+				BreakResult result = environment.breakBlock(below);
+				if (result == BreakResult.NO_TOOL) {
+					environment.stopBreaking();
+					cageUnavailable = "no tool to dig back down";
+				}
+			}
+		}
+		return true;
+	}
+
+	private boolean canOpenACage(Fight fight) {
+		if (fight.health() < CAGE_MIN_HEALTH) return false;
+		Crystal caged = fight.crystals().stream().filter(Crystal::caged).findFirst().orElse(null);
+		if (caged == null) return false;
+		if (fight.crystals().stream().noneMatch(c -> c.caged() && cageAttempts.getOrDefault(c.id(), 0) < CAGE_ATTEMPTS)) {
+			cageUnavailable = "every attempt to open them failed";
+			return false;
+		}
+		cageUnavailable = environment.cageReadiness((int) Math.ceil(caged.position().y - fight.feet().y) + 4 + CAGE_SPARE_BLOCKS);
+		return cageUnavailable == null;
+	}
+
+	/** Above the ground the cage climb started from, on our own pillar. */
+	private boolean elevated(Fight fight) {
+		return cagePlan != null && fight.feet().y > cagePlan.ground().y() + 1.5D;
+	}
+
+	private void failCage(Fight fight) {
+		if (cageTarget != null) cageAttempts.merge(cageTarget, 1, Integer::sum);
+		endCage();
+	}
+
+	private void endCage() {
+		if (cageTarget == null) return;
+		environment.stopBreaking();
+		stopNavigation();
+		cageTarget = null;
+		cagePlan = null;
+		cageStage = null;
+		cageBlock = null;
+	}
+
+	private void setCageStage(CageStage stage) {
+		cageStage = stage;
+		cageStageTicks = 0;
+		cageBlock = null;
+	}
+
 	private void waitNearPortal(Fight fight) {
 		stopBow();
 		if (phase != Phase.WAIT) {
@@ -334,12 +492,15 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private boolean navigate(GoalPosition goal, int radius) {
+		return navigate(goal, radius, onIsland ? NavigationOptions.WALK_ONLY : NavigationOptions.DEFAULT);
+	}
+
+	private boolean navigate(GoalPosition goal, int radius, NavigationOptions options) {
 		if (navigationRestTick == activeTicks) return true;
 		if (!navigationOwned || !goal.equals(navigationGoal)) {
 			stopNavigation();
 			NavigationRelease.release(navigation);
 			navigation.pollPathEvent();
-			NavigationOptions options = onIsland ? NavigationOptions.WALK_ONLY : NavigationOptions.DEFAULT;
 			if (radius > 0) navigation.startNavigateNear(goal, radius, options);
 			else navigation.startNavigate(goal, options);
 			navigationOwned = true;
@@ -374,6 +535,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private void release() {
 		stopBow();
 		stopNavigation();
+		environment.stopBreaking();
 		environment.release();
 	}
 
@@ -401,12 +563,19 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		onIsland = false;
 		wasPerched = false;
 		cagedOnlyPerches = 0;
+		cageTarget = null;
+		cagePlan = null;
+		cageStage = null;
+		cageBlock = null;
+		cageStageTicks = cageBlockTicks = cagesOpened = 0;
+		cageAttempts.clear();
+		cageUnavailable = null;
 	}
 
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason, TaskFailureCode failureCode) {
 		release();
 		String summary = reason + " crystalsDestroyed=" + crystalsDestroyed + " headHits=" + headHits + " arrowsShot=" + arrowsShot
-			+ " dodges=" + dodges + (skippedCrystals.isEmpty() ? "" : " crystalsSkipped=" + skippedCrystals.values());
+			+ " dodges=" + dodges + " cagesOpened=" + cagesOpened + (skippedCrystals.isEmpty() ? "" : " crystalsSkipped=" + skippedCrystals.values());
 		terminal = new TaskTerminalEvent(request.taskId(), null, success ? TaskExecutionState.COMPLETED : TaskExecutionState.FAILED,
 			summary, success ? TaskTerminationCause.GOAL_REACHED : null, success ? null : failureCode);
 		return finishRelease();
@@ -437,7 +606,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		}
 		detail += " crystalsDestroyed=" + crystalsDestroyed + " skipped=" + skippedCrystals.values()
 			+ " noShotFromHere=" + blockedCrystals.size() + " headHits=" + headHits
-			+ " arrowsShot=" + arrowsShot + " dodges=" + dodges + " navigationGoal=" + navigationGoal + " activeTicks=" + activeTicks;
+			+ " arrowsShot=" + arrowsShot + " dodges=" + dodges + " cagesOpened=" + cagesOpened
+			+ (cageStage == null ? "" : " cageStage=" + cageStage) + " navigationGoal=" + navigationGoal + " activeTicks=" + activeTicks;
 		snapshot = new TaskExecutionSnapshot(state, request.taskId(), null, "FightEnderDragon", detail, null, null);
 	}
 
@@ -466,7 +636,19 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	}
 	@Override public void shutdown() { onWorldLeave(); }
 
-	enum Phase { WAIT, DODGE, PERCH, CRYSTAL }
+	enum Phase { WAIT, DODGE, PERCH, CRYSTAL, CAGE }
+	enum CageStage { APPROACH, CLIMB, BREAK, DESCEND }
+	enum BreakResult { WORKING, GONE, UNREACHABLE, NO_TOOL }
+
+	/**
+	 * Opening one cage: {@code ground} is the end stone cell beside the pillar to climb from, {@code top} the feet cell
+	 * of our own pillar beside the cage roof, {@code roof} the bars to break so a lobbed arrow drops onto the crystal.
+	 */
+	record CagePlan(GoalPosition ground, GoalPosition top, java.util.List<GoalPosition> roof) {
+		CagePlan {
+			roof = new java.util.ArrayList<>(roof);
+		}
+	}
 	private record Blocked(Vec3 from, int tick) {}
 	enum AimResult { NO_SOLUTION, AIMING, ALIGNED }
 	enum MeleeResult { OUT_OF_REACH, AIMING, COOLDOWN, HIT }
@@ -497,6 +679,12 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		/** Stops drawing without caring whether an arrow leaves. */
 		void cancelBow();
 		MeleeResult meleeHead();
+		/** Null when ready to open a cage with {@code blocksNeeded} building blocks, else what is missing. */
+		String cageReadiness(int blocksNeeded);
+		Optional<CagePlan> cagePlan(Fight fight, Crystal crystal);
+		/** Works on breaking one block from where the player stands. */
+		BreakResult breakBlock(GoalPosition block);
+		void stopBreaking();
 		void release();
 	}
 }

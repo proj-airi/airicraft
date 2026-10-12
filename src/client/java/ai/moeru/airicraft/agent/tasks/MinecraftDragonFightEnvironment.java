@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
+import ai.moeru.airicraft.agent.navigation.NavigationPolicies;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexRuntime;
 import ai.moeru.airicraft.control.Priority;
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.AreaEffectCloud;
 import net.minecraft.world.entity.Entity;
@@ -48,6 +50,7 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 	private Vec3 aimPoint;
 	private int flightTicks;
 	private boolean drawing;
+	private BlockPos breaking;
 
 	MinecraftDragonFightEnvironment(CameraController camera) {
 		this.camera = java.util.Objects.requireNonNull(camera, "camera");
@@ -97,12 +100,103 @@ final class MinecraftDragonFightEnvironment implements DragonFightTaskExecutor.E
 			perched, dragon.getHealth(), phase.toString().replaceAll(" \\(#\\d+\\)$", ""), dragon.position(), dragon.head.getBoundingBox().getCenter());
 	}
 
-	/** The two lowest pillars cage their crystal in iron bars; arrows cannot pass them. */
+	/**
+	 * The two lowest pillars cage their crystal in iron bars: four walls two blocks out and a roof. Arrows only
+	 * reach it lobbed down through the roof, so the crystal counts as caged while bars remain above it.
+	 */
 	private static boolean caged(ClientLevel level, EndCrystal crystal) {
-		BlockPos base = crystal.blockPosition();
-		for (BlockPos pos : BlockPos.betweenClosed(base.offset(-2, -1, -2), base.offset(2, 3, 2)))
-			if (level.getBlockState(pos).is(Blocks.IRON_BARS)) return true;
-		return false;
+		return !roofBars(level, crystal.blockPosition()).isEmpty();
+	}
+
+	/** Bars in the 3x3 above the crystal; a lobbed arrow comes down through these. */
+	private static List<BlockPos> roofBars(ClientLevel level, BlockPos crystal) {
+		List<BlockPos> bars = new ArrayList<>();
+		for (BlockPos pos : BlockPos.betweenClosed(crystal.offset(-1, 1, -1), crystal.offset(1, 4, 1)))
+			if (level.getBlockState(pos).is(Blocks.IRON_BARS)) bars.add(pos.immutable());
+		return bars;
+	}
+
+	@Override
+	public String cageReadiness(int blocksNeeded) {
+		LocalPlayer player = client().player;
+		if (player == null) return "no player";
+		boolean pickaxe = false;
+		for (int slot = 0; slot < player.getInventory().getContainerSize() && !pickaxe; slot++)
+			pickaxe = player.getInventory().getItem(slot).is(ItemTags.PICKAXES);
+		if (!pickaxe) return "no pickaxe to break the iron bars";
+		int blocks = player.hasInfiniteMaterials() ? Integer.MAX_VALUE : NavigationPolicies.throwawayCount(player);
+		return blocks >= blocksNeeded ? null : "only " + blocks + " building blocks, the climb needs about " + blocksNeeded;
+	}
+
+	@Override
+	public Optional<DragonFightTaskExecutor.CagePlan> cagePlan(DragonFightTaskExecutor.Fight fight, DragonFightTaskExecutor.Crystal crystal) {
+		ClientLevel level = client().level;
+		if (level == null) return Optional.empty();
+		BlockPos center = BlockPos.containing(crystal.position());
+		List<BlockPos> roof = roofBars(level, center);
+		if (roof.isEmpty()) return Optional.empty();
+		int roofY = roof.stream().mapToInt(BlockPos::getY).max().orElseThrow();
+		DragonFightTaskExecutor.CagePlan best = null;
+		double bestDistance = Double.MAX_VALUE;
+		for (Direction side : Direction.Plane.HORIZONTAL) {
+			// Just outside the cage walls, which stand two blocks out.
+			int x = center.getX() + side.getStepX() * 3, z = center.getZ() + side.getStepZ() * 3;
+			Optional<Integer> ground = islandGround(level, x, z, level.getMinY(), center.getY() - 2);
+			if (ground.isEmpty()) continue;
+			int top = roofY + 1;
+			boolean clear = true;
+			for (int y = ground.get(); y <= top + 1 && clear; y++) {
+				BlockPos cell = new BlockPos(x, y, z);
+				clear = level.getBlockState(cell).getCollisionShape(level, cell).isEmpty();
+			}
+			if (!clear) continue;
+			Vec3 groundCenter = new Vec3(x + 0.5D, ground.get(), z + 0.5D);
+			double distance = groundCenter.distanceTo(fight.feet());
+			if (distance >= bestDistance) continue;
+			Vec3 eye = new Vec3(x + 0.5D, top + 1.62D, z + 0.5D);
+			List<GoalPosition> bars = roof.stream()
+				.sorted(Comparator.comparingDouble(pos -> pos.getCenter().distanceToSqr(eye)))
+				.map(pos -> new GoalPosition(pos.getX(), pos.getY(), pos.getZ(), true)).toList();
+			bestDistance = distance;
+			best = new DragonFightTaskExecutor.CagePlan(new GoalPosition(x, ground.get(), z, true), new GoalPosition(x, top, z, true), bars);
+		}
+		return Optional.ofNullable(best);
+	}
+
+	@Override
+	public DragonFightTaskExecutor.BreakResult breakBlock(GoalPosition block) {
+		Minecraft minecraft = client();
+		LocalPlayer player = minecraft.player;
+		ClientLevel level = minecraft.level;
+		if (player == null || level == null || minecraft.gameMode == null) return DragonFightTaskExecutor.BreakResult.UNREACHABLE;
+		BlockPos pos = new BlockPos(block.x(), block.y(), block.z());
+		var state = level.getBlockState(pos);
+		if (state.isAir() || state.canBeReplaced()) {
+			stopBreaking();
+			return DragonFightTaskExecutor.BreakResult.GONE;
+		}
+		if (!player.canInteractWithBlock(pos, 0.0D)) return DragonFightTaskExecutor.BreakResult.UNREACHABLE;
+		cancelBow();
+		var tool = MiningToolPreparation.ensureSelectedForClearance(minecraft, actuator, player, List.of(state));
+		if (!tool.ok()) return tool.message().startsWith("missing_suitable_tool")
+			? DragonFightTaskExecutor.BreakResult.NO_TOOL : DragonFightTaskExecutor.BreakResult.WORKING;
+		if (camera.lookAtBlock(minecraft, pos).isEmpty()) return DragonFightTaskExecutor.BreakResult.UNREACHABLE;
+		var hit = camera.blockHit(minecraft, pos);
+		if (hit.isEmpty()) return DragonFightTaskExecutor.BreakResult.WORKING;
+		if (!pos.equals(breaking)) {
+			stopBreaking();
+			if (!actuator.startDestroy(minecraft, pos, hit.get().getDirection())) return DragonFightTaskExecutor.BreakResult.WORKING;
+			breaking = pos;
+		} else actuator.continueDestroy(minecraft, pos, hit.get().getDirection());
+		player.swing(InteractionHand.MAIN_HAND);
+		return DragonFightTaskExecutor.BreakResult.WORKING;
+	}
+
+	@Override
+	public void stopBreaking() {
+		if (breaking == null) return;
+		breaking = null;
+		actuator.stopDestroy(client());
 	}
 
 	@Override

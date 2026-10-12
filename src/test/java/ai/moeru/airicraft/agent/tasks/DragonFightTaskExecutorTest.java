@@ -14,6 +14,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class DragonFightTaskExecutorTest {
 	private static final GoalPosition SPOT_A = new GoalPosition(20, 64, 0, true);
+	private static final GoalPosition CAGE_GROUND = new GoalPosition(45, 62, 0, true);
+	private static final GoalPosition CAGE_TOP = new GoalPosition(45, 84, 0, true);
+	private static final GoalPosition ROOF_A = new GoalPosition(43, 83, 0, true);
+	private static final GoalPosition ROOF_B = new GoalPosition(42, 83, 0, true);
 
 	@Test void dodgesBreathBeforeAnythingElseAndStopsDrawing() {
 		Fixture f = new Fixture();
@@ -109,6 +113,58 @@ class DragonFightTaskExecutorTest {
 			f.tick(1);
 		}
 		assertTrue(f.events.getFirst().message().startsWith("caged_crystals; 1 end crystals"), f.events.toString());
+		assertTrue(f.events.getFirst().message().contains("no pickaxe"), "says what is missing");
+	}
+
+	@Test void opensACageByClimbingBreakingTheRoofAndDiggingDown() {
+		Fixture f = new Fixture();
+		f.env.readiness = null;
+		f.env.crystals = List.of(crystal("c", 42, true));
+		f.tick(1);
+		assertEquals(CAGE_GROUND, f.nav.goals.getLast(), "walk to the foot of the climb");
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options);
+		f.env.feet = new Vec3(45.5, 62, 0.5);
+		f.tick(2);
+		assertEquals(CAGE_TOP, f.nav.goals.getLast());
+		assertEquals(NavigationOptions.DEFAULT, f.nav.options, "the climb places blocks");
+		f.env.feet = new Vec3(45.5, 84, 0.5);
+		f.env.clouds = List.of(new DragonHazards.Cloud(new Vec3(45, 84, 0), 3));
+		f.tick(1);
+		assertFalse(f.nav.active, "breaking stands still");
+		assertTrue(f.snapshotText().contains("phase=CAGE"), "nowhere to dodge to up on the pillar: " + f.snapshotText());
+		f.env.gone.add(ROOF_A);
+		f.tick(2);
+		f.env.gone.add(ROOF_B);
+		f.tick(2);
+		assertTrue(f.env.broken.containsAll(List.of(ROOF_A, ROOF_B)));
+		assertTrue(f.snapshotText().contains("cageStage=DESCEND"), f.snapshotText());
+		f.tick(1);
+		assertEquals(new GoalPosition(45, 83, 0, true), f.env.broken.getLast(), "digs the block under its feet");
+		f.env.clouds = List.of();
+		f.env.feet = new Vec3(45.5, 62, 0.5);
+		f.env.crystals = List.of(crystal("c", 42, false));
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("cagesOpened=1"), f.snapshotText());
+		f.tick(1);
+		assertEquals("c", f.env.spotRequests.getLast(), "now shot like any open crystal");
+	}
+
+	@Test void knockedOffThePillarItClimbsDownAndRetries() {
+		Fixture f = new Fixture();
+		f.env.readiness = null;
+		f.env.crystals = List.of(crystal("c", 42, true));
+		f.env.feet = new Vec3(45.5, 62, 0.5);
+		f.tick(2);
+		f.env.feet = new Vec3(45.5, 84, 0.5);
+		f.tick(2);
+		f.env.feet = new Vec3(44.5, 75, 0.5); // knocked against the pillar, still high
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("cageStage=DESCEND"), f.snapshotText());
+		f.env.feet = new Vec3(45.5, 62, 0.5);
+		f.tick(1);
+		assertFalse(f.snapshotText().contains("cageStage="), "attempt over: " + f.snapshotText());
+		f.tick(1);
+		assertEquals(CAGE_TOP, f.nav.goals.getLast(), "climbs again from where it landed");
 	}
 
 	@Test void aCrystalUnloadedFarAwayIsNotCountedAsDestroyed() {
@@ -334,6 +390,18 @@ class DragonFightTaskExecutorTest {
 		public void cancelBow() { drawing = false; }
 		public DragonFightTaskExecutor.MeleeResult meleeHead() { return melee; }
 		public void release() { drawing = false; }
+		String readiness = "no pickaxe to break the iron bars";
+		Set<GoalPosition> gone = new HashSet<>();
+		List<GoalPosition> broken = new ArrayList<>();
+		public String cageReadiness(int blocksNeeded) { return readiness; }
+		public Optional<DragonFightTaskExecutor.CagePlan> cagePlan(DragonFightTaskExecutor.Fight fight, DragonFightTaskExecutor.Crystal crystal) {
+			return Optional.of(new DragonFightTaskExecutor.CagePlan(CAGE_GROUND, CAGE_TOP, List.of(ROOF_A, ROOF_B)));
+		}
+		public DragonFightTaskExecutor.BreakResult breakBlock(GoalPosition block) {
+			broken.add(block);
+			return gone.contains(block) ? DragonFightTaskExecutor.BreakResult.GONE : DragonFightTaskExecutor.BreakResult.WORKING;
+		}
+		public void stopBreaking() {}
 	}
 
 	private static final class Navigation implements NavigationFacade {
