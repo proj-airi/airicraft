@@ -146,6 +146,10 @@ public final class EventCatalog {
 			new EventTypeSpec("task.started", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.started")),
 			new EventTypeSpec("task.submitted", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.submitted")),
 
+			// tool
+			new EventTypeSpec("tool.broken", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("tool.broken", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("tool.durability_low", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("tool.durability_low", true, PlannerTriggerType.SYSTEM, false)),
+
 			// work
 			new EventTypeSpec("work.changed", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("work.changed")),
 			new EventTypeSpec("work.travel_restriction_violated", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("work.travel_restriction_violated")),

@@ -1108,6 +1108,32 @@
       "extraWake": "W2"
     },
     {
+      "type": "tool.broken",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "tool.durability_low",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "work.changed",
       "producers": [
         "EmbodiedAgentRuntime"
