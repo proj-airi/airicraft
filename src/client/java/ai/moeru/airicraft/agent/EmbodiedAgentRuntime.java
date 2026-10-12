@@ -2877,7 +2877,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (policyActive() || activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
 		var args=call.arguments();var client=Minecraft.getInstance();
 		var origin=new BlockPos(args.get("x").getAsInt(),args.get("y").getAsInt(),args.get("z").getAsInt());
-		var cells=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
+		var planned=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
+		// Blocks with no item form cannot be placed from an inventory; skip them and report them instead of failing the build.
+		var skipped=new java.util.TreeMap<String,Integer>();
+		var cells=planned.stream().filter(c->{
+			boolean unplaceable=!c.state().equals("minecraft:air") && !c.state().equals("minecraft:cave_air") && c.item().equals("minecraft:air");
+			if(unplaceable)skipped.merge(c.state().replaceAll("\\[.*",""),1,Integer::sum);
+			return !unplaceable;
+		}).toList();
+		if(cells.isEmpty())throw new IllegalStateException("construction_nothing_placeable");
 		var environment=new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client,cells);
         ai.moeru.airicraft.blueprint.BlueprintConstructionProgram program;
         try { program=new ai.moeru.airicraft.blueprint.BlueprintConstructionProgram(cells,environment); }
@@ -2894,6 +2902,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		recordWork(work);dialogueRuntime.observeAcceptedWork(work);
 		var gson=new com.google.gson.Gson();var receipt=gson.toJsonTree(work.summary()).getAsJsonObject();
 		var shortfall=program.materialShortfall();
+		if(!skipped.isEmpty())receipt.add("skippedUnplaceable",gson.toJsonTree(skipped));
 		if(!shortfall.isEmpty()){receipt.add("materialShortfall",gson.toJsonTree(shortfall));receipt.addProperty("warning","Inventory is short of the design's materials; construction proceeds and stops with construction_material_missing at the first block it cannot place. Gather the shortfall and call construct_blueprint again with the same revision and origin to resume.");}
 		return "Tool result for construct_blueprint: "+gson.toJson(receipt);
 	}
