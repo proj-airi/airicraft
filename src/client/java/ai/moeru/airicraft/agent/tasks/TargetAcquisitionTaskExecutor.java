@@ -294,10 +294,12 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 			}
 		}
 		else if (phase == Phase.PICKUP && phaseTicks > 40) reject("pickup_not_collected");
-		setSnapshot(TaskExecutionState.RUNNING, "acquisition phase=" + phase + " target="
-			+ (target == null ? "none" : target.id() + "@" + target.position())
-			+ " workPosition=" + (target == null ? "none" : target.workPosition())
-			+ " itemCount=" + count + " targetCount=" + spec.quantity() + " rejected=" + rejected.size() + " lastRejection=" + lastRejection);
+		// The planner reads this line: name the target and positions, and leave out empty counters.
+		setSnapshot(TaskExecutionState.RUNNING, "acquisition phase=" + phase + ", "
+			+ (target == null ? "no target" : "target " + (target.kind() == Kind.DROP ? "dropped item" : target.id()) + " at " + target.position()
+				+ ", working from " + target.workPosition())
+			+ ", " + count + "/" + spec.quantity() + " collected"
+			+ (rejected.isEmpty() ? "" : ", " + rejected.size() + " targets rejected (last " + lastRejection + ")"));
 		return Optional.empty();
 	}
 
