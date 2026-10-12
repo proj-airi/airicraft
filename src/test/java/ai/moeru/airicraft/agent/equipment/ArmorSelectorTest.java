@@ -66,6 +66,26 @@ class ArmorSelectorTest {
 	}
 
 	@Test
+	void plannerPolicyCanReserveCarriedPiecesOrTurnWearingOff() {
+		var pieces = List.of(
+			carried("chest", 9, "minecraft:diamond_chestplate", 8, 2, 528),
+			carried("chest", 10, "minecraft:iron_chestplate", 6, 0, 240),
+			carried("feet", 11, "minecraft:iron_boots", 2, 0, 195));
+		var reserved = ArmorSelector.choose(pieces, new ArmorPolicy(true, List.of("minecraft:diamond_chestplate")));
+		assertEquals(List.of("minecraft:iron_chestplate", "minecraft:iron_boots"), reserved.stream().map(ArmorSelector.Swap::itemId).toList());
+		assertTrue(ArmorSelector.choose(pieces, new ArmorPolicy(false, List.of())).isEmpty());
+		assertEquals(2, ArmorSelector.choose(pieces, ArmorPolicy.defaults()).size());
+	}
+
+	@Test
+	void aReservedItemIdStillCountsAsWornProtection() {
+		// Reserving the worn piece's id keeps a carried copy in the inventory, not the worn one off.
+		assertTrue(ArmorSelector.choose(List.of(
+			worn("head", "minecraft:iron_helmet", 2),
+			carried("head", 3, "minecraft:iron_helmet", 2, 0, 165)), new ArmorPolicy(true, List.of("minecraft:iron_helmet"))).isEmpty());
+	}
+
+	@Test
 	void mapsInventoryAndArmorSlotsToTheInventoryMenu() {
 		assertEquals(InventoryMenu.USE_ROW_SLOT_START, ArmorAutoEquip.menuSlot(0));
 		assertEquals(InventoryMenu.USE_ROW_SLOT_START + 8, ArmorAutoEquip.menuSlot(8));

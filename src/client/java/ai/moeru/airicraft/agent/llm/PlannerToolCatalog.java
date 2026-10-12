@@ -68,6 +68,7 @@ public final class PlannerToolCatalog {
 	public static final String CONFIGURE_PATHFIND = "configure_pathfind";
 	public static final String CONFIGURE_LIGHTING = "configure_lighting";
 	public static final String CONFIGURE_FOOD = "configure_food";
+	public static final String CONFIGURE_ARMOR = "configure_armor";
 	public static final String CONFIGURE_OPPORTUNISTIC_MINING = "configure_opportunistic_mining";
 	public static final String CONFIGURE_REFLEX = "configure_reflex";
 
@@ -250,7 +251,7 @@ public final class PlannerToolCatalog {
 		builtInTool(CANCEL_SMELTING, false, tool(CANCEL_SMELTING, "Stop tracking an Airicraft-owned smelting process without reclaiming furnace contents.", properties(
 				prop("processId", string("Airicraft-owned process id to stop tracking."))
 			), List.of("processId")), PlannerToolCatalog::validateCancelSmeltingArguments),
-		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; use this only for a specific wearable such as a carved pumpkin.", properties(
+		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; configure_armor turns that off or reserves pieces. Use this for a specific wearable such as a carved pumpkin.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(
@@ -341,6 +342,10 @@ public final class PlannerToolCatalog {
 			prop("goal", enumString("Automatic idle eating goal.", List.of("off", "movement", "heal"))),
 			prop("foodChoice", enumString("Automatic food selection.", List.of("any", "cooked_only")))
 		), List.of()), PlannerToolCatalog::validateConfigureFoodArguments),
+		builtInTool(CONFIGURE_ARMOR, false, tool(CONFIGURE_ARMOR, "Read or replace automatic armor wearing. Call with {} to read; provide enabled and reservedItemIds together to replace. Enabled by default: carried armor that protects more than what is worn is put on, one piece per second, and each change is an equipment.armor_equipped event. Pieces whose item id is in reservedItemIds stay in the inventory, for example armor you are holding to give a player. enabled=false stops all automatic wearing. Worn armor is never taken off automatically. Policy lasts until agent session reset.", properties(
+			prop("enabled", bool("Whether carried armor is worn automatically.")),
+			prop("reservedItemIds", stringArray("Exact armor item ids to keep in the inventory, at most 16; [] for none."))
+		), List.of()), PlannerToolCatalog::validateConfigureArmorArguments),
 		builtInTool(CONFIGURE_LIGHTING, false, tool(CONFIGURE_LIGHTING, "Configure automatic torch placement while mining, navigating, or idle after standing still for five seconds. Uses the average over only air cells in a centered 5x5 horizontal square at foot level; occupied cells do not count. Any sky-visible cell in that square prevents placement. Enabled by default underground when average combined light is strictly below 4 (spacing 6); can be disabled explicitly. Keeps offhand equipment such as a shield, temporarily uses a carried torch and restores the held item. Does not interrupt combat, item use or active block breaking. Confirmed placements are batched into the next planner window.", properties(
 				prop("enabled", bool("Whether automatic torch placement is enabled.")),
 				prop("mode", enumString("Lighting rule. darkness averages combined light; spawn_proof averages block light.", List.of("darkness", "spawn_proof"))),
@@ -1067,6 +1072,21 @@ public final class PlannerToolCatalog {
 		if (arguments.size() != 2 || !List.of("off", "movement", "heal").contains(goal)
 			|| !List.of("any", "cooked_only").contains(foodChoice)) {
 			throw new JsonParseException("Expected goal=off|movement|heal and foodChoice=any|cooked_only");
+		}
+	}
+
+	private static void validateConfigureArmorArguments(JsonObject arguments) {
+		if (arguments.isEmpty()) return;
+		requireBoolean(arguments, "enabled");
+		if (arguments.size() != 2 || !arguments.has("reservedItemIds") || !arguments.get("reservedItemIds").isJsonArray()) {
+			throw new JsonParseException("Expected enabled and reservedItemIds together");
+		}
+		var reserved = arguments.getAsJsonArray("reservedItemIds");
+		if (reserved.size() > 16) throw new JsonParseException("reservedItemIds holds at most 16 item ids");
+		for (var id : reserved) {
+			if (!id.isJsonPrimitive() || !id.getAsJsonPrimitive().isString() || !id.getAsString().contains(":")) {
+				throw new JsonParseException("reservedItemIds must be namespaced item ids");
+			}
 		}
 	}
 

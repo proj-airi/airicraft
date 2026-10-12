@@ -32,6 +32,12 @@ public final class ArmorSelector {
 	public record Swap(String slot, int inventorySlot, String itemId, String replacedItemId) {
 	}
 
+	/** Swaps the policy allows: none when disabled, and never a carried piece it reserves. */
+	public static List<Swap> choose(List<Piece> pieces, ArmorPolicy policy) {
+		if (!policy.enabled()) return List.of();
+		return choose(pieces.stream().filter(piece -> piece.worn() || !policy.reserves(piece.itemId())).toList());
+	}
+
 	/** One swap per slot whose best carried piece protects more than what is worn there. */
 	public static List<Swap> choose(List<Piece> pieces) {
 		Map<String, Piece> worn = new LinkedHashMap<>();

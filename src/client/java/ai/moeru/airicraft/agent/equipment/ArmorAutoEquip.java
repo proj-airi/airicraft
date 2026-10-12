@@ -21,28 +21,40 @@ import java.util.Optional;
 
 /**
  * Wears the best carried armor, as a player does without thinking about it. Works through the
- * player's own inventory menu, so it waits while any container screen is open. Client thread only.
+ * player's own inventory menu, so it waits while any container screen is open. The planner can turn it
+ * off or reserve item ids with {@link ArmorPolicy}; worn armor is never taken off. Client thread only.
  */
 public final class ArmorAutoEquip {
 	private static final long CHECK_INTERVAL_TICKS = 20L;
 	private static final List<EquipmentSlot> SLOTS = List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET);
 
 	private long nextCheckTick;
+	private ArmorPolicy policy = ArmorPolicy.defaults();
 
 	public void reset() {
 		nextCheckTick = 0L;
+		policy = ArmorPolicy.defaults();
+	}
+
+	public ArmorPolicy policy() {
+		return policy;
+	}
+
+	public ArmorPolicy configure(ArmorPolicy next) {
+		policy = java.util.Objects.requireNonNull(next, "policy");
+		return policy;
 	}
 
 	/** Puts on at most one piece per check; empty when nothing was worth changing or the menu is busy. */
 	public Optional<ArmorSelector.Swap> tick(Minecraft minecraft, long tick) {
-		if (tick < nextCheckTick) return Optional.empty();
+		if (!policy.enabled() || tick < nextCheckTick) return Optional.empty();
 		nextCheckTick = tick + CHECK_INTERVAL_TICKS;
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (player == null || minecraft.gameMode == null || player.isDeadOrDying() || player.isSpectator()
 			|| player.getAbilities().instabuild) return Optional.empty();
 		InventoryMenu menu = player.inventoryMenu;
 		if (player.containerMenu != menu || !menu.getCarried().isEmpty()) return Optional.empty();
-		var swaps = ArmorSelector.choose(pieces(player));
+		var swaps = ArmorSelector.choose(pieces(player), policy);
 		if (swaps.isEmpty()) return Optional.empty();
 		ArmorSelector.Swap swap = swaps.getFirst();
 		int source = menuSlot(swap.inventorySlot());
