@@ -2892,7 +2892,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		},Math.max(12000,Math.min(240000,cells.size()*300)),ai.moeru.airicraft.blueprint.BlueprintConstructionProgram.effectLimit(cells.size()));
 		var work=new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,"construct_blueprint","CONSTRUCTION",true,tickCount,Map.of("blueprint",args.deepCopy(),"cells",cells.size()));
 		recordWork(work);dialogueRuntime.observeAcceptedWork(work);
-		return "Tool result for construct_blueprint: "+new com.google.gson.Gson().toJson(work.summary());
+		var gson=new com.google.gson.Gson();var receipt=gson.toJsonTree(work.summary()).getAsJsonObject();
+		var shortfall=program.materialShortfall();
+		if(!shortfall.isEmpty()){receipt.add("materialShortfall",gson.toJsonTree(shortfall));receipt.addProperty("warning","Inventory is short of the design's materials; construction proceeds and stops with construction_material_missing at the first block it cannot place. Gather the shortfall and call construct_blueprint again with the same revision and origin to resume.");}
+		return "Tool result for construct_blueprint: "+gson.toJson(receipt);
 	}
 
 	private boolean policyActive() { return policyRuntime != null && policyRuntime.active(); }

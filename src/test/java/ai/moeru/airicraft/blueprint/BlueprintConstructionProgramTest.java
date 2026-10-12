@@ -478,6 +478,18 @@ class BlueprintConstructionProgramTest {
         assertTrue(error.toString().contains("construction_material_missing"));
         assertEquals(0,searches.get());
     }
+    @Test void shortfallListsEveryMissingItemWithCounts(){
+        var world=new World(){
+            public boolean hasMaterial(BlueprintConstructionProgram.Cell c){return false;}
+            public int materialCount(String item){return 0;}
+        };
+        var cells=List.of(cell(0),cell(1));
+        var program=new BlueprintConstructionProgram(cells,world);
+        var shortfall=program.materialShortfall();
+        assertEquals(1,shortfall.size());assertEquals(2,shortfall.values().iterator().next());
+        var error=assertThrows(RuntimeException.class,()->program.resume(JsonNull.INSTANCE).join());
+        assertTrue(error.toString().contains("shortfall="+shortfall.keySet().iterator().next()+":2"));
+    }
     @Test void depletedMaterialStopsAfterVerifiedPlacementWithoutGeometryRetries(){
         var world=new World(){
             public boolean hasMaterial(BlueprintConstructionProgram.Cell c){return states.isEmpty();}

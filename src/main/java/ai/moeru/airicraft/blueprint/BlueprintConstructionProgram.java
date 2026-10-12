@@ -15,6 +15,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         String state(Cell cell);
         boolean eligible(Cell cell);
         default boolean hasMaterial(Cell cell){return true;}
+        /** Items of this id the builder carries; unlimited by default (creative, tests). */
+        default int materialCount(String item){return Integer.MAX_VALUE;}
         /** The cell holds a solid block it cannot be placed over (terrain, vegetation) and that must be dug out first. */
         default boolean blocked(Cell cell){return false;}
         /** A standable position within reach of the cell, or null when none is known. */
@@ -192,7 +194,7 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         var checkedItems=new HashSet<String>();
         for(var cell:pending)if(!cell.air() && !cell.state().contains("half=upper")
             && !environment.canToggle(cell) && checkedItems.add(cell.item()) && !environment.hasMaterial(cell))
-            throw new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key());
+            throw new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key()+" shortfall="+shortfallText(shortfall(pending)));
         // Door closing waits until teardown, but it does not need an access-repair search.
         boolean onlyCleanup=!ledger.entries().isEmpty()
             && pending.stream().allMatch(c->c.air() || environment.canToggle(c));
@@ -384,4 +386,21 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         value.addProperty("phase",settling!=null?"waiting_for_ground":movingToAccess?"moving_to_platform":moving?"moving_to_repair":target==null?"planning":inspected?"placing":"inspecting");return value;
     }
     @Override public void close(){if(!closed){closed=true;if(settling!=null){settling.completeExceptionally(new IllegalStateException("construction_cancelled"));settling=null;}environment.close();}}
+
+    /** Items still owed that the builder does not carry enough of: item id to missing count. Advisory only. */
+    public Map<String,Integer> materialShortfall(){
+        return shortfall(cells.stream().filter(c->!c.state().equals(environment.state(c))).toList());
+    }
+    private Map<String,Integer> shortfall(List<Cell> pending){
+        var needed=new java.util.TreeMap<String,Integer>();
+        for(var cell:pending)if(!cell.air() && !cell.state().contains("half=upper") && !environment.canToggle(cell))needed.merge(cell.item(),1,Integer::sum);
+        var missing=new java.util.LinkedHashMap<String,Integer>();
+        needed.forEach((item,count)->{long have=environment.materialCount(item);if(have<count)missing.put(item,(int)(count-have));});
+        return missing;
+    }
+    private static String shortfallText(Map<String,Integer> missing){
+        var text=new StringBuilder();
+        missing.forEach((item,count)->{if(text.length()>0)text.append(',');text.append(item).append(':').append(count);});
+        return text.toString();
+    }
 }
