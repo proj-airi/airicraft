@@ -40,7 +40,7 @@ class DialogueWakeCharacterizationTest {
 			}
 		}
 		void advance(int ticks) { for(int i=0; i<ticks; i++) { tick++; clock.advance(Duration.ofMillis(50)); poll(); } }
-		WakeTranscript transcript(String name) { return WakeTranscript.capture(name, backend.requests(), audit, events.query(null).events(), dialogue.allAvailableTools()); }
+		WakeTranscript transcript(String name) { return WakeTranscript.capture(name, backend.requests(), audit, events.query(null).events()); }
 		void golden(String name) { transcript(name).assertMatchesGolden(name); }
 		@Override public void close() { dialogue.shutdown(); }
 	}
