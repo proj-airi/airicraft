@@ -33,6 +33,7 @@ public final class EventCatalog {
 			new EventTypeSpec("food.eat_failed", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eat_failed")),
 			new EventTypeSpec("food.eat_started", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eat_started")),
 			new EventTypeSpec("food.eaten", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eaten")),
+			new EventTypeSpec("equipment.armor_equipped", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("equipment.armor_equipped")),
 			new EventTypeSpec("food.unavailable", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.unavailable")),
 
 			// lighting
@@ -100,6 +101,7 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.food_unavailable", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_unavailable")),
 			new EventTypeSpec("reflex.hold_released", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.hold_released", true, null, true)),
 			new EventTypeSpec("reflex.movement_recovery", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.movement_recovery")),
+			new EventTypeSpec("reflex.wet_fight", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.wet_fight")),
 			new EventTypeSpec("reflex.policy_changed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.policy_changed")),
 			new EventTypeSpec("reflex.resolved", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.resolved", true, PlannerTriggerType.SYSTEM, true)),
 			new EventTypeSpec("reflex.shield_lowered", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.shield_lowered")),
@@ -145,6 +147,10 @@ public final class EventCatalog {
 			new EventTypeSpec("task.paused_by_session_gate", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.paused_by_session_gate")),
 			new EventTypeSpec("task.started", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.started")),
 			new EventTypeSpec("task.submitted", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.submitted")),
+
+			// tool
+			new EventTypeSpec("tool.broken", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("tool.broken", true, PlannerTriggerType.SYSTEM, false)),
+			new EventTypeSpec("tool.durability_low", false, EventFamily.PERCEPT, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("tool.durability_low", true, PlannerTriggerType.SYSTEM, false)),
 
 			// work
 			new EventTypeSpec("work.changed", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("work.changed")),

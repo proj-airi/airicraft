@@ -29,6 +29,17 @@ class DecisionHintsTest {
 		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("recorded combat outcomes"));
 	}
 
+	@Test void toolWearHintsSayWhenToReplaceATool() {
+		var events = List.of(
+			new SemanticEvent(1, 1, 50, "tool.durability_low", Map.of("itemId", "minecraft:iron_pickaxe", "toolKind", "pickaxe", "remaining", 25, "sparesOfKind", 0L)),
+			new SemanticEvent(2, 1, 50, "tool.broken", Map.of("itemId", "minecraft:iron_pickaxe", "toolKind", "pickaxe", "sparesOfKind", 0L)),
+			new SemanticEvent(3, 1, 50, "tool.broken", Map.of("itemId", "minecraft:stone_pickaxe", "toolKind", "pickaxe", "sparesOfKind", 1L)));
+		var hints = DecisionHints.render(List.of(wake(1, "tool.durability_low"), wake(2, "tool.broken"), wake(3, "tool.broken")), events);
+		assertEquals(List.of(1L, 2L), hints.stream().map(hint -> hint.get("seqNo")).toList(), "a break with a spare left needs no advice");
+		assertTrue(String.valueOf(hints.get(0).get("hint")).contains("last pickaxe"));
+		assertTrue(String.valueOf(hints.get(1).get("hint")).contains("no pickaxe left"));
+	}
+
 	@Test void idleThinkHintCarriesTheCharactersInterestsAndIdeas() {
 		var scheduler = new ai.moeru.airicraft.agent.idle.IdleIdeaScheduler(
 			new ai.moeru.airicraft.agent.idle.IdleIdeasConfig(true, 1, 1, List.of("build a shelter")), List.of("collecting flowers"));

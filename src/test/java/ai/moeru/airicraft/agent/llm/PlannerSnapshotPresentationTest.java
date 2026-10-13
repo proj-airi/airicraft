@@ -49,7 +49,19 @@ class PlannerSnapshotPresentationTest {
 		assertTrue(rendered.get(1).contains("[{\"op\":\"replace\",\"path\":\"/work\",\"value\":[]}]"), rendered.get(1));
 		assertFalse(rendered.get(1).contains("historical note"));
 		assertTrue(rendered.get(2).contains("State unchanged since the previous observation."));
-		assertTrue(rendered.get(2).contains("client tick 3"));
+		assertFalse(rendered.get(2).contains("client tick"), rendered.get(2));
+	}
+
+	@Test void aTickThatOnlyMovedOnIsNotAChange() {
+		var rendered = present(snapshot("a", 1, padded("{\"work\":[{\"workId\":\"JOB:one\",\"updatedTick\":1}]}"), false),
+			snapshot("a", 2, padded("{\"work\":[{\"workId\":\"JOB:one\",\"updatedTick\":2}]}"), false));
+		assertTrue(rendered.get(1).contains("State unchanged since the previous observation."), rendered.get(1));
+	}
+
+	@Test void aDurationThatGrewIsAChangeInSeconds() {
+		var rendered = present(snapshot("a", 1, padded("{\"reflex\":{\"state\":\"AWAITING_PLANNER\",\"breathableTicks\":20}}"), false),
+			snapshot("a", 2, padded("{\"reflex\":{\"state\":\"AWAITING_PLANNER\",\"breathableTicks\":40}}"), false));
+		assertTrue(rendered.get(1).contains("\"path\":\"/reflex/breathableTicks\",\"value\":\"2s\""), rendered.get(1));
 	}
 
 	@Test void pointerSegmentsAreEscaped() {

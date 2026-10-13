@@ -408,7 +408,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_RESOURCE -> tickCollectResource(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, nearbyResourceTargetAvailable, tick);
 			case CRAFT_RECIPE -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case DROP_ITEMS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, true, tick);
-			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
+			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ATTACK_ENTITY, USE_ENTITY -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
@@ -477,6 +477,11 @@ public final class ActiveJobRuntime {
 		if (activeJob.type() == ActiveJobType.LURE_ENTITIES && activeJob.lureEntities() != null) {
 			clearAttemptState();
 			desiredPrimitiveTask = WorldTaskRequest.lureEntities(activeJob.jobId(), activeJob.jobId(), activeJob.lureEntities());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.FIGHT_ENDER_DRAGON) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.fightEnderDragon(activeJob.jobId(), activeJob.jobId());
 			return;
 		}
 		if (activeJob.type() == ActiveJobType.TEND_CROPS && activeJob.cropTending() != null) {
@@ -1299,6 +1304,9 @@ public final class ActiveJobRuntime {
 			case LURE_ENTITIES -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.LURE_ENTITIES, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, proposal.lureEntities());
+			case FIGHT_ENDER_DRAGON -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.FIGHT_ENDER_DRAGON, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick);
 			case TEND_CROPS -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.TEND_CROPS, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, proposal.cropTending());
@@ -1418,6 +1426,7 @@ public final class ActiveJobRuntime {
 			case USE_BLOCK -> activeJob.blockUse() == null ? "Use block" : "Use block at " + activeJob.blockUse().targets().size() + " target blocks";
 			case TEND_CROPS -> "Tend crops in a bounded plot";
 			case LURE_ENTITIES -> "Lure selected animals into the destination area";
+			case FIGHT_ENDER_DRAGON -> "Fight the Ender Dragon";
 			case BREAK_BLOCKS -> activeJob.blockBreak() == null ? "Break blocks" : "Break " + activeJob.blockBreak().targets().size() + " target blocks";
 			case ATTACK_ENTITY -> activeJob.entityInteraction() == null ? "Attack entity" : "Attack " + activeJob.entityInteraction().selector();
 			case USE_ENTITY -> activeJob.entityInteraction() == null ? "Use entity" : "Use on " + activeJob.entityInteraction().selector();
@@ -1439,7 +1448,7 @@ public final class ActiveJobRuntime {
 			case PLACE_BLOCK -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.PLACE_BLOCK;
 			case USE_BLOCK, TEND_CROPS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
 			case BREAK_BLOCKS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
-			case ATTACK_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
+			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
 			case USE_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_ENTITY;
 			case ASK_USER -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ASK_USER;
 			case IDLE -> null;

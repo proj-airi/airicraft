@@ -24,7 +24,7 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 	public static final Set<String> EVALUATION_SUPPRESSED = Set.of(
 		"social.player_spoke", "social.system_message", "pickup.item_picked_up", "social.item_offered",
 		"crafting.item_crafted", "combat.damage_taken", "player.physical", "smelting.output_ready",
-		"task.blocked", "action_graph.goal_suspended", "action_graph.goal_terminal");
+		"task.blocked", "action_graph.goal_suspended", "action_graph.goal_terminal", "tool.broken", "tool.durability_low");
 
 	private final Supplier<AttentionState> state;
 	private final Function<SemanticEvent, AttentionEvidence> evidence;
@@ -115,6 +115,12 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 				? WakeDecision.none(AttentionStage.RULES, "ownership.reflex_actuation", "the survival reflex owns actuation")
 				: WakeDecision.immediate(Urgency.NORMAL, AttentionStage.RULES, "catalog.trigger", "");
 			case "social.item_offered" -> WakeDecision.immediate(Urgency.NORMAL, AttentionStage.RULES, "catalog.trigger", "");
+			case "tool.broken" -> state.reflexOwnsActuation()
+				? WakeDecision.none(AttentionStage.RULES, "ownership.reflex_actuation", "the survival reflex owns actuation")
+				: WakeDecision.immediate(Urgency.NORMAL, AttentionStage.RULES, "catalog.trigger", "");
+			case "tool.durability_low" -> state.reflexOwnsActuation()
+				? WakeDecision.none(AttentionStage.RULES, "ownership.reflex_actuation", "the survival reflex owns actuation")
+				: WakeDecision.immediate(Urgency.LOW, AttentionStage.RULES, "catalog.trigger", "");
 			case "action_graph.goal_terminal" -> "FAILED".equals(stringValue(event.payload().get("state")))
 				? WakeDecision.immediate(Urgency.HIGH, AttentionStage.RULES, "catalog.trigger", "")
 				: WakeDecision.none(AttentionStage.RULES, "graph.terminal_not_failed", "only failed graph outcomes wake");

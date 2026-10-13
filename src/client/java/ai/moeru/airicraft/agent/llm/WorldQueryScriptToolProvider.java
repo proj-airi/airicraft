@@ -89,7 +89,7 @@ public final class WorldQueryScriptToolProvider implements PlannerToolProvider {
 		var bounds = metadata.getAsJsonObject("bounds");
 		var blocks = metadata.getAsJsonObject("blocks");
 		var entities = metadata.getAsJsonObject("entities");
-		return "Coverage: " + metadata.get("dimension").getAsString() + " tick=" + metadata.get("serverTick")
+		return "Coverage: " + metadata.get("dimension").getAsString()
 			+ " box=" + positionText(bounds.getAsJsonObject("min")) + ".." + positionText(bounds.getAsJsonObject("max"))
 			+ "; blocks=" + blocks.get("returned") + "/" + blocks.get("requested")
 			+ " unloaded=" + blocks.get("unloaded") + " outsideWorld=" + blocks.get("outsideWorld")

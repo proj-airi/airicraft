@@ -811,6 +811,11 @@ public final class PlannerOrchestrator {
 				);
 			}
 		}
+		// A skill's rules must be in the conversation before the action they govern, so a read cannot share a batch with other tools.
+		if (toolCalls.size() > 1 && toolCalls.stream().anyMatch(call -> SkillToolProvider.USE_SKILL.equals(normalizedToolName(call)))
+			&& toolCalls.stream().anyMatch(call -> !SkillToolProvider.USE_SKILL.equals(normalizedToolName(call)))) {
+			return rejectToolRequest(plannerResult, "use_skill must be called alone; read the rules first, then act in your next turn");
+		}
 		PlannerToolRegistry.ReadOnlyBatchAuthorization batchAuthorization = toolRegistry.authorizeReadOnlyBatch(toolCalls);
 		if (!usesToolQueue() && toolCalls.size() > 1 && !batchAuthorization.authorized()) {
 			Airicraft.LOGGER.warn(

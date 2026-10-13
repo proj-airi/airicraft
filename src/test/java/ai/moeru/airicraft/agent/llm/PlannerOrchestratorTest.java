@@ -317,6 +317,32 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
+	void skillReadCannotShareABatchWithAnAction() throws Exception {
+		var backend = new RecordingBackend();
+		var started = new java.util.concurrent.atomic.AtomicBoolean();
+		var provider = new PlannerToolProvider() {
+			public String id() { return "slow_fixture"; }
+			public boolean handles(String name) { return name.equals("mine_blocks"); }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("mine_blocks", "Mine", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { started.set(true); return new CompletableFuture<>(); }
+		};
+		var registry = PlannerToolRegistry.of(provider, new SkillToolProvider(), new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("ok")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		try {
+			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
+			var skill = new JsonObject(); skill.addProperty("name", "furnaces");
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(
+				new PlannerToolCall("skill", "use_skill", skill, null),
+				new PlannerToolCall("smelt", "mine_blocks", new JsonObject(), null)), null));
+			long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
+			while (System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
+			assertFalse(started.get(), "The action must not run before the skill is read");
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
 	void quickLoneCallOnlyRequestsItsResultReview() throws Exception {
 		var backend = new RecordingBackend();
 		var started = new java.util.concurrent.atomic.AtomicBoolean();
