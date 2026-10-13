@@ -3080,6 +3080,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			var results = new ArrayList<String>();
 			for (var work : workHistory.list()) {
 				if (!work.foreground() || !work.parentWorkId().isBlank() || work.state().terminal()) continue;
+				// Construction is long, deterministic and resumable; replanning must not abort it. Only cancel_work stops it.
+				if (work.label().equals("construct_blueprint")) {
+					results.add("construct_blueprint " + work.handle().id() + " kept running; stop it with cancel_work");
+					continue;
+				}
 				var args = new com.google.gson.JsonObject();
 				args.addProperty("workId", work.handle().id());
 				args.addProperty("reason", "planner_clear_queue");
