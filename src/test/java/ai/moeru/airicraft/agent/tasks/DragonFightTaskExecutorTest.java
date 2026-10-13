@@ -218,6 +218,22 @@ class DragonFightTaskExecutorTest {
 		assertEquals(2, f.nav.radius);
 	}
 
+	@Test void arrivingNearTheWaitingSpotEndsTheRoute() {
+		Fixture f = new Fixture();
+		f.env.bow = false;
+		f.env.feet = new Vec3(11.5, 64, 0.5);
+		f.tick(2);
+		int routes = f.nav.goals.size();
+		f.nav.active = false;
+		f.nav.events.add("AT_GOAL");
+		int cancels = f.nav.cancels;
+		f.tick(2);
+		assertEquals(cancels + 1, f.nav.cancels, "the route is released on arrival, not at its timeout");
+		f.tick(DragonFightTaskExecutor.NAVIGATION_TIMEOUT_TICKS + 10);
+		assertEquals(routes, f.nav.goals.size(), "two blocks off the spot counts as there");
+		assertTrue(f.events.isEmpty());
+	}
+
 	@Test void dyingDragonCompletesTheFight() {
 		Fixture f = new Fixture();
 		f.tick(2);
@@ -274,6 +290,10 @@ class DragonFightTaskExecutorTest {
 		f.nav.events.add("CALC_FAILED");
 		f.tick(2);
 		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options);
+		f.env.onEndStone = false; // the portal's bedrock rim
+		f.nav.events.add("CALC_FAILED");
+		f.tick(2);
+		assertEquals(NavigationOptions.WALK_ONLY, f.nav.options, "once on the island, never bridge again");
 	}
 
 	@Test void anIsolatedArrivalPlatformFailsWithAReasonInsteadOfWaiting() {
@@ -433,7 +453,8 @@ class DragonFightTaskExecutorTest {
 		public void startNavigate(GoalPosition p, NavigationOptions o) { goals.add(p); radius = 0; active = true; options = o; }
 		public void startNavigateNear(GoalPosition p, int r, NavigationOptions o) { goals.add(p); radius = r; active = true; options = o; }
 		public boolean processActive() { return active; }
-		public void cancel() { active = false; }
+		int cancels;
+		public void cancel() { active = false; cancels++; }
 		public Optional<String> activeProcessName() { return Optional.empty(); }
 		public Optional<Double> estimatedTicksToGoal() { return Optional.empty(); }
 		Queue<String> events = new ArrayDeque<>();

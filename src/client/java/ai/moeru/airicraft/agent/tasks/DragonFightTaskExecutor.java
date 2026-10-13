@@ -65,6 +65,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private int activeTicks, lastProgressTick, missingDragonTicks, navigationTicks;
 	private GoalPosition navigationGoal;
 	private boolean navigationOwned;
+	private boolean navigationArrived;
 	private float lowestDragonHealth = Float.MAX_VALUE;
 	/** Crystals seen so far, by id; one that vanishes while its spot is in view was destroyed, not unloaded. */
 	private final Map<String, Vec3> knownCrystals = new LinkedHashMap<>();
@@ -137,7 +138,8 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 		if (fight == null) return finish(false, "world_unavailable", TaskFailureCode.ENVIRONMENT_CHANGED);
 		if (!fight.inEnd()) return finish(false, "not_in_the_end", TaskFailureCode.INVALID_ACTION);
 		activeTicks++;
-		if (fight.onEndStone() != null) onIsland = fight.onEndStone();
+		// Sticky: portal bedrock and cage pillars are not end stone, but the island is still under them.
+		if (Boolean.TRUE.equals(fight.onEndStone())) onIsland = true;
 
 		Dragon dragon = fight.dragon();
 		if (dragon == null || !dragon.alive()) {
@@ -497,7 +499,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 				approachFailures++;
 			}
 		}
-		else if (navigation.navigationGoalReached(spot.get())) {
+		else if (navigationArrived || navigation.navigationGoalReached(spot.get())) {
 			stopNavigation();
 			waitingSpotReached = !fight.awayFromPortal();
 		}
@@ -534,9 +536,11 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 			navigationOwned = true;
 			navigationGoal = goal;
 			navigationTicks = 0;
+			navigationArrived = false;
 		}
 		navigationTicks++;
 		String event = navigation.pollPathEvent().orElse("");
+		if (event.equals("AT_GOAL")) navigationArrived = true;
 		var progress = navigation.navigationProgress();
 		if (progress.isEmpty()) navigationStall.clear();
 		else if (navigationStall.observe(activeTicks, progress.get())) {
@@ -551,6 +555,7 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	private void stopNavigation() {
 		if (navigationOwned) navigation.cancel();
 		navigationOwned = false;
+		navigationArrived = false;
 		navigationGoal = null;
 		navigationTicks = 0;
 	}
