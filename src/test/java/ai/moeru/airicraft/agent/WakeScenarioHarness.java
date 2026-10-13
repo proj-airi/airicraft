@@ -126,7 +126,7 @@ final class WakeScenarioHarness implements AutoCloseable {
 	}
 	WakeTranscript transcript(String name) {
 		return WakeTranscript.capture(name, backend.requests(), runtime.debugTimeline(null).entries(),
-			runtime.recentEvents(null).events(), runtime.dialogueRuntimeForTests().allAvailableTools());
+			runtime.recentEvents(null).events());
 	}
 	@Override public void close() { backend.openGate(); runtime.shutdown(); }
 }

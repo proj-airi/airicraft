@@ -62,6 +62,7 @@ public final class PlannerToolCatalog {
 	public static final String BREAK_BLOCKS = "break_blocks";
 	public static final String TEND_CROPS = "tend_crops";
 	public static final String LURE_ENTITIES = "lure_entities";
+	public static final String FIGHT_ENDER_DRAGON = "fight_ender_dragon";
 	public static final String CANCEL_TASK = "cancel_task";
 	public static final String RESUME_TASK = "resume_task";
 	public static final String CLEAR_GOAL = "clear_goal";
@@ -69,6 +70,7 @@ public final class PlannerToolCatalog {
 	public static final String CONFIGURE_PATHFIND = "configure_pathfind";
 	public static final String CONFIGURE_LIGHTING = "configure_lighting";
 	public static final String CONFIGURE_FOOD = "configure_food";
+	public static final String CONFIGURE_ARMOR = "configure_armor";
 	public static final String CONFIGURE_OPPORTUNISTIC_MINING = "configure_opportunistic_mining";
 	public static final String CONFIGURE_REFLEX = "configure_reflex";
 
@@ -251,7 +253,7 @@ public final class PlannerToolCatalog {
 		builtInTool(CANCEL_SMELTING, false, tool(CANCEL_SMELTING, "Stop tracking an Airicraft-owned smelting process without reclaiming furnace contents.", properties(
 				prop("processId", string("Airicraft-owned process id to stop tracking."))
 			), List.of("processId")), PlannerToolCatalog::validateCancelSmeltingArguments),
-		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Armor is worn through normal item use; weapons and tools become the selected main-hand item.", properties(
+		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; configure_armor turns that off or reserves pieces. Use this for a specific wearable such as a carved pumpkin.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(
@@ -288,7 +290,7 @@ public final class PlannerToolCatalog {
 			prop("z", integer("Optional lower frame corner z.")),
 			prop("axis", enumString("Optional direction the frame extends from the corner: x means +x, z means +z.", List.of("x", "z"))),
 			prop("light", bool("Light the portal after building. Default true.")),
-			prop("enter", bool("After lighting, walk into the portal and wait for the dimension change. Default false."))
+			prop("enter", bool("After lighting, walk into the portal and wait for the dimension change. The result names arrivalPortal, the portal to walk back through. Default false."))
 		), List.of()), PlannerToolCatalog::validateBuildNetherPortalArguments),
 		builtInTool(PLACE_BLOCK, false, tool(PLACE_BLOCK, "Place a block item at one or more intended modified target positions. Target positions must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
@@ -318,6 +320,7 @@ public final class PlannerToolCatalog {
 			prop("x1", integer("Minimum destination x.")), prop("y1", integer("Minimum destination y.")), prop("z1", integer("Minimum destination z.")),
 			prop("x2", integer("Maximum destination x.")), prop("y2", integer("Maximum destination y.")), prop("z2", integer("Maximum destination z."))
 		), List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2")), ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs::parse),
+		builtInTool(FIGHT_ENDER_DRAGON, false, tool(FIGHT_ENDER_DRAGON, "Fight the Ender Dragon in the End. System 1 runs the fight without waiting for planner turns, which are too slow to dodge it: it steps out of dragon-breath clouds and away from fireball impacts (their damage ignores armor), hits the dragon's head with the best melee weapon whenever it perches on the exit portal at x=0 z=0, and between perches shoots the end crystals that heal it with a bow from the island's end stone (needs a bow and arrows). Carry building blocks: from the arrival platform it bridges to the island. With a pickaxe and about 40 building blocks it also opens the two caged crystals while the dragon perches: it pillars up beside the cage, breaks its roof and digs back down. Call it as soon as you are in the End with the dragon alive. Ends when the dragon dies. Fails with a reason: caged_crystals when only crystals inside iron bars are left and it cannot open them (they heal the dragon faster than head hits hurt it; the reason says what is missing), portal_unreachable, low_health at 6 health or less (eat or back off, then call again), no_progress, dragon_not_found, not_in_the_end or fight_timeout.", properties(), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(TEND_CROPS, false, tool(TEND_CROPS, "Tend one existing flat crop plot, at most 16 by 16 blocks within 64 blocks of you. System 1 inspects the plot, harvests mature crops, collects drops and replants, and plants empty farmland when seeds are available. Leaves immature crops and other blocks intact. Deliberately edits crops within preserved places. One pass; does not wait for growth or till soil. Its terminal result reports counts and missing seeds.", properties(
 			prop("seedItemId", string("Crop planting item, e.g. minecraft:wheat_seeds, minecraft:carrot, minecraft:potato, minecraft:beetroot_seeds.")),
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),
@@ -350,6 +353,10 @@ public final class PlannerToolCatalog {
 			prop("goal", enumString("Automatic idle eating goal.", List.of("off", "movement", "heal"))),
 			prop("foodChoice", enumString("Automatic food selection.", List.of("any", "cooked_only")))
 		), List.of()), PlannerToolCatalog::validateConfigureFoodArguments),
+		builtInTool(CONFIGURE_ARMOR, false, tool(CONFIGURE_ARMOR, "Read or replace automatic armor wearing. Call with {} to read; provide enabled and reservedItemIds together to replace. Enabled by default: carried armor that protects more than what is worn is put on, one piece per second, and each change is an equipment.armor_equipped event. Pieces whose item id is in reservedItemIds stay in the inventory, for example armor you are holding to give a player. enabled=false stops all automatic wearing. Worn armor is never taken off automatically. Policy lasts until agent session reset.", properties(
+			prop("enabled", bool("Whether carried armor is worn automatically.")),
+			prop("reservedItemIds", stringArray("Exact armor item ids to keep in the inventory, at most 16; [] for none."))
+		), List.of()), PlannerToolCatalog::validateConfigureArmorArguments),
 		builtInTool(CONFIGURE_LIGHTING, false, tool(CONFIGURE_LIGHTING, "Configure automatic torch placement while mining, navigating, or idle after standing still for five seconds. Uses the average over only air cells in a centered 5x5 horizontal square at foot level; occupied cells do not count. Any sky-visible cell in that square prevents placement. Enabled by default underground when average combined light is strictly below 4 (spacing 6); can be disabled explicitly. Keeps offhand equipment such as a shield, temporarily uses a carried torch and restores the held item. Does not interrupt combat, item use or active block breaking. Confirmed placements are batched into the next planner window.", properties(
 				prop("enabled", bool("Whether automatic torch placement is enabled.")),
 				prop("mode", enumString("Lighting rule. darkness averages combined light; spawn_proof averages block light.", List.of("darkness", "spawn_proof"))),
@@ -1093,6 +1100,21 @@ public final class PlannerToolCatalog {
 		if (arguments.size() != 2 || !List.of("off", "movement", "heal").contains(goal)
 			|| !List.of("any", "cooked_only").contains(foodChoice)) {
 			throw new JsonParseException("Expected goal=off|movement|heal and foodChoice=any|cooked_only");
+		}
+	}
+
+	private static void validateConfigureArmorArguments(JsonObject arguments) {
+		if (arguments.isEmpty()) return;
+		requireBoolean(arguments, "enabled");
+		if (arguments.size() != 2 || !arguments.has("reservedItemIds") || !arguments.get("reservedItemIds").isJsonArray()) {
+			throw new JsonParseException("Expected enabled and reservedItemIds together");
+		}
+		var reserved = arguments.getAsJsonArray("reservedItemIds");
+		if (reserved.size() > 16) throw new JsonParseException("reservedItemIds holds at most 16 item ids");
+		for (var id : reserved) {
+			if (!id.isJsonPrimitive() || !id.getAsJsonPrimitive().isString() || !id.getAsString().contains(":")) {
+				throw new JsonParseException("reservedItemIds must be namespaced item ids");
+			}
 		}
 	}
 

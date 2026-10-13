@@ -6,14 +6,13 @@ import ai.moeru.airicraft.agent.llm.*;
 import com.google.gson.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 public record WakeTranscript(JsonObject data) {
 	private static final Gson JSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 	public static WakeTranscript capture(String name, List<RecordingPlannerBackend.Request> recorded,
-		List<AgentDebugTimelineEntry> timeline, List<SemanticEvent> events, Object tools) {
+		List<AgentDebugTimelineEntry> timeline, List<SemanticEvent> events) {
 		var root = new JsonObject();
 		root.addProperty("scenario", name);
 		var requests = new JsonArray();
@@ -54,8 +53,6 @@ public record WakeTranscript(JsonObject data) {
 			}
 			request.add("newMessages", delta);
 			previousMessages = messages;
-			String system = messages.stream().filter(m -> m.role().equals("system")).map(LlmChatMessage::content).reduce("", String::concat);
-			request.add("prefix", JSON.toJsonTree(Map.of("systemSha", sha(system), "toolsSha", sha(JSON.toJson(normalize(JSON.toJsonTree(tools)))))));
 			requests.add(request);
 		}
 		root.add("requests", requests);
@@ -127,8 +124,4 @@ public record WakeTranscript(JsonObject data) {
 		java.util.stream.Stream.of("delegation", "graph", "goal", "hold", "op", "smelting", "smelt-confirm", "blueprint"),
 		java.util.Arrays.stream(ai.moeru.airicraft.agent.job.ActiveJobType.values()).map(ai.moeru.airicraft.agent.work.ReadableIds::kind))
 		.collect(java.util.stream.Collectors.joining("|")) + ")-\\d+\\b";
-	public static String sha(String value) {
-		try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-		catch (Exception e) { throw new AssertionError(e); }
-	}
 }

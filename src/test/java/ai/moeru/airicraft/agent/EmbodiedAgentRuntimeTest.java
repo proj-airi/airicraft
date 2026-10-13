@@ -292,6 +292,21 @@ class EmbodiedAgentRuntimeTest {
 		finally { runtime.shutdown(); }
 	}
 
+	@Test void plannerCanReadAndReplaceArmorPolicyThroughActionExecutor() {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			var settings = com.google.gson.JsonParser.parseString("{\"enabled\":true,\"reservedItemIds\":[\"minecraft:iron_chestplate\"]}").getAsJsonObject();
+			String applied = runtime.execute(PlannerToolCatalog.parseToolCall("configure_armor", settings,
+				ai.moeru.airicraft.agent.llm.PlannerToolRegistry.empty())).join();
+			assertTrue(applied.contains("reservedItemIds=[minecraft:iron_chestplate]"), applied);
+			runtime.onWorldLeave();
+			String reset = runtime.execute(PlannerToolCatalog.parseToolCall("configure_armor", new com.google.gson.JsonObject(),
+				ai.moeru.airicraft.agent.llm.PlannerToolRegistry.empty())).join();
+			assertTrue(reset.contains("enabled=true, reservedItemIds=[]"), reset);
+		}
+		finally { runtime.shutdown(); }
+	}
+
 	@Test void plannerCanReadAndReplaceFoodPolicyThroughActionExecutor() {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {

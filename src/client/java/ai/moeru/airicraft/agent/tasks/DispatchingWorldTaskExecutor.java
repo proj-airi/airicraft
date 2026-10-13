@@ -135,7 +135,8 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		WorldTaskExecutor acquisition,
 		WorldTaskExecutor underwaterHarvest,
 		WorldTaskExecutor cropTending,
-		WorldTaskExecutor lureEntities
+		WorldTaskExecutor lureEntities,
+		WorldTaskExecutor dragonFight
 	) {
 		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
@@ -143,6 +144,14 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending) {
 			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
 				blockBreak, acquisition, underwaterHarvest, cropTending, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, entityInteraction);
 		}
 
 		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
@@ -160,6 +169,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		public ExecutorSet {
 			Objects.requireNonNull(cropTending, "cropTending");
 			Objects.requireNonNull(lureEntities, "lureEntities");
+			Objects.requireNonNull(dragonFight, "dragonFight");
 			Objects.requireNonNull(acquisition, "acquisition");
 			Objects.requireNonNull(underwaterHarvest, "underwaterHarvest");
 			Objects.requireNonNull(navigation, "navigation");
@@ -186,6 +196,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				case BREAK_BLOCKS -> blockBreak;
 				case TEND_CROPS -> cropTending;
 				case LURE_ENTITIES -> lureEntities;
+				case FIGHT_ENDER_DRAGON -> dragonFight;
 			};
 		}
 
@@ -198,7 +209,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				smelting,
 				returnToSurface,
 				blockInteraction,
-				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight
 			)));
 		}
 	}

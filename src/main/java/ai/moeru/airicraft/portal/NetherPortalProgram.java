@@ -38,6 +38,8 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		default Entry enterStep() { throw new UnsupportedOperationException("portal_entry_unsupported"); }
 		/** After a dimension change, walks one tick out of the arrival portal; true only once no portal block touches the player. */
 		default boolean leaveArrivalStep() { return true; }
+		/** The portal the player arrived through, as {@link NetherPortalFrame#describe()}, or null when it was not recognised. */
+		default Map<String, Object> arrivalPortal() { return null; }
 		/** Releases movement taken by {@link #enterStep}. */
 		default void stopMoving() { }
 		default String dimension() { return ""; }
@@ -274,6 +276,9 @@ public final class NetherPortalProgram implements PolicyRuntime.Program {
 		if (outcome.equals("entered")) {
 			value.addProperty("fromDimension", startDimension);
 			value.addProperty("dimension", world.dimension());
+			// Where to come back to: the way home is this portal, not the frame above, which is in the old dimension.
+			var arrival = world.arrivalPortal();
+			if (arrival != null) value.add("arrivalPortal", new Gson().toJsonTree(arrival));
 		}
 		value.add("construction", constructionResult.deepCopy());
 		var done = new JsonObject();

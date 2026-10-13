@@ -248,14 +248,14 @@ public final class MinecraftNetherPortal {
 				var player = client.player;
 				var current = client.level;
 				if (player == null || current == null) return false;
+				// Destination chunks can arrive a few ticks after the player. A portal that is not the
+				// minimal frame is never recognised; it cannot be walked out of or reported.
+				if (arrival == null) arrival = nearbyLitPortal(current, player.blockPosition()).orElse(null);
 				// Out means no portal block touches the body, whatever portal it arrived in.
 				if (!touchingPortal(current, player.getBoundingBox())) {
 					movement.stop(client);
 					return true;
 				}
-				// Destination chunks can arrive a few ticks after the player. A portal that is not the
-				// minimal frame is never recognised; the program then reports leftArrivalPortal=false.
-				if (arrival == null) arrival = nearbyLitPortal(current, player.blockPosition()).orElse(null);
 				if (arrival == null) return false;
 				var feet = player.position();
 				var stance = arrival.entryStances(terrain(current)).stream()
@@ -265,6 +265,9 @@ public final class MinecraftNetherPortal {
 				camera.tick(client);
 				movement.moveForward(client, false, false, walkTick++);
 				return false;
+			}
+			@Override public java.util.Map<String, Object> arrivalPortal() {
+				return arrival == null ? null : arrival.describe();
 			}
 			@Override public void stopMoving() {
 				movement.stop(client);

@@ -49,6 +49,7 @@ class NetherPortalProgramTest {
 			return NetherPortalProgram.Entry.INSIDE;
 		}
 		@Override public void stopMoving() { stopped = true; }
+		@Override public Map<String, Object> arrivalPortal() { return dimension.equals("minecraft:the_nether") ? new NetherPortalFrame(8, 70, -3, NetherPortalFrame.Axis.Z).describe() : null; }
 		@Override public String dimension() { return dimension; }
 
 		JsonElement apply(JsonObject step) {
@@ -227,6 +228,7 @@ class NetherPortalProgramTest {
 		assertEquals("minecraft:overworld", result.get("fromDimension").getAsString());
 		assertEquals("minecraft:the_nether", result.get("dimension").getAsString());
 		assertTrue(result.get("leftArrivalPortal").getAsBoolean());
+		assertEquals(8, result.getAsJsonObject("arrivalPortal").get("x").getAsInt());
 		assertTrue(sim.stopped);
 		// The approach is a normal walk to the stance; the step into portal blocks is the program's own.
 		assertEquals("navigate_to", sim.tools.getLast());
