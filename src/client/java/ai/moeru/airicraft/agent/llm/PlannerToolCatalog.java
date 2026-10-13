@@ -57,6 +57,7 @@ public final class PlannerToolCatalog {
 	public static final String ATTACK_ENTITY = "attack_entity";
 	public static final String USE_ENTITY = "use_entity";
 	public static final String PLACE_BLOCK = "place_block";
+	public static final String BUILD_NETHER_PORTAL = "build_nether_portal";
 	public static final String USE_BLOCK = "use_block";
 	public static final String BREAK_BLOCKS = "break_blocks";
 	public static final String TEND_CROPS = "tend_crops";
@@ -283,6 +284,14 @@ public final class PlannerToolCatalog {
 			prop("revision", integer("Current blueprint revision.")),
 			prop("x", integer("Blueprint world origin x.")), prop("y", integer("Blueprint world origin y.")), prop("z", integer("Blueprint world origin z."))
 		), List.of("revision","x","y","z")), args -> { requireInt(args,"revision");requireInt(args,"x");requireInt(args,"y");requireInt(args,"z"); }),
+		builtInTool(BUILD_NETHER_PORTAL, false, tool(BUILD_NETHER_PORTAL, "Build, light and optionally enter a minimal Nether portal: a 4 wide by 5 tall frame (10 obsidian on the edges, any full block such as cobblestone in the 4 corners) around a 2 by 3 opening. Lights it with flint and steel (or a fire charge) and verifies that portal blocks fill the opening. Reuses obsidian already in place and digs out anything in the frame or opening. Omit x, y, z and axis to reuse a lit portal within 16 blocks, else pick a flat clear site within 8 blocks. With enter=true it then walks into the portal and succeeds once the dimension changes; use this to travel, since navigation never paths through portal blocks, and never break a lit portal's frame to get in. Returns tracked work; inspect_work observes completion. It only succeeds when the portal is lit (and entered, if asked); a failure names the wrong cells.", properties(
+			prop("x", integer("Optional lower frame corner x (bottom bar level). Pass x, y, z and axis together.")),
+			prop("y", integer("Optional lower frame corner y: the bottom obsidian bar sits here and the opening starts at y+1.")),
+			prop("z", integer("Optional lower frame corner z.")),
+			prop("axis", enumString("Optional direction the frame extends from the corner: x means +x, z means +z.", List.of("x", "z"))),
+			prop("light", bool("Light the portal after building. Default true.")),
+			prop("enter", bool("After lighting, walk into the portal and wait for the dimension change. The result names arrivalPortal, the portal to walk back through. Default false."))
+		), List.of()), PlannerToolCatalog::validateBuildNetherPortalArguments),
 		builtInTool(PLACE_BLOCK, false, tool(PLACE_BLOCK, "Place a block item at one or more intended modified target positions. Target positions must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts.")),
 				prop("x", integer("Intended modified target block x coordinate.")),
@@ -682,6 +691,23 @@ public final class PlannerToolCatalog {
 
 	private static void validateInventoryItemArguments(JsonObject arguments) {
 		requireString(arguments, "itemId");
+	}
+
+	static void validateBuildNetherPortalArguments(JsonObject arguments) {
+		int given = 0;
+		for (String key : List.of("x", "y", "z", "axis")) if (arguments.has(key) && !arguments.get(key).isJsonNull()) given++;
+		if (given != 0 && given != 4) throw new JsonParseException("pass x, y, z and axis together, or omit all four to pick a site");
+		if (given == 4) {
+			requireInt(arguments, "x");
+			requireInt(arguments, "y");
+			requireInt(arguments, "z");
+			String axis = requireString(arguments, "axis");
+			if (!axis.equals("x") && !axis.equals("z")) throw new JsonParseException("axis must be x or z");
+		}
+		if (arguments.has("light")) requireBoolean(arguments, "light");
+		if (arguments.has("enter")) requireBoolean(arguments, "enter");
+		if (arguments.has("enter") && arguments.get("enter").getAsBoolean() && arguments.has("light") && !arguments.get("light").getAsBoolean())
+			throw new JsonParseException("enter requires light");
 	}
 
 	private static void validateDropItemsArguments(JsonObject arguments) {

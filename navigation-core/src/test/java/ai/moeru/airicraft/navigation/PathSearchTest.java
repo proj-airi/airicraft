@@ -496,6 +496,56 @@ class PathSearchTest {
 	}
 
 	@Test
+	void neverBreaksACobwebEvenWhenItIsTheOnlyWay() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			#####
+			#####
+			#####
+			y1
+			#####
+			S.c.G
+			#####
+			y2
+			#####
+			..c..
+			#####
+			""");
+
+		Path path = found(world.search(BUILDER));
+
+		assertTrue(path.positions().stream().noneMatch(pos -> pos.x() == 2 && pos.z() == 1), "mined around the walls, not the cobweb: " + path.positions());
+	}
+
+	@Test
+	void entersACobwebThatIsTheExplicitGoal() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			#####
+			y1
+			S.c..
+			""");
+		Goal web = new Goal.Block(2, 1, 0);
+
+		assertFalse(world.search(WALK_ONLY, web) instanceof SearchResult.Found);
+		Path path = found(world.search(WALK_ONLY.withHazardEntries(List.of(new Box(2, 1, 0, 2, 2, 0))), web));
+		assertEquals(new GridPos(2, 1, 0), path.positions().getLast());
+	}
+
+	@Test
+	void leavesACobwebItStartsIn() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			#####
+			y1
+			S...G
+			""");
+		world.terrain.set(0, 1, 0, AsciiTerrain.COBWEB);
+
+		found(world.search(WALK_ONLY.withHazardEntries(List.of(new Box(0, 1, 0, 0, 2, 0)))));
+	}
+
+	@Test
 	void cutsCornersDiagonallyOnlyWhenBothSidesAreClear() {
 		AsciiTerrain open = AsciiTerrain.parse("""
 			y0

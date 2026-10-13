@@ -2975,6 +2975,45 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return "Tool result for construct_blueprint: "+new com.google.gson.Gson().toJson(work.summary());
 	}
 
+	private String startNetherPortal(PlannerToolCall call) {
+		requireLivingPlayerForAction();
+		if (survivalReflexRuntime.snapshot().holdId() != null) throw new IllegalStateException("work_in_safety_hold");
+		if (policyActive() || activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
+		var client = Minecraft.getInstance();
+		var prepared = ai.moeru.airicraft.portal.MinecraftNetherPortal.prepare(client, call.arguments());
+		var environment = new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client, prepared.cells());
+		ai.moeru.airicraft.portal.NetherPortalProgram program;
+		try {
+			program = new ai.moeru.airicraft.portal.NetherPortalProgram(prepared.frame(),
+				new ai.moeru.airicraft.blueprint.BlueprintConstructionProgram(prepared.cells(), environment),
+				ai.moeru.airicraft.portal.MinecraftNetherPortal.world(client, prepared.frame()), prepared.igniter(), prepared.light(), prepared.enter());
+		} catch (RuntimeException error) { environment.close(); throw error; }
+		policyChildren.clear();
+		var host = new ToolPolicyHost(this::dispatchPolicyTool, this::describePolicyTool, workHistory::find, this::cancelPolicyChildren, () -> new ContainerPolicyHost(client));
+		var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, ai.moeru.airicraft.agent.work.ReadableIds.next("op"));
+		var request = new LinkedHashMap<String, Object>(prepared.frame().describe());
+		request.put("site", prepared.site());
+		request.put("enter", prepared.enter());
+		request.put("cornerItem", prepared.cornerItem());
+		request.put("light", prepared.light());
+		policyWork = handle;
+		policyRuntime = new ai.moeru.airicraft.policy.PolicyRuntime(program, host, outcome -> {
+			var details = new LinkedHashMap<String, Object>();
+			details.put("portal", request);
+			details.put("reason", outcome.reason());
+			details.put("result", outcome.result());
+			details.put("effects", outcome.effects().size());
+			details.put("elapsedTicks", outcome.elapsedTicks());
+			recordWork(new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", ai.moeru.airicraft.agent.work.WorkSnapshot.State.valueOf(outcome.state()),
+				PlannerToolCatalog.BUILD_NETHER_PORTAL, "FINISHED", false, tickCount, details));
+		}, 24000, ai.moeru.airicraft.blueprint.BlueprintConstructionProgram.effectLimit(prepared.cells().size()) + 32);
+		var work = new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,
+			PlannerToolCatalog.BUILD_NETHER_PORTAL, "CONSTRUCTION", true, tickCount, Map.of("portal", request));
+		recordWork(work);
+		dialogueRuntime.observeAcceptedWork(work);
+		return "Tool result for " + PlannerToolCatalog.BUILD_NETHER_PORTAL + ": " + new com.google.gson.Gson().toJson(work.summary());
+	}
+
 	private boolean policyActive() { return policyRuntime != null && policyRuntime.active(); }
 
 	private void cancelPolicy(String reason) {
@@ -3325,6 +3364,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			case "inspect_work", "list_work", "cancel_work", "resume_work" -> executeWorkTool(toolCall);
 			case "run_policy" -> "TOOL_UNAVAILABLE: run_policy disabled";
 			case "construct_blueprint" -> startBlueprintConstruction(toolCall);
+			case PlannerToolCatalog.BUILD_NETHER_PORTAL -> startNetherPortal(toolCall);
 			case PlannerToolCatalog.RESUME_TASK -> {
 				String holdId = stringArg(args, "holdId").orElseThrow(() -> new IllegalArgumentException("holdId is required"));
 				SurvivalReflexSnapshot reflex = resumeSafetyHold(holdId, "planner_tool");
