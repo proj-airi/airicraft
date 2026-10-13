@@ -490,6 +490,16 @@ class BlueprintConstructionProgramTest {
         var error=assertThrows(RuntimeException.class,()->program.resume(JsonNull.INSTANCE).join());
         assertTrue(error.toString().contains("shortfall="+shortfall.keySet().iterator().next()+":2"));
     }
+    @Test void missingItemDoesNotStopCellsThatHaveMaterial(){
+        var world=new World(){
+            public boolean hasMaterial(BlueprintConstructionProgram.Cell c){return c.x()!=0;}
+        };
+        var other=new BlueprintConstructionProgram.Cell(2,0,0,"minecraft:oak_planks","minecraft:oak_planks","house.wall");
+        var program=new BlueprintConstructionProgram(List.of(cell(0),other),world);
+        var first=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        assertFalse(first.get("done").getAsBoolean(),first.toString());
+        assertEquals(2,first.getAsJsonObject("value").getAsJsonObject("arguments").getAsJsonObject("args").get("x1").getAsInt(),first.toString());
+    }
     @Test void depletedMaterialStopsAfterVerifiedPlacementWithoutGeometryRetries(){
         var world=new World(){
             public boolean hasMaterial(BlueprintConstructionProgram.Cell c){return states.isEmpty();}

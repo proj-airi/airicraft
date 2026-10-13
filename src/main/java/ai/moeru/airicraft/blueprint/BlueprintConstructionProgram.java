@@ -194,9 +194,15 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         var checkedItems=new HashSet<String>();
         for(var cell:pending)if(!cell.air() && cell.item().equals("minecraft:air") && !cell.state().contains("half=upper") && !environment.canToggle(cell))
             throw new IllegalStateException("construction_unplaceable_block state="+cell.state()+" target="+cell.key()+" reason=block_has_no_item; redesign without it");
-        for(var cell:pending)if(!cell.air() && !cell.state().contains("half=upper")
-            && !environment.canToggle(cell) && checkedItems.add(cell.item()) && !environment.hasMaterial(cell))
-            throw new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key()+" shortfall="+shortfallText(shortfall(pending)));
+        // A missing item stops only its own cells: everything else that has material is still
+        // placed, so each resume makes progress. Stop once no placeable cell has material.
+        var missingItems=new HashSet<String>();Cell missingExample=null;boolean anyWithMaterial=false;
+        for(var cell:pending){
+            if(cell.air() || cell.state().contains("half=upper") || environment.canToggle(cell))continue;
+            if(checkedItems.add(cell.item()) && !environment.hasMaterial(cell))missingItems.add(cell.item());
+            if(missingItems.contains(cell.item())){if(missingExample==null)missingExample=cell;}else anyWithMaterial=true;
+        }
+        if(missingExample!=null && !anyWithMaterial)throw materialMissing(missingExample,pending);
         // Door closing waits until teardown, but it does not need an access-repair search.
         boolean onlyCleanup=!ledger.entries().isEmpty()
             && pending.stream().allMatch(c->c.air() || environment.canToggle(c));
@@ -215,7 +221,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             .filter(c->environment.structuralSupport(c) && !deferred.containsKey(c) && !verifiedFinalPositions.contains(c.key()))
             .forEach(c->unfinishedSolids.add(c.key()));
         var eligible=pending.stream().filter(c->!unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z()))
-            .filter(c->!c.air() && !c.state().contains("half=upper") && environment.eligible(c)).toList();
+            .filter(c->!c.air() && !c.state().contains("half=upper") && !missingItems.contains(c.item()) && environment.eligible(c)).toList();
+        // What remains with material sits on cells still waiting for material: stop for materials, not geometry.
+        if(missingExample!=null && eligible.isEmpty() && repairQueue.isEmpty())throw materialMissing(missingExample,pending);
         var immediate=new HashSet<Cell>();
         eligible.stream().filter(environment::immediatelyPlaceable).forEach(immediate::add);
         var ordering=Comparator.comparingInt((Cell c)->c.equals(repairObjective)?0:1)
@@ -399,6 +407,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         var missing=new java.util.LinkedHashMap<String,Integer>();
         needed.forEach((item,count)->{long have=environment.materialCount(item);if(have<count)missing.put(item,(int)(count-have));});
         return missing;
+    }
+    private IllegalStateException materialMissing(Cell cell,List<Cell> pending){
+        return new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key()+" shortfall="+shortfallText(shortfall(pending)));
     }
     private static String shortfallText(Map<String,Integer> missing){
         var text=new StringBuilder();
