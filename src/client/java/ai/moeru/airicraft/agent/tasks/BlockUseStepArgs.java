@@ -6,9 +6,20 @@ import java.util.List;
 
 public record BlockUseStepArgs(
 	String itemId,
-	List<Target> targets
+	List<Target> targets,
+	int holdTicks
 ) {
 	public static final int MAX_TARGETS = BlockBreakStepArgs.MAX_TARGETS;
+	/** Longest repeat-use hold, in ticks (60 s), for blocks such as a Create hand crank that act only while clicked. */
+	public static final int MAX_HOLD_TICKS = 1200;
+
+	public BlockUseStepArgs(String itemId, List<Target> targets) {
+		this(itemId, targets, 0);
+	}
+
+	public BlockUseStepArgs(String itemId, GoalPosition targetPosition, String facePreference, List<String> expectedSupportBlockIds, String expectedTargetMaterial, int holdTicks) {
+		this(itemId, List.of(new Target(targetPosition, facePreference, expectedSupportBlockIds, expectedTargetMaterial)), holdTicks);
+	}
 
 	public BlockUseStepArgs(String itemId, GoalPosition targetPosition, String facePreference, List<String> expectedSupportBlockIds, String expectedTargetMaterial) {
 		this(itemId, List.of(new Target(targetPosition, facePreference, expectedSupportBlockIds, expectedTargetMaterial)));
@@ -16,6 +27,9 @@ public record BlockUseStepArgs(
 
 	public BlockUseStepArgs {
 		itemId = normalizeOptional(itemId);
+		if (holdTicks < 0 || holdTicks > MAX_HOLD_TICKS) {
+			throw new IllegalArgumentException("holdTicks must be 0.." + MAX_HOLD_TICKS);
+		}
 		targets = targets == null
 			? List.of()
 			: targets.stream()

@@ -47,6 +47,7 @@ import java.util.function.Supplier;
 public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	private final Actuator actuator = new Actuator("block_interaction", Priority.FOREGROUND);
 	private static final double INTERACTION_RANGE_SQUARED = 20.25D;
+	private static final int HOLD_USE_INTERVAL_TICKS = 4;
 	private static final int MIN_DIRECT_WATER_HORIZONTAL_SUPPORTS = 3;
 	private static final int INTERACTION_NAVIGATION_RADIUS_BLOCKS = 3;
 	private static final long INTERACTION_NAVIGATION_TIMEOUT_TICKS = 160L;
@@ -90,6 +91,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 	private BlockState expectedPlacementState;
 	private InteractionHand placementHand = InteractionHand.MAIN_HAND;
 	private PendingWaterPlacementConfirmation pendingWaterPlacementConfirmation;
+	private PendingHold pendingHold;
 
 	public BlockInteractionTaskExecutor() {
 		this(0);
@@ -177,6 +179,9 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		if (pendingPlacementConfirmation != null) {
 			return confirmPendingPlacement(tick, minecraft, request);
+		}
+		if (pendingHold != null) {
+			return continueHold(tick, minecraft, player, request);
 		}
 		return request.type() == WorldTaskType.PLACE_BLOCK
 			? placeBlock(tick, minecraft, player, request, placementArgs(request).targets().get(targetIndex))
@@ -504,7 +509,51 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 				+ " afterBlockId=" + blockId(after));
 			return Optional.empty();
 		}
+		int holdTicks = request.type() == WorldTaskType.USE_BLOCK ? useArgs(request).holdTicks() : 0;
+		if (holdTicks > 0) {
+			pendingHold = new PendingHold(target, interactionHit.get(), hand, tick, holdTicks, message);
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "holding_use targetIndex=" + targetIndex
+				+ " targetPos=" + compactPos(target) + " holdTicks=" + holdTicks);
+			return Optional.empty();
+		}
 		return completeTarget(tick, request, message);
+	}
+
+	/** Repeats the click like a held right mouse button (vanilla re-fires use every 4 ticks) until holdTicks elapse. */
+	private Optional<TaskTerminalEvent> continueHold(long tick, Minecraft minecraft, LocalPlayer player, WorldTaskRequest request) {
+		PendingHold hold = pendingHold;
+		if (!minecraft.level.hasChunkAt(hold.target())) {
+			pendingHold = null;
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_unloaded_during_hold"));
+		}
+		if (minecraft.level.getBlockState(hold.target()).isAir()) {
+			pendingHold = null;
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_removed_during_hold heldTicks=" + (tick - hold.startedTick())));
+		}
+		if (player.getEyePosition().distanceToSqr(hold.hit().getLocation()) > INTERACTION_RANGE_SQUARED) {
+			pendingHold = null;
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "out_of_range_during_hold heldTicks=" + (tick - hold.startedTick())));
+		}
+		long elapsed = tick - hold.startedTick();
+		if (elapsed >= hold.holdTicks()) {
+			pendingHold = null;
+			return completeTarget(tick, request, hold.message() + " heldTicks=" + elapsed + " uses=" + hold.uses());
+		}
+		if (tick >= hold.nextUseTick()) {
+			InteractionResult result = actuator.useItemOn(minecraft, player, hold.hand(), hold.hit());
+			if (result.consumesAction()) {
+				player.swing(hold.hand());
+				hold.used(tick + HOLD_USE_INTERVAL_TICKS);
+			}
+			else {
+				pendingHold = null;
+				return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, hold.target(), "hold_use_rejected result=" + result
+					+ " heldTicks=" + elapsed + " uses=" + hold.uses()));
+			}
+		}
+		snapshot = snapshot(TaskExecutionState.RUNNING, request, "holding_use targetIndex=" + targetIndex
+			+ " targetPos=" + compactPos(hold.target()) + " heldTicks=" + elapsed + " holdTicks=" + hold.holdTicks());
+		return Optional.empty();
 	}
 
     private static boolean placementRequiresSneak(Minecraft minecraft,LocalPlayer player,BlockState supportState) {
@@ -1735,6 +1784,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		attemptedPlacementStandPositions.clear();
 		pendingPlacementConfirmation = null;
 		pendingWaterPlacementConfirmation = null;
+		pendingHold = null;
 	}
 
 	private void clearNavigation() {
@@ -1828,6 +1878,37 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		Vec3 hitVec,
 		BlockHitResult hitResult
 	) {
+	}
+
+	private static final class PendingHold {
+		private final BlockPos target;
+		private final BlockHitResult hit;
+		private final InteractionHand hand;
+		private final long startedTick;
+		private final int holdTicks;
+		private final String message;
+		private long nextUseTick;
+		private int uses = 1;
+
+		PendingHold(BlockPos target, BlockHitResult hit, InteractionHand hand, long startedTick, int holdTicks, String message) {
+			this.target = target;
+			this.hit = hit;
+			this.hand = hand;
+			this.startedTick = startedTick;
+			this.holdTicks = holdTicks;
+			this.message = message;
+			this.nextUseTick = startedTick + HOLD_USE_INTERVAL_TICKS;
+		}
+
+		BlockPos target() { return target; }
+		BlockHitResult hit() { return hit; }
+		InteractionHand hand() { return hand; }
+		long startedTick() { return startedTick; }
+		int holdTicks() { return holdTicks; }
+		String message() { return message; }
+		long nextUseTick() { return nextUseTick; }
+		int uses() { return uses; }
+		void used(long next) { nextUseTick = next; uses++; }
 	}
 
 	private record PendingPlacementConfirmation(

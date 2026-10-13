@@ -1825,3 +1825,11 @@ A blueprint cell state may name any registered block, for example `create:shaft[
 - Create picks some facings from neighbouring kinetic blocks, so not every state is attainable at every point in the build order. An unattainable state fails with `placement_state_requires_different_approach` rather than placing a different block. In this layout the wheel is placed first and alone (`facing=south`), the press beside shafts (`facing=north`).
 - A press needs one empty block between its head and the depot or belt below it.
 - The evaluator's tool-fixture `state` query returns `blockEntity` data for queried blocks, so machine state (a kinetic `Speed`, a depot's held item) can be checked without a model.
+
+### Using a placed machine (hand crank)
+
+`examples/create-hand-crank-press.js` builds a hand crank on the end of a three-shaft line that drives a mechanical press over a depot. Live check on 2026-10-13 (Create Fly 1.21.8, evaluator arena): construction placed and verified 9/9 cells; `use_block` put iron ingots on the depot; `use_block` on the crank with `holdTicks: 120` kept the crank turning for the whole hold (it re-clicks every 4 ticks, as a held mouse button does), the press ran and the depot's output held `create:iron_sheet` x2 (one sheet per ingot pressed in that time).
+
+- A single click turns a crank for about half a second, so a plain `use_block` does nothing useful; `holdTicks` (0..1200) repeats the click and ends the task when it elapses, or fails with `out_of_range_during_hold`, `target_removed_during_hold` or `hold_use_rejected`.
+- The crank must be attached to a kinetic block, with its back facing the first shaft (`facing=north` at the north end of a z line). A crank on a plain block forms a network of size 1 and spins nothing.
+- The planner reads this guidance from the `modded-machines` skill.

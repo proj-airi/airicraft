@@ -3,3 +3,4 @@ furnaces
 positions-and-placement
 attention-rules
 slow-mining
+modded-machines

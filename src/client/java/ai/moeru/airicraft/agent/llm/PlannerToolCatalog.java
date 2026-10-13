@@ -312,6 +312,7 @@ public final class PlannerToolCatalog {
 				prop("facePreference", enumString("For air/replaceable targets, direction from target to support: down selects the floor below and clicks its top (for example placing a torch). For an existing solid target, selects the clicked face. Prefer auto.", List.of("auto", "down", "north", "south", "east", "west", "up"))),
 				prop("expectedSupportBlockIds", stringArray("Optional exact block ids expected on the clicked support block.")),
 				prop("expectedTargetMaterial", enumString("Optional precondition for an air/replaceable target, such as planting. Omit when interacting with existing solid blocks (chests, furnaces, doors); every listed value rejects them.", List.of("air", "replaceable", "air_or_replaceable"))),
+				prop("holdTicks", integer("Keep using the block for this many ticks (0..1200, 20 per second) by repeating the click every 4 ticks like a held right mouse button, then finish. Needed for blocks that only act while clicked, such as a Create hand crank. Default 0 is a single click.")),
 				prop("targets", array("Ordered target blocks to use. Maximum 16. Root facePreference, expectedSupportBlockIds, and expectedTargetMaterial apply as defaults.", useBlockTargetSchema()))
 			), List.of()), PlannerToolCatalog::validateUseBlockArguments),
 		builtInTool(LURE_ENTITIES, false, tool(LURE_ENTITIES, "Lure 1..8 observed animals into an inclusive destination box within 64 blocks. Animals must respond to the held food item. System 1 approaches moving followers, pauses travel for catch-up and chooses standing positions inside the area. Completion requires every selected animal's body inside; player arrival is insufficient. Does not feed animals or close gates. Use a roomy interior box and an open entrance. Uses temporary walking-only path settings, restored on release. Resume a safety hold after combat to reacquire followers.", properties(
@@ -778,6 +779,12 @@ public final class PlannerToolCatalog {
 			requireStringArray(arguments, "expectedSupportBlockIds");
 		}
 		validateTargetMaterial(arguments, "expectedTargetMaterial");
+		if (arguments.has("holdTicks") && !arguments.get("holdTicks").isJsonNull()) {
+			int holdTicks = requireInt(arguments, "holdTicks");
+			if (holdTicks < 0 || holdTicks > ai.moeru.airicraft.agent.tasks.BlockUseStepArgs.MAX_HOLD_TICKS) {
+				throw new JsonParseException("holdTicks must be 0.." + ai.moeru.airicraft.agent.tasks.BlockUseStepArgs.MAX_HOLD_TICKS);
+			}
+		}
 		validateBlockTargetShape(arguments, target -> {
 			validateFacePreference(target, "facePreference");
 			if (target.has("expectedSupportBlockIds") && !target.get("expectedSupportBlockIds").isJsonNull()) {
