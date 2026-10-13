@@ -555,7 +555,10 @@ public final class PlannerOrchestrator {
 		if (notice != null) loopNotices.addLast(notice);
 	}
 
-	/** What counts as progress between planner turns: dimension, inventory, block position, work states and the goal. */
+	/**
+	 * What counts as progress between planner turns: dimension, inventory, block position and the goal. Work that was
+	 * only started or cancelled is not; work that did something changed one of these.
+	 */
 	static List<Object> progressState(Map<String, Object> current) {
 		var state = new ArrayList<Object>();
 		state.add(current.get("dimension"));
@@ -564,8 +567,6 @@ public final class PlannerOrchestrator {
 		if (current.get("physical") instanceof Map<?, ?> physical && physical.get("position") instanceof Map<?, ?> position)
 			for (String axis : List.of("x", "y", "z"))
 				state.add(position.get(axis) instanceof Number value ? (Object) (long) Math.floor(value.doubleValue()) : null);
-		if (current.get("work") instanceof List<?> work) for (Object entry : work)
-			if (entry instanceof Map<?, ?> value) state.add(value.get("workId") + "=" + value.get("state"));
 		return state;
 	}
 
@@ -1095,7 +1096,12 @@ public final class PlannerOrchestrator {
 		var clear = calls.stream().filter(c -> PlannerQueueToolProvider.CLEAR.equals(c.name())).findFirst();
 		if (clear.isPresent()) {
 			var cancelled = new ArrayList<>(toolQueue.tools.pending());
-			if (toolQueue.tools.active() != null) cancelled.addFirst(toolQueue.tools.active());
+			PlannerToolCall active = toolQueue.tools.active();
+			if (active != null) cancelled.addFirst(active);
+			if (active != null && !toolRegistry.isReadTool(active.name())) {
+				var notice = loopWatchdog.onAbandoned(active.name());
+				if (notice != null) loopNotices.addLast(notice);
+			}
 			toolQueue.tools.clear((call, work) -> {});
 			toolQueue.checkpoints.clear();
 			for (var call : cancelled) queueReport(call, new TextToolExecutionOutcome("Cancelled by clear_queue; completed effects are not undone."));

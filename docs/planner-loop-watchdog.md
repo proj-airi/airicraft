@@ -9,7 +9,8 @@ stuck furnace craft. `PlannerLoopWatchdog` (in `agent/llm`, fed by `PlannerOrche
 ## What it detects
 
 After every accepted planner turn it compares a progress state taken from the decision context: dimension, carried
-item counts, block position, each work item's id and state, and the planner goal. The player's guidance resets
+item counts, block position and the planner goal. Work state is deliberately left out: starting work and cancelling it
+again changes work ids and states without getting anywhere, and work that does something changes items or position. The player's guidance resets
 everything; a turn whose state differs from the streak's first turn starts a new streak. A reply without tool calls is
 not counted: it is the planner waiting for the next event, which is what a loop should turn into.
 
@@ -20,12 +21,15 @@ not counted: it is the planner waiting for the next event, which is what a loop 
   attempts. A failure is a `TOOL_ERROR`/`TOOL_UNAVAILABLE`, a receipt with `accepted: false`, or a work outcome
   `FAILED` or carrying `failure`. Ids, ticks and ages are left out of the comparison; item counts are not, so a smaller
   shortfall is a different failure. Any success of that tool clears its history.
+- **Abandoned work**: the planner's `clear_queue` cancelled its own running call of one tool 3 times
+  (`REPEAT_ABANDONS`), counted until that tool succeeds. Seen live on the cabin build: glm cancelled a running
+  `construct_blueprint` five times and redesigned at new spots instead of resuming.
 
 ## What it does
 
 1. **Notice** (`planner.loop_detected`, advisory): the event rides on the next wake as evidence with an
    `observe.hints` entry saying what repeated and that more of the same will not change anything. It never wakes the
-   planner by itself. A repeated failure is only ever noticed, every third identical failure.
+   planner by itself. Repeated failures and abandoned work are only ever noticed, every third time.
 2. **Hold** (`planner.loop_held`): if a no-progress streak goes on for 3 more turns after its notice
    (`HOLD_AFTER_TURNS`), autonomous wakes are held for 60 s, doubling per hold up to 10 min:
    - tool-queue reviews wait, keeping their results (they run when the hold ends);

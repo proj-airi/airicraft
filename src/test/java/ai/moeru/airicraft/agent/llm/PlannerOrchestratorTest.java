@@ -541,6 +541,7 @@ class PlannerOrchestratorTest {
 			futures.get("B").complete("late B completion");
 			abort.complete("aborted"); orchestrator.poll();
 			assertEquals(List.of("A", "B", "E"), executed, "C must never run");
+			assertTrue(orchestrator.drainLoopNotices(10).isEmpty(), "one cancelled run is not yet a pattern");
 		} finally { orchestrator.shutdown(); }
 	}
 
@@ -600,6 +601,40 @@ class PlannerOrchestratorTest {
 			while (System.nanoTime() < deadline) { orchestrator.poll(); orchestrator.tickToolQueue(); Thread.sleep(5); }
 			assertEquals(1, backend.callCount(), "an idle report_to_me must not start a review of nothing");
 			assertFalse(orchestrator.hasQueuedToolWork());
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
+	void cancellingOwnRunningWorkThreeTimesIsNoticed() throws Exception {
+		var backend = new RecordingBackend();
+		var executed = new java.util.concurrent.CopyOnWriteArrayList<String>();
+		var provider = new PlannerToolProvider() {
+			public String id() { return "fifo_fixture"; }
+			public boolean handles(String name) { return name.equals("construct_blueprint"); }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("construct_blueprint", "Build", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { executed.add(call.id()); return new CompletableFuture<>(); }
+		};
+		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("aborted")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		try {
+			var notices = new ArrayList<PlannerLoopWatchdog.Notice>();
+			for (int turn = 0; turn < 4; turn++) {
+				orchestrator.submit(baseRequest(null));
+				awaitBackendCallCount(orchestrator, backend, turn + 1, Duration.ofSeconds(2));
+				var calls = new ArrayList<PlannerToolCall>();
+				if (turn > 0) calls.add(new PlannerToolCall("clear-" + turn, "clear_queue", new JsonObject(), null));
+				calls.add(new PlannerToolCall("build-" + turn, "construct_blueprint", new JsonObject(), null));
+				backend.succeed(turn, PlannerResponse.toolCalls(calls, null));
+				long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
+				while (executed.size() <= turn && System.nanoTime() < deadline) { orchestrator.poll(); Thread.sleep(5); }
+				notices.addAll(orchestrator.drainLoopNotices(10));
+			}
+			assertEquals(List.of("build-0", "build-1", "build-2", "build-3"), executed);
+			assertEquals(1, notices.size());
+			assertEquals(PlannerLoopWatchdog.ABANDONED_WORK, notices.getFirst().kind());
+			assertEquals(List.of("construct_blueprint"), notices.getFirst().tools());
 		} finally { orchestrator.shutdown(); }
 	}
 

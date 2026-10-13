@@ -77,6 +77,9 @@ public final class DecisionHints {
 			case "planner.loop_detected" -> PlannerLoopWatchdog.REPEATED_FAILURE.equals(payload.get("kind"))
 				? names(payload.get("tools")) + " failed the same way " + payload.get("count") + " times. What you did between attempts did not "
 					+ "change the result, so find out why before calling it again, or choose another approach."
+				: PlannerLoopWatchdog.ABANDONED_WORK.equals(payload.get("kind"))
+				? "You cancelled your own running " + names(payload.get("tools")) + " " + payload.get("count") + " times before it finished. "
+					+ "Starting over throws away what it had done: resume or let it finish unless it hit something it cannot handle."
 				: "Your last " + payload.get("count") + " turns changed nothing: no item, place or work changed (tools: " + names(payload.get("tools"))
 					+ "). More of the same will not either. Start the work your goal needs, or reply without tool calls to wait for the "
 					+ "next event; if turns like these continue, autonomous wakes are held for a while.";

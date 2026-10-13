@@ -82,6 +82,20 @@ class PlannerLoopWatchdogTest {
 		assertNull(watchdog.onResult("construct_blueprint", shortfall.formatted(5, 3300)), "success clears the tool's history");
 	}
 
+	@Test void cancellingOwnRunningWorkIsNoticedEveryThirdTimeUntilItSucceeds() {
+		var watchdog = new PlannerLoopWatchdog();
+		assertNull(watchdog.onAbandoned("construct_blueprint"));
+		assertNull(watchdog.onResult("construct_blueprint", "Cancelled by clear_queue; completed effects are not undone."));
+		assertNull(watchdog.onAbandoned("construct_blueprint"));
+		var notice = watchdog.onAbandoned("construct_blueprint");
+		assertEquals(PlannerLoopWatchdog.ABANDONED_WORK, notice.kind());
+		assertEquals(List.of("construct_blueprint"), notice.tools());
+		assertFalse(notice.hold());
+		assertNull(watchdog.onResult("construct_blueprint", "Work outcome: {\"workId\":\"build-4\",\"state\":\"SUCCEEDED\"}"));
+		assertNull(watchdog.onAbandoned("construct_blueprint"));
+		assertNull(watchdog.onAbandoned("construct_blueprint"), "a success started the count over");
+	}
+
 	@Test void failuresAreReadFromErrorsReceiptsAndWorkOutcomes() {
 		assertTrue(PlannerLoopWatchdog.isFailure("TOOL_ERROR: no path"));
 		assertTrue(PlannerLoopWatchdog.isFailure("Work outcome: {\"workId\":\"craft-2\",\"state\":\"FAILED\",\"failure\":\"missing_ingredients\"}"));

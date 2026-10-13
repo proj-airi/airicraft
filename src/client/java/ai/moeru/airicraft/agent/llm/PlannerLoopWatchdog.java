@@ -13,7 +13,8 @@ import java.util.TreeSet;
 
 /**
  * Watches the planner's own turns for loops that the work watchdog cannot see: autonomous turns that keep coming while
- * nothing in the world changes, and a tool that keeps failing the same way. The first notice is advisory. A
+ * nothing in the world changes, a tool that keeps failing the same way, and running work the planner keeps cancelling
+ * to start over. The first notice is advisory. A
  * no-progress loop that outlives it holds autonomous wakes for a cooldown that doubles per hold; the player's
  * guidance or real progress clears it.
  */
@@ -26,10 +27,14 @@ public final class PlannerLoopWatchdog {
 	public static final int HOLD_AFTER_TURNS = 3;
 	/** Identical failures of one tool before a notice, and between later notices. */
 	public static final int REPEAT_FAILURES = 3;
+	/** Times the planner cancelled its own running work of one tool before a notice, and between later notices. */
+	public static final int REPEAT_ABANDONS = 3;
 	public static final long HOLD_TICKS = 1_200L;
 	public static final long MAX_HOLD_TICKS = 12_000L;
 	public static final String NO_PROGRESS = "no_progress";
 	public static final String REPEATED_FAILURE = "repeated_failure";
+	public static final String ABANDONED_WORK = "abandoned_work";
+	private static final String CANCELLED = "Cancelled by clear_queue";
 	private static final int MAX_FAILURE_KEYS = 64;
 	private static final int MAX_RESULT_CHARS = 240;
 
@@ -56,10 +61,12 @@ public final class PlannerLoopWatchdog {
 	private boolean holdActive;
 	private long holdUntil = Long.MIN_VALUE;
 	private final LinkedHashMap<String, Integer> failures = new LinkedHashMap<>();
+	private final Map<String, Integer> abandons = new HashMap<>();
 
 	/**
 	 * Records one accepted planner turn. {@code state} is what counts as progress when it changes (inventory, place,
-	 * work); {@code null} means it is unknown, and the turn is ignored, as is a turn without tool calls.
+	 * goal), not work that was started or cancelled; {@code null} means it is unknown, and the turn is ignored, as is
+	 * a turn without tool calls.
 	 */
 	public Notice onTurn(long tick, boolean directGuidance, List<String> toolNames, Object state) {
 		if (directGuidance) {
@@ -90,12 +97,16 @@ public final class PlannerLoopWatchdog {
 		return new Notice(NO_PROGRESS, streak, List.copyOf(names), null, ticks, false);
 	}
 
-	/** Records one finished tool call. Any result that is not a failure clears that tool's failure history. */
+	/**
+	 * Records one finished tool call. Any result that is neither a failure nor a cancellation clears that tool's
+	 * failure and cancellation history.
+	 */
 	public Notice onResult(String toolName, String resultText) {
-		if (toolName == null || resultText == null) return null;
+		if (toolName == null || resultText == null || resultText.startsWith(CANCELLED)) return null;
 		String prefix = toolName + "\n";
 		if (!isFailure(resultText)) {
 			failures.keySet().removeIf(key -> key.startsWith(prefix));
+			abandons.remove(toolName);
 			return null;
 		}
 		String key = prefix + normalize(resultText);
@@ -103,6 +114,17 @@ public final class PlannerLoopWatchdog {
 		while (failures.size() > MAX_FAILURE_KEYS) failures.remove(failures.keySet().iterator().next());
 		if (count % REPEAT_FAILURES != 0) return null;
 		return new Notice(REPEATED_FAILURE, count, List.of(toolName), abbreviate(resultText), 0L, false);
+	}
+
+	/**
+	 * Records the planner cancelling its own running work ({@code clear_queue} with that call active). Starting
+	 * over and over changes work state without getting anywhere, so it is counted per tool until the tool succeeds.
+	 */
+	public Notice onAbandoned(String toolName) {
+		if (toolName == null) return null;
+		int count = abandons.merge(toolName, 1, Integer::sum);
+		if (count % REPEAT_ABANDONS != 0) return null;
+		return new Notice(ABANDONED_WORK, count, List.of(toolName), null, 0L, false);
 	}
 
 	/** Autonomous wakes are held until {@code tick} reaches the end of the cooldown. */
@@ -126,6 +148,7 @@ public final class PlannerLoopWatchdog {
 		holds = 0;
 		holdActive = false;
 		failures.clear();
+		abandons.clear();
 	}
 
 	private void clearStreak(Object state) {
