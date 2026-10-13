@@ -23,7 +23,7 @@ class PlannerPromptPolicyTest {
 		assertTrue(prompt.contains("schemas are authoritative"));
 		assertTrue(prompt.contains("the runtime calls observe for you"));
 		assertFalse(prompt.contains("navigate_to"));
-		assertTrue(prompt.contains("check_position"));
+		assertTrue(PlannerSkills.bundled().find("positions-and-placement").orElseThrow().body().contains("check_position"));
 		assertFalse(prompt.contains("craft_recipe"));
 		assertFalse(prompt.contains("{{"));
 	}
@@ -38,9 +38,10 @@ class PlannerPromptPolicyTest {
 		assertTrue(prompt.contains("same-client admin messages"));
 		assertTrue(prompt.contains("unknown_acquisition_method"));
 		assertTrue(prompt.contains("does not finish the objective"));
-		assertTrue(prompt.contains("minecraft:charcoal"));
-		assertTrue(prompt.contains("craft minecraft:torch from charcoal and sticks"));
-		assertTrue(prompt.contains("allowUnilluminated"));
+		String lighting = PlannerSkills.bundled().find("mining-light").orElseThrow().body();
+		assertTrue(lighting.contains("minecraft:charcoal"));
+		assertTrue(lighting.contains("craft minecraft:torch from charcoal and sticks"));
+		assertTrue(lighting.contains("allowUnilluminated"));
 		assertTrue(prompt.contains("Accepted means admitted, not completed"));
 	}
 
