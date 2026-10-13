@@ -361,10 +361,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 1
     },
     {
@@ -412,10 +408,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 2
     },
     {
@@ -463,10 +455,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 3
     },
     {
@@ -514,10 +502,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 4
     },
     {
@@ -565,10 +549,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 5
     },
     {
@@ -616,10 +596,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 6
     },
     {
@@ -667,10 +643,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 7
     },
     {
@@ -718,10 +690,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 8
     },
     {
@@ -769,10 +737,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 9
     },
     {
@@ -820,10 +784,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 10
     }
   ],

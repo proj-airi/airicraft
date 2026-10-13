@@ -80,6 +80,14 @@ The client infers the source and intent because vanilla item tracking does not s
 
 The first observation after world entry/reset establishes a baseline. Each loaded item UUID is evaluated once; stack metadata may arrive up to five ticks later without losing the original motion evidence. Payloads include likely player name/UUID, item entity UUID, item ID/count, current/spawn position, initial velocity, dimension, observation tick, and `inferred=true`. Overlapping players, delayed observations, and offers without clear horizontal motion may be missed. Other item sources with matching geometry can produce false positives. Multiplayer behavior still requires live validation.
 
+## Tool wear
+
+`current.durability` lists every damaged item in the inventory, armor and offhand slots with its slot and durability in 10% steps, switching to exact uses left once the item is low (at most a tenth of its maximum or 8 uses, whichever is more). The coarse steps keep a long mining job from changing the observation on every block.
+
+`tool.durability_low` is published when the last tool of a kind (pickaxe, axe, shovel, hoe, sword or shears, by item tag, so modded tools count) wears into the low band and no healthy tool of that kind is carried; it wakes the planner at `LOW`. `tool.broken` is published when a tool with at most 4 uses left disappears from its slot and its item count drops; it wakes at `NORMAL`, and its hint says when no tool of that kind is left. Both payloads carry `itemId`, `toolKind`, `slot`, `maximum` and `sparesOfKind`; the low event also carries `remaining`. Breaks are inferred from successive inventory readings, so dropping a nearly broken tool reads as a break.
+
+When `mine_blocks` or `ensure_blocks_in_inventory` starts and, for any requested block that needs a tool, the carried tools that can harvest that block have fewer uses left than the blocks still needed (the block with the least tool life left is named), a `task.notice` with `reason: tool_wear` is published with task attention. It is a notice rather than part of the receipt because queued receipts reach the planner only when the work ends. The job runs either way; blocks that drop items without a tool never warn, and Unbreaking is not counted.
+
 ## Combat resolution summaries
 
 `reflex.resolved` includes `combatSummary` for episodes that entered mob combat. The summary retains each participant across threat filtering and distinguishes `confirmedDead`, `surviving`, and `unconfirmed` targets by UUID, name/type, last observed health, and distance. It also reports duration in ticks, health before/after, cumulative observed health loss, and the resolution reason. Healing does not erase previously observed health loss; damage before the reflex began or between unsampled health updates is not included.

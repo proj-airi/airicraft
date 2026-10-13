@@ -178,6 +178,10 @@ public record ActiveJobProposal(
 		return new ActiveJobProposal(ActiveJobType.LURE_ENTITIES, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
 	}
 
+	public static ActiveJobProposal fightEnderDragon() {
+		return new ActiveJobProposal(ActiveJobType.FIGHT_ENDER_DRAGON, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+	}
+
 	public static ActiveJobProposal askUser(String askPrompt) {
 		return new ActiveJobProposal(ActiveJobType.ASK_USER, null, null, null, null, null, null, null, null, null, null, null, null, null, askPrompt);
 	}

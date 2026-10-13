@@ -93,7 +93,7 @@
         "previousVersion": 1,
         "reason": "I need pickups again",
         "replayed": 5,
-        "sha": "37ce24db38862922",
+        "sha": "f142702f68b8797d",
         "version": 0,
         "wakesGained": 0,
         "wakesLost": 0
@@ -182,10 +182,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 1
     },
     {
@@ -240,10 +236,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 4
     },
     {
@@ -280,10 +272,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 5
     },
     {
@@ -294,7 +282,7 @@
         {
           "kind": "TOOL_RESULT",
           "role": "tool",
-          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":2}},\"changed\":3,\"examples\":[{\"now\":\"no wake (catalog.semantic)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"37ce24db38862922\"}"
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":2}},\"changed\":3,\"examples\":[{\"now\":\"no wake (catalog.semantic)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"f142702f68b8797d\"}"
         }
       ],
       "observe": {
@@ -310,7 +298,7 @@
               "previousVersion": 1,
               "reason": "I need pickups again",
               "replayed": 5,
-              "sha": "37ce24db38862922",
+              "sha": "f142702f68b8797d",
               "version": 0,
               "wakesGained": 0,
               "wakesLost": 0
@@ -348,10 +336,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "0d71a6c5a33e0c8242253149b776e4c2b8f29d84241727ae4fa83cdbde6f570d",
-        "toolsSha": "da448f51954807a99a8d92201efe92fa7fa09954652ee3399f3f8b228a92cba6"
-      },
       "tick": 8
     }
   ],

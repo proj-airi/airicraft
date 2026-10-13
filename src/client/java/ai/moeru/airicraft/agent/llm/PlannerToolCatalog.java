@@ -61,6 +61,7 @@ public final class PlannerToolCatalog {
 	public static final String BREAK_BLOCKS = "break_blocks";
 	public static final String TEND_CROPS = "tend_crops";
 	public static final String LURE_ENTITIES = "lure_entities";
+	public static final String FIGHT_ENDER_DRAGON = "fight_ender_dragon";
 	public static final String CANCEL_TASK = "cancel_task";
 	public static final String RESUME_TASK = "resume_task";
 	public static final String CLEAR_GOAL = "clear_goal";
@@ -310,6 +311,7 @@ public final class PlannerToolCatalog {
 			prop("x1", integer("Minimum destination x.")), prop("y1", integer("Minimum destination y.")), prop("z1", integer("Minimum destination z.")),
 			prop("x2", integer("Maximum destination x.")), prop("y2", integer("Maximum destination y.")), prop("z2", integer("Maximum destination z."))
 		), List.of("uuids", "itemId", "x1", "y1", "z1", "x2", "y2", "z2")), ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs::parse),
+		builtInTool(FIGHT_ENDER_DRAGON, false, tool(FIGHT_ENDER_DRAGON, "Fight the Ender Dragon in the End. System 1 runs the fight without waiting for planner turns, which are too slow to dodge it: it steps out of dragon-breath clouds and away from fireball impacts (their damage ignores armor), hits the dragon's head with the best melee weapon whenever it perches on the exit portal at x=0 z=0, and between perches shoots the end crystals that heal it with a bow from the island's end stone (needs a bow and arrows). Carry building blocks: from the arrival platform it bridges to the island. With a pickaxe and about 40 building blocks it also opens the two caged crystals while the dragon perches: it pillars up beside the cage, breaks its roof and digs back down. Call it as soon as you are in the End with the dragon alive. Ends when the dragon dies. Fails with a reason: caged_crystals when only crystals inside iron bars are left and it cannot open them (they heal the dragon faster than head hits hurt it; the reason says what is missing), portal_unreachable, low_health at 6 health or less (eat or back off, then call again), no_progress, dragon_not_found, not_in_the_end or fight_timeout.", properties(), List.of()), NO_ARGUMENT_VALIDATION),
 		builtInTool(TEND_CROPS, false, tool(TEND_CROPS, "Tend one existing flat crop plot, at most 16 by 16 blocks within 64 blocks of you. System 1 inspects the plot, harvests mature crops, collects drops and replants, and plants empty farmland when seeds are available. Leaves immature crops and other blocks intact. Deliberately edits crops within preserved places. One pass; does not wait for growth or till soil. Its terminal result reports counts and missing seeds.", properties(
 			prop("seedItemId", string("Crop planting item, e.g. minecraft:wheat_seeds, minecraft:carrot, minecraft:potato, minecraft:beetroot_seeds.")),
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),

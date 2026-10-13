@@ -46,7 +46,7 @@ public final class MiningToolPreparation {
 		var inventory = player.getInventory();
 		int selectedSlot = inventory.getSelectedSlot();
 		java.util.function.IntFunction<MiningToolSelection.Score> scores = slot -> !allowInventory && slot >= 9
-			? new MiningToolSelection.Score(false, 0.0F)
+			? new MiningToolSelection.Score(false, 0.0F, false)
 			: score(inventory.getItem(slot), targets, required);
 		int sourceSlot = requireDrops ? MiningToolSelection.preferredSlot(selectedSlot, scores)
 			: MiningToolSelection.preferredClearanceSlot(selectedSlot, scores);
@@ -80,7 +80,7 @@ public final class MiningToolPreparation {
 			eligible &= !state.requiresCorrectToolForDrops() || !stack.isEmpty() && stack.isCorrectToolForDrops(state);
 			speed = Math.min(speed, stack.isEmpty() ? 1.0F : stack.getDestroySpeed(state));
 		}
-		return new MiningToolSelection.Score(eligible, speed == Float.MAX_VALUE ? 1.0F : speed);
+		return new MiningToolSelection.Score(eligible, speed == Float.MAX_VALUE ? 1.0F : speed, stack.isDamageableItem());
 	}
 
 	private static List<String> blockIds(List<BlockState> targets) {

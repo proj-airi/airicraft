@@ -277,6 +277,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final WorldTaskExecutor worldTaskExecutor;
 	private final InventoryResourceCounter inventoryResourceCounter = new InventoryResourceCounter();
 	private final InventoryItemCounter inventoryItemCounter = new InventoryItemCounter();
+	private final ai.moeru.airicraft.agent.durability.ToolWear.Tracker toolWearTracker = new ai.moeru.airicraft.agent.durability.ToolWear.Tracker();
 	private final SurfaceMemory surfaceMemory = new SurfaceMemory();
 	private final SmeltingProcessManager smeltingProcessManager;
 	private final SmeltingPlannerService smeltingPlannerService = new SmeltingPlannerService();
@@ -606,6 +607,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		armorAutoEquip.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
+		toolWearTracker.reset();
 		seenPlayerNames.clear();
 	}
 
@@ -613,7 +615,19 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		try { tickClient(minecraft); }
 		finally { refreshWorkHistory(); }
 		observeWorkProgress(minecraft);
+		observeToolWear(minecraft);
 		tickPolicy();
+	}
+
+	/** Publishes tool.durability_low when the last tool of a kind runs low and tool.broken when one breaks. */
+	private void observeToolWear(Minecraft minecraft) {
+		if (minecraft == null || minecraft.player == null || minecraft.level == null) {
+			toolWearTracker.reset();
+			return;
+		}
+		var events = toolWearTracker.update(ai.moeru.airicraft.agent.durability.MinecraftToolStacks.read(minecraft.player.getInventory()));
+		for (var event : events) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, event.type(), event.payload());
+		if (!events.isEmpty()) drainEventPipeline();
 	}
 
 	private void tickClient(Minecraft minecraft) {
@@ -968,6 +982,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				if (!stack.isEmpty()) inventory.merge(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount(), Integer::sum);
 			}
 			facts.put("inventory", inventory);
+			var toolDurability = ai.moeru.airicraft.agent.durability.ToolWear.present(
+				ai.moeru.airicraft.agent.durability.MinecraftToolStacks.read(minecraft.player.getInventory()));
+			if (!toolDurability.isEmpty()) facts.put("durability", toolDurability);
 			int freeStorageSlots = 0;
 			for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
 				if (minecraft.player.getInventory().getItem(slot).isEmpty()) freeStorageSlots++;
@@ -3400,6 +3417,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: mine_blocks " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.mineBlocks(mineSpec));
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity());
 				yield queuedActionToolResult("mine_blocks", "blockIds=" + String.join(",", mineSpec.blockIds())
 					+ " quantity=" + mineSpec.quantity()
 					+ " allowUnilluminated=" + booleanArg(args, "allowUnilluminated").orElse(false));
@@ -3432,6 +3450,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					yield "TOOL_ERROR: ensure_blocks_in_inventory " + illuminationError.get();
 				}
 				applyPlannerJobTool(ActiveJobProposal.ensureBlocksInInventory(mineSpec));
+				noticeToolWear(mineSpec.blockIds(), mineSpec.quantity() - currentItemCount);
 				yield queuedActionToolResult("ensure_blocks_in_inventory", "blockIds=" + String.join(",", mineSpec.blockIds()) + " quantity=" + mineSpec.quantity());
 			}
 			case PlannerToolCatalog.COLLECT_RESOURCE -> {
@@ -3634,6 +3653,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				applyPlannerJobTool(ActiveJobProposal.lureEntities(lure));
 				yield queuedActionToolResult("lure_entities", "destination=" + lure);
 			}
+			case PlannerToolCatalog.FIGHT_ENDER_DRAGON -> {
+				applyPlannerJobTool(ActiveJobProposal.fightEnderDragon());
+				yield queuedActionToolResult("fight_ender_dragon", "target=minecraft:ender_dragon");
+			}
 			case PlannerToolCatalog.TEND_CROPS -> {
 				var cropTending = ai.moeru.airicraft.agent.tasks.CropTendingStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.tendCrops(cropTending));
@@ -3734,6 +3757,28 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return activeJob.status() == ActiveJobStatus.QUEUED
 			|| activeJob.status() == ActiveJobStatus.RUNNING
 			|| activeJob.status() == ActiveJobStatus.BLOCKED;
+	}
+
+	/**
+	 * Mining work starts when its queued call runs, long before its receipt reaches the planner, so a tool-wear forecast
+	 * is a task.notice with attention at that moment. The work still runs.
+	 */
+	private void noticeToolWear(List<String> blockIds, int blocksNeeded) {
+		var minecraft = Minecraft.getInstance();
+		if (minecraft == null || minecraft.player == null) return;
+		var warning = ai.moeru.airicraft.agent.durability.MinecraftToolStacks.miningShortfall(minecraft.player.getInventory(), blockIds, blocksNeeded);
+		if (warning.isEmpty()) return;
+		var job = activeJobRuntime.current();
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("reason", "tool_wear");
+		payload.put("blockIds", List.copyOf(blockIds));
+		payload.put("blocksNeeded", blocksNeeded);
+		payload.put("message", "Tool wear: " + warning.get() + " The work is running; this notice does not cancel it.");
+		var event = job == null || job.jobId() == null
+			? eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload)
+			: eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.notice", payload,
+				EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
+		dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 	}
 
 	private static String queuedActionToolResult(String toolName, String details) {
@@ -5232,7 +5277,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, ASK_USER -> false;
 		};
 	}
 
@@ -5476,7 +5521,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (type) {
 			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS -> true;
-			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES -> false;
+			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> false;
 		};
 	}
 
