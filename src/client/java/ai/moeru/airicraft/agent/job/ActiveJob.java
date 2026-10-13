@@ -2,6 +2,7 @@ package ai.moeru.airicraft.agent.job;
 
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.tasks.BlockBreakStepArgs;
+import ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs;
 import ai.moeru.airicraft.agent.tasks.CropTendingStepArgs;
 import ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
@@ -40,8 +41,38 @@ public record ActiveJob(
 	String lastError,
 	long updatedTick,
 	CropTendingStepArgs cropTending,
-	LureEntitiesStepArgs lureEntities
+	LureEntitiesStepArgs lureEntities,
+	CollectObsidianStepArgs collectObsidian
 ) {
+	public ActiveJob(
+		String jobId,
+		ActiveJobType type,
+		ActiveJobStatus status,
+		GoalSnapshot directGoal,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		long waitUntilTick,
+		int baselineResourceCount,
+		int collectedCount,
+		String source,
+		String blockedReason,
+		String lastError,
+		long updatedTick,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities
+	) {
+		this(jobId, type, status, directGoal, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, waitUntilTick, baselineResourceCount, collectedCount, source, blockedReason, lastError, updatedTick, cropTending, lureEntities, null);
+	}
+
 	public ActiveJob(
 		String jobId,
 		ActiveJobType type,

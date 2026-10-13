@@ -81,6 +81,10 @@ public final class DecisionHints {
 				+ "or cover plan; do not resume the same stalled pursuit. After you release the hold, ordinary mob pressure will not preempt your "
 				+ "action for 600 ticks; critical health, an imminent creeper or drowning still can. Mining steps or towering may be needed to escape a pit.");
 		}
+		if ("out_of_lava".equals(reason)) {
+			parts.add("The body fell into lava and the reflex walked it out; it may still be burning. Check health before resuming, and "
+				+ "work from solid ground beside lava rather than inside or above it.");
+		}
 		if ("combat_approach_stalled".equals(reason)) {
 			parts.add("Pursuit made no closer approach to the distant threats. Choose a tactical next step from fresh geometry and inventory. "
 				+ "These distant attackers are deferred while you act; close danger, incoming projectiles, damage or a new attacker reactivate defense.");

@@ -24,6 +24,12 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -34,6 +40,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 
 public final class SurvivalReflexRuntime {
 	private final Actuator actuator = new Actuator("reflex", Priority.REFLEX);
@@ -46,6 +53,8 @@ public final class SurvivalReflexRuntime {
 	private static final int SHELTER_CONFIRM_TICKS = 200;
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
+	static final int LAVA_CLEAR_TICKS = 5;
+	static final int LAVA_ESCAPE_RADIUS = 5;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -214,6 +223,7 @@ public final class SurvivalReflexRuntime {
 		if (tacticalWindow != null && (!tacticalWindow.active(tick, player.getHealth()) || minecraft.level.getEntitiesOfClass(
 			net.minecraft.world.entity.monster.Creeper.class, player.getBoundingBox().inflate(4),
 			c -> c.isAlive() && c.getSwellDir() > 0 && c.getSwelling(1) >= .5F).size() > 0)) tacticalWindow = null;
+		boolean lavaDanger = player.isInLava();
 		boolean drowningDanger = policy().drowningEnabled() && drowningDanger(player, config.lowAirTicks(), drowningDamageObserved);
 		detectProactiveThreats(minecraft, player, tick);
 		List<ResolvedThreat> threats = resolveThreats(minecraft, player);
@@ -242,10 +252,12 @@ public final class SurvivalReflexRuntime {
 		}
 		boolean mobDanger = !combatDeferred() && threats.stream().anyMatch(threat ->
 			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight()));
-		if (shouldBeginReflex(snapshot.state(), drowningDanger || mobDanger)) {
-			SurvivalReflexCause cause = drowningDanger ? SurvivalReflexCause.DROWNING : SurvivalReflexCause.MOB_ATTACK;
+		if (shouldBeginReflex(snapshot.state(), lavaDanger || drowningDanger || mobDanger)) {
+			SurvivalReflexCause cause = lavaDanger ? SurvivalReflexCause.LAVA
+				: drowningDanger ? SurvivalReflexCause.DROWNING : SurvivalReflexCause.MOB_ATTACK;
 			boolean hasInterruptedWork = interruptedWork != null && interruptedWork.hasInterruptedWork();
-			SurvivalReflexAction action = drowningDanger
+			SurvivalReflexAction action = lavaDanger ? SurvivalReflexAction.ESCAPE_LAVA
+				: drowningDanger
 				? drowningAction(hasInterruptedWork)
 				: chooseMobAction(player, threats);
 			begin(cause, action, interruptedWork, player, threats, tick, releaseNormalActuators);
@@ -265,6 +277,11 @@ public final class SurvivalReflexRuntime {
 		if (snapshot.cause() == SurvivalReflexCause.DROWNING && !policy().drowningEnabled()
 			|| snapshot.cause() == SurvivalReflexCause.MOB_ATTACK && !policy().combatEnabled()) {
 			resolve(minecraft, player, threats, tick, "reflex_policy_disabled", false);
+		}
+		else if (lavaDanger || snapshot.cause() == SurvivalReflexCause.LAVA) {
+			if (combatEating != null && combatEating.eating()) combatEating.cancel(minecraft);
+			releaseShield(minecraft);
+			tickLava(minecraft, player, lavaDanger, threats, tick);
 		}
 		else if (recoverCombatMovement(minecraft, player, threats, tick)) {
 			// The recovery navigator owns all movement until dry supported ground.
@@ -506,6 +523,91 @@ public final class SurvivalReflexRuntime {
 			recordActuatorFailure(operation, exception, tick);
 			refreshSnapshot(player, threats, danger ? tick : snapshot.lastDangerTick(), stableTicks, failureText(exception));
 		}
+	}
+
+	/**
+	 * Gets the body out of lava: walks and jumps toward the nearest dry cell with solid ground, and ends once the body has
+	 * stood outside the lava for a few ticks. Lava outranks drowning and mobs because it kills in seconds.
+	 */
+	private void tickLava(Minecraft minecraft, LocalPlayer player, boolean inLava, List<ResolvedThreat> threats, long tick) {
+		if (snapshot.cause() != SurvivalReflexCause.LAVA) {
+			underwaterEscape.reset(minecraft);
+			combatRecovery = CombatRecovery.READY;
+			changeAction(SurvivalReflexCause.LAVA, SurvivalReflexAction.ESCAPE_LAVA, tick);
+		}
+		boolean clear = !inLava && player.onGround();
+		int clearTicks = clear ? snapshot.breathableTicks() + 1 : 0;
+		if (clearTicks >= LAVA_CLEAR_TICKS) {
+			if (!mobThreatsResolved(threats.size(), tick, lastMobDamageTick, config.threatCooldownTicks())) {
+				changeAction(SurvivalReflexCause.MOB_ATTACK, chooseMobAction(player, threats), tick);
+				refreshSnapshot(player, threats, snapshot.lastDangerTick(), 0, null);
+				return;
+			}
+			resolve(minecraft, player, threats, tick, "out_of_lava", false);
+			return;
+		}
+		try {
+			if (clear) {
+				movementController.stop(minecraft);
+			}
+			else {
+				BlockPos target = lavaEscapeTarget(player.blockPosition(), player.position(), LAVA_ESCAPE_RADIUS,
+					cell -> lavaSafeStand(minecraft.level, cell));
+				if (target == null) {
+					movementController.hold(minecraft, true, false);
+				}
+				else {
+					cameraController.lookAt(minecraft, new Vec3(target.getX() + 0.5D, player.getEyeY(), target.getZ() + 0.5D));
+					movementController.moveForward(minecraft, false, true, tick);
+				}
+			}
+			refreshSnapshot(player, threats, inLava ? tick : snapshot.lastDangerTick(), clearTicks, null);
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("escape_lava", exception, tick);
+			refreshSnapshot(player, threats, inLava ? tick : snapshot.lastDangerTick(), clearTicks, failureText(exception));
+		}
+	}
+
+	/**
+	 * The closest cell to stand on outside the lava, searched from one below the feet to two above, since a body in a
+	 * pool sinks below the bank. Nearer cells win; climbing costs a little more than walking level.
+	 */
+	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand) {
+		BlockPos best = null;
+		double bestCost = Double.MAX_VALUE;
+		for (int dy = -1; dy <= 2; dy++) {
+			for (int dx = -radius; dx <= radius; dx++) {
+				for (int dz = -radius; dz <= radius; dz++) {
+					BlockPos cell = feet.offset(dx, dy, dz);
+					if (!safeStand.test(cell)) continue;
+					double horizontal = Math.hypot(cell.getX() + 0.5D - position.x, cell.getZ() + 0.5D - position.z);
+					double cost = horizontal + 0.5D * Math.max(0, cell.getY() - feet.getY());
+					if (cost < bestCost) {
+						bestCost = cost;
+						best = cell;
+					}
+				}
+			}
+		}
+		return best;
+	}
+
+	private static boolean lavaSafeStand(Level level, BlockPos cell) {
+		BlockPos floorPos = cell.below();
+		BlockState floor = level.getBlockState(floorPos);
+		if (!floor.isFaceSturdy(level, floorPos, Direction.UP) || floor.is(Blocks.MAGMA_BLOCK)
+			|| !floor.getFluidState().isEmpty()) {
+			return false;
+		}
+		for (BlockPos body : List.of(cell, cell.above())) {
+			BlockState state = level.getBlockState(body);
+			if (!state.getCollisionShape(level, body).isEmpty() || state.getFluidState().is(FluidTags.LAVA)
+				|| state.is(BlockTags.FIRE)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private boolean combatDeferred() {

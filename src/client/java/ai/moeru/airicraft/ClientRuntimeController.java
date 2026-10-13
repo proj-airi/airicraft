@@ -516,7 +516,8 @@ public final class ClientRuntimeController {
 			new ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor(navigationFacade, cameraController,
 				new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade)),
 			new ai.moeru.airicraft.agent.tasks.LureEntitiesTaskExecutor(navigationFacade),
-			new ai.moeru.airicraft.agent.tasks.DragonFightTaskExecutor(navigationFacade, cameraController)
+			new ai.moeru.airicraft.agent.tasks.DragonFightTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.CollectObsidianTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);

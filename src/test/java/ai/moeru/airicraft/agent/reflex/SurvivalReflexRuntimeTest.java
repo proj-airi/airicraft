@@ -15,6 +15,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SurvivalReflexRuntimeTest {
+	@Test void lavaEscapeHeadsForTheNearestBankEvenAboveTheSunkenFeet() {
+		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
+		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
+		// A 2-deep pool: banks one block above the lava surface on the west (x=-2) and far east (x=4).
+		java.util.function.Predicate<net.minecraft.core.BlockPos> bank = cell -> cell.getY() == 28 && (cell.getX() == -2 || cell.getX() == 4);
+		assertEquals(new net.minecraft.core.BlockPos(-2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank));
+		assertNull(SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, cell -> false));
+		// A level exit beats a slightly nearer climb.
+		java.util.function.Predicate<net.minecraft.core.BlockPos> mixed = cell -> cell.equals(new net.minecraft.core.BlockPos(-2, 28, 0))
+			|| cell.equals(new net.minecraft.core.BlockPos(2, 26, 2));
+		assertEquals(new net.minecraft.core.BlockPos(2, 26, 2), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, mixed));
+	}
+
 	@Test void combatMealNeedsShelterAndAFullUseWindow() {
 		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, true, false, 4D));
 		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, false, false, 12D));
