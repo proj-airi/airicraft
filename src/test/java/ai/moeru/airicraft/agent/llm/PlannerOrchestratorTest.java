@@ -584,6 +584,68 @@ class PlannerOrchestratorTest {
 
 
 	@Test
+	void reportToMeWithNothingQueuedIsNotQueuedAndSchedulesNoReview() throws Exception {
+		var backend = new RecordingBackend();
+		var registry = PlannerToolRegistry.of(new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		var events = new ai.moeru.airicraft.agent.events.SemanticEventBuffer(8);
+		orchestrator.configureDecisionContext(() -> new PlannerDecisionContext("world", 10, 10, "controller", "idle", Map.of(), events.query(null)));
+		try {
+			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("wait", "report_to_me",
+				JsonParser.parseString("{\"question\":\"Is the glass done?\"}").getAsJsonObject(), null)), null));
+			long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
+			while (System.nanoTime() < deadline) { orchestrator.poll(); orchestrator.tickToolQueue(); Thread.sleep(5); }
+			assertEquals(1, backend.callCount(), "an idle report_to_me must not start a review of nothing");
+			assertFalse(orchestrator.hasQueuedToolWork());
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
+	void reviewsThatKeepChangingNothingAreNoticedThenHeldUntilTheCooldownEnds() throws Exception {
+		var backend = new RecordingBackend();
+		var provider = new PlannerToolProvider() {
+			public String id() { return "inspect_fixture"; }
+			public boolean handles(String name) { return name.equals("inspect_world"); }
+			public boolean isReadTool(String name) { return true; }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("inspect_world", "Inspect", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { return CompletableFuture.completedFuture("Tool result for inspect_world: {}"); }
+		};
+		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		var events = new ai.moeru.airicraft.agent.events.SemanticEventBuffer(8);
+		orchestrator.configureDecisionContext(() -> new PlannerDecisionContext("world", 10, 10, "controller", "idle",
+			Map.of("inventory", Map.of("minecraft:dirt", 3)), events.query(null)));
+		try {
+			orchestrator.submit(baseRequest(null));
+			// The player's turn, then three reviews to the notice and three more to the hold.
+			int turns = 1 + PlannerLoopWatchdog.REPEAT_TURNS + PlannerLoopWatchdog.HOLD_AFTER_TURNS;
+			for (int turn = 0; turn < turns; turn++) {
+				awaitBackendCallCount(orchestrator, backend, turn + 1, Duration.ofSeconds(2));
+				backend.succeed(turn, PlannerResponse.toolCalls(List.of(new PlannerToolCall("inspect-" + turn, "inspect_world", new JsonObject(), null)), null));
+				backend.awaitCompletions(turn + 1, Duration.ofSeconds(1));
+				orchestrator.poll();
+			}
+			long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
+			while (System.nanoTime() < deadline) { orchestrator.poll(); orchestrator.tickToolQueue(); Thread.sleep(5); }
+			assertEquals(turns, backend.callCount(), "a held loop starts no more reviews");
+			assertTrue(orchestrator.holdsAutonomousWakes());
+			var notices = orchestrator.drainLoopNotices(10);
+			assertEquals(List.of(false, true), notices.stream().map(PlannerLoopWatchdog.Notice::hold).toList());
+			assertEquals(List.of("inspect_world"), notices.getFirst().tools());
+
+			assertTrue(orchestrator.drainLoopNotices(10 + PlannerLoopWatchdog.HOLD_TICKS).getFirst().released());
+			assertFalse(orchestrator.holdsAutonomousWakes());
+			awaitBackendCallCount(orchestrator, backend, turns + 1, Duration.ofSeconds(2));
+			assertEquals(turns + 1, backend.callCount(), "the held review runs once the hold ends");
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
 	void bugReportCommitsTheReceiptBeforePausingAndDoesNotRequestAnotherModelTurn() throws Exception {
 		RecordingBackend backend = new RecordingBackend();
 		var order = new ArrayList<String>();

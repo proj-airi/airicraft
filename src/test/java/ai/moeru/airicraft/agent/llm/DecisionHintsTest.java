@@ -29,6 +29,19 @@ class DecisionHintsTest {
 		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("recorded combat outcomes"));
 	}
 
+	@Test void loopNoticesGetAHintOnWhateverWakeFollowsThem() {
+		var events = List.of(
+			new SemanticEvent(1, 1, 50, "planner.loop_detected", Map.of("kind", "no_progress", "count", 3, "tools", List.of("inspect_world"))),
+			new SemanticEvent(2, 1, 50, "planner.loop_detected", Map.of("kind", "repeated_failure", "count", 3, "tools", List.of("craft_item"))),
+			new SemanticEvent(3, 1, 50, "planner.loop_held", Map.of("kind", "no_progress", "count", 6, "holdSeconds", 60L)),
+			new SemanticEvent(4, 1, 50, "planner.loop_released", Map.of("kind", "no_progress")));
+		var hints = DecisionHints.render(List.of(wake(9, "smelting.output_ready")), events);
+		assertEquals(List.of(1L, 2L, 3L), hints.stream().map(hint -> hint.get("seqNo")).toList());
+		assertTrue(String.valueOf(hints.get(0).get("hint")).contains("tools: inspect_world"));
+		assertTrue(String.valueOf(hints.get(1).get("hint")).startsWith("craft_item failed the same way 3 times"));
+		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("held for 60 seconds"));
+	}
+
 	@Test void toolWearHintsSayWhenToReplaceATool() {
 		var events = List.of(
 			new SemanticEvent(1, 1, 50, "tool.durability_low", Map.of("itemId", "minecraft:iron_pickaxe", "toolKind", "pickaxe", "remaining", 25, "sparesOfKind", 0L)),

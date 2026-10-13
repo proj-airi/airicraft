@@ -84,6 +84,9 @@ public final class PlannerOrchestrator {
 	private Context turnContext;
 	private boolean inventoryBootstrapPending = true;
 	private final ArrayDeque<StalePlannerRejection> stalePlannerRejections = new ArrayDeque<>();
+	private final PlannerLoopWatchdog loopWatchdog = new PlannerLoopWatchdog();
+	private final ArrayDeque<PlannerLoopWatchdog.Notice> loopNotices = new ArrayDeque<>();
+	private long loopTick;
 	private long minimumSafetyEpoch;
 	private String currentSafetyHoldId;
 	private boolean safetyLaunchBlocked;
@@ -525,6 +528,47 @@ public final class PlannerOrchestrator {
 		return Preemption.PREEMPTED;
 	}
 
+	/** Autonomous wakes are held because the planner's recent turns kept changing nothing ({@link PlannerLoopWatchdog}). */
+	public boolean holdsAutonomousWakes() {
+		return loopWatchdog.holding(loopTick);
+	}
+
+	/** Loop notices since the last drain, including the end of a hold by {@code tick}. Called once per client tick. */
+	public List<PlannerLoopWatchdog.Notice> drainLoopNotices(long tick) {
+		loopTick = tick;
+		var released = loopWatchdog.release(loopTick);
+		if (released != null) loopNotices.addLast(released);
+		if (loopNotices.isEmpty()) return List.of();
+		var drained = List.copyOf(loopNotices);
+		loopNotices.clear();
+		return drained;
+	}
+
+	private void observeLoopTurn(PlannerExecutionResult result, List<PlannerToolCall> calls) {
+		PlannerDecisionContext context = decisionContextSource == null ? null : decisionContextSource.get();
+		if (context == null) return;
+		loopTick = context.tick();
+		PlannerRequest request = result.request();
+		boolean direct = request != null && request.triggerBatch() != null
+			&& request.triggerBatch().triggers().stream().anyMatch(PlannerTrigger::maySupersedeLaunchedTurn);
+		var notice = loopWatchdog.onTurn(context.tick(), direct, PlannerLoopWatchdog.toolNames(calls), progressState(context.current()));
+		if (notice != null) loopNotices.addLast(notice);
+	}
+
+	/** What counts as progress between planner turns: dimension, inventory, block position, work states and the goal. */
+	static List<Object> progressState(Map<String, Object> current) {
+		var state = new ArrayList<Object>();
+		state.add(current.get("dimension"));
+		state.add(current.get("inventory"));
+		state.add(current.get("objective"));
+		if (current.get("physical") instanceof Map<?, ?> physical && physical.get("position") instanceof Map<?, ?> position)
+			for (String axis : List.of("x", "y", "z"))
+				state.add(position.get(axis) instanceof Number value ? (Object) (long) Math.floor(value.doubleValue()) : null);
+		if (current.get("work") instanceof List<?> work) for (Object entry : work)
+			if (entry instanceof Map<?, ?> value) state.add(value.get("workId") + "=" + value.get("state"));
+		return state;
+	}
+
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
 		if (stalePlannerRejections.isEmpty()) {
 			return List.of();
@@ -700,6 +744,7 @@ public final class PlannerOrchestrator {
 		lifecycleListener.onPlannerExecutionSucceeded(plannerResult);
 		List<PlannerToolCall> toolCalls = effectiveToolCalls(plannerResult.response());
 		if (toolCalls.isEmpty()) {
+			observeLoopTurn(plannerResult, toolCalls);
 			PlannerExecutionResult promotionFailure = promoteBackendCandidate(plannerResult);
 			if (promotionFailure != null) {
 				return finishFailedPlannerResult(promotionFailure);
@@ -720,6 +765,7 @@ public final class PlannerOrchestrator {
 			committedSnapshotGenerations.remove(plannerResult.generation());
 			return toolRequestFailure;
 		}
+		observeLoopTurn(plannerResult, toolCalls);
 		if (usesToolQueue())
 			return enqueueTools(plannerResult, toolCalls);
 		return startToolExecution(plannerResult, toolCalls);
@@ -1066,6 +1112,10 @@ public final class PlannerOrchestrator {
 				}
 			}
 			else if (PlannerQueueToolProvider.CLEAR.equals(call.name())) receipt = "Queue cleared; aborting active work.";
+			else if (PlannerQueueToolProvider.REPORT.equals(call.name()) && toolQueue.tools.isEmpty() && toolQueue.abort == null)
+				// Alone it would only schedule an immediate review of nothing, which is how a model spins on it.
+				receipt = "Not queued: nothing is queued or running before report_to_me, so there is nothing to report. "
+					+ "Reply without tool calls to wait for the next event.";
 			else if (SayToolProvider.isSayNow(call)) {
 				// Talking never waits behind queued work, a safety hold or the active action.
 				chatSink.say(SayToolProvider.text(call));
@@ -1130,6 +1180,8 @@ public final class PlannerOrchestrator {
 		if (toolQueue.reports.isEmpty() || toolQueue.seed == null || sessionCoordinator.hasInFlight()
 			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || compactionService.hasInFlight() || coalescePending) return;
 		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
+		// A held loop keeps its results; the review runs when the hold ends.
+		if (loopWatchdog.holding(toolQueue.observationTick)) return;
 		long now = clock.millis();
 		PlannerRequest seed = toolQueue.seed;
 		var wakeFields = new java.util.LinkedHashMap<String, Object>();
@@ -1151,6 +1203,11 @@ public final class PlannerOrchestrator {
 	}
 
 	private void queueReport(PlannerToolCall call, ToolExecutionOutcome outcome) {
+		if (!List.of(PlannerObservation.TOOL_NAME, PlannerQueueToolProvider.CONTINUE, PlannerQueueToolProvider.CLEAR,
+			PlannerQueueToolProvider.REPORT).contains(call.name())) {
+			var notice = loopWatchdog.onResult(call.name(), outcome.toolResultText());
+			if (notice != null) loopNotices.addLast(notice);
+		}
 		if (PlannerQueueToolProvider.REPORT.equals(call.name()) && !outcome.toolResultText().startsWith("Cancelled by clear_queue")) toolQueue.checkpoints.add(call);
 		toolQueue.reports.put(call.id(), new ToolExecutionResult(call, outcome.toolResultText(), outcome.hasImageAttachment()));
 		if (outcome instanceof ImageToolExecutionOutcome image) toolQueue.images.put(call.id(), image.imageAttachment());
@@ -1345,6 +1402,8 @@ public final class PlannerOrchestrator {
 		pendingAcceptedAssistantRawContent = null;
 		inventoryBootstrapPending = true;
 		stalePlannerRejections.clear();
+		loopWatchdog.reset();
+		loopNotices.clear();
 		minimumSafetyEpoch = 0L;
 		currentSafetyHoldId = null;
 		safetyLaunchBlocked = false;

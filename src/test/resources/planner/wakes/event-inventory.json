@@ -366,6 +366,33 @@
       "extraWake": null
     },
     {
+      "type": "planner.loop_detected",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "planner.loop_held",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "planner.loop_released",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
+    },
+    {
       "type": "planner.parse_error",
       "producers": [
         "DialogueCore"

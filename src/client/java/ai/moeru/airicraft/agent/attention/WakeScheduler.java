@@ -30,6 +30,11 @@ public final class WakeScheduler {
 
 		boolean queuedToolWork();
 
+		/** The planner loop watchdog holds ordinary task wakes back for its cooldown; attention and preempting wakes pass. */
+		default boolean plannerLoopHold() {
+			return false;
+		}
+
 		/** The active role's incorporated event cursor has passed every reference (satisfaction). */
 		boolean satisfied(Wake wake);
 
@@ -63,6 +68,11 @@ public final class WakeScheduler {
 
 		/** Accepted or queued tool work consumes routine progress while no safety hold or reflex is active. */
 		boolean workHoldsRoutineWakes();
+
+		/** The planner loop watchdog holds autonomous wakes for its cooldown; direct guidance, damage and high urgency pass. */
+		default boolean plannerLoopHold() {
+			return false;
+		}
 
 		/** The active role's decision cursor has passed {@code seqNo}: an observation already carried it. */
 		boolean incorporated(long seqNo);
@@ -208,6 +218,10 @@ public final class WakeScheduler {
 		}
 		while (!taskWakes.isEmpty()) {
 			Wake head = taskWakes.peekFirst();
+			if (!head.attention() && !head.preempts() && host.plannerLoopHold()) {
+				auditDeferred(host, head, "G5.planner_loop");
+				return false;
+			}
 			if (!head.attention() && host.runPolicyHold()) {
 				auditDeferred(host, head, "G5.run_policy");
 				return false;
@@ -271,6 +285,10 @@ public final class WakeScheduler {
 		boolean direct = trigger.maySupersedeLaunchedTurn();
 		if (!direct && host.blockedGoal()) {
 			host.audit(trigger, "dropped", "G4.blocked_goal");
+			return;
+		}
+		if (!direct && host.plannerLoopHold() && trigger.type() != PlannerTriggerType.DAMAGE && !protectedUrgency(trigger)) {
+			host.audit(trigger, "dropped", "G8.planner_loop");
 			return;
 		}
 		// Accepted work already consumes these observations. Retain the evidence in the
@@ -357,7 +375,12 @@ public final class WakeScheduler {
 	private static boolean debounces(PlannerTrigger trigger) {
 		var wake = trigger.wake();
 		if (wake == null || !wake.debounced()) return false;
-		return !List.of("critical", "direct", "high").contains(wake.urgency());
+		return !protectedUrgency(trigger);
+	}
+
+	private static boolean protectedUrgency(PlannerTrigger trigger) {
+		String urgency = trigger.wake() == null ? null : trigger.wake().urgency();
+		return urgency != null && List.of("critical", "direct", "high").contains(urgency);
 	}
 
 	private List<PlannerTrigger> takeDebounced(TriggerHost host, String gate) {

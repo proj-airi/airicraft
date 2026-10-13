@@ -157,7 +157,7 @@ def build_ledger(run_dir):
                       "serverTick": fields.get("serverTick"), "path": fields.get("path"),
                       "owner": fields.get("owner"), "gate": fields.get("gate"),
                       "eventSequence": fields.get("eventSequence"),
-                      "retainedPending": fields.get("gate") in {"G5.run_policy", "G5.queued_tool_work"}})
+                      "retainedPending": fields.get("gate") in {"G5.run_policy", "G5.queued_tool_work", "G5.planner_loop"}})
 
     requests = []
     previous_initial_server = None
