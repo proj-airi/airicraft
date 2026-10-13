@@ -41,6 +41,8 @@ public final class SurvivalReflexRuntime {
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 	private static final double MELEE_ATTACK_DISTANCE = 3.0D;
 	static final double MELEE_THREAT_DISTANCE = 6.0D;
+	static final double WET_FIGHT_DISTANCE = 4.0D;
+	static final long ESCAPE_RETRY_TICKS = 100L;
 	private static final int SHELTER_CONFIRM_TICKS = 200;
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
@@ -78,6 +80,8 @@ public final class SurvivalReflexRuntime {
 	private String escapingCreeper;
 	private String reportedCombatFocus;
 	private CombatRecovery combatRecovery;
+	private boolean wetFighting;
+	private long escapeExhaustedTick = -1L;
 	private ReflexPolicy policyOverride;
 	private long foodRetreatStartedTick = -1L;
 	private boolean foodRetreatAbandoned;
@@ -342,6 +346,8 @@ public final class SurvivalReflexRuntime {
 		tacticalWindow = null;
 		progressThreats = null;
 		combatRecovery = CombatRecovery.READY;
+		wetFighting = false;
+		escapeExhaustedTick = -1L;
 		combatStalemate = null;
 		releaseShield(minecraft);
 		movementController.stop(minecraft);
@@ -537,8 +543,22 @@ public final class SurvivalReflexRuntime {
 			underwaterEscape.reset(minecraft);
 			pendingEvents.add(new SurvivalReflexEvent("reflex.movement_recovery", Map.of("phase", next.name(), "tick", tick)));
 		}
-		if (next == CombatRecovery.READY) return false;
+		if (next == CombatRecovery.READY) {
+			wetFighting = false;
+			escapeExhaustedTick = -1L;
+			return false;
+		}
 		releaseShield(minecraft);
+		ResolvedThreat wetThreat = wetMeleeThreat(player, threats);
+		if (wetThreat != null) {
+			fightWhileWet(minecraft, player, threats, wetThreat, tick);
+			return true;
+		}
+		if (wetFighting) {
+			// Knockback during the fight fails escape targets that are fine to retry once it is over.
+			wetFighting = false;
+			underwaterEscape.reset(minecraft);
+		}
 		try {
 			// Low air gets a breathable waypoint first; breathing alone does not hand control back.
 			var mode = player.isUnderWater() && player.getAirSupply() < config.lowAirTicks()
@@ -550,7 +570,14 @@ public final class SurvivalReflexRuntime {
 			if (snapshot.action() != action) changeAction(SurvivalReflexCause.MOB_ATTACK, action, tick);
 			if (exhausted) {
 				movementController.swimUp(minecraft, false, false, tick);
+				if (escapeExhaustedTick < 0) escapeExhaustedTick = tick;
+				else if (tick - escapeExhaustedTick >= ESCAPE_RETRY_TICKS) {
+					// Floating in place is never the end state: the shore may be reachable from here.
+					escapeExhaustedTick = -1L;
+					underwaterEscape.reset(minecraft);
+				}
 			}
+			else escapeExhaustedTick = -1L;
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
 		}
 		catch (RuntimeException exception) {
@@ -559,6 +586,49 @@ public final class SurvivalReflexRuntime {
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
 		}
 		return true;
+	}
+
+	/** A melee threat close enough to hit back from the water, unless air is too low to stay and fight. */
+	private ResolvedThreat wetMeleeThreat(LocalPlayer player, List<ResolvedThreat> threats) {
+		boolean lowAir = player.isUnderWater() && player.getAirSupply() < config.lowAirTicks();
+		// The combat path that tracks fuses doesn't run during recovery; read them live here.
+		updateCreeperEscape(threats);
+		if (lowAir || escapingCreeper != null) return null;
+		ResolvedThreat threat = threats.isEmpty() ? null : focusedThreat(threats);
+		return threat != null && shouldFightWhileWet(threat.distance(), threat.lineOfSight(), isRangedThreat(threat.entity()))
+			? threat : null;
+	}
+
+	static boolean shouldFightWhileWet(double distance, boolean lineOfSight, boolean ranged) {
+		return !ranged && lineOfSight && distance <= WET_FIGHT_DISTANCE;
+	}
+
+	/**
+	 * Swimming away from a melee mob only trades hits for distance it closes anyway; spiders and
+	 * drowned follow into water. Face it, keep afloat, close to reach and strike when ready.
+	 */
+	private void fightWhileWet(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
+		ResolvedThreat threat, long tick) {
+		if (!wetFighting) {
+			wetFighting = true;
+			underwaterEscape.reset(minecraft);
+			pendingEvents.add(new SurvivalReflexEvent("reflex.wet_fight", mapOfNullable(
+				"threatUuid", threat.observed().uuid(), "entityTypeId", threat.observed().entityTypeId(),
+				"distance", threat.distance(), "air", player.getAirSupply(), "tick", tick)));
+		}
+		if (snapshot.action() != SurvivalReflexAction.DEFEND) changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.DEFEND, tick);
+		try {
+			equipBestCombatItem(minecraft, player);
+			cameraController.lookAt(minecraft, threat.entity().getBoundingBox().getCenter());
+			movementController.swimUp(minecraft, threat.distance() > MELEE_ATTACK_DISTANCE - 0.5D, false, tick);
+			attemptCloseQuarterAttack(minecraft, player, threats, tick);
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("fight_while_wet", exception, tick);
+			movementController.swimUp(minecraft, false, false, tick);
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
+		}
 	}
 
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
@@ -999,6 +1069,7 @@ public final class SurvivalReflexRuntime {
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
+		wetFighting = false;
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();

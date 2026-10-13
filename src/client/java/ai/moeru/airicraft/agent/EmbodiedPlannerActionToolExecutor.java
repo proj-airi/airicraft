@@ -79,7 +79,8 @@ record EmbodiedPlannerActionToolExecutor(
 			case "inspect_work", "list_work", "cancel_work" -> ToolPolicy.READ;
 			case "resume_work" -> ToolPolicy.ACTION;
 			case PlannerToolCatalog.CANCEL_ACTION_GOAL, PlannerToolCatalog.CANCEL_SMELTING,
-				PlannerToolCatalog.CONFIGURE_REFLEX, PlannerToolCatalog.CONFIGURE_FOOD -> ToolPolicy.READ;
+				PlannerToolCatalog.CONFIGURE_REFLEX, PlannerToolCatalog.CONFIGURE_FOOD,
+				PlannerToolCatalog.CONFIGURE_ARMOR -> ToolPolicy.READ;
 			case PlannerToolCatalog.CANCEL_TASK, PlannerToolCatalog.CLEAR_GOAL -> ToolPolicy.GRAPH_CONTROL;
 			case PlannerToolCatalog.UPDATE_EVENT_POLICY, PlannerToolCatalog.CONFIGURE_PATHFIND,
 				PlannerToolCatalog.CONFIGURE_LIGHTING -> ToolPolicy.DEAD_SAFE;

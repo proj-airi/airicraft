@@ -268,6 +268,15 @@ class SurvivalReflexRuntimeTest {
 	}
 
 	@Test
+	void fightsBackFromTheWaterOnlyAgainstVisibleMeleeThreatsInReach() {
+		assertTrue(SurvivalReflexRuntime.shouldFightWhileWet(3.5D, true, false));
+		assertTrue(SurvivalReflexRuntime.shouldFightWhileWet(SurvivalReflexRuntime.WET_FIGHT_DISTANCE, true, false));
+		assertFalse(SurvivalReflexRuntime.shouldFightWhileWet(4.5D, true, false));
+		assertFalse(SurvivalReflexRuntime.shouldFightWhileWet(2.0D, false, false));
+		assertFalse(SurvivalReflexRuntime.shouldFightWhileWet(2.0D, true, true));
+	}
+
+	@Test
 	void ranksCombatHotbarItemsAheadOfIncidentalBlocks() {
 		assertTrue(SurvivalReflexRuntime.combatItemRank("minecraft:stone_pickaxe")
 			< SurvivalReflexRuntime.combatItemRank("minecraft:leaf_litter"));

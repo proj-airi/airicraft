@@ -85,6 +85,13 @@ class PlannerInputTextTest {
 		assertTrue(prose.contains("{\"futurePolicy\":{\"combatEnabled\":true}}\nTool queue: "), prose);
 	}
 
+	@Test void armorPolicyReadsAsSettings() {
+		var payload = new java.util.LinkedHashMap<String, Object>();
+		payload.put("current", Map.of("armorPolicy", new java.util.LinkedHashMap<>(Map.of("enabled", true))));
+		String prose = PlannerInputText.observation(payload);
+		assertTrue(prose.contains("Armor policy: enabled true\n"), prose);
+	}
+
 	@Test void wakeLeadsTheObservationAndHintsAreLabelledRuntimeCoaching() {
 		var payload = new java.util.LinkedHashMap<String, Object>();
 		payload.put("worldSessionId", "world"); payload.put("tick", 10); payload.put("serverTick", 8);

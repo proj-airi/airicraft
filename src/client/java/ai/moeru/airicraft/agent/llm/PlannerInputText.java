@@ -47,7 +47,7 @@ public final class PlannerInputText {
 		if (current != null && current.isJsonObject()) {
 			Fields facts = new Fields(current.getAsJsonObject());
 			for (String key : List.of("session", "dimension", "objective", "inventory", "inventoryCapacity", "vitals", "physical", "reflex",
-				"reflexPolicy", "foodPolicy", "travelRestrictions", "work")) {
+				"reflexPolicy", "foodPolicy", "armorPolicy", "travelRestrictions", "work")) {
 				JsonElement value = facts.take(key);
 				if (value == null) continue;
 				out.append(switch (key) {
@@ -56,6 +56,7 @@ public final class PlannerInputText {
 					case "inventoryCapacity" -> "Inventory space: " + inventoryCapacity(value);
 					case "reflexPolicy" -> "Reflex policy: " + settings(value);
 					case "foodPolicy" -> "Food policy: " + settings(value);
+					case "armorPolicy" -> "Armor policy: " + settings(value);
 					case "travelRestrictions" -> "Travel restrictions: " + travelRestrictions(value);
 					case "vitals" -> vitals(value);
 					case "physical" -> "Physical: " + physical(value);
