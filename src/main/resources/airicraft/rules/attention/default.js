@@ -88,6 +88,10 @@
         return attention.reflexOwnsActuation ? none('ownership.reflex_actuation', 'the survival reflex owns actuation') : wake('NORMAL', 'catalog.trigger');
       case 'social.item_offered':
         return wake('NORMAL', 'catalog.trigger');
+      case 'tool.broken':
+        return attention.reflexOwnsActuation ? none('ownership.reflex_actuation', 'the survival reflex owns actuation') : wake('NORMAL', 'catalog.trigger');
+      case 'tool.durability_low':
+        return attention.reflexOwnsActuation ? none('ownership.reflex_actuation', 'the survival reflex owns actuation') : wake('LOW', 'catalog.trigger');
       case 'action_graph.goal_terminal':
         return event.fields.state === 'FAILED' ? wake('HIGH', 'catalog.trigger') : none('graph.terminal_not_failed', 'only failed graph outcomes wake');
       case 'smelting.output_ready':

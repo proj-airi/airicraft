@@ -56,8 +56,18 @@ public final class DecisionHints {
 			case "social.item_offered" -> "The player and intent are inferred from spawn position and motion; this is not a confirmed pickup. "
 				+ "Decide whether to collect or acknowledge the items using current world evidence.";
 			case "reflex.resolved" -> reflexHint(payload);
+			case "tool.durability_low" -> "This is your last " + payload.get("toolKind") + " that is not worn out. Plan a replacement before "
+				+ "it breaks: craft a spare when you have the materials, or keep enough for one. Running work keeps using it.";
+			case "tool.broken" -> Long.valueOf(0L).equals(asLong(payload.get("sparesOfKind")))
+				? "You have no " + payload.get("toolKind") + " left. Blocks that need one drop nothing without it, and mining work that needs "
+					+ "it fails with missing_suitable_tool; craft a replacement before resuming that work."
+				: null;
 			default -> null;
 		};
+	}
+
+	private static Long asLong(Object value) {
+		return value instanceof Number number ? number.longValue() : null;
 	}
 
 	private static String reflexHint(Map<String, Object> payload) {
