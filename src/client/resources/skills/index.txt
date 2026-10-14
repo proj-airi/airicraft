@@ -5,3 +5,4 @@ attention-rules
 slow-mining
 strongholds
 exploring
+blaze-rods

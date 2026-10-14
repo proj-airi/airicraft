@@ -35,6 +35,7 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case CollectObsidian ignored -> WorldTaskType.COLLECT_OBSIDIAN;
 			case LocateStronghold ignored -> WorldTaskType.LOCATE_STRONGHOLD;
 			case ExploreFor ignored -> WorldTaskType.EXPLORE_FOR;
+			case CollectBlazeRods ignored -> WorldTaskType.COLLECT_BLAZE_RODS;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -156,6 +157,11 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new ExploreFor(args));
 	}
 	public record ExploreFor(ExploreForStepArgs args) implements Task { public ExploreFor { Objects.requireNonNull(args, "exploreFor"); } }
+
+	public static WorldTaskRequest collectBlazeRods(String taskId, String sourceJobId, CollectBlazeRodsStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectBlazeRods(args));
+	}
+	public record CollectBlazeRods(CollectBlazeRodsStepArgs args) implements Task { public CollectBlazeRods { Objects.requireNonNull(args, "collectBlazeRods"); } }
 
 	public sealed interface Task {
 	}

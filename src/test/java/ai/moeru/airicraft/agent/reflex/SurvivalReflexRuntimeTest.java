@@ -101,6 +101,28 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(((java.util.Map<?, ?>) threatsField.get(runtime)).isEmpty());
 	}
 
+	@Test void aTaskThatFightsBlazesKeepsThemFromTheReflexUntilItEnds() throws Exception {
+		var runtime = new SurvivalReflexRuntime(null);
+		var threatsField = SurvivalReflexRuntime.class.getDeclaredField("observedThreats");
+		threatsField.setAccessible(true);
+		var threats = (java.util.Map<?, ?>) threatsField.get(runtime);
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(1, "fireball", "early-blaze", "Blaze", "minecraft:blaze", true, false));
+		assertTrue(threats.containsKey("early-blaze"));
+
+		runtime.taskOwnsThreatTypes(java.util.Set.of("minecraft:blaze"));
+		assertFalse(threats.containsKey("early-blaze"), "a blaze seen before the task started is the task's now");
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(2, "fireball", "blaze", "Blaze", "minecraft:blaze", true, false));
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(2, "mob_attack", "skeleton", "Wither Skeleton",
+			"minecraft:wither_skeleton", true, false));
+		assertFalse(threats.containsKey("blaze"), "the task shields, strafes and hides from blazes itself");
+		assertTrue(threats.containsKey("skeleton"), "other mobs stay the reflex's");
+		assertEquals(java.util.Set.of("minecraft:blaze"), runtime.decisionEvidence().get("taskOwnedThreatTypes"));
+
+		runtime.taskOwnsThreatTypes(java.util.Set.of());
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(3, "fireball", "blaze", "Blaze", "minecraft:blaze", true, false));
+		assertTrue(threats.containsKey("blaze"), "once the task ends a burning blaze is a reflex threat again");
+	}
+
 	@Test void blocksAnApproachingCreeperBlastBeforeShieldStartupDelay() {
 		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.35F, false));
 		assertTrue(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.7F, false));

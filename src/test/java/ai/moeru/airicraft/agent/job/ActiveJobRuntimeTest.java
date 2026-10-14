@@ -760,6 +760,26 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void blazeRodsPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs(9);
+		runtime.applyPlannerResponse(new DialogueResponse("Getting blaze rods.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectBlazeRods(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_BLAZE_RODS, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectBlazeRods(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectBlazeRods());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectBlazeRods(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectBlazeRods());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);

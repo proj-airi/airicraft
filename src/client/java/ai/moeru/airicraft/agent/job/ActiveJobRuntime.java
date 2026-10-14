@@ -354,7 +354,8 @@ public final class ActiveJobRuntime {
 			activeJob.lureEntities(),
 			activeJob.collectObsidian(),
 			activeJob.locateStronghold(),
-			activeJob.exploreFor()
+			activeJob.exploreFor(),
+			activeJob.collectBlazeRods()
 		);
 		collectResourceDebugSnapshot = activeJob.type() == ActiveJobType.COLLECT_RESOURCE
 			? collectResourceProbe(activeJob, activeJob.baselineResourceCount() + activeJob.collectedCount(), false, lastPrimitiveExecution.state(), reason, tick)
@@ -411,7 +412,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_RESOURCE -> tickCollectResource(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, nearbyResourceTargetAvailable, tick);
 			case CRAFT_RECIPE -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case DROP_ITEMS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, true, tick);
-			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
+			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ATTACK_ENTITY, USE_ENTITY -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
@@ -485,6 +486,11 @@ public final class ActiveJobRuntime {
 		if (activeJob.type() == ActiveJobType.COLLECT_OBSIDIAN && activeJob.collectObsidian() != null) {
 			clearAttemptState();
 			desiredPrimitiveTask = WorldTaskRequest.collectObsidian(activeJob.jobId(), activeJob.jobId(), activeJob.collectObsidian());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.COLLECT_BLAZE_RODS && activeJob.collectBlazeRods() != null) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.collectBlazeRods(activeJob.jobId(), activeJob.jobId(), activeJob.collectBlazeRods());
 			return;
 		}
 		if (activeJob.type() == ActiveJobType.EXPLORE_FOR && activeJob.exploreFor() != null) {
@@ -1331,6 +1337,9 @@ public final class ActiveJobRuntime {
 			case EXPLORE_FOR -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.EXPLORE_FOR, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, null, null, null, proposal.exploreFor());
+			case COLLECT_BLAZE_RODS -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.COLLECT_BLAZE_RODS, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, proposal.collectBlazeRods());
 			case FIGHT_ENDER_DRAGON -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.FIGHT_ENDER_DRAGON, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick);
@@ -1376,7 +1385,8 @@ public final class ActiveJobRuntime {
 			next.lureEntities(),
 			next.collectObsidian(),
 			next.locateStronghold(),
-			next.exploreFor()
+			next.exploreFor(),
+			next.collectBlazeRods()
 			);
 		}
 		return next;
@@ -1411,6 +1421,7 @@ public final class ActiveJobRuntime {
 		if (left.collectObsidian() != null || right.collectObsidian() != null) return Objects.equals(left.collectObsidian(), right.collectObsidian());
 		if (left.locateStronghold() != null || right.locateStronghold() != null) return Objects.equals(left.locateStronghold(), right.locateStronghold());
 		if (left.exploreFor() != null || right.exploreFor() != null) return Objects.equals(left.exploreFor(), right.exploreFor());
+		if (left.collectBlazeRods() != null || right.collectBlazeRods() != null) return Objects.equals(left.collectBlazeRods(), right.collectBlazeRods());
 		if (left.cropTending() != null || right.cropTending() != null) return Objects.equals(left.cropTending(), right.cropTending());
 		if (left.returnToSurface() != null || right.returnToSurface() != null) {
 			return Objects.equals(left.returnToSurface(), right.returnToSurface());
@@ -1462,6 +1473,7 @@ public final class ActiveJobRuntime {
 			case FIGHT_ENDER_DRAGON -> "Fight the Ender Dragon";
 			case COLLECT_OBSIDIAN -> activeJob.collectObsidian() == null ? "Collect obsidian" : "Collect " + activeJob.collectObsidian().count() + " obsidian";
 			case LOCATE_STRONGHOLD -> "Locate the stronghold with eyes of ender";
+			case COLLECT_BLAZE_RODS -> activeJob.collectBlazeRods() == null ? "Collect blaze rods" : "Collect " + activeJob.collectBlazeRods().count() + " blaze rods";
 			case EXPLORE_FOR -> activeJob.exploreFor() == null ? "Explore for a feature" : "Explore for " + activeJob.exploreFor().featureKind().replace('_', ' ');
 			case BREAK_BLOCKS -> activeJob.blockBreak() == null ? "Break blocks" : "Break " + activeJob.blockBreak().targets().size() + " target blocks";
 			case ATTACK_ENTITY -> activeJob.entityInteraction() == null ? "Attack entity" : "Attack " + activeJob.entityInteraction().selector();
@@ -1484,7 +1496,7 @@ public final class ActiveJobRuntime {
 			case PLACE_BLOCK -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.PLACE_BLOCK;
 			case USE_BLOCK, TEND_CROPS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
 			case BREAK_BLOCKS, COLLECT_OBSIDIAN -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
-			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
+			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_BLAZE_RODS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
 			case USE_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_ENTITY;
 			case ASK_USER -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ASK_USER;
 			case IDLE -> null;
@@ -1579,7 +1591,8 @@ public final class ActiveJobRuntime {
 			job.lureEntities(),
 			job.collectObsidian(),
 			job.locateStronghold(),
-			job.exploreFor()
+			job.exploreFor(),
+			job.collectBlazeRods()
 		);
 	}
 

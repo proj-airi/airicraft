@@ -103,6 +103,8 @@ public final class SurvivalReflexRuntime {
 	private boolean wetFighting;
 	private long escapeExhaustedTick = -1L;
 	private ReflexPolicy policyOverride;
+	/** Mob types a running task fights itself; see {@link #taskOwnsThreatTypes}. */
+	private Set<String> taskOwnedThreatTypes = Set.of();
 	private long foodRetreatStartedTick = -1L;
 	private BlockPos extinguishPour;
 	private int extinguishAttempts;
@@ -178,10 +180,27 @@ public final class SurvivalReflexRuntime {
 		return policy;
 	}
 
+	/**
+	 * Mob types a running task fights itself, so the reflex leaves them alone: collect_blaze_rods shields, strafes and
+	 * hides from blazes, where the reflex's melee pursuit of one blaze let the others burn the playtest body to death.
+	 * Threats of those types already observed are dropped. An empty set gives every type back to the reflex.
+	 */
+	public void taskOwnsThreatTypes(Set<String> entityTypeIds) {
+		Set<String> owned = Set.copyOf(entityTypeIds);
+		if (owned.equals(taskOwnedThreatTypes)) return;
+		taskOwnedThreatTypes = owned;
+		observedThreats.values().removeIf(threat -> owned.contains(threat.entityTypeId()));
+	}
+
+	private boolean reflexThreat(String entityTypeId) {
+		return reflexThreatType(entityTypeId) && !taskOwnedThreatTypes.contains(entityTypeId);
+	}
+
 	public Map<String, Object> decisionEvidence() {
 		Map<String, Object> evidence = new LinkedHashMap<>();
 		evidence.put("snapshot", snapshot);
 		evidence.put("policy", policy());
+		evidence.put("taskOwnedThreatTypes", taskOwnedThreatTypes);
 		evidence.put("combatTarget", combatTarget);
 		evidence.put("combatStalemate", combatStalemate);
 		evidence.put("combatProgress", combatProgress);
@@ -207,7 +226,7 @@ public final class SurvivalReflexRuntime {
 			return;
 		}
 		if (!observation.attackerLiving() || observation.attackerPlayer() || observation.attackerUuid() == null
-			|| !reflexThreatType(observation.attackerEntityTypeId())) {
+			|| !reflexThreat(observation.attackerEntityTypeId())) {
 			return;
 		}
 		observedThreats.put(observation.attackerUuid(), new ObservedThreat(
@@ -1886,7 +1905,7 @@ public final class SurvivalReflexRuntime {
 				|| mob.getTarget() != null && player.getUUID().equals(mob.getTarget().getUUID());
 			boolean visibleHostile = mob.getType().getCategory() == net.minecraft.world.entity.MobCategory.MONSTER
 				&& !(mob instanceof net.minecraft.world.entity.NeutralMob) && player.hasLineOfSight(mob);
-			if (!reflexThreatType(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())
+			if (!reflexThreat(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())
 				|| !shouldDetectProactiveThreat(targetsUs || visibleHostile, mob.isAlive())
 				|| !policy().observesMob(player.distanceTo(mob))) {
 				continue;

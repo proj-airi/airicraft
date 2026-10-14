@@ -139,8 +139,20 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		WorldTaskExecutor dragonFight,
 		WorldTaskExecutor collectObsidian,
 		WorldTaskExecutor locateStronghold,
-		WorldTaskExecutor exploreFor
+		WorldTaskExecutor exploreFor,
+		WorldTaskExecutor collectBlazeRods
 	) {
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, entityInteraction);
+		}
+
 		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
@@ -204,6 +216,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			Objects.requireNonNull(collectObsidian, "collectObsidian");
 			Objects.requireNonNull(locateStronghold, "locateStronghold");
 			Objects.requireNonNull(exploreFor, "exploreFor");
+			Objects.requireNonNull(collectBlazeRods, "collectBlazeRods");
 			Objects.requireNonNull(acquisition, "acquisition");
 			Objects.requireNonNull(underwaterHarvest, "underwaterHarvest");
 			Objects.requireNonNull(navigation, "navigation");
@@ -234,6 +247,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				case COLLECT_OBSIDIAN -> collectObsidian;
 				case LOCATE_STRONGHOLD -> locateStronghold;
 				case EXPLORE_FOR -> exploreFor;
+				case COLLECT_BLAZE_RODS -> collectBlazeRods;
 			};
 		}
 
@@ -246,7 +260,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				smelting,
 				returnToSurface,
 				blockInteraction,
-				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold, exploreFor
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold, exploreFor, collectBlazeRods
 			)));
 		}
 	}

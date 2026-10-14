@@ -519,7 +519,8 @@ public final class ClientRuntimeController {
 			new ai.moeru.airicraft.agent.tasks.DragonFightTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.CollectObsidianTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.LocateStrongholdTaskExecutor(navigationFacade, cameraController),
-			new ai.moeru.airicraft.agent.tasks.ExploreForTaskExecutor(navigationFacade)
+			new ai.moeru.airicraft.agent.tasks.ExploreForTaskExecutor(navigationFacade),
+			new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);

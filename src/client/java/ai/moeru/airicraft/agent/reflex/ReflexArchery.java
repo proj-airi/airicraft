@@ -25,7 +25,7 @@ import java.util.function.Predicate;
  * kept raising the shield and letting go. With a bow and arrows it now aims a ballistic arc (the one the dragon
  * fight uses) at the mob, leading its movement, draws fully and looses when lined up. Client thread only.
  */
-final class ReflexArchery {
+public final class ReflexArchery {
 	/** Closer than this the sword is the better answer. */
 	static final double MIN_DISTANCE = 5.0D;
 	static final double MAX_DISTANCE = 28.0D;
@@ -93,7 +93,7 @@ final class ReflexArchery {
 	}
 
 	/** A point to look at that sends a full-draw arrow into the mob's body where it will be, or null with no clear arc. */
-	private static Vec3 aimPoint(Minecraft minecraft, LocalPlayer player, Vec3 launch, LivingEntity target) {
+	public static Vec3 aimPoint(Minecraft minecraft, LocalPlayer player, Vec3 launch, LivingEntity target) {
 		Vec3 body = target.position().add(0.0D, target.getBbHeight() * 0.6D, 0.0D);
 		Vec3 lead = body;
 		ArrowBallistics.Solution solution = null;
