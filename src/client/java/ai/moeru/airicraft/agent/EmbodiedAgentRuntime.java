@@ -2981,6 +2981,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if(unplaceable)skipped.merge(c.state().replaceAll("\\[.*",""),1,Integer::sum);
 			return !unplaceable;
 		}).toList();
+		// A block the finished design cannot hold up (a torch over planned air) would stall the build forever; skip and name it.
+		var unsupported=ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment.unsupportedInDesign(client.level,cells);
+		if(!unsupported.isEmpty()){var drop=new java.util.HashSet<>(unsupported);cells=cells.stream().filter(c->!drop.contains(c)).toList();}
 		if(cells.isEmpty())throw new IllegalStateException("construction_nothing_placeable");
 		var environment=new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client,cells);
         ai.moeru.airicraft.blueprint.BlueprintConstructionProgram program;
@@ -2999,6 +3002,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		var gson=new com.google.gson.Gson();var receipt=gson.toJsonTree(work.summary()).getAsJsonObject();
 		var shortfall=program.materialShortfall();
 		if(!skipped.isEmpty())receipt.add("skippedUnplaceable",gson.toJsonTree(skipped));
+		if(!unsupported.isEmpty())receipt.add("skippedUnsupported",gson.toJsonTree(unsupported.stream().limit(16)
+			.map(c->c.state().replaceAll("\\[.*","")+"@"+c.x()+","+c.y()+","+c.z()+" (nothing holds it up in the finished design)").toList()));
 		if(!shortfall.isEmpty()){receipt.add("materialShortfall",gson.toJsonTree(shortfall));receipt.addProperty("warning","Inventory is short of the design's materials; construction proceeds and stops with construction_material_missing at the first block it cannot place. Gather the shortfall and call construct_blueprint again with the same revision and origin to resume.");}
 		return "Tool result for construct_blueprint: "+gson.toJson(receipt);
 	}

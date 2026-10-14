@@ -27,12 +27,17 @@ public final class Blueprint {
         if(obstacles!=null) deriveClearance(obstacles);
     }
     public static final String DERIVED_CLEARANCE="derived_clearance";
-    /** Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell. */
+    /**
+     * Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell.
+     * Blocks below a column's lowest built block (or, in the walking room, its neighbours' lowest) are support, not obstacles: digging them leaves pits under floors and in front of doors.
+     */
     private void deriveClearance(Map<String,List<String>> obstacles) {
         int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,maxY=Integer.MIN_VALUE;
+        var lowest=new HashMap<Long,Integer>();
         for(var c:cells.values()) {
             if(c.state().isAir()) continue;
             var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());maxY=Math.max(maxY,p.getY());
+            lowest.merge(BlockPos.asLong(p.getX(),0,p.getZ()),p.getY(),Math::min);
         }
         if(maxY==Integer.MIN_VALUE) return;
         var air=Blocks.AIR.defaultBlockState();int cleared=0;
@@ -40,11 +45,16 @@ public final class Blueprint {
         for(var column:obstacles.entrySet()) {
             String[] xz=column.getKey().split(",");int x=Integer.parseInt(xz[0]),z=Integer.parseInt(xz[1]);
             if(x<minX-1||x>maxX+1||z<minZ-1||z>maxZ+1) continue;
+            Integer base=lowest.get(BlockPos.asLong(x,0,z));
+            if(base==null)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+                var near=lowest.get(BlockPos.asLong(x+dx,0,z+dz));if(near!=null)base=base==null?near:Math.min(base,near);
+            }
+            if(base==null) continue;
             for(String run:column.getValue()) {
                 int at=run.lastIndexOf('@');if(at<0) continue;
                 String[] range=run.substring(at+1).split("\\.\\.");
                 int y0=Integer.parseInt(range[0]),y1=Integer.parseInt(range[1]);
-                for(int y=y0;y<=Math.min(y1,maxY);y++) {
+                for(int y=Math.max(y0,base);y<=Math.min(y1,maxY);y++) {
                     var p=new BlockPos(x,y,z);
                     if(cells.containsKey(p)) continue;
                     put(p,air,DERIVED_CLEARANCE,List.of());cleared++;

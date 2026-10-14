@@ -55,6 +55,38 @@ class BlueprintDiagnosticsTest {
         assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(5,0,5)));
         assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(1,3,1)),"canopy above the roof is left alone");
     }
+    @Test void obstaclesBelowTheFloorAreSupportNotClearance(){
+        // A floor at y=3 over a giant mushroom: the stem under it and beside the doorstep stays, the part through the room goes.
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"at\":[0,3,0],\"volume\":{\"size\":[2,1,2],\"state\":\"minecraft:stone\"},"
+            +"\"children\":[{\"id\":\"wall\",\"at\":[0,1,0],\"volume\":{\"size\":[1,2,1],\"state\":\"minecraft:stone\"}}]}").getAsJsonObject();
+        var obstacles=Map.of(
+            "1,1",java.util.List.of("mushroom_stem@0..5"),
+            "2,1",java.util.List.of("mushroom_stem@0..4"));
+        var blueprint=new Blueprint(tree,null,obstacles);
+        for(int y=0;y<3;y++){
+            assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(1,y,1)),"under the floor y="+y);
+            assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(2,y,1)),"walking room below floor level y="+y);
+        }
+        assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(1,4,1)).state().isAir(),"inside the room");
+        assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(2,3,1)).state().isAir(),"walking room at floor level");
+    }
+    @Test void attachmentsOverPlannedAirAreUnsupportedInTheDesign(){
+        // An empty, loaded world: every unplanned position is air.
+        var world=(net.minecraft.world.level.LevelReader)java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{net.minecraft.world.level.LevelReader.class},(proxy,method,args)->{
+                if(method.getReturnType()==net.minecraft.world.level.block.state.BlockState.class)return net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+                if(method.getReturnType()==net.minecraft.world.level.material.FluidState.class)return net.minecraft.world.level.material.Fluids.EMPTY.defaultFluidState();
+                if(method.getReturnType()==boolean.class)return true;
+                if(method.getReturnType()==int.class)return 0;
+                if(method.isDefault())return java.lang.reflect.InvocationHandler.invokeDefault(proxy,method,args);
+                return null;
+            });
+        var floor=new BlueprintConstructionProgram.Cell(0,0,0,"minecraft:stone","minecraft:stone","floor");
+        var held=new BlueprintConstructionProgram.Cell(0,1,0,"minecraft:torch","minecraft:torch","torchA");
+        var hole=new BlueprintConstructionProgram.Cell(2,0,0,"minecraft:air","minecraft:air","alcove");
+        var floating=new BlueprintConstructionProgram.Cell(2,1,0,"minecraft:torch","minecraft:torch","torchB");
+        assertEquals(java.util.List.of(floating),MinecraftBlueprintConstructionEnvironment.unsupportedInDesign(world,java.util.List.of(floor,held,hole,floating)));
+    }
     @Test void missingIdIsNamedNotANullPointer(){
         var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":[{\"type\":\"WalkableArea\"}]}").getAsJsonObject();
         var error=assertThrows(IllegalArgumentException.class,()->new Blueprint(tree,null));

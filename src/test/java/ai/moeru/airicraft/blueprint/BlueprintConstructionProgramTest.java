@@ -525,6 +525,47 @@ class BlueprintConstructionProgramTest {
         assertTrue(tools.contains("break_blocks"),tools.toString());
         assertEquals("minecraft:stone",world.states.get(0),tools.toString());
     }
+    @Test void plannedAirIsClearedBeforeTheWallsCloseItIn(){
+        // Leaves at y=3 inside the room; walls at y=0..2 are placeable from the start.
+        var world=new World(){
+            {states.put(3,"minecraft:oak_leaves");}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return c.air() && states.containsKey(c.y());}
+            public ConstructionEscape.Position digStance(BlueprintConstructionProgram.Cell c){return new ConstructionEscape.Position(1,c.y(),0);}
+        };
+        var leaves=new BlueprintConstructionProgram.Cell(0,3,0,"minecraft:air","minecraft:air","house.interior");
+        var program=new BlueprintConstructionProgram(List.of(cell(0),cell(1),cell(2),leaves),world);
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        assertEquals("navigate_to",tool(step),"walk to the dig stance first");
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("inspect_world",tool(step));
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("break_blocks",tool(step),"leaves go before any wall");
+        world.states.remove(3);
+        step=program.resume(OK).join().getAsJsonObject();
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("place_block",tool(step));
+    }
+    @Test void anOpenDoorIsClosedNotDugOut(){
+        var door=new BlueprintConstructionProgram.Cell(0,5,0,"minecraft:oak_door[half=lower,open=false]","minecraft:oak_door","house.door");
+        var world=new World(){
+            {states.put(5,"minecraft:oak_door[half=lower,open=true]");}
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return c.y()==0;}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return c.y()==5;}
+            public boolean canToggle(BlueprintConstructionProgram.Cell c){return c.y()==5 && states.get(5).contains("open=true");}
+        };
+        var program=new BlueprintConstructionProgram(List.of(cell(0),door),world);
+        var tools=new ArrayList<String>();
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        for(int i=0;i<8 && !step.get("done").getAsBoolean();i++){
+            var name=tool(step);tools.add(name);
+            if(name.equals("place_block"))world.states.put(0,"minecraft:stone");
+            if(name.equals("use_block"))world.states.put(5,door.state());
+            step=program.resume(OK).join().getAsJsonObject();
+        }
+        assertTrue(step.get("done").getAsBoolean(),tools.toString());
+        assertFalse(tools.contains("break_blocks"),tools.toString());
+        assertTrue(tools.contains("use_block"),tools.toString());
+    }
     @Test void bedHeadAndCreativeDoNotInflateTheShortfall(){
         var world=new World(){
             public int materialCount(String item){return 0;}

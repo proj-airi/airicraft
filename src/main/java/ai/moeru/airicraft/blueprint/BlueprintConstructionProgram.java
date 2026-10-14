@@ -231,6 +231,26 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         var ordering=Comparator.comparingInt((Cell c)->c.equals(repairObjective)?0:1)
             .thenComparingInt(c->immediate.contains(c)?0:1)
             .thenComparingDouble(c->score(c,pendingPositions)).thenComparing(Cell::key);
+        // Clear planned air (leaves, trunks in the room) while the building is still open: once the walls and
+        // roof are up it can be reached only through the door, if at all. A cell that cannot be reached yet (the
+        // floor under its stance is not built) is retried after more geometry, a few times; then the dig fallback below takes over.
+        if(repairQueue.isEmpty() && !onlyCleanup){
+            var clear=pending.stream().filter(c->{
+                    var p=new ConstructionEscape.Position(c.x(),c.y(),c.z());var tried=earlyClearance.get(p);
+                    return c.air() && (tried==null || tried[0]<EARLY_CLEARANCE_ATTEMPTS && geometryRevision>=tried[1]+EARLY_CLEARANCE_SPACING)
+                        && !ledger.entries().containsKey(p) && !deferredCleanup.contains(p) && environment.blocked(c);
+                }).min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
+            if(clear!=null){
+                var p=new ConstructionEscape.Position(clear.x(),clear.y(),clear.z());
+                earlyClearance.merge(p,new int[]{1,geometryRevision},(old,next)->new int[]{old[0]+1,geometryRevision});
+                var stance=environment.digStance(clear);
+                if(stance!=null){
+                    digs.add(p);
+                    repairQueue.add(new AccessRepairSearch.Edit(p,environment.state(clear),"minecraft:air",1.0,stance));
+                    planLog.addLast("clear "+clear.key());if(planLog.size()>6)planLog.removeFirst();
+                }
+            }
+        }
         target=selectTarget(eligible,immediate,ordering,pending);
         // No shortlisted target has a known usable stance. Try a bounded access
         // macro before spending native attempts on the whole inaccessible layer.
@@ -251,7 +271,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             if(repairQueue.isEmpty()) {
                 // Walls and floors that sit inside a hillside, and planned air (clearance) that holds a tree, have nothing to place over or are not yet empty.
                 // Dig the nearest one out; the ledger keeps the intended block owed. Scaffolds the build added inside planned air (ledger entries) are cleaned up by teardown, not dug.
-                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && (c.air() || !missingItems.contains(c.item())) && environment.blocked(c)
+                // A door left open by walking through it is closed at the end, never dug out.
+                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && (c.air() || !missingItems.contains(c.item())) && !environment.canToggle(c) && environment.blocked(c)
                     && !(c.air() && ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
@@ -300,6 +321,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         return edit.after().equals("minecraft:air") && ((digs.contains(edit.position()) && actual.equals("minecraft:air")) || edit.before().split("\\[")[0].equals(actual.split("\\[")[0]));
     }
     private final Set<ConstructionEscape.Position> digs=new HashSet<>();
+    /** Early clearance attempts per cell: count and the geometry revision of the last one. */
+    private final Map<ConstructionEscape.Position,int[]> earlyClearance=new HashMap<>();
+    private static final int EARLY_CLEARANCE_ATTEMPTS=3,EARLY_CLEARANCE_SPACING=10;
     private final ArrayDeque<String> planLog=new ArrayDeque<>();
     private void planRepair(boolean initial) {
         var plan=environment.repairPlan(cells,initial);
