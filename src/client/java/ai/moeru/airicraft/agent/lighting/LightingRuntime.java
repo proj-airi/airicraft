@@ -194,6 +194,9 @@ public final class LightingRuntime {
 			|| !torchState.canSurvive(minecraft.level, target)) {
 			return false;
 		}
+		if (opensOnUse(minecraft.level, candidate.support())) {
+			return false;
+		}
 		Vec3 hit = Vec3.atCenterOf(candidate.support()).add(
 			candidate.face().getStepX() * 0.5D,
 			candidate.face().getStepY() * 0.5D,
@@ -315,6 +318,16 @@ public final class LightingRuntime {
 	}
 
 	public record PlacementEvent(Map<String, Object> payload) {
+	}
+
+	/**
+	 * Whether using an item on this block opens or works it instead of placing against it. In a playtest a torch
+	 * placed against a carried furnace opened the furnace instead, every few seconds, and the open screen blocked
+	 * all digging until the session ended.
+	 */
+	private static boolean opensOnUse(net.minecraft.world.level.Level level, BlockPos support) {
+		BlockState state = level.getBlockState(support);
+		return state.hasBlockEntity() || state.getMenuProvider(level, support) != null;
 	}
 
 	record PlacementCandidate(BlockPos target, BlockPos support, Direction face, String side, PlacementSurface surface) {
