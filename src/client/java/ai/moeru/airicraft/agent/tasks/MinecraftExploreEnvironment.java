@@ -53,8 +53,6 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	/** Columns read per chunk side when sampling the surface: every other block, so one small tree is not missed. */
 	private static final int SURFACE_GRID = 8;
 	private static final float ALIGNED_DEGREES = 1.5F;
-	/** Off the column centre by more than this, the body steps to it before digging, or it would not drop in. */
-	private static final double CENTERED_BLOCKS = 0.18D;
 	private static final Set<EntityType<?>> FOOD_ANIMALS = Set.of(EntityType.COW, EntityType.PIG, EntityType.SHEEP,
 		EntityType.CHICKEN, EntityType.RABBIT, EntityType.MOOSHROOM);
 	/** Eaten only when starving: hunger effects, but still food. */
@@ -71,6 +69,8 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	private int eatingCount;
 	private boolean eatStarted;
 	private boolean digging;
+	private String shelterFailure = "";
+	private String shelterState = "";
 
 	MinecraftExploreEnvironment(CameraController camera) {
 		this.camera = Objects.requireNonNull(camera, "camera");
@@ -326,8 +326,12 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 		if (player == null || level == null) return ExploreForTaskExecutor.ShelterTick.FAILED;
 		BlockPos at = player.blockPosition();
 		if (at.getX() != plan.top().getX() || at.getZ() != plan.top().getZ() || at.getY() > plan.top().getY())
-			return ExploreForTaskExecutor.ShelterTick.FAILED;
+			return failShelter("left_column at=" + at.toShortString() + " top=" + plan.top().toShortString());
 		var step = ExploreShelter.step(plan, at.getY(), player.onGround(), level.getBlockState(plan.roof()).isSolidRender());
+		shelterState = step + " at=" + at.toShortString() + " top=" + plan.top().toShortString() + " roof=" + plan.roof().toShortString()
+			+ ":" + BuiltInRegistries.BLOCK.getKey(level.getBlockState(plan.roof()).getBlock()).getPath()
+			+ " support=" + plan.roofSupport().toShortString() + " hand=" + BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).getPath()
+			+ " below=" + BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.below()).getBlock()).getPath() + " ground=" + player.onGround();
 		if (step == ExploreShelter.Step.CLOSED) {
 			stopDigging();
 			movement.stop(minecraft);
@@ -338,30 +342,33 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 			return ExploreForTaskExecutor.ShelterTick.WORKING;
 		}
 		if (step == ExploreShelter.Step.DIG) {
-			Vec3 center = Vec3.atBottomCenterOf(at);
-			if (Math.hypot(player.getX() - center.x, player.getZ() - center.z) > CENTERED_BLOCKS) {
-				// Step onto the middle of the column, or the body stays on the rim when the block under it goes.
+			BlockPos below = at.below();
+			BlockState state = level.getBlockState(below);
+			if (state.getCollisionShape(level, below).isEmpty()) {
+				// Dug, but the body still stands on the rim: step toward the middle and it drops in.
 				stopDigging();
+				Vec3 center = Vec3.atBottomCenterOf(at);
 				camera.lookAt(minecraft, center.add(0.0D, player.getEyeHeight(), 0.0D));
 				movement.moveForward(minecraft, false, false, ticks);
 				return ExploreForTaskExecutor.ShelterTick.WORKING;
 			}
 			movement.stop(minecraft);
-			BlockPos below = at.below();
-			BlockState state = level.getBlockState(below);
-			if (state.isAir()) return ExploreForTaskExecutor.ShelterTick.WORKING;
-			if (!plan.dig().contains(below)) return ExploreForTaskExecutor.ShelterTick.FAILED;
+			if (!plan.dig().contains(below)) return failShelter("off_plan below=" + below.toShortString());
 			selectBestTool(minecraft, player, state);
 			camera.lookAt(minecraft, Vec3.atCenterOf(below).add(0.0D, 0.5D, 0.0D));
-			if (digging && minecraft.gameMode != null && minecraft.gameMode.isDestroying()) actuator.continueDestroy(minecraft, below, Direction.UP);
-			else actuator.startDestroy(minecraft, below, Direction.UP);
+			boolean continuing = digging && minecraft.gameMode != null && minecraft.gameMode.isDestroying();
+			boolean accepted = continuing ? actuator.continueDestroy(minecraft, below, Direction.UP)
+				: actuator.startDestroy(minecraft, below, Direction.UP);
 			digging = true;
+			if (minecraft.gameMode != null)
+				shelterState += " " + (continuing ? "continue" : "start") + "=" + accepted
+					+ " destroying=" + minecraft.gameMode.isDestroying() + " progress=" + minecraft.gameMode.destroyProgress;
 			return ExploreForTaskExecutor.ShelterTick.WORKING;
 		}
 		stopDigging();
 		movement.stop(minecraft);
 		int slot = roofSlot(player);
-		if (slot < 0) return ExploreForTaskExecutor.ShelterTick.FAILED;
+		if (slot < 0) return failShelter("no_roof_block");
 		if (!isRoofBlock(player.getMainHandItem())) {
 			select(minecraft, player, slot);
 			return ExploreForTaskExecutor.ShelterTick.WORKING;
@@ -374,6 +381,17 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 		actuator.useItemOn(minecraft, player, InteractionHand.MAIN_HAND, new BlockHitResult(hit, face, plan.roofSupport(), false));
 		return ExploreForTaskExecutor.ShelterTick.WORKING;
 	}
+
+	private ExploreForTaskExecutor.ShelterTick failShelter(String reason) {
+		shelterFailure = reason;
+		return ExploreForTaskExecutor.ShelterTick.FAILED;
+	}
+
+	@Override
+	public String shelterFailure() { return shelterFailure; }
+
+	@Override
+	public String shelterState() { return shelterState; }
 
 	@Override
 	public void stopDigging() {

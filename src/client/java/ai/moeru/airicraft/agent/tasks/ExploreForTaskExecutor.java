@@ -73,8 +73,11 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final NavigationOptions CROSSING_OPTIONS = NavigationOptions.WALK_ONLY;
 	/** Out of a shelter: the roof and walls may be broken and blocks placed to climb. */
 	static final NavigationOptions EXIT_OPTIONS = NavigationOptions.DEFAULT;
-	/** Sunset to sunrise in day ticks: hostile mobs spawn on the surface from about 13,000. */
-	static final long NIGHT_START = 12_500L, NIGHT_END = 23_200L;
+	/**
+	 * Sunset to sunrise in day ticks. Hostile mobs spawn on the surface from about 13,000; the night starts a little
+	 * before so a shelter is dug while the sun is still up.
+	 */
+	static final long NIGHT_START = 12_000L, NIGHT_END = 23_200L;
 	/** Eats at this hunger or below, or when hurt and below {@link #HEAL_FOOD} (health only regenerates from 18). */
 	static final int EAT_FOOD = 6;
 	static final int HEAL_FOOD = 18;
@@ -125,7 +128,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	private Vec3 preyLastSeen;
 	private int huntFailures, kills, eaten, eatBlockedUntil;
 	private ExploreShelter.Plan shelter;
-	private int shelterFailures, nightsSheltered, lastShelterLook = Integer.MIN_VALUE / 2;
+	private int shelterFailures, failuresTonight, nightsSheltered, lastShelterLook = Integer.MIN_VALUE / 2;
 	private boolean walkingAtNight;
 	private String note = "";
 	private GoalPosition navigationGoal;
@@ -186,6 +189,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			case SHELTER_DIG -> shelterDig(body);
 			case SHELTER_WAIT -> shelterWait(body);
 			case SHELTER_EXIT -> shelterExit(body);
+			case NIGHT_WAIT -> nightWait(body);
 		};
 		if (ended.isPresent()) return ended;
 		setSnapshot(TaskExecutionState.RUNNING, "working", body);
@@ -223,8 +227,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 				return Optional.empty();
 			}
 		}
+		if (!body.night()) failuresTonight = 0;
+		if (body.night() && failuresTonight >= MAX_SHELTER_FAILURES) walkingAtNight = true;
 		if (body.night() && !body.inWater() && phase != Phase.APPROACH && phase != Phase.HUNT && phase != Phase.LOOT
-			&& shelterFailures < MAX_SHELTER_FAILURES && activeTicks - lastShelterLook >= SHELTER_RETRY_TICKS) {
+			&& phase != Phase.NIGHT_WAIT && failuresTonight < MAX_SHELTER_FAILURES && activeTicks - lastShelterLook >= SHELTER_RETRY_TICKS) {
 			lastShelterLook = activeTicks;
 			if (!environment.hasRoofBlock()) {
 				walkingAtNight = true;
@@ -284,6 +290,13 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			environment::ground, lure);
 		if (choice.leg() == null && !choice.exhausted() && !body.night() && body.health() >= SWIM_HEALTH)
 			choice = chooseCrossing(body.feet(), origin, args.maxDistance(), memory.visited(), headingFailures, environment::ground, lure);
+		if (choice.leg() == null && !choice.exhausted() && body.night()) {
+			// Water all round and no crossing in the dark: wait for morning here rather than give up.
+			note = "waiting_for_morning: only water ahead, crossed by day";
+			walkingAtNight = true;
+			enter(Phase.NIGHT_WAIT);
+			return Optional.empty();
+		}
 		if (choice.leg() == null) {
 			if (choice.exhausted()) return finish(false, "max_distance; no new ground left within maxDistance=" + args.maxDistance()
 				+ " of the start and no " + args.featureKind() + " found", TaskFailureCode.MISSING_FACT);
@@ -406,7 +419,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		ShelterTick result = phaseTicks > SHELTER_DIG_TICKS ? ShelterTick.FAILED : environment.digShelter(shelter);
 		if (result == ShelterTick.WORKING) return Optional.empty();
 		environment.stopDigging();
-		if (result == ShelterTick.FAILED) return shelterFailed(phaseTicks > SHELTER_DIG_TICKS ? "dig_too_slow" : "dig_failed");
+		if (result == ShelterTick.FAILED)
+			return shelterFailed(phaseTicks > SHELTER_DIG_TICKS ? "dig_too_slow " + environment.shelterState() : "dig_failed " + environment.shelterFailure());
 		nightsSheltered++;
 		note = "";
 		enter(Phase.SHELTER_WAIT);
@@ -443,8 +457,19 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			TaskFailureCode.TRANSIENT);
 	}
 
+	/** Stands still until morning, then looks again (a crossing by day). */
+	private Optional<TaskTerminalEvent> nightWait(Body body) {
+		environment.stopMoving();
+		if (!body.night()) {
+			note = "";
+			enter(Phase.SEARCH);
+		}
+		return Optional.empty();
+	}
+
 	private Optional<TaskTerminalEvent> shelterFailed(String reason) {
 		shelterFailures++;
+		failuresTonight++;
 		environment.stopDigging();
 		note = "shelter_failed: " + reason;
 		shelter = null;
@@ -685,7 +710,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		preyLastSeen = null;
 		huntFailures = kills = eaten = eatBlockedUntil = 0;
 		shelter = null;
-		shelterFailures = nightsSheltered = 0;
+		shelterFailures = failuresTonight = nightsSheltered = 0;
 		lastShelterLook = Integer.MIN_VALUE / 2;
 		walkingAtNight = false;
 		note = "";
@@ -727,6 +752,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			body.feet().y, body.feet().z, body.health(), body.food()));
 		if (phase == Phase.WALK && leg != null) detail.append(" leg=").append(leg.x()).append(',').append(leg.y()).append(',').append(leg.z())
 			.append(leg.crossing() ? " crossing" : "");
+		if (phase == Phase.SHELTER_DIG) detail.append(" shelter=").append(environment.shelterState());
 		if (!note.isEmpty()) detail.append(' ').append(note);
 		detail.append(evidence());
 		snapshot = new TaskExecutionSnapshot(state, request == null ? null : request.taskId(), null, "ExploreFor", detail.toString(),
@@ -746,7 +772,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public void shutdown() { release(); }
 
-	enum Phase { SEARCH, WALK, APPROACH, EAT, HUNT, LOOT, SHELTER_GO, SHELTER_DIG, SHELTER_WAIT, SHELTER_EXIT }
+	enum Phase { SEARCH, WALK, APPROACH, EAT, HUNT, LOOT, SHELTER_GO, SHELTER_DIG, SHELTER_WAIT, SHELTER_EXIT, NIGHT_WAIT }
 
 	enum ConsumeResult { CONSUMING, DONE, NOTHING }
 
@@ -800,6 +826,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		ExploreShelter.Plan shelterNear(Vec3 feet);
 		/** Digs or roofs the shelter for one tick. */
 		ShelterTick digShelter(ExploreShelter.Plan plan);
+		/** Why the last {@link #digShelter} failed, for the status line. */
+		default String shelterFailure() { return ""; }
+		/** What the shelter dig is doing, for the status line. */
+		default String shelterState() { return ""; }
 		void stopDigging();
 		void stopMoving();
 		void release();
