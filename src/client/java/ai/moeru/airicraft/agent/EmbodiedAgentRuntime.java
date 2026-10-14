@@ -711,6 +711,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			missionExecutionSnapshot
 		);
 		recordStalePlannerRejections();
+		recordPlannerLoopNotices();
 		if (completedDialogueResponse != null) {
 			Optional<GoalSnapshot> previousGoal = activeGoal();
 			applyPlannerEventPolicyChanges(completedDialogueResponse.eventPolicyChanges());
@@ -1262,6 +1263,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			reflex.holdId(),
 			reflex.state() == SurvivalReflexState.ACTIVE
 		);
+	}
+
+	/** Planner loop notices are evidence for the next turn; the end of a hold wakes the planner to look again. */
+	private void recordPlannerLoopNotices() {
+		for (var notice : dialogueRuntime.drainPlannerLoopNotices(tickCount)) {
+			var payload = new java.util.LinkedHashMap<String, Object>();
+			payload.put("kind", notice.kind());
+			if (!notice.released()) payload.put("count", notice.count());
+			if (!notice.tools().isEmpty()) payload.put("tools", notice.tools());
+			if (notice.result() != null) payload.put("result", notice.result());
+			if (notice.hold()) payload.put("holdSeconds", notice.holdTicks() / 20);
+			String type = notice.released() ? "planner.loop_released" : notice.hold() ? "planner.loop_held" : "planner.loop_detected";
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, type, payload);
+			if (notice.released()) dialogueRuntime.queueTaskWakeup(null, tickCount, event.seqNo());
+		}
 	}
 
 	private void recordStalePlannerRejections() {
