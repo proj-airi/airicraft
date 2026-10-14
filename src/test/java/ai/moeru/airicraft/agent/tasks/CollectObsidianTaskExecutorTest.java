@@ -59,6 +59,23 @@ class CollectObsidianTaskExecutorTest {
 		assertTrue(f.snapshotText().contains("phase=MINE_APPROACH"), f.snapshotText());
 	}
 
+	@Test void reachingTheCountWhileScoopingStillScoopsBeforeFinishing() {
+		Fixture f = new Fixture(1);
+		f.env.cast = Optional.of(new CollectObsidianTaskExecutor.Cast(LAVA, new GoalPosition(5, 26, 0, true), "up", CAST_STANCE, 3));
+		f.env.feet = new Vec3(2.5, 28, 2.5);
+		f.env.pourResult = CollectObsidianTaskExecutor.PourResult.POURED;
+		f.tick(3);
+		f.env.obsidian = 3;
+		f.tick(1);
+		assertEquals(List.of(), f.events, "the scoop runs first");
+		assertEquals(List.of(LAVA), f.env.scoops);
+		f.env.scoopResult = CollectObsidianTaskExecutor.ScoopResult.SCOOPED;
+		f.tick(2);
+		assertEquals(1, f.events.size());
+		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
+		assertEquals(2, f.env.scoops.size());
+	}
+
 	@Test void opensObsidianOverDeeperLavaOnlyWhenNothingElseIsLeft() {
 		Fixture f = new Fixture(10);
 		f.env.opening = Optional.of(new CollectObsidianTaskExecutor.Mine(OBSIDIAN, MINE_STANCE, true));

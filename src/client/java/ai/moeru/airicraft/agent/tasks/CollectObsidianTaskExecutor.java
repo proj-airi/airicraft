@@ -98,6 +98,12 @@ public final class CollectObsidianTaskExecutor implements WorldTaskExecutor {
 			mostObsidian = site.obsidian();
 			lastProgressTick = activeTicks;
 		}
+		// The scoop comes before every exit (its timeout bounds it), so finishing never leaves the poured water behind.
+		if (phase == Phase.SCOOP) {
+			scoop();
+			setSnapshot(TaskExecutionState.RUNNING, "working", site);
+			return Optional.empty();
+		}
 		int wanted = ((WorldTaskRequest.CollectObsidian) request.task()).args().count();
 		if (site.obsidian() >= wanted) return finish(true, "collected obsidian=" + site.obsidian(), null);
 		if (!site.pickaxe())
@@ -116,7 +122,7 @@ public final class CollectObsidianTaskExecutor implements WorldTaskExecutor {
 			case COLLECT_DROP -> collectDrop(site);
 			case CAST_APPROACH -> approach(site, cast.stance(), Phase.POUR, () -> rejectCast("stance_unreachable"));
 			case POUR -> pour();
-			case SCOOP -> scoop();
+			case SCOOP -> Optional.empty();
 		};
 		if (ended.isPresent()) return ended;
 		setSnapshot(TaskExecutionState.RUNNING, "working", site);
@@ -244,7 +250,7 @@ public final class CollectObsidianTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
-	private Optional<TaskTerminalEvent> scoop() {
+	private void scoop() {
 		switch (environment.scoop(pouredAt)) {
 			case SCOOPED -> enter(Phase.CHOOSE);
 			case NO_WATER, NO_BUCKET -> {
@@ -258,7 +264,6 @@ public final class CollectObsidianTaskExecutor implements WorldTaskExecutor {
 				}
 			}
 		}
-		return Optional.empty();
 	}
 
 	private void rejectMine(String why) {

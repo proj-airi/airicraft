@@ -49,6 +49,7 @@ final class MinecraftObsidianEnvironment implements CollectObsidianTaskExecutor.
 	private final Actuator actuator = new Actuator("collect_obsidian", Priority.FOREGROUND);
 	private final CameraController camera;
 	private BlockPos breaking;
+	private int waterBucketsAfterPour;
 
 	MinecraftObsidianEnvironment(CameraController camera) {
 		this.camera = java.util.Objects.requireNonNull(camera, "camera");
@@ -297,7 +298,10 @@ final class MinecraftObsidianEnvironment implements CollectObsidianTaskExecutor.
 		ClientLevel level = minecraft.level;
 		if (player == null || level == null) return CollectObsidianTaskExecutor.PourResult.NO_SHOT;
 		BlockPos pour = block(cast.pour());
-		if (level.getFluidState(pour).is(FluidTags.WATER)) return CollectObsidianTaskExecutor.PourResult.POURED;
+		if (level.getFluidState(pour).is(FluidTags.WATER)) {
+			waterBucketsAfterPour = count(player, Items.WATER_BUCKET);
+			return CollectObsidianTaskExecutor.PourResult.POURED;
+		}
 		if (!pourable(level, pour)) return CollectObsidianTaskExecutor.PourResult.NOT_LAVA;
 		if (!hold(minecraft, player, Items.WATER_BUCKET)) return slot(player, Items.WATER_BUCKET) < 0
 			? CollectObsidianTaskExecutor.PourResult.NO_WATER_BUCKET : CollectObsidianTaskExecutor.PourResult.WORKING;
@@ -325,8 +329,9 @@ final class MinecraftObsidianEnvironment implements CollectObsidianTaskExecutor.
 		if (player == null || level == null) return CollectObsidianTaskExecutor.ScoopResult.NO_SHOT;
 		BlockPos pos = block(water);
 		FluidState fluid = level.getFluidState(pos);
+		// The source is gone: scooped only if a water bucket came back, not because a spare one was carried all along.
 		if (!fluid.is(FluidTags.WATER) || !fluid.isSource())
-			return slot(player, Items.WATER_BUCKET) >= 0 ? CollectObsidianTaskExecutor.ScoopResult.SCOOPED
+			return count(player, Items.WATER_BUCKET) > waterBucketsAfterPour ? CollectObsidianTaskExecutor.ScoopResult.SCOOPED
 				: CollectObsidianTaskExecutor.ScoopResult.NO_WATER;
 		if (!hold(minecraft, player, Items.BUCKET)) return slot(player, Items.BUCKET) < 0
 			? CollectObsidianTaskExecutor.ScoopResult.NO_BUCKET : CollectObsidianTaskExecutor.ScoopResult.WORKING;

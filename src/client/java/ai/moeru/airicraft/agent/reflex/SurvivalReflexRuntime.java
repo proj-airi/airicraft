@@ -33,6 +33,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,8 @@ public final class SurvivalReflexRuntime {
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
 	static final int LAVA_CLEAR_TICKS = 5;
 	static final int LAVA_ESCAPE_RADIUS = 5;
+	/** Ticks without closing in on the chosen bank before trying another. */
+	static final int LAVA_STALL_TICKS = 30;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -93,6 +96,11 @@ public final class SurvivalReflexRuntime {
 	private long escapeExhaustedTick = -1L;
 	private ReflexPolicy policyOverride;
 	private long foodRetreatStartedTick = -1L;
+	/** Banks the body could not close in on during this escape. */
+	private final Set<BlockPos> lavaBlockedTargets = new HashSet<>();
+	private BlockPos lavaTarget;
+	private double lavaTargetBestDistance;
+	private long lavaTargetProgressTick;
 	private boolean foodRetreatAbandoned;
 	private boolean foodUnavailableReported;
 
@@ -531,6 +539,8 @@ public final class SurvivalReflexRuntime {
 	 */
 	private void tickLava(Minecraft minecraft, LocalPlayer player, boolean inLava, List<ResolvedThreat> threats, long tick) {
 		if (snapshot.cause() != SurvivalReflexCause.LAVA) {
+			lavaBlockedTargets.clear();
+			lavaTarget = null;
 			underwaterEscape.reset(minecraft);
 			combatRecovery = CombatRecovery.READY;
 			changeAction(SurvivalReflexCause.LAVA, SurvivalReflexAction.ESCAPE_LAVA, tick);
@@ -552,7 +562,9 @@ public final class SurvivalReflexRuntime {
 			}
 			else {
 				BlockPos target = lavaEscapeTarget(player.blockPosition(), player.position(), LAVA_ESCAPE_RADIUS,
-					cell -> lavaSafeStand(minecraft.level, cell));
+					cell -> !lavaBlockedTargets.contains(cell) && lavaSafeStand(minecraft.level, cell),
+					cell -> !minecraft.level.getBlockState(cell).getCollisionShape(minecraft.level, cell).isEmpty());
+				target = trackLavaTarget(target, player.position(), tick);
 				if (target == null) {
 					movementController.hold(minecraft, true, false);
 				}
@@ -569,28 +581,58 @@ public final class SurvivalReflexRuntime {
 		}
 	}
 
+	/** Gives up on a bank the body has not closed in on for a while, so the next search picks another. */
+	private BlockPos trackLavaTarget(BlockPos target, Vec3 position, long tick) {
+		if (target == null) {
+			lavaTarget = null;
+			return null;
+		}
+		double distance = Math.hypot(target.getX() + 0.5D - position.x, target.getZ() + 0.5D - position.z);
+		if (!target.equals(lavaTarget) || distance < lavaTargetBestDistance - 0.3D) {
+			if (!target.equals(lavaTarget)) lavaTarget = target.immutable();
+			lavaTargetBestDistance = distance;
+			lavaTargetProgressTick = tick;
+		}
+		else if (tick - lavaTargetProgressTick >= LAVA_STALL_TICKS) {
+			lavaBlockedTargets.add(lavaTarget);
+			lavaTarget = null;
+		}
+		return target;
+	}
+
 	/**
 	 * The closest cell to stand on outside the lava, searched from one below the feet to two above, since a body in a
-	 * pool sinks below the bank. Nearer cells win; climbing costs a little more than walking level.
+	 * pool sinks below the bank. Nearer cells win; climbing costs a little more than walking level. A cell counts only if
+	 * the straight way there is open at the height the body arrives at, so a bank behind a wall loses to an open one.
 	 */
-	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand) {
+	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand, Predicate<BlockPos> solid) {
 		BlockPos best = null;
 		double bestCost = Double.MAX_VALUE;
 		for (int dy = -1; dy <= 2; dy++) {
 			for (int dx = -radius; dx <= radius; dx++) {
 				for (int dz = -radius; dz <= radius; dz++) {
 					BlockPos cell = feet.offset(dx, dy, dz);
-					if (!safeStand.test(cell)) continue;
 					double horizontal = Math.hypot(cell.getX() + 0.5D - position.x, cell.getZ() + 0.5D - position.z);
 					double cost = horizontal + 0.5D * Math.max(0, cell.getY() - feet.getY());
-					if (cost < bestCost) {
-						bestCost = cost;
-						best = cell;
-					}
+					if (cost >= bestCost || !safeStand.test(cell) || !openWay(position, cell, solid)) continue;
+					bestCost = cost;
+					best = cell;
 				}
 			}
 		}
 		return best;
+	}
+
+	/** Whether the body's two cells at the bank's height are free along the straight line from here to the bank. */
+	static boolean openWay(Vec3 position, BlockPos cell, Predicate<BlockPos> solid) {
+		double dx = cell.getX() + 0.5D - position.x, dz = cell.getZ() + 0.5D - position.z;
+		int steps = Math.max(1, (int) Math.ceil(Math.hypot(dx, dz) / 0.25D));
+		for (int i = 1; i <= steps; i++) {
+			double t = (double) i / steps;
+			BlockPos column = BlockPos.containing(position.x + dx * t, cell.getY(), position.z + dz * t);
+			if (solid.test(column) || solid.test(column.above())) return false;
+		}
+		return true;
 	}
 
 	private static boolean lavaSafeStand(Level level, BlockPos cell) {

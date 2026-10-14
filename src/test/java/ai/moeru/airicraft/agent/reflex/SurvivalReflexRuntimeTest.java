@@ -20,12 +20,23 @@ class SurvivalReflexRuntimeTest {
 		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
 		// A 2-deep pool: banks one block above the lava surface on the west (x=-2) and far east (x=4).
 		java.util.function.Predicate<net.minecraft.core.BlockPos> bank = cell -> cell.getY() == 28 && (cell.getX() == -2 || cell.getX() == 4);
-		assertEquals(new net.minecraft.core.BlockPos(-2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank));
-		assertNull(SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, cell -> false));
+		assertEquals(new net.minecraft.core.BlockPos(-2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
+		assertNull(SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, cell -> false, cell -> false));
 		// A level exit beats a slightly nearer climb.
 		java.util.function.Predicate<net.minecraft.core.BlockPos> mixed = cell -> cell.equals(new net.minecraft.core.BlockPos(-2, 28, 0))
 			|| cell.equals(new net.minecraft.core.BlockPos(2, 26, 2));
-		assertEquals(new net.minecraft.core.BlockPos(2, 26, 2), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, mixed));
+		assertEquals(new net.minecraft.core.BlockPos(2, 26, 2), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, mixed, cell -> false));
+	}
+
+	@Test void lavaEscapeSkipsABankBehindAWall() {
+		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
+		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
+		java.util.function.Predicate<net.minecraft.core.BlockPos> bank = cell -> cell.getY() == 28 && (cell.getX() == 2 || cell.getX() == -4)
+			&& cell.getZ() == 0;
+		// A wall at x=1 stands between the body and the nearer east bank.
+		java.util.function.Predicate<net.minecraft.core.BlockPos> wall = cell -> cell.getX() == 1 && cell.getY() >= 28;
+		assertEquals(new net.minecraft.core.BlockPos(-4, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, wall));
+		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
 	}
 
 	@Test void combatMealNeedsShelterAndAFullUseWindow() {
