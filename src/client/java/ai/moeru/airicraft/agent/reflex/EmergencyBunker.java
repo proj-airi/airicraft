@@ -8,10 +8,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -118,7 +121,7 @@ final class EmergencyBunker {
 		Level level = minecraft.level;
 		if (failed || level == null) return false;
 		if (plan == null) {
-			if (!player.onGround() || !hasThrowaway(player)) return false;
+			if (!player.onGround() || !hasThrowaway(player) && !dropsDirt(level.getBlockState(player.blockPosition().below()))) return false;
 			plan = plan(cells(level, player), player.blockPosition());
 			if (plan == null) return false;
 			startedTick = tick;
@@ -215,6 +218,15 @@ final class EmergencyBunker {
 				return level.getBlockState(pos).getBlock() instanceof FallingBlock;
 			}
 		};
+	}
+
+	/**
+	 * Whether the first dug block drops dirt, which the body picks up on the way down and roofs with. A body that
+	 * respawned with nothing can still dig in where the ground is soil.
+	 */
+	static boolean dropsDirt(BlockState state) {
+		return state.is(BlockTags.DIRT) && !state.is(Blocks.MOSS_BLOCK) && !state.is(Blocks.MUD)
+			&& NavigationPolicies.isThrowaway(new ItemStack(Items.DIRT));
 	}
 
 	private static boolean hasThrowaway(LocalPlayer player) {

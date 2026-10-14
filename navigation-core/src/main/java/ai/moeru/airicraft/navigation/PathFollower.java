@@ -135,14 +135,17 @@ public final class PathFollower {
 			&& feet.y() >= Math.min(step.from().y(), step.to().y()) && feet.y() <= Math.max(step.from().y(), step.to().y()) + 1;
 	}
 
-	/** Upcoming plain steps must still be possible; edit steps are rechecked by their executors. */
+	/** Upcoming plain steps must still be possible and no closer to lava; edit steps are rechecked by their executors. */
 	private String revalidate(Moves moves) {
 		int last = Math.min(path.steps().size() - 1, index + 2);
 		for (int i = index + 1; i <= last; i++) {
 			Step previous = path.steps().get(i - 1);
 			Step step = path.steps().get(i);
 			if (previous.edits() || step.edits() || !step.doors().isEmpty()) break;
-			if (moves.stepBetween(step.from(), step.to()) == null) return "step_invalid " + step.type() + " to " + step.to();
+			Step now = moves.stepBetween(step.from(), step.to());
+			if (now == null) return "step_invalid " + step.type() + " to " + step.to();
+			// Lava that flowed in beside the route since it was planned: plan again around it.
+			if (now.cost() >= step.cost() + Costs.LAVA_MARGIN) return "lava_beside " + step.type() + " to " + step.to();
 		}
 		return null;
 	}

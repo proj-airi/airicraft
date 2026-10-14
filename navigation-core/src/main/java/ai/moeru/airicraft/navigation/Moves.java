@@ -117,6 +117,7 @@ public final class Moves {
 			out.reset();
 			return false;
 		}
+		out.cost += lavaMargin(out.x, out.y, out.z);
 		out.cost *= policy.avoidanceFactor(out.x, out.y, out.z);
 		return out.cost < Double.POSITIVE_INFINITY;
 	}
@@ -457,6 +458,29 @@ public final class Moves {
 			if (!neighbour.loaded() || neighbour.fluid() != CellInfo.Fluid.NONE) return false;
 		}
 		return true;
+	}
+
+	/** {@link Costs#LAVA_MARGIN} when lava is beside the body's feet or head, or just above the head. */
+	private double lavaMargin(int x, int y, int z) {
+		if (nearbyLava(x, y + 2, z)) return Costs.LAVA_MARGIN;
+		for (int dy = 0; dy <= 1; dy++) {
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dz = -1; dz <= 1; dz++) {
+					if ((dx != 0 || dz != 0) && nearbyLava(x + dx, y + dy, z + dz)) return Costs.LAVA_MARGIN;
+				}
+			}
+		}
+		return 0;
+	}
+
+	/** Like {@link #cell} but an unloaded neighbour is not lava and does not mark the search as touching unloaded terrain. */
+	private boolean nearbyLava(int x, int y, int z) {
+		if (overlay != null) {
+			CellInfo edited = overlay.cell(x, y, z);
+			if (edited != null) return edited.fluid() == CellInfo.Fluid.LAVA;
+		}
+		CellInfo cell = terrain.cell(x, y, z);
+		return cell.loaded() && cell.fluid() == CellInfo.Fluid.LAVA;
 	}
 
 	private boolean deadly(int x, int y, int z, CellInfo cell) {

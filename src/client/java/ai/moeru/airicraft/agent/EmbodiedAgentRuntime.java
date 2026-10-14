@@ -1206,10 +1206,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private void tickIdleEating(Minecraft minecraft) {
 		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) return;
 		var player = minecraft.player;
-		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
-			&& !survivalReflexRuntime.snapshot().holdsNormalTasks() && !policyActive()
+		var reflex = survivalReflexRuntime.snapshot();
+		// A safety hold with nothing left to fight only waits for a decision, so the paused body eats meanwhile.
+		boolean quietHold = reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.threats().isEmpty()
+			&& !reflex.ownsActuation();
+		boolean free = !reflex.holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
-			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current())
+			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current());
+		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
+			&& (free || quietHold)
 			&& !playerItemUseController.eating() && !player.isUsingItem()
 			&& !minecraft.gameMode.isDestroying()
 			&& player.containerMenu == player.inventoryMenu

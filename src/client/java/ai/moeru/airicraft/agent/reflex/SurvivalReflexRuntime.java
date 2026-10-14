@@ -1072,12 +1072,14 @@ public final class SurvivalReflexRuntime {
 	}
 
 	/**
-	 * At low health the fight turns into digging in (see {@link EmergencyBunker}); inside a closed bunker the body
+	 * At low health, or unarmed with no escape route, the fight turns into digging in (see {@link EmergencyBunker}); inside a closed bunker the body
 	 * eats and waits for the threats to leave. Returns whether the bunker handled this tick.
 	 */
 	private boolean tickBunker(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
 		CombatEating combatEating) {
-		if (!bunker.active() && (threats.isEmpty() || player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD)) return false;
+		// An unarmed body that could not outrun its attackers digs in at once rather than fight bare-handed.
+		boolean cornered = flight.abandoned() && !"armed".equals(flight.abandonReason());
+		if (!bunker.active() && (threats.isEmpty() || player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered)) return false;
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
