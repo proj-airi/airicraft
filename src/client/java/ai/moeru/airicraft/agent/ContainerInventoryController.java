@@ -13,8 +13,12 @@ import java.util.Objects;
 /** Ordinary screen clicks only; no access to unopened block or entity inventories. */
 final class ContainerInventoryController {
 
+	/** Closes whatever container is open (a chest, or a furnace or crafting table left open by earlier work). */
 	static String close(Minecraft minecraft) {
-		var menu = requireContainer(minecraft);
+		if (minecraft == null || minecraft.level == null || minecraft.player == null) throw new IllegalStateException("world_not_loaded");
+		var menu = minecraft.player.containerMenu;
+		if (menu == minecraft.player.inventoryMenu)
+			throw new IllegalStateException("container_not_open use_block_for_chests_or_use_entity_for_chest_minecarts_first");
 		if (!menu.getCarried().isEmpty()) throw new IllegalStateException("cursor_not_empty");
 		minecraft.player.closeContainer();
 		return "Tool result for close_container: closed syncId=" + menu.containerId;

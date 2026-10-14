@@ -38,6 +38,7 @@ public final class MiningToolPreparation {
 
 	private static Result ensureSelected(Minecraft minecraft, Actuator actuator, LocalPlayer player, List<BlockState> targets,
 		List<String> requiredToolItemIds, boolean requireDrops, boolean allowInventory) {
+		ScreenCloseSafety.closeLeftoverContainer(player, "mining_tool_open_screen_close");
 		if (player.containerMenu != player.inventoryMenu
 			|| !player.containerMenu.getCarried().isEmpty() || player.isUsingItem()) {
 			return Result.failed("inventory_unavailable_for_tool_selection");
