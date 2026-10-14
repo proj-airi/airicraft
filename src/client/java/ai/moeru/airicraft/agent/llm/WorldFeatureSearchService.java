@@ -77,6 +77,11 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	}
 
 	static WorldFeatureSearchResult search(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
+		List<FeatureCandidate> limited = candidates(access, origin, request);
+		return new WorldFeatureSearchResult(resultText(request, limited), observedPositions(limited));
+	}
+
+	private static List<FeatureCandidate> candidates(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
 		Objects.requireNonNull(access, "access");
 		Objects.requireNonNull(origin, "origin");
 		Objects.requireNonNull(request, "request");
@@ -85,12 +90,30 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 			case FOREST -> findForests(access, origin, request);
 			case LAVA_POOL, NETHER_FORTRESS, END_PORTAL -> findExposedClusters(access, origin, request);
 		};
-		List<FeatureCandidate> limited = candidates.stream()
+		return candidates.stream()
 			.sorted(FeatureCandidate.ORDERING)
 			.limit(request.limit())
 			.toList();
-		return new WorldFeatureSearchResult(resultText(request, limited), observedPositions(limited));
 	}
+
+	/**
+	 * The nearest feature of a kind in loaded chunks, for a task that searches as it walks (explore_for). Forests and
+	 * water bodies count only at the surface, where a walk can reach them.
+	 */
+	public static Optional<FoundFeature> nearest(Level level, BlockPos origin, String featureKind, int maxDistanceBlocks) {
+		return nearest(new MinecraftWorldFeatureAccess(level), origin, featureKind, maxDistanceBlocks);
+	}
+
+	static Optional<FoundFeature> nearest(WorldFeatureAccess access, BlockPos origin, String featureKind, int maxDistanceBlocks) {
+		FeatureKind kind = FeatureKind.from(featureKind);
+		SearchRequest request = new SearchRequest(kind, Optional.empty(), Math.max(1, Math.min(maxDistanceBlocks, MAX_DISTANCE_BLOCKS)), 1,
+			DEFAULT_MIN_CONNECTED_WATER_SOURCES, DEFAULT_MIN_TREE_COUNT, kind == FeatureKind.WATER_BODY || kind == FeatureKind.FOREST);
+		return candidates(access, origin, request).stream().findFirst()
+			.map(candidate -> new FoundFeature(candidate.targetPos(), candidate.standPos(), candidate.compact()));
+	}
+
+	/** One found feature: the block to go to, where to stand by it (null when none was found), and its description. */
+	public record FoundFeature(BlockPos targetPos, BlockPos standPos, String summary) { }
 
 	private static List<FeatureCandidate> findWaterBodies(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
 		ArrayList<FeatureCandidate> candidates = new ArrayList<>();

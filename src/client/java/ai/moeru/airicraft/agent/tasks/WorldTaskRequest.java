@@ -34,6 +34,7 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case FightEnderDragon ignored -> WorldTaskType.FIGHT_ENDER_DRAGON;
 			case CollectObsidian ignored -> WorldTaskType.COLLECT_OBSIDIAN;
 			case LocateStronghold ignored -> WorldTaskType.LOCATE_STRONGHOLD;
+			case ExploreFor ignored -> WorldTaskType.EXPLORE_FOR;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -150,6 +151,11 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new LocateStronghold(args));
 	}
 	public record LocateStronghold(LocateStrongholdStepArgs args) implements Task { public LocateStronghold { Objects.requireNonNull(args, "locateStronghold"); } }
+
+	public static WorldTaskRequest exploreFor(String taskId, String sourceJobId, ExploreForStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new ExploreFor(args));
+	}
+	public record ExploreFor(ExploreForStepArgs args) implements Task { public ExploreFor { Objects.requireNonNull(args, "exploreFor"); } }
 
 	public sealed interface Task {
 	}

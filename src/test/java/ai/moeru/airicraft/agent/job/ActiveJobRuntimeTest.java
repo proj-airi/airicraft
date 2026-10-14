@@ -760,6 +760,26 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void explorePayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);
+		runtime.applyPlannerResponse(new DialogueResponse("Looking for trees.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.exploreFor(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.EXPLORE_FOR, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.ExploreFor(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().exploreFor());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.ExploreFor(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().exploreFor());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void lurePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs(java.util.List.of("aaaaaaaa"), "minecraft:wheat_seeds", 1, 63, 2, 3, 64, 4);

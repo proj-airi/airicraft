@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldFeatureSearchServiceTest {
@@ -29,6 +30,21 @@ class WorldFeatureSearchServiceTest {
 		var result = WorldFeatureSearchService.search(access, new BlockPos(0,40,0), args);
 		assertTrue(result.text().contains("targetPos=30,63,0"));
 		assertTrue(result.text().contains("standPos=29,64,0"));
+	}
+
+	@Test
+	void nearestForAWalkingSearchTakesOnlySurfaceWater() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.surfaceY = 63;
+		addWaterPool(access, 2, 40, 0, 4, 2);
+		addWaterPool(access, 30, 63, 0, 4, 2);
+		access.standable(new BlockPos(29, 64, 0));
+		var found = WorldFeatureSearchService.nearest(access, new BlockPos(0, 40, 0), "water_body", 128).orElseThrow();
+		assertEquals(new BlockPos(30, 63, 0), found.targetPos());
+		assertEquals(new BlockPos(29, 64, 0), found.standPos());
+		assertTrue(found.summary().contains("kind=water_body"), found.summary());
+		assertTrue(WorldFeatureSearchService.nearest(access, new BlockPos(0, 40, 0), "water_body", 16).isEmpty(),
+			"the surface pool is out of range and the cave pool does not count");
 	}
 
 	@Test

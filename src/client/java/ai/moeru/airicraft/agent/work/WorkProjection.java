@@ -84,6 +84,7 @@ public final class WorkProjection {
 			case FIGHT_ENDER_DRAGON -> Map.of("target", "minecraft:ender_dragon");
 			case COLLECT_OBSIDIAN -> job.collectObsidian();
 			case LOCATE_STRONGHOLD -> job.locateStronghold();
+			case EXPLORE_FOR -> job.exploreFor();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;
