@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DropItemsTaskExecutorTest {
@@ -76,5 +77,17 @@ class DropItemsTaskExecutorTest {
 
 	private static SessionSnapshot snapshot(SessionMode mode, boolean worldLoaded) {
 		return new SessionSnapshot(mode, true, worldLoaded, "minecraft:overworld", false, 0, 0L);
+	}
+
+	@Test
+	void throwsTowardAnOpenSideWithRoomToBackAway() {
+		assertEquals(2, DropItemsTaskExecutor.chooseThrowDirection(step -> step != 0, step -> step == 2 || step == 3));
+		assertEquals(1, DropItemsTaskExecutor.chooseThrowDirection(step -> step == 1 || step == 5, step -> step == 1));
+	}
+
+	@Test
+	void throwsAheadEvenWithNowhereToBackAwayAndGivesUpOnlyWhenWalledIn() {
+		assertEquals(4, DropItemsTaskExecutor.chooseThrowDirection(step -> step == 4, step -> false));
+		assertNull(DropItemsTaskExecutor.chooseThrowDirection(step -> false, step -> true));
 	}
 }

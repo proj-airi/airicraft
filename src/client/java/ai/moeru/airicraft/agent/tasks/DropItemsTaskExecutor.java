@@ -50,6 +50,21 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 	private int chaseGoalRefreshTicks;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
+	private enum DiscardPhase { AIM, RETREAT, SETTLE }
+	/** Ticks to face the throw direction before throwing anyway. */
+	private static final int AIM_TICKS = 20;
+	/** Pickup reach is about one block around the body; thrown items land one to two blocks ahead. */
+	private static final double RETREAT_BLOCKS = 3.5D;
+	private static final int RETREAT_TICKS = 35;
+	/** A player's thrown items cannot be picked up for 40 ticks; check the inventory a little after. */
+	private static final int SETTLE_TICKS = 50;
+	private DiscardPhase discardPhase = DiscardPhase.AIM;
+	private Integer discardYaw;
+	private long discardStartTick;
+	private long discardDropTick;
+	private Vec3 discardOrigin;
+	private int discardBaseline;
+
 	public DropItemsTaskExecutor() {
 		this(Minecraft::getInstance, null, new CameraController());
 	}
@@ -125,16 +140,111 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		if (args.targetPlayer() != null) {
 			return tickDelivery(minecraft, player, request, args, available, sessionSnapshot.tickCount());
 		}
-		if (available < args.quantity()) {
+		if (discardPhase == DiscardPhase.AIM && available < args.quantity()) {
 			return fail(request, available == 0
 				? TaskFailure.of(TaskFailureCode.MISSING_FACT, "item_not_found")
 				: TaskFailure.of(TaskFailureCode.UNKNOWN, "insufficient_items"));
 		}
 
-		for (DropClick click : planDropClicks(matchingSlots, args.quantity())) {
-			performDropClick(minecraft, player, menu, click);
+		return tickDiscard(minecraft, player, request, args, menu, matchingSlots, available, sessionSnapshot.tickCount());
+	}
+
+	/**
+	 * Throws the stack away so the body does not pick it straight back up: face an open direction, throw, then
+	 * back off past pickup reach before the thrown items' pickup delay ends. A playtest's drop_items of 250
+	 * cobblestone reported success while every item was back in the inventory, because it threw at its feet and
+	 * stood still.
+	 */
+	private Optional<TaskTerminalEvent> tickDiscard(Minecraft minecraft, LocalPlayer player, WorldTaskRequest request,
+		DropItemsStepArgs args, AbstractContainerMenu menu, List<DropSlot> matchingSlots, int available, long tick) {
+		if (discardPhase == DiscardPhase.AIM) {
+			if (discardYaw == null) {
+				discardYaw = chooseThrowDirection(step -> open(minecraft, player, step, 2, false),
+					step -> open(minecraft, player, (step + 4) % 8, (int) Math.ceil(RETREAT_BLOCKS), true));
+				discardStartTick = tick;
+				if (discardYaw == null) discardYaw = Math.floorMod(Math.round(player.getYRot() / 45.0F), 8);
+			}
+			Vec3 aim = throwAim(player, discardYaw);
+			cameraController.lookAt(minecraft, aim);
+			if (!cameraController.isLookingAt(minecraft, aim, 8.0F) && tick - discardStartTick < AIM_TICKS) {
+				snapshot = snapshot(TaskExecutionState.RUNNING, request, "aiming_throw");
+				return Optional.empty();
+			}
+			int before = available;
+			for (DropClick click : planDropClicks(matchingSlots, args.quantity())) {
+				performDropClick(minecraft, player, menu, click);
+			}
+			discardBaseline = before - args.quantity();
+			discardOrigin = player.position();
+			discardDropTick = tick;
+			discardPhase = DiscardPhase.RETREAT;
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "stepping_away_from_dropped_items");
+			return Optional.empty();
 		}
-		return complete(request);
+		cameraController.lookAt(minecraft, throwAim(player, discardYaw));
+		if (discardPhase == DiscardPhase.RETREAT) {
+			boolean clear = player.position().distanceTo(discardOrigin) >= RETREAT_BLOCKS;
+			if (!clear && tick - discardDropTick < RETREAT_TICKS) {
+				movementController.moveDirectional(minecraft, false, true, false, false, false, false, tick);
+				return Optional.empty();
+			}
+			movementController.stop(minecraft);
+			discardPhase = DiscardPhase.SETTLE;
+		}
+		if (tick - discardDropTick < SETTLE_TICKS) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_pickup_delay");
+			return Optional.empty();
+		}
+		int now = matchingSlots.stream().mapToInt(DropSlot::count).sum();
+		int repicked = Math.max(0, now - discardBaseline);
+		return repicked >= args.quantity()
+			? fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "items_picked_back_up itemId=" + args.itemId()
+				+ " quantity=" + args.quantity() + " hint=walk_a_few_blocks_and_drop_again"))
+			: complete(request, repicked > 0 ? "dropped_items repickedQuantity=" + repicked : "dropped_items");
+	}
+
+	/**
+	 * The yaw step (0-7, 45 degrees each, Minecraft yaw) to throw toward: open ahead for the throw and walkable
+	 * behind for backing off. Straight directions first. Null when none is both.
+	 */
+	static Integer chooseThrowDirection(java.util.function.IntPredicate openAhead, java.util.function.IntPredicate walkableBehind) {
+		Integer aheadOnly = null;
+		for (int step : new int[] {0, 2, 4, 6, 1, 3, 5, 7}) {
+			if (!openAhead.test(step)) continue;
+			if (walkableBehind.test(step)) return step;
+			if (aheadOnly == null) aheadOnly = step;
+		}
+		return aheadOnly;
+	}
+
+	private static Vec3 throwAim(LocalPlayer player, int yawStep) {
+		double yaw = Math.toRadians(yawStep * 45.0D);
+		return player.getEyePosition().add(-Math.sin(yaw) * 4.0D, -0.6D, Math.cos(yaw) * 4.0D);
+	}
+
+	/**
+	 * Whether {@code blocks} cells along a yaw step are passable at the feet and head, and when {@code floor}, stand on
+	 * something no deeper than one block down.
+	 */
+	private static boolean open(Minecraft minecraft, LocalPlayer player, int yawStep, int blocks, boolean floor) {
+		double yaw = Math.toRadians(yawStep * 45.0D);
+		double dx = -Math.sin(yaw), dz = Math.cos(yaw);
+		net.minecraft.world.level.Level level = minecraft.level;
+		for (int i = 1; i <= blocks; i++) {
+			net.minecraft.core.BlockPos feet = net.minecraft.core.BlockPos.containing(
+				player.getX() + dx * i, player.getY() + 0.01D, player.getZ() + dz * i);
+			if (!level.hasChunkAt(feet)) return false;
+			if (!passable(level, feet) || !passable(level, feet.above())) return false;
+			if (floor && !level.getFluidState(feet).isEmpty()) return false;
+			if (floor && passable(level, feet.below()) && passable(level, feet.below(2))) return false;
+		}
+		return true;
+	}
+
+	private static boolean passable(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos) {
+		var fluid = level.getFluidState(pos);
+		return level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()
+			&& (fluid.isEmpty() || fluid.is(net.minecraft.tags.FluidTags.WATER));
 	}
 
 	private Optional<TaskTerminalEvent> tickDelivery(
@@ -528,6 +638,9 @@ public final class DropItemsTaskExecutor implements WorldTaskExecutor {
 		deliveryState = null;
 		chaseGoal = null;
 		chaseGoalRefreshTicks = 0;
+		discardPhase = DiscardPhase.AIM;
+		discardYaw = null;
+		discardOrigin = null;
 		snapshot = TaskExecutionSnapshot.idle();
 	}
 
