@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 public final class WorldFeatureSearchToolProvider implements PlannerToolProvider {
 	public static final String FIND_WORLD_FEATURES = "find_world_features";
 
-	private static final List<String> FEATURES = List.of("water_body", "forest", "lava_pool", "nether_fortress", "end_portal");
+	private static final List<String> FEATURES = List.of("water_body", "forest", "lava_pool", "nether_fortress", "end_portal", "blaze_spawner");
 	private static final List<String> DIRECTIONS = List.of(
 		"north",
 		"northeast",
@@ -49,7 +49,7 @@ public final class WorldFeatureSearchToolProvider implements PlannerToolProvider
 	public List<Map<String, Object>> openAiTools() {
 		return List.of(PlannerToolCatalog.toolForProvider(
 			FIND_WORLD_FEATURES,
-			"Find coordinate-grounded world features in already-loaded chunks: water_body, forest, lava_pool (lava sources open to air at any depth, for collect_obsidian), nether_fortress (exposed nether bricks) or end_portal (exposed end portal frames in a stronghold's portal room).",
+			"Find coordinate-grounded world features in already-loaded chunks: water_body, forest, lava_pool (lava sources open to air at any depth, for collect_obsidian), nether_fortress (exposed nether bricks), end_portal (exposed end portal frames in a stronghold's portal room) or blaze_spawner (an exposed spawner with a blaze spinning inside, for collect_blaze_rods).",
 			PlannerToolCatalog.propertiesForProvider(
 				PlannerToolCatalog.propForProvider("featureKind", PlannerToolCatalog.enumStringForProvider("Feature kind to find.", FEATURES)),
 				PlannerToolCatalog.propForProvider("surfaceOnly", Map.of("type", "boolean", "description", "Restrict target and standing positions to the surface, ignoring logs/leaves as roofs. Useful for surface water, farms and camps. Default false.")),

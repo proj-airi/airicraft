@@ -221,6 +221,31 @@ class WorldFeatureSearchServiceTest {
 		assertTrue(result.text().contains("returned=0"), result.text());
 	}
 
+	@Test
+	void aSingleExposedBlazeSpawnerIsAFeature() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// The fake hands out exposed spawners the Minecraft access has already checked to spin a blaze.
+		access.exposed.add(new BlockPos(20, 70, -6));
+		access.standable(new BlockPos(20, 71, -6));
+
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("blaze_spawner"));
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=blaze_spawner"), result.text());
+		assertTrue(result.text().contains("targetPos=20,70,-6"), result.text());
+		assertEquals(new BlockPos(20, 70, -6), WorldFeatureSearchService.nearest(access, ORIGIN, "blaze_spawner", 64).orElseThrow().targetPos());
+	}
+
+	@Test
+	void twoBlazeSpawnersFarApartAreTwoFeaturesNearestFirst() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.exposed.add(new BlockPos(60, 70, 0));
+		access.exposed.add(new BlockPos(-20, 66, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("blaze_spawner"));
+		assertTrue(result.text().contains("returned=2"), result.text());
+		assertEquals(new BlockPos(-20, 66, 0), WorldFeatureSearchService.nearest(access, ORIGIN, "blaze_spawner", 128).orElseThrow().targetPos());
+	}
+
 	private static JsonObject args(String featureKind) {
 		JsonObject args = new JsonObject();
 		args.addProperty("featureKind", featureKind);

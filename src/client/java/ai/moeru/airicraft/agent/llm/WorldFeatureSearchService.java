@@ -4,6 +4,9 @@ import ai.moeru.airicraft.agent.spatial.SurfaceTerrain;
 import com.google.gson.JsonObject;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.tags.BlockTags;
@@ -88,7 +91,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		List<FeatureCandidate> candidates = switch (request.featureKind()) {
 			case WATER_BODY -> findWaterBodies(access, origin, request);
 			case FOREST -> findForests(access, origin, request);
-			case LAVA_POOL, NETHER_FORTRESS, END_PORTAL -> findExposedClusters(access, origin, request);
+			case LAVA_POOL, NETHER_FORTRESS, END_PORTAL, BLAZE_SPAWNER -> findExposedClusters(access, origin, request);
 		};
 		return candidates.stream()
 			.sorted(FeatureCandidate.ORDERING)
@@ -514,7 +517,9 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		/** Nether bricks, fences and stairs: only fortresses generate them. */
 		NETHER_FORTRESS("nether_fortress", 24),
 		/** End portal frames: only a stronghold's portal room has them. */
-		END_PORTAL("end_portal", 4);
+		END_PORTAL("end_portal", 4),
+		/** A spawner whose spinning mob, which the client renders from the block entity, is a blaze. */
+		BLAZE_SPAWNER("blaze_spawner", 1);
 
 		private final String wireValue;
 		private final int minExposedBlocks;
@@ -702,6 +707,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 				case NETHER_FORTRESS -> state -> state.is(Blocks.NETHER_BRICKS) || state.is(Blocks.NETHER_BRICK_FENCE)
 					|| state.is(Blocks.NETHER_BRICK_STAIRS);
 				case END_PORTAL -> state -> state.is(Blocks.END_PORTAL_FRAME);
+				case BLAZE_SPAWNER -> state -> state.is(Blocks.SPAWNER);
 				default -> state -> false;
 			};
 			int minChunkX = (origin.getX() - maxDistanceBlocks) >> 4, maxChunkX = (origin.getX() + maxDistanceBlocks) >> 4;
@@ -720,11 +726,22 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 						for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
 							if (!matches.test(section.getBlockState(x, y, z))) continue;
 							BlockPos pos = new BlockPos((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
-							if (exposed(pos, neighbour)) consumer.accept(pos);
+							if (exposed(pos, neighbour) && (featureKind != FeatureKind.BLAZE_SPAWNER || spawns(pos, EntityType.BLAZE)))
+								consumer.accept(pos);
 						}
 					}
 				}
 			}
+		}
+
+		/**
+		 * Whether a spawner spawns this mob. The server sends a spawner's next spawn data with the chunk so the client can
+		 * render the mob spinning inside it; that display entity is what a player sees through the cage.
+		 */
+		private boolean spawns(BlockPos pos, EntityType<?> type) {
+			if (!(level.getBlockEntity(pos) instanceof SpawnerBlockEntity spawner)) return false;
+			Entity display = spawner.getSpawner().getOrCreateDisplayEntity(level, pos);
+			return display != null && display.getType() == type;
 		}
 
 		private boolean exposed(BlockPos pos, BlockPos.MutableBlockPos neighbour) {
