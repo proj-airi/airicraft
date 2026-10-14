@@ -135,6 +135,7 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
         }
         return false;
     }
+    @Override public boolean consumesMaterial(){return !owner.isCreative();}
     @Override public int materialCount(String item){
         requireWorld();var inventory=owner.getInventory();int total=0;
         for(int slot=0;slot<inventory.getContainerSize();slot++){

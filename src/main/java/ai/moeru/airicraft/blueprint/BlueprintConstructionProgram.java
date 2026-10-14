@@ -17,6 +17,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         default boolean hasMaterial(Cell cell){return true;}
         /** Items of this id the builder carries; unlimited by default (creative, tests). */
         default int materialCount(String item){return Integer.MAX_VALUE;}
+        /** False in Creative: placing does not use up the carried stack, so one of each item is enough. */
+        default boolean consumesMaterial(){return true;}
         /** The cell holds a solid block it cannot be placed over (terrain, vegetation) and that must be dug out first. */
         default boolean blocked(Cell cell){return false;}
         /** A standable position within reach of the cell, or null when none is known. */
@@ -198,11 +200,13 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         // placed, so each resume makes progress. Stop once no placeable cell has material.
         var missingItems=new HashSet<String>();Cell missingExample=null;boolean anyWithMaterial=false;
         for(var cell:pending){
-            if(cell.air() || cell.state().contains("half=upper") || environment.canToggle(cell))continue;
+            if(cell.air() || pairedHalf(cell) || environment.canToggle(cell))continue;
             if(checkedItems.add(cell.item()) && !environment.hasMaterial(cell))missingItems.add(cell.item());
             if(missingItems.contains(cell.item())){if(missingExample==null)missingExample=cell;}else anyWithMaterial=true;
         }
-        if(missingExample!=null && !anyWithMaterial)throw materialMissing(missingExample,pending);
+        // Stop at once only when nothing else is left: no other material, no clearance, no repair debt.
+        boolean otherWork=anyWithMaterial || !ledger.entries().isEmpty() || pending.stream().anyMatch(Cell::air);
+        if(missingExample!=null && !otherWork)throw materialMissing(missingExample,pending);
         // Door closing waits until teardown, but it does not need an access-repair search.
         boolean onlyCleanup=!ledger.entries().isEmpty()
             && pending.stream().allMatch(c->c.air() || environment.canToggle(c));
@@ -222,8 +226,6 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             .forEach(c->unfinishedSolids.add(c.key()));
         var eligible=pending.stream().filter(c->!unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z()))
             .filter(c->!c.air() && !c.state().contains("half=upper") && !missingItems.contains(c.item()) && environment.eligible(c)).toList();
-        // What remains with material sits on cells still waiting for material: stop for materials, not geometry.
-        if(missingExample!=null && eligible.isEmpty() && repairQueue.isEmpty())throw materialMissing(missingExample,pending);
         var immediate=new HashSet<Cell>();
         eligible.stream().filter(environment::immediatelyPlaceable).forEach(immediate::add);
         var ordering=Comparator.comparingInt((Cell c)->c.equals(repairObjective)?0:1)
@@ -249,7 +251,7 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             if(repairQueue.isEmpty()) {
                 // Walls and floors that sit inside a hillside, and planned air (clearance) that holds a tree, have nothing to place over or are not yet empty.
                 // Dig the nearest one out; the ledger keeps the intended block owed. Scaffolds the build added inside planned air (ledger entries) are cleaned up by teardown, not dug.
-                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && environment.blocked(c)
+                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && (c.air() || !missingItems.contains(c.item())) && environment.blocked(c)
                     && !(c.air() && ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
@@ -269,6 +271,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                     if(!cleanupDebt.isEmpty())repairQueue.addAll(environment.cleanupPlan(cells,cleanupDebt));
                 }
             }
+            // Nothing placeable, diggable or cleanable remains without the missing items: stop for materials, not geometry.
+            if(repairQueue.isEmpty() && missingExample!=null)throw materialMissing(missingExample,pending);
             if(repairQueue.isEmpty()){
                 var lowest=pending.stream().filter(c->!c.air()).sorted(Comparator.comparingInt(Cell::y).thenComparing(Cell::key)).limit(4)
                     .map(c->c.key()+"{"+c.item()+(unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z())?" below_unfinished":"")
@@ -403,11 +407,14 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
     }
     private Map<String,Integer> shortfall(List<Cell> pending){
         var needed=new java.util.TreeMap<String,Integer>();
-        for(var cell:pending)if(!cell.air() && !cell.item().equals("minecraft:air") && !cell.state().contains("half=upper") && !environment.canToggle(cell))needed.merge(cell.item(),1,Integer::sum);
+        for(var cell:pending)if(!cell.air() && !cell.item().equals("minecraft:air") && !pairedHalf(cell) && !environment.canToggle(cell))needed.merge(cell.item(),1,Integer::sum);
+        if(!environment.consumesMaterial())needed.replaceAll((item,count)->1);
         var missing=new java.util.LinkedHashMap<String,Integer>();
         needed.forEach((item,count)->{long have=environment.materialCount(item);if(have<count)missing.put(item,(int)(count-have));});
         return missing;
     }
+    /** The upper half of a door or tall plant, or a bed's head: placing the other half supplies it. */
+    private static boolean pairedHalf(Cell cell){return cell.state().contains("half=upper") || cell.state().contains("part=head");}
     private IllegalStateException materialMissing(Cell cell,List<Cell> pending){
         return new IllegalStateException("construction_material_missing itemId="+cell.item()+" target="+cell.key()+" shortfall="+shortfallText(shortfall(pending)));
     }
