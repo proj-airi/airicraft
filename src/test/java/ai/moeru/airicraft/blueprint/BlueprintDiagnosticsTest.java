@@ -16,6 +16,17 @@ class BlueprintDiagnosticsTest {
         assertTrue(error.getMessage().contains("column 1,0"),error.getMessage());
         assertTrue(error.getMessage().contains("highest ground under its footprint is y=5"),error.getMessage());
     }
+    @Test void materialsAreItemsAndNoItemBlocksAreListedAsUnplaceable(){
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":["
+            +"{\"id\":\"lower\",\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:oak_door[half=lower]\"}},"
+            +"{\"id\":\"upper\",\"at\":[0,1,0],\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:oak_door[half=upper]\"}},"
+            +"{\"id\":\"torch\",\"at\":[1,0,0],\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:wall_torch\"}},"
+            +"{\"id\":\"pot\",\"at\":[2,0,0],\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:potted_azalea_bush\"}}]}").getAsJsonObject();
+        var snapshot=new Blueprint(tree,null).snapshot(1);
+        assertEquals(Map.of("minecraft:oak_door",1,"minecraft:torch",1),snapshot.get("materials"));
+        @SuppressWarnings("unchecked") var unplaceable=(Map<String,Object>)snapshot.get("unplaceable");
+        assertEquals(Map.of("minecraft:potted_azalea_bush",1),unplaceable.get("blocks"));
+    }
     @Test void conflictSuggestsTheExactReplacesPath(){
         var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":[{\"id\":\"wall\",\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:stone\"}},{\"id\":\"torch\",\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:torch\"}}]}").getAsJsonObject();
         var error=assertThrows(IllegalArgumentException.class,()->new Blueprint(tree,null));

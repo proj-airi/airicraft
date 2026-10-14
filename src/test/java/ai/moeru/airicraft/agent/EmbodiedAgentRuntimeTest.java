@@ -531,6 +531,19 @@ class EmbodiedAgentRuntimeTest {
 		} finally { runtime.shutdown(); }
 	}
 
+	@Test void clearQueueKeepsRunningConstruction() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			var handle = ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.OPERATION, "build-1");
+			var record = EmbodiedAgentRuntime.class.getDeclaredMethod("recordWork", ai.moeru.airicraft.agent.work.WorkSnapshot.class);
+			record.setAccessible(true);
+			record.invoke(runtime, new ai.moeru.airicraft.agent.work.WorkSnapshot(handle, "", ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,
+				"construct_blueprint", "CONSTRUCTION", true, 0, Map.of()));
+			String result = runtime.executePlannerAction(new PlannerToolCall("clear", "clear_queue", new JsonObject(), null)).join();
+			assertTrue(result.contains("kept running"), result);
+		} finally { runtime.shutdown(); }
+	}
+
 	@Test void continueCannotOverrideAnActiveReflex() throws Exception {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {

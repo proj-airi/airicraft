@@ -135,6 +135,15 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
         }
         return false;
     }
+    @Override public boolean consumesMaterial(){return !owner.isCreative();}
+    @Override public int materialCount(String item){
+        requireWorld();var inventory=owner.getInventory();int total=0;
+        for(int slot=0;slot<inventory.getContainerSize();slot++){
+            var stack=inventory.getItem(slot);
+            if(!stack.isEmpty() && net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(item))total+=stack.getCount();
+        }
+        return total;
+    }
     @Override public boolean blocked(BlueprintConstructionProgram.Cell cell) {
         requireWorld();var pos=position(cell);
         if(!world.hasChunkAt(pos))return false;

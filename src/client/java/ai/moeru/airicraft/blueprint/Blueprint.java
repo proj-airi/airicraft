@@ -130,8 +130,27 @@ public final class Blueprint {
     public Map<String,Object> snapshot(int revision) {
         var out=new LinkedHashMap<String,Object>(); out.put("revision",revision);out.put("tree",tree);out.put("components",components);
         out.put("cells",cells.values().stream().map(Blueprint::describe).toList());
-        var materials=new TreeMap<String,Integer>(); cells.values().stream().filter(c->!c.state().isAir()).forEach(c->materials.merge(BuiltInRegistries.BLOCK.getKey(c.state().getBlock()).toString(),1,Integer::sum));
-        out.put("materials",materials);out.put("cellCount",cells.size());return out;
+        // Materials are inventory items: one per placed block, none for the second half of a door or tall plant.
+        var materials=new TreeMap<String,Integer>();var unplaceable=new TreeMap<String,Integer>();
+        for(var c:cells.values()){
+            if(c.state().isAir() || secondHalf(c.state()))continue;
+            if(unplaceable(c.state()))unplaceable.merge(BuiltInRegistries.BLOCK.getKey(c.state().getBlock()).toString(),1,Integer::sum);
+            else materials.merge(BuiltInRegistries.ITEM.getKey(c.state().getBlock().asItem()).toString(),1,Integer::sum);
+        }
+        out.put("materials",materials);
+        if(!unplaceable.isEmpty())out.put("unplaceable",Map.of("blocks",unplaceable,"note","These blocks have no item form, so construction skips them. Replace them with placeable blocks."));
+        out.put("cellCount",cells.size());return out;
+    }
+    /** A non-air block with no item form (potted plants, fire, liquids): nothing in an inventory can place it. */
+    public static boolean unplaceable(net.minecraft.world.level.block.state.BlockState state){
+        return !state.isAir() && state.getBlock().asItem()==net.minecraft.world.item.Items.AIR;
+    }
+    /** The upper half of a door or tall plant, or a bed's head: placed together with its other half. */
+    public static boolean secondHalf(net.minecraft.world.level.block.state.BlockState state){
+        if(state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF))
+            return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF)==net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER;
+        return state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.BED_PART)
+            && state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.BED_PART)==net.minecraft.world.level.block.state.properties.BedPart.HEAD;
     }
     public static Map<String,Object> describe(Cell c) {
         return Map.of("position",xyz(c.position()),"state",stateText(c.state()),"owner",c.owner(),"contributors",c.contributors(),"ancestry",ancestry(c.owner()));
