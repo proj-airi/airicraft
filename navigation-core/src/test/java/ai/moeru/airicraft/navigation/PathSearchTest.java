@@ -699,6 +699,33 @@ class PathSearchTest {
 	}
 
 	@Test
+	void aSubmergedStartStillGetsAPartialRouteUpToAir() {
+		// Under a roof with the only air behind the start; the goal ahead is sealed in bedrock.
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			BBBBBBBBBBBB
+			y1
+			wwwwwwwBBBBG
+			y2
+			wwwwwwwBBBBB
+			y3
+			wwwwwwwBBBBB
+			y4
+			...wwwwBBBBB
+			y5
+			BBBBBBBBBBBB
+			""");
+
+		SearchResult result = PathSearch.search(world.terrain, WALK_ONLY, new GridPos(6, 1, 0),
+			new Goal.Block(world.goal.x(), world.goal.y(), world.goal.z()), SearchBudget.defaults(), () -> false);
+
+		SearchResult.Partial partial = assertInstanceOf(SearchResult.Partial.class, result);
+		GridPos end = partial.path().end();
+		assertEquals(3, end.y(), "surfaces in the air pocket: " + end);
+		assertTrue(end.x() <= 2, "surfaces in the air pocket: " + end);
+	}
+
+	@Test
 	void swimmingDownPaysTheWaterPenaltyAndDeeperWaterCostsMore() {
 		AsciiTerrain world = AsciiTerrain.parse("""
 			y0
