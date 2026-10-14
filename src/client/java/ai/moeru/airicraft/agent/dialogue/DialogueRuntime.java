@@ -438,6 +438,11 @@ public final class DialogueRuntime {
 		planners().forEach(p -> p.updateSafetyContext(safetyEpoch, safetyHoldId, reflexActive));
 	}
 
+	/** The active planner's loop notices ({@code PlannerLoopWatchdog}); called once per client tick. */
+	public List<ai.moeru.airicraft.agent.llm.PlannerLoopWatchdog.Notice> drainPlannerLoopNotices(long tick) {
+		return activePlanner().drainLoopNotices(tick);
+	}
+
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
 		return activePlanner().drainStalePlannerRejections();
 	}
@@ -576,6 +581,10 @@ public final class DialogueRuntime {
 
 			@Override public boolean workHoldsRoutineWakes() {
 				return routineWakesHeld();
+			}
+
+			@Override public boolean plannerLoopHold() {
+				return activePlanner().holdsAutonomousWakes();
 			}
 
 			@Override public boolean incorporated(long seqNo) {
@@ -955,6 +964,7 @@ public final class DialogueRuntime {
 			return acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive;
 		}
 		@Override public boolean queuedToolWork() { return activePlanner().hasQueuedToolWork(); }
+		@Override public boolean plannerLoopHold() { return activePlanner().holdsAutonomousWakes(); }
 		@Override public boolean satisfied(Wake wake) {
 			return wake.eventRefs().stream().allMatch(activePlanner()::hasIncorporatedDecisionEvent);
 		}

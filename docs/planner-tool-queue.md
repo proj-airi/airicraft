@@ -9,6 +9,8 @@ Routine intermediate results accumulate without launching the planner. A review 
 1. A queued `report_to_me` call executes; or
 2. The FIFO becomes empty with new results to deliver.
 
+A `report_to_me` with nothing queued or running before it is answered "Not queued" and starts no review: alone it would only review nothing, which is how a model busy-waits (for example, on a furnace) one paid turn after another. The planner waits for the next event instead (`smelting.output_ready` wakes it). See `docs/planner-loop-watchdog.md` for the general loop guard.
+
 For example, the planner can queue `inspect_inventory`, `inspect_world`, `report_to_me({"question":"Is the site suitable?","includeTools":["inspect_world"]})`, then a previously justified long-running action. At the checkpoint, the long-running action starts independently and the planner receives the selected observation and question. The checkpoint does not pause execution. Plans that depend on an answer not yet known should end at the checkpoint instead.
 
 `report_to_me` accepts optional arguments:

@@ -94,6 +94,14 @@ public final class OpenAiCompatibleChatClient {
 			return completeAnthropic(conversation, requestBody, preview);
 		}
 		HttpResponse<String> response = sendHttpRequest(uri, conversation, requestBody, options.plannerTools(), preview);
+		if (options.equals(LlmRequestOptions.compaction()) && response.statusCode() == 400 && !compactionEffortRejected
+			&& response.body() != null && response.body().contains("reasoning_effort")) {
+			// Some models cannot disable reasoning (GLM Flash). Remember that and compact at the configured effort instead of failing every compaction.
+			compactionEffortRejected = true;
+			Airicraft.LOGGER.info("Provider rejected compaction reasoning_effort=none; compacting at the configured effort");
+			requestBody = GSON.toJson(buildRequestPayload(conversation, options));
+			response = sendHttpRequest(uri, conversation, requestBody, options.plannerTools(), preview);
+		}
 		if (options.plannerTools() && response.statusCode() == 400) {
 			Airicraft.LOGGER.info("Planner HTTP 400; trying Anthropic-compatible Messages for this session");
 			LlmCallResult<String> fallback = completeAnthropic(conversation, requestBody, preview);
@@ -111,6 +119,8 @@ public final class OpenAiCompatibleChatClient {
 			requestBody
 		);
 	}
+
+	private volatile boolean compactionEffortRejected;
 
 	void resetProtocolMode() {
 		protocolState.updateAndGet(previous -> new ProtocolState(previous.epoch() + 1, false));
@@ -311,7 +321,7 @@ public final class OpenAiCompatibleChatClient {
 		payload.put("model", config.model());
 		if (cacheKey != null) payload.put("prompt_cache_key", cacheKey);
 		// Compaction has its own client/cache identity and summarizes evidence without gameplay reasoning.
-		String reasoningEffort = options.equals(LlmRequestOptions.compaction()) ? "none" : config.reasoningEffort();
+		String reasoningEffort = options.equals(LlmRequestOptions.compaction()) && !compactionEffortRejected ? "none" : config.reasoningEffort();
 		if (reasoningEffort != null && !reasoningEffort.isBlank()) {
 			payload.put("reasoning_effort", reasoningEffort);
 		}

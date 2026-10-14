@@ -15,6 +15,10 @@ public final class BlueprintDesigner {
         + "Call one blueprint tool at a time. Finish with a short design summary and honest unresolved limitations. "
         + "A failed draft leaves the previous revision; do not claim a rejected change succeeded. "
         + "Lint is advisory: explain intentional exceptions; never suppress warnings merely to get a clean result. "
+        + "On natural terrain, input.terrain.surface[x,z] is the local ground height: set the floor at or just above the highest ground under the footprint (use Foundation to fill below it) "
+        + "so floors and walls sit on the ground instead of inside it, and clear only the building's own volume. "
+        + "Keep the material list short and common (planks, logs, cobblestone, glass); do not add crafted stations such as crafting tables, furnaces or chests unless the brief asks for them, "
+        + "and prefer the materials the brief names. Avoid blocks that have no item form (potted plants, fire, water) because the builder cannot place them. "
         + "Modded blocks are allowed: give the exact state in a Solid material, for example namespace:block[axis=z]; use only property names the block really has. "
         + "Directional or rotating blocks (shafts, wheels, machines) may choose their facing from adjacent blocks when placed, so not every facing is attainable in every layout. "
         + "Keep connected rotating parts on one shared axis, and if construction fails with placement_state_requires_different_approach for a block, redraft it with the opposite facing.";

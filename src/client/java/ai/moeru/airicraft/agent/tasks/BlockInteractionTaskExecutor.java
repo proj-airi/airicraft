@@ -32,6 +32,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.tags.FluidTags;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -296,21 +297,29 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			blockId(before),
 			before.isAir() || before.canBeReplaced()
 		);
+		// Water poured into a lava source replaces it and turns the lava around it into obsidian.
+		boolean pourIntoLava = waterPlacement && before.getFluidState().is(FluidTags.LAVA);
 		int horizontalSolidNeighbors = horizontalSolidNeighborCount(minecraft.level, target);
-		if (waterPlacement && !isSafeDirectWaterTarget(horizontalSolidNeighbors)) {
+		boolean castsObsidian = pourIntoLava || touchesLava(minecraft.level, target);
+		if (waterPlacement && !isSafeDirectWaterTarget(horizontalSolidNeighbors, castsObsidian)) {
 			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, "unsafe_fluid_target"
 				+ " horizontalSolidNeighbors=" + horizontalSolidNeighbors
-				+ " beforeBlockId=" + blockId(before)));
+				+ " beforeBlockId=" + blockId(before)
+				+ " hint=water_needs_3_solid_side_neighbors_or_lava_directly_below_or_beside"));
 		}
-		UseBlockInteractionMode mode = useBlockInteractionMode(!before.getFluidState().isEmpty(), before.isAir() || before.canBeReplaced());
+		// A bucket's own raycast passes through lava, so pouring into lava clicks the block behind it like air.
+		UseBlockInteractionMode mode = pourIntoLava
+			? UseBlockInteractionMode.SUPPORT_INTERACTION
+			: useBlockInteractionMode(!before.getFluidState().isEmpty(), before.isAir() || before.canBeReplaced());
 		if (mode == UseBlockInteractionMode.FLUID_ITEM_USE) {
 			return useItemOnFluidTarget(tick, minecraft, player, request, hand, target, before);
 		}
 		Optional<HitTarget> hitTarget = mode == UseBlockInteractionMode.SUPPORT_INTERACTION
-			? resolvePlacementHit(minecraft, player, target, args.facePreference(), false)
+			? resolvePlacementHit(minecraft, player, target, pourIntoLava ? null : args.facePreference(), false)
 			: Optional.of(hitOnBlock(target, before, facePreference(args.facePreference()).orElse(Direction.UP)));
 		if (hitTarget.isEmpty()) {
-			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, "support_not_found"));
+			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, "support_not_found"
+				+ (castsObsidian && !pourIntoLava ? " hint=no_solid_block_touches_this_cell_pour_into_the_lava_source_itself" : "")));
 		}
 		if (!args.expectedSupportBlockIds().isEmpty() && !args.expectedSupportBlockIds().contains(blockId(hitTarget.get().supportState()))) {
 			return fail(request, targetFailure(TaskFailureCode.MISSING_FACT, target, "support_block_mismatch supportPos=" + compactPos(hitTarget.get().supportPos()) + " supportBlockId=" + blockId(hitTarget.get().supportState())));
@@ -923,7 +932,9 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			&& player.blockPosition().getX() == target.getX()
 			&& player.blockPosition().getZ() == target.getZ();
 		if (!allowsDirectInteractionApproach(approachReason)
-			|| !shouldUseDirectInteractionApproach(squaredDistance, movementController.snapshot().stuck(), sameTargetColumn, elapsedTicks)) {
+			|| !shouldUseDirectInteractionApproach(squaredDistance, movementController.snapshot().stuck(), sameTargetColumn, elapsedTicks)
+			|| player == null || aimPoint == null
+			|| directStepEntersHazard(player.position(), aimPoint, cell -> burnsOnContact(minecraft.level, cell))) {
 			if (continuing || movementController.snapshot().stuck()) {
 				movementController.stop(minecraft);
 			}
@@ -948,6 +959,39 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			+ " targetPos=" + compactPos(target)
 			+ " reason=" + approachReason.detail());
 		return true;
+	}
+
+	/**
+	 * Whether the next blind step toward the aim point would put the player's body, or the floor under it, in a
+	 * hazard. Path navigation avoids lava; the direct approach walks straight ahead, so it gives way to navigation.
+	 */
+	static boolean directStepEntersHazard(Vec3 position, Vec3 aimPoint, Predicate<BlockPos> hazardAt) {
+		Vec3 heading = new Vec3(aimPoint.x - position.x, 0.0D, aimPoint.z - position.z);
+		if (heading.lengthSqr() < 1.0E-6D) {
+			return false;
+		}
+		heading = heading.normalize();
+		for (double ahead : new double[] {0.5D, 1.0D}) {
+			for (double dx : new double[] {-0.3D, 0.3D}) {
+				for (double dz : new double[] {-0.3D, 0.3D}) {
+					BlockPos feet = BlockPos.containing(position.x + heading.x * ahead + dx, position.y, position.z + heading.z * ahead + dz);
+					for (BlockPos cell : List.of(feet.above(), feet, feet.below())) {
+						if (hazardAt.test(cell)) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean burnsOnContact(Level level, BlockPos cell) {
+		if (level == null || !level.hasChunkAt(cell)) {
+			return false;
+		}
+		BlockState state = level.getBlockState(cell);
+		return state.getFluidState().is(FluidTags.LAVA) || state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE) || state.is(Blocks.MAGMA_BLOCK);
 	}
 
 	static boolean shouldUseDirectInteractionApproach(double squaredDistance, boolean movementStuck) {
@@ -1351,8 +1395,22 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		return count;
 	}
 
-	static boolean isSafeDirectWaterTarget(int horizontalSolidNeighbors) {
-		return horizontalSolidNeighbors >= MIN_DIRECT_WATER_HORIZONTAL_SUPPORTS;
+	/** Whether lava lies directly below or beside the target, so poured water casts obsidian or cobblestone there. */
+	private static boolean touchesLava(Level level, BlockPos target) {
+		if (level == null) {
+			return false;
+		}
+		for (Direction direction : List.of(Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST)) {
+			BlockPos neighbor = target.relative(direction);
+			if (level.hasChunkAt(neighbor) && level.getFluidState(neighbor).is(FluidTags.LAVA)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static boolean isSafeDirectWaterTarget(int horizontalSolidNeighbors, boolean touchesLava) {
+		return touchesLava || horizontalSolidNeighbors >= MIN_DIRECT_WATER_HORIZONTAL_SUPPORTS;
 	}
 
 	static boolean isDirectWaterPlacementTarget(String blockId, boolean airOrReplaceable) {

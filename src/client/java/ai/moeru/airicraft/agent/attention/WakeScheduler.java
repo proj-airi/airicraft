@@ -30,6 +30,11 @@ public final class WakeScheduler {
 
 		boolean queuedToolWork();
 
+		/** The planner loop watchdog holds ordinary task wakes back for its cooldown; attention and preempting wakes pass. */
+		default boolean plannerLoopHold() {
+			return false;
+		}
+
 		/** The active role's incorporated event cursor has passed every reference (satisfaction). */
 		boolean satisfied(Wake wake);
 
@@ -63,6 +68,11 @@ public final class WakeScheduler {
 
 		/** Accepted or queued tool work consumes routine progress while no safety hold or reflex is active. */
 		boolean workHoldsRoutineWakes();
+
+		/** The planner loop watchdog holds autonomous wakes for its cooldown; direct guidance, damage and high urgency pass. */
+		default boolean plannerLoopHold() {
+			return false;
+		}
 
 		/** The active role's decision cursor has passed {@code seqNo}: an observation already carried it. */
 		boolean incorporated(long seqNo);
@@ -208,6 +218,10 @@ public final class WakeScheduler {
 		}
 		while (!taskWakes.isEmpty()) {
 			Wake head = taskWakes.peekFirst();
+			if (!head.attention() && !head.preempts() && host.plannerLoopHold()) {
+				auditDeferred(host, head, "G5.planner_loop");
+				return false;
+			}
 			if (!head.attention() && host.runPolicyHold()) {
 				auditDeferred(host, head, "G5.run_policy");
 				return false;
@@ -273,6 +287,10 @@ public final class WakeScheduler {
 			host.audit(trigger, "dropped", "G4.blocked_goal");
 			return;
 		}
+		if (!direct && loopHolds(trigger, host)) {
+			host.audit(trigger, "dropped", "G8.planner_loop");
+			return;
+		}
 		// Accepted work already consumes these observations. Retain the evidence in the
 		// event buffer, but do not launch a competing turn for ordinary progress.
 		if (!direct && ROUTINE_PROGRESS.contains(trigger.type()) && host.workHoldsRoutineWakes()) {
@@ -326,7 +344,7 @@ public final class WakeScheduler {
 	/**
 	 * Releases the held debounced wakes as one batch once {@link #DEBOUNCE_QUIET_TICKS} passed without a new one, or
 	 * the oldest waited {@link #DEBOUNCE_MAX_HOLD_TICKS}. Wakes whose event an observation already carried, and
-	 * wakes a newly blocked goal holds, are dropped on the way. Returns whether anything was delivered.
+	 * wakes a newly blocked goal or planner loop hold drops, are dropped on the way. Returns whether anything was delivered.
 	 */
 	public boolean releaseDebounced(long tick, TriggerHost host) {
 		if (debounced.isEmpty()) return false;
@@ -357,7 +375,17 @@ public final class WakeScheduler {
 	private static boolean debounces(PlannerTrigger trigger) {
 		var wake = trigger.wake();
 		if (wake == null || !wake.debounced()) return false;
-		return !List.of("critical", "direct", "high").contains(wake.urgency());
+		return !protectedUrgency(trigger);
+	}
+
+	/** A planner loop hold drops every autonomous trigger except damage and protected urgencies. */
+	private static boolean loopHolds(PlannerTrigger trigger, TriggerHost host) {
+		return host.plannerLoopHold() && trigger.type() != PlannerTriggerType.DAMAGE && !protectedUrgency(trigger);
+	}
+
+	private static boolean protectedUrgency(PlannerTrigger trigger) {
+		String urgency = trigger.wake() == null ? null : trigger.wake().urgency();
+		return urgency != null && List.of("critical", "direct", "high").contains(urgency);
 	}
 
 	private List<PlannerTrigger> takeDebounced(TriggerHost host, String gate) {
@@ -369,6 +397,10 @@ public final class WakeScheduler {
 			}
 			else if (host.blockedGoal()) {
 				host.audit(held, "dropped", "G4.blocked_goal");
+			}
+			// A loop hold that began while it waited drops it as it would a new one.
+			else if (!held.maySupersedeLaunchedTurn() && loopHolds(held, host)) {
+				host.audit(held, "dropped", "G8.planner_loop");
 			}
 			else {
 				host.audit(held, "released", gate);

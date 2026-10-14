@@ -711,6 +711,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			missionExecutionSnapshot
 		);
 		recordStalePlannerRejections();
+		recordPlannerLoopNotices();
 		if (completedDialogueResponse != null) {
 			Optional<GoalSnapshot> previousGoal = activeGoal();
 			applyPlannerEventPolicyChanges(completedDialogueResponse.eventPolicyChanges());
@@ -1262,6 +1263,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			reflex.holdId(),
 			reflex.state() == SurvivalReflexState.ACTIVE
 		);
+	}
+
+	/** Planner loop notices are evidence for the next turn; the end of a hold wakes the planner to look again. */
+	private void recordPlannerLoopNotices() {
+		for (var notice : dialogueRuntime.drainPlannerLoopNotices(tickCount)) {
+			var payload = new java.util.LinkedHashMap<String, Object>();
+			payload.put("kind", notice.kind());
+			if (!notice.released()) payload.put("count", notice.count());
+			if (!notice.tools().isEmpty()) payload.put("tools", notice.tools());
+			if (notice.result() != null) payload.put("result", notice.result());
+			if (notice.hold()) payload.put("holdSeconds", notice.holdTicks() / 20);
+			String type = notice.released() ? "planner.loop_released" : notice.hold() ? "planner.loop_held" : "planner.loop_detected";
+			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, type, payload);
+			if (notice.released()) dialogueRuntime.queueTaskWakeup(null, tickCount, event.seqNo());
+		}
 	}
 
 	private void recordStalePlannerRejections() {
@@ -2957,7 +2973,18 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (policyActive() || activeTaskInProgress() || actionGraphCoordinator.hasNonterminal()) throw new IllegalStateException("active_task_in_progress");
 		var args=call.arguments();var client=Minecraft.getInstance();
 		var origin=new BlockPos(args.get("x").getAsInt(),args.get("y").getAsInt(),args.get("z").getAsInt());
-		var cells=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
+		var planned=ai.moeru.airicraft.blueprint.BlueprintService.instance().constructionCells(client,args.get("revision").getAsInt(),origin);
+		// Blocks with no item form cannot be placed from an inventory; skip them and report them instead of failing the build.
+		var skipped=new java.util.TreeMap<String,Integer>();
+		var cells=planned.stream().filter(c->{
+			boolean unplaceable=!c.state().equals("minecraft:air") && !c.state().equals("minecraft:cave_air") && c.item().equals("minecraft:air");
+			if(unplaceable)skipped.merge(c.state().replaceAll("\\[.*",""),1,Integer::sum);
+			return !unplaceable;
+		}).toList();
+		// A block the finished design cannot hold up (a torch over planned air) would stall the build forever; skip and name it.
+		var unsupported=ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment.unsupportedInDesign(client.level,cells);
+		if(!unsupported.isEmpty()){var drop=new java.util.HashSet<>(unsupported);cells=cells.stream().filter(c->!drop.contains(c)).toList();}
+		if(cells.isEmpty())throw new IllegalStateException("construction_nothing_placeable");
 		var environment=new ai.moeru.airicraft.blueprint.MinecraftBlueprintConstructionEnvironment(client,cells);
         ai.moeru.airicraft.blueprint.BlueprintConstructionProgram program;
         try { program=new ai.moeru.airicraft.blueprint.BlueprintConstructionProgram(cells,environment); }
@@ -2972,7 +2999,13 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		},Math.max(12000,Math.min(240000,cells.size()*300)),ai.moeru.airicraft.blueprint.BlueprintConstructionProgram.effectLimit(cells.size()));
 		var work=new ai.moeru.airicraft.agent.work.WorkSnapshot(handle,"",ai.moeru.airicraft.agent.work.WorkSnapshot.State.RUNNING,"construct_blueprint","CONSTRUCTION",true,tickCount,Map.of("blueprint",args.deepCopy(),"cells",cells.size()));
 		recordWork(work);dialogueRuntime.observeAcceptedWork(work);
-		return "Tool result for construct_blueprint: "+new com.google.gson.Gson().toJson(work.summary());
+		var gson=new com.google.gson.Gson();var receipt=gson.toJsonTree(work.summary()).getAsJsonObject();
+		var shortfall=program.materialShortfall();
+		if(!skipped.isEmpty())receipt.add("skippedUnplaceable",gson.toJsonTree(skipped));
+		if(!unsupported.isEmpty())receipt.add("skippedUnsupported",gson.toJsonTree(unsupported.stream().limit(16)
+			.map(c->c.state().replaceAll("\\[.*","")+"@"+c.x()+","+c.y()+","+c.z()+" (nothing holds it up in the finished design)").toList()));
+		if(!shortfall.isEmpty()){receipt.add("materialShortfall",gson.toJsonTree(shortfall));receipt.addProperty("warning","Inventory is short of the design's materials; construction proceeds and stops with construction_material_missing at the first block it cannot place. Gather the shortfall and call construct_blueprint again with the same revision and origin to resume.");}
+		return "Tool result for construct_blueprint: "+gson.toJson(receipt);
 	}
 
 	private String startNetherPortal(PlannerToolCall call) {
@@ -3187,6 +3220,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			var results = new ArrayList<String>();
 			for (var work : workHistory.list()) {
 				if (!work.foreground() || !work.parentWorkId().isBlank() || work.state().terminal()) continue;
+				// Construction is long, deterministic and resumable; replanning must not abort it. Only cancel_work stops it.
+				if (work.label().equals("construct_blueprint")) {
+					results.add("construct_blueprint " + work.handle().id() + " kept running; stop it with cancel_work");
+					continue;
+				}
 				var args = new com.google.gson.JsonObject();
 				args.addProperty("workId", work.handle().id());
 				args.addProperty("reason", "planner_clear_queue");
@@ -3692,6 +3730,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var lure = ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.lureEntities(lure));
 				yield queuedActionToolResult("lure_entities", "destination=" + lure);
+			}
+			case PlannerToolCatalog.COLLECT_OBSIDIAN -> {
+				var obsidian = ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.collectObsidian(obsidian));
+				yield queuedActionToolResult("collect_obsidian", "count=" + obsidian.count());
 			}
 			case PlannerToolCatalog.FIGHT_ENDER_DRAGON -> {
 				applyPlannerJobTool(ActiveJobProposal.fightEnderDragon());
@@ -5319,7 +5362,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, ASK_USER -> false;
 		};
 	}
 
@@ -5562,7 +5605,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 		return switch (type) {
-			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS -> true;
+			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN -> true;
 			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> false;
 		};
 	}

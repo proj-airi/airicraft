@@ -351,7 +351,8 @@ public final class ActiveJobRuntime {
 			reason,
 			tick,
 			activeJob.cropTending(),
-			activeJob.lureEntities()
+			activeJob.lureEntities(),
+			activeJob.collectObsidian()
 		);
 		collectResourceDebugSnapshot = activeJob.type() == ActiveJobType.COLLECT_RESOURCE
 			? collectResourceProbe(activeJob, activeJob.baselineResourceCount() + activeJob.collectedCount(), false, lastPrimitiveExecution.state(), reason, tick)
@@ -408,7 +409,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_RESOURCE -> tickCollectResource(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, nearbyResourceTargetAvailable, tick);
 			case CRAFT_RECIPE -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case DROP_ITEMS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, true, tick);
-			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
+			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ATTACK_ENTITY, USE_ENTITY -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
@@ -477,6 +478,11 @@ public final class ActiveJobRuntime {
 		if (activeJob.type() == ActiveJobType.LURE_ENTITIES && activeJob.lureEntities() != null) {
 			clearAttemptState();
 			desiredPrimitiveTask = WorldTaskRequest.lureEntities(activeJob.jobId(), activeJob.jobId(), activeJob.lureEntities());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.COLLECT_OBSIDIAN && activeJob.collectObsidian() != null) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.collectObsidian(activeJob.jobId(), activeJob.jobId(), activeJob.collectObsidian());
 			return;
 		}
 		if (activeJob.type() == ActiveJobType.FIGHT_ENDER_DRAGON) {
@@ -1304,6 +1310,9 @@ public final class ActiveJobRuntime {
 			case LURE_ENTITIES -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.LURE_ENTITIES, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, proposal.lureEntities());
+			case COLLECT_OBSIDIAN -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.COLLECT_OBSIDIAN, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick, null, null, proposal.collectObsidian());
 			case FIGHT_ENDER_DRAGON -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.FIGHT_ENDER_DRAGON, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick);
@@ -1346,7 +1355,8 @@ public final class ActiveJobRuntime {
 				activeJob.lastError(),
 				tick,
 				next.cropTending(),
-			next.lureEntities()
+			next.lureEntities(),
+			next.collectObsidian()
 			);
 		}
 		return next;
@@ -1378,6 +1388,7 @@ public final class ActiveJobRuntime {
 			return Objects.equals(left.collectSmeltedItems(), right.collectSmeltedItems());
 		}
 		if (left.lureEntities() != null || right.lureEntities() != null) return Objects.equals(left.lureEntities(), right.lureEntities());
+		if (left.collectObsidian() != null || right.collectObsidian() != null) return Objects.equals(left.collectObsidian(), right.collectObsidian());
 		if (left.cropTending() != null || right.cropTending() != null) return Objects.equals(left.cropTending(), right.cropTending());
 		if (left.returnToSurface() != null || right.returnToSurface() != null) {
 			return Objects.equals(left.returnToSurface(), right.returnToSurface());
@@ -1427,6 +1438,7 @@ public final class ActiveJobRuntime {
 			case TEND_CROPS -> "Tend crops in a bounded plot";
 			case LURE_ENTITIES -> "Lure selected animals into the destination area";
 			case FIGHT_ENDER_DRAGON -> "Fight the Ender Dragon";
+			case COLLECT_OBSIDIAN -> activeJob.collectObsidian() == null ? "Collect obsidian" : "Collect " + activeJob.collectObsidian().count() + " obsidian";
 			case BREAK_BLOCKS -> activeJob.blockBreak() == null ? "Break blocks" : "Break " + activeJob.blockBreak().targets().size() + " target blocks";
 			case ATTACK_ENTITY -> activeJob.entityInteraction() == null ? "Attack entity" : "Attack " + activeJob.entityInteraction().selector();
 			case USE_ENTITY -> activeJob.entityInteraction() == null ? "Use entity" : "Use on " + activeJob.entityInteraction().selector();
@@ -1447,7 +1459,7 @@ public final class ActiveJobRuntime {
 			case RETURN_TO_SURFACE -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.NAVIGATE_TO_POSITION;
 			case PLACE_BLOCK -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.PLACE_BLOCK;
 			case USE_BLOCK, TEND_CROPS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
-			case BREAK_BLOCKS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
+			case BREAK_BLOCKS, COLLECT_OBSIDIAN -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
 			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
 			case USE_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_ENTITY;
 			case ASK_USER -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ASK_USER;
@@ -1540,7 +1552,8 @@ public final class ActiveJobRuntime {
 			lastError,
 			tick,
 			job.cropTending(),
-			job.lureEntities()
+			job.lureEntities(),
+			job.collectObsidian()
 		);
 	}
 

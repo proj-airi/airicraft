@@ -27,24 +27,43 @@ public final class Blueprint {
         if(obstacles!=null) deriveClearance(obstacles);
     }
     public static final String DERIVED_CLEARANCE="derived_clearance";
-    /** Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell. */
+    /**
+     * Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell.
+     * Blocks below a column's floor are support, not obstacles: digging them leaves pits under floors and in front of doors.
+     * A column's floor is its lowest built block, except a lone run at the top of the upper half of the building (a roof), which covers
+     * room volume down to the building's lowest block. The walking room keeps everything below its highest neighbouring floor.
+     */
     private void deriveClearance(Map<String,List<String>> obstacles) {
-        int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,maxY=Integer.MIN_VALUE;
+        int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,minY=Integer.MAX_VALUE,maxY=Integer.MIN_VALUE;
+        var lowest=new HashMap<Long,Integer>();var highest=new HashMap<Long,Integer>();var solids=new HashMap<Long,Integer>();
         for(var c:cells.values()) {
             if(c.state().isAir()) continue;
-            var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());maxY=Math.max(maxY,p.getY());
+            var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());minY=Math.min(minY,p.getY());maxY=Math.max(maxY,p.getY());
+            long key=BlockPos.asLong(p.getX(),0,p.getZ());
+            lowest.merge(key,p.getY(),Math::min);highest.merge(key,p.getY(),Math::max);solids.merge(key,1,Integer::sum);
         }
         if(maxY==Integer.MIN_VALUE) return;
+        var floor=new HashMap<Long,Integer>();
+        for(var e:lowest.entrySet()){
+            long key=e.getKey();int low=e.getValue();
+            boolean loneRun=solids.get(key)==highest.get(key)-low+1;
+            floor.put(key,loneRun && highest.get(key)>=maxY-1 && 2*low>minY+maxY?minY:low);
+        }
         var air=Blocks.AIR.defaultBlockState();int cleared=0;
         softOwners.add(DERIVED_CLEARANCE);
         for(var column:obstacles.entrySet()) {
             String[] xz=column.getKey().split(",");int x=Integer.parseInt(xz[0]),z=Integer.parseInt(xz[1]);
             if(x<minX-1||x>maxX+1||z<minZ-1||z>maxZ+1) continue;
+            Integer base=floor.get(BlockPos.asLong(x,0,z));
+            if(base==null)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+                var near=floor.get(BlockPos.asLong(x+dx,0,z+dz));if(near!=null)base=base==null?near:Math.max(base,near);
+            }
+            if(base==null) continue;
             for(String run:column.getValue()) {
                 int at=run.lastIndexOf('@');if(at<0) continue;
                 String[] range=run.substring(at+1).split("\\.\\.");
                 int y0=Integer.parseInt(range[0]),y1=Integer.parseInt(range[1]);
-                for(int y=y0;y<=Math.min(y1,maxY);y++) {
+                for(int y=Math.max(y0,base);y<=Math.min(y1,maxY);y++) {
                     var p=new BlockPos(x,y,z);
                     if(cells.containsKey(p)) continue;
                     put(p,air,DERIVED_CLEARANCE,List.of());cleared++;
@@ -130,8 +149,27 @@ public final class Blueprint {
     public Map<String,Object> snapshot(int revision) {
         var out=new LinkedHashMap<String,Object>(); out.put("revision",revision);out.put("tree",tree);out.put("components",components);
         out.put("cells",cells.values().stream().map(Blueprint::describe).toList());
-        var materials=new TreeMap<String,Integer>(); cells.values().stream().filter(c->!c.state().isAir()).forEach(c->materials.merge(BuiltInRegistries.BLOCK.getKey(c.state().getBlock()).toString(),1,Integer::sum));
-        out.put("materials",materials);out.put("cellCount",cells.size());return out;
+        // Materials are inventory items: one per placed block, none for the second half of a door or tall plant.
+        var materials=new TreeMap<String,Integer>();var unplaceable=new TreeMap<String,Integer>();
+        for(var c:cells.values()){
+            if(c.state().isAir() || secondHalf(c.state()))continue;
+            if(unplaceable(c.state()))unplaceable.merge(BuiltInRegistries.BLOCK.getKey(c.state().getBlock()).toString(),1,Integer::sum);
+            else materials.merge(BuiltInRegistries.ITEM.getKey(c.state().getBlock().asItem()).toString(),1,Integer::sum);
+        }
+        out.put("materials",materials);
+        if(!unplaceable.isEmpty())out.put("unplaceable",Map.of("blocks",unplaceable,"note","These blocks have no item form, so construction skips them. Replace them with placeable blocks."));
+        out.put("cellCount",cells.size());return out;
+    }
+    /** A non-air block with no item form (potted plants, fire, liquids): nothing in an inventory can place it. */
+    public static boolean unplaceable(net.minecraft.world.level.block.state.BlockState state){
+        return !state.isAir() && state.getBlock().asItem()==net.minecraft.world.item.Items.AIR;
+    }
+    /** The upper half of a door or tall plant, or a bed's head: placed together with its other half. */
+    public static boolean secondHalf(net.minecraft.world.level.block.state.BlockState state){
+        if(state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF))
+            return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.DOUBLE_BLOCK_HALF)==net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER;
+        return state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.BED_PART)
+            && state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.BED_PART)==net.minecraft.world.level.block.state.properties.BedPart.HEAD;
     }
     public static Map<String,Object> describe(Cell c) {
         return Map.of("position",xyz(c.position()),"state",stateText(c.state()),"owner",c.owner(),"contributors",c.contributors(),"ancestry",ancestry(c.owner()));

@@ -39,7 +39,7 @@ public final class PlannerQueueToolProvider implements PlannerToolProvider {
 		return "Plan ahead by returning multiple tool calls in intended order. Calls append to a FIFO and execute sequentially, "
 			+ "waiting for actual work completion. Execution continues while you think. Routine reviews happen only when a queued report_to_me completes or the FIFO empties. Insert report_to_me with question and optional includeTools to choose where to think and which raw results you need. User messages and urgent safety events can still interrupt. "
 			+ "TOOL QUEUE shows active and pending calls at request time; it may advance before your reply. "
-			+ "Use continue to retain the plan and resume work after a resolved safety hold, or clear_queue to discard pending calls AND abort active work before a replacement plan. "
+			+ "Use continue to retain the plan and resume work after a resolved safety hold, or clear_queue to discard pending calls AND abort active work before a replacement plan (a running construct_blueprint keeps running; only cancel_work stops it). "
 			+ "New calls append behind existing pending calls. Only queue calls whose arguments are already known; do not invent outputs of earlier queries.";
 	}
 }

@@ -32,6 +32,7 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case TendCrops ignored -> WorldTaskType.TEND_CROPS;
 			case LureEntities ignored -> WorldTaskType.LURE_ENTITIES;
 			case FightEnderDragon ignored -> WorldTaskType.FIGHT_ENDER_DRAGON;
+			case CollectObsidian ignored -> WorldTaskType.COLLECT_OBSIDIAN;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -138,6 +139,11 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new FightEnderDragon());
 	}
 	public record FightEnderDragon() implements Task {}
+
+	public static WorldTaskRequest collectObsidian(String taskId, String sourceJobId, CollectObsidianStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectObsidian(args));
+	}
+	public record CollectObsidian(CollectObsidianStepArgs args) implements Task { public CollectObsidian { Objects.requireNonNull(args, "collectObsidian"); } }
 
 	public sealed interface Task {
 	}
