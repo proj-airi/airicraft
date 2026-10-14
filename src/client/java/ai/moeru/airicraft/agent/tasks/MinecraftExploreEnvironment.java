@@ -69,6 +69,7 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	private int eatingCount;
 	private boolean eatStarted;
 	private boolean digging;
+	private BlockPos diggingAt;
 	private String shelterFailure = "";
 	private String shelterState = "";
 
@@ -356,13 +357,15 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 			if (!plan.dig().contains(below)) return failShelter("off_plan below=" + below.toShortString());
 			selectBestTool(minecraft, player, state);
 			camera.lookAt(minecraft, Vec3.atCenterOf(below).add(0.0D, 0.5D, 0.0D));
-			boolean continuing = digging && minecraft.gameMode != null && minecraft.gameMode.isDestroying();
+			// Start once, then continue: the game drops isDestroying every tick the attack key is up,
+			// so restarting whenever it reads false would reset the progress forever.
+			boolean continuing = below.equals(diggingAt);
 			boolean accepted = continuing ? actuator.continueDestroy(minecraft, below, Direction.UP)
 				: actuator.startDestroy(minecraft, below, Direction.UP);
 			digging = true;
+			diggingAt = accepted ? below : null;
 			if (minecraft.gameMode != null)
-				shelterState += " " + (continuing ? "continue" : "start") + "=" + accepted
-					+ " destroying=" + minecraft.gameMode.isDestroying() + " progress=" + minecraft.gameMode.destroyProgress;
+				shelterState += " " + (continuing ? "continue" : "start") + "=" + accepted + " progress=" + minecraft.gameMode.destroyProgress;
 			return ExploreForTaskExecutor.ShelterTick.WORKING;
 		}
 		stopDigging();
@@ -397,6 +400,7 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	public void stopDigging() {
 		if (digging) actuator.stopDestroy(client());
 		digging = false;
+		diggingAt = null;
 	}
 
 	private static ExploreShelter.Cells cells(ClientLevel level, LocalPlayer player) {
