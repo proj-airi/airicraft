@@ -343,6 +343,17 @@ public final class DialogueRuntime {
 		return state.degraded();
 	}
 
+	/** Ends a degraded period whose cooldown has passed; also runs while the game is paused for the outage. */
+	public void pollProviderRecovery(long tick, EventStream eventBuffer) {
+		if (DialogueCore.degradedCooldownElapsed(state, clock.millis()))
+			applyTransition(DialogueCore.onDegradedCooldownElapsed(state, clock.millis()), tick, eventBuffer);
+	}
+
+	/** Wall-clock time since the provider outage began (0 when the last turn succeeded or no outage). */
+	public long providerOutageMillis() {
+		return DialogueCore.outageMillis(state, clock.millis());
+	}
+
 	public boolean llmAvailable() {
 		return activePlanner().isConfigured();
 	}
@@ -425,6 +436,11 @@ public final class DialogueRuntime {
 		safetyHoldId = replacementSafetyHoldId;
 		reflexActive = activeReflex;
 		planners().forEach(p -> p.updateSafetyContext(safetyEpoch, safetyHoldId, reflexActive));
+	}
+
+	/** The active planner's loop notices ({@code PlannerLoopWatchdog}); called once per client tick. */
+	public List<ai.moeru.airicraft.agent.llm.PlannerLoopWatchdog.Notice> drainPlannerLoopNotices(long tick) {
+		return activePlanner().drainLoopNotices(tick);
 	}
 
 	public List<StalePlannerRejection> drainStalePlannerRejections() {
@@ -567,6 +583,10 @@ public final class DialogueRuntime {
 				return routineWakesHeld();
 			}
 
+			@Override public boolean plannerLoopHold() {
+				return activePlanner().holdsAutonomousWakes();
+			}
+
 			@Override public boolean incorporated(long seqNo) {
 				return activePlanner().hasIncorporatedDecisionEvent(seqNo);
 			}
@@ -684,6 +704,9 @@ public final class DialogueRuntime {
 			}
 		}
 
+		// A degraded planner recovers on its own once the cooldown passes; '@agent reset' only shortens the wait.
+		pollProviderRecovery(tick, eventBuffer);
+
 		if (pollPolicyContinuation(tick, eventBuffer)) return null;
 
 		activePlanner().tickToolQueue();
@@ -691,7 +714,7 @@ public final class DialogueRuntime {
 		if (queuedTimeoutInjections > 0 && !activePlanner().hasInFlight()) {
 			queuedTimeoutInjections--;
 			applyTransition(DialogueCore.onPlannerFailure(state, LlmFailureType.TIMEOUT, "Injected LLM timeout",
-				pendingTimeoutVisibleReply, tick, resetGuidance(), messages), tick, eventBuffer);
+				pendingTimeoutVisibleReply, tick, clock.millis(), resetGuidance(), messages), tick, eventBuffer);
 			pendingTimeoutVisibleReply = false;
 			return null;
 		}
@@ -734,6 +757,7 @@ public final class DialogueRuntime {
 					result.failureMessage(),
 					timeoutVisibleReply,
 					tick,
+					clock.millis(),
 					resetGuidance(),
 					messages
 				),
@@ -940,6 +964,7 @@ public final class DialogueRuntime {
 			return acceptedWork != null && acceptedWork.label().equals("run_policy") && safetyHoldId == null && !reflexActive;
 		}
 		@Override public boolean queuedToolWork() { return activePlanner().hasQueuedToolWork(); }
+		@Override public boolean plannerLoopHold() { return activePlanner().holdsAutonomousWakes(); }
 		@Override public boolean satisfied(Wake wake) {
 			return wake.eventRefs().stream().allMatch(activePlanner()::hasIncorporatedDecisionEvent);
 		}

@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WakeSchedulerTest {
 	private static final class Host implements WakeScheduler.TaskWakeHost {
-		boolean external, inFlight, unavailable, runPolicy, queuedTools;
+		boolean external, inFlight, unavailable, runPolicy, queuedTools, loopHold;
 		long revision;
 		String mission;
 		final Set<Long> incorporated = new HashSet<>();
@@ -22,6 +22,7 @@ class WakeSchedulerTest {
 		@Override public boolean plannerUnavailable() { return unavailable; }
 		@Override public boolean runPolicyHold() { return runPolicy; }
 		@Override public boolean queuedToolWork() { return queuedTools; }
+		@Override public boolean plannerLoopHold() { return loopHold; }
 		@Override public boolean satisfied(Wake wake) { return incorporated.containsAll(wake.eventRefs()); }
 		@Override public boolean irrelevantToBlockedGoal(Wake wake) { return irrelevant.contains(wake.eventSequence()); }
 		@Override public long guidanceRevision() { return revision; }
@@ -66,6 +67,32 @@ class WakeSchedulerTest {
 		for (long seq = 1; seq <= WakeScheduler.MAX_DEBOUNCED; seq++) scheduler.offerTrigger(percept(seq, 10, "LOW"), triggers);
 		scheduler.offerTrigger(percept(100, 10, "NORMAL"), triggers);
 		assertEquals("dropped:pending.bounded:1", triggers.log.getLast(), "the oldest LOW wake goes, not the NORMAL one");
+	}
+
+	@Test void aPlannerLoopHoldDefersOrdinaryWakesAndDropsAutonomousTriggers() {
+		var scheduler = new WakeScheduler();
+		var host = new Host();
+		host.loopHold = true;
+		scheduler.offerTask(Wake.task(1, 10, 0, null));
+		assertFalse(scheduler.releaseTaskWake(host));
+		assertEquals(List.of("dropped:10:G5.planner_loop"), host.log);
+		scheduler.offerAttention(Wake.attention(1, 11, 0));
+		assertTrue(scheduler.releaseTaskWake(host), "attention still wakes the planner");
+		assertEquals("deliver:11", host.log.getLast());
+		host.loopHold = false;
+		assertTrue(scheduler.releaseTaskWake(host));
+		assertEquals("deliver:10", host.log.getLast(), "the held wake goes once the hold ends");
+
+		var triggers = new Triggers();
+		triggers.loopHold = true;
+		scheduler.offerTrigger(ai.moeru.airicraft.agent.llm.PlannerTrigger.autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.IDLE_THINK,
+			"self", "idle", 5, 250, null), triggers);
+		scheduler.offerTrigger(ai.moeru.airicraft.agent.llm.PlannerTrigger.autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.DAMAGE,
+			"self", "hurt", 5, 250, null), triggers);
+		scheduler.offerTrigger(ai.moeru.airicraft.agent.llm.PlannerTrigger.autonomous(ai.moeru.airicraft.agent.llm.PlannerTriggerType.SYSTEM,
+			"self", "smelted", 5, 250, null).withWake(ai.moeru.airicraft.agent.llm.WakeRef.event(7, "smelting.output_ready", "HIGH")), triggers);
+		scheduler.offerTrigger(chat(6), triggers);
+		assertEquals(List.of("dropped:G8.planner_loop", "deliver:DAMAGE", "deliver:7", "deliver:CHAT"), triggers.log);
 	}
 
 	@Test void aPreemptWakeCancelsAStaleTurnAndIsDeliveredAtOnce() {
@@ -164,11 +191,12 @@ class WakeSchedulerTest {
 	}
 
 	private static class Triggers implements WakeScheduler.TriggerHost {
-		boolean blocked, workHolds;
+		boolean blocked, workHolds, loopHold;
 		long incorporatedThrough;
 		final List<String> log = new ArrayList<>();
 		@Override public boolean blockedGoal() { return blocked; }
 		@Override public boolean workHoldsRoutineWakes() { return workHolds; }
+		@Override public boolean plannerLoopHold() { return loopHold; }
 		@Override public boolean incorporated(long seqNo) { return seqNo <= incorporatedThrough; }
 		@Override public void audit(ai.moeru.airicraft.agent.llm.PlannerTrigger trigger, String kind, String gate) {
 			log.add(kind + ":" + gate + (trigger.wake() == null ? "" : ":" + trigger.wake().seqNo()));
@@ -298,6 +326,22 @@ class WakeSchedulerTest {
 		scheduler.offerTrigger(percept(3, 10, "LOW"), host);
 		scheduler.offerTrigger(percept(4, 11, "HIGH"), host);
 		assertEquals(List.of("debounced:debounce.hold:3", "released:debounce.piggyback:3", "deliver:3,4"), host.log);
+	}
+
+	@Test void aLoopHoldThatBeginsWhileWakesAreDebouncedDropsThem() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		scheduler.offerTrigger(percept(3, 10, "LOW"), host);
+		host.loopHold = true;
+		assertFalse(scheduler.releaseDebounced(20, host));
+		assertEquals(List.of("debounced:debounce.hold:3", "dropped:G8.planner_loop:3"), host.log);
+		host.log.clear();
+		host.loopHold = false;
+		scheduler.offerTrigger(percept(4, 30, "LOW"), host);
+		host.loopHold = true;
+		scheduler.offerTrigger(percept(5, 31, "HIGH"), host);
+		assertEquals(List.of("debounced:debounce.hold:4", "dropped:G8.planner_loop:4", "deliver:5"), host.log,
+			"a protected wake during the hold does not carry the routine ones along");
 	}
 
 	@Test void heldWakesAlreadyObservedOrBlockedAreDroppedAndResetsClearThem() {

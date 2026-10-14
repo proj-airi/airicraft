@@ -59,6 +59,50 @@ class DialogueCoreTest {
 	}
 
 	@Test
+	void degradedModeEndsAfterACooldownThatGrowsUntilATurnSucceeds() {
+		long cooldown = DialogueCore.DEGRADED_COOLDOWN_MILLIS;
+		DialogueState state = failAt(DialogueState.initial().withConsecutiveFailureCount(2), 100_000L);
+		assertTrue(state.degraded());
+		assertEquals(100_000L + cooldown, state.degradedRecoverAtMillis());
+		assertEquals(5_000L, DialogueCore.outageMillis(state, 105_000L));
+
+		DialogueTransition early = DialogueCore.onDegradedCooldownElapsed(state, 100_000L + cooldown - 1);
+		assertTrue(early.state().degraded());
+		assertTrue(early.effects().isEmpty());
+
+		DialogueTransition recovered = DialogueCore.onDegradedCooldownElapsed(state, 100_000L + cooldown);
+		assertFalse(recovered.state().degraded());
+		assertTrue(recovered.visibleResponses().isEmpty());
+		assertEquals("planner.degraded_cleared", ((DialogueEffect.AppendSemanticEvent) recovered.effects().get(0)).type());
+
+		// One more failure after recovery re-enters degraded mode with twice the cooldown; the outage keeps its start.
+		state = failAt(recovered.state(), 200_000L);
+		assertTrue(state.degraded());
+		assertEquals(200_000L + 2 * cooldown, state.degradedRecoverAtMillis());
+		assertEquals(100_000L, DialogueCore.outageMillis(state, 200_000L));
+		for (int entry = 3; entry < 12; entry++) {
+			long recoverAt = state.degradedRecoverAtMillis();
+			state = failAt(DialogueCore.onDegradedCooldownElapsed(state, recoverAt).state(), recoverAt);
+		}
+		long recoverAt = state.degradedRecoverAtMillis();
+		assertEquals(DialogueCore.MAX_DEGRADED_COOLDOWN_MILLIS, state.degradedRecoverAtMillis() - state.lastFailureTick());
+
+		DialogueState healthy = DialogueCore.onPlannerSuccess(DialogueCore.onDegradedCooldownElapsed(state, recoverAt).state(),
+			new PlannerResponse("Back.", new PlannerIntent("reply_only", null, null)), 20_000L).state();
+		assertEquals(0, healthy.consecutiveFailureCount());
+		assertEquals(0, healthy.degradedEntries());
+		assertEquals(0L, DialogueCore.outageMillis(healthy, recoverAt + 1));
+		healthy = failAt(failAt(failAt(healthy, 9_000_000L), 9_000_001L), 9_000_002L);
+		assertEquals(9_000_002L + cooldown, healthy.degradedRecoverAtMillis());
+	}
+
+	// The tick and the wall clock coincide in these tests, so lastFailureTick reads back when the period began.
+	private static DialogueState failAt(DialogueState state, long nowMillis) {
+		return DialogueCore.onPlannerFailure(state, LlmFailureType.PROVIDER_ERROR, "Provider returned HTTP 502", false, nowMillis,
+			nowMillis, DialogueCore.ResetGuidance.MANUAL).state();
+	}
+
+	@Test
 	void thirdFailureEntersDegradedAndEmitsSemanticEffects() {
 		DialogueState state = DialogueState.initial()
 			.withConsecutiveFailureCount(2);
@@ -69,6 +113,7 @@ class DialogueCoreTest {
 			"planner timed out",
 			false,
 			77L,
+			0L,
 			DialogueCore.ResetGuidance.MANUAL
 		);
 
@@ -86,6 +131,7 @@ class DialogueCoreTest {
 			"planner timed out",
 			true,
 			91L,
+			0L,
 			DialogueCore.ResetGuidance.MANUAL
 		);
 
@@ -101,6 +147,7 @@ class DialogueCoreTest {
 			"LLM request failed: ConnectException",
 			true,
 			91L,
+			0L,
 			DialogueCore.ResetGuidance.MANUAL
 		);
 
@@ -134,16 +181,16 @@ class DialogueCoreTest {
 			"reset", "ok, fresh start"));
 
 		assertEquals("wait, lost my train of thought", DialogueCore.onPlannerFailure(DialogueState.initial(),
-			LlmFailureType.PARSE_ERROR, "bad json", false, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+			LlmFailureType.PARSE_ERROR, "bad json", false, 1L, 0L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
 		assertEquals("zoned out, say again?", DialogueCore.onPlannerFailure(DialogueState.initial(),
-			LlmFailureType.TIMEOUT, "slow", true, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+			LlmFailureType.TIMEOUT, "slow", true, 1L, 0L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
 		assertEquals(DialogueMessages.DEFAULTS.providerUnavailable(), DialogueCore.onPlannerFailure(DialogueState.initial(),
-			LlmFailureType.PROVIDER_UNAVAILABLE, "down", true, 1L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text(),
+			LlmFailureType.PROVIDER_UNAVAILABLE, "down", true, 1L, 0L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text(),
 			"Lines the card leaves out keep their default text");
 
 		DialogueState almostDegraded = DialogueState.initial().withConsecutiveFailureCount(DialogueCore.DEGRADED_FAILURE_THRESHOLD - 1);
 		assertEquals("brain lag, send @agent reset", DialogueCore.onPlannerFailure(almostDegraded,
-			LlmFailureType.PROVIDER_ERROR, "500", false, 2L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
+			LlmFailureType.PROVIDER_ERROR, "500", false, 2L, 0L, DialogueCore.ResetGuidance.MANUAL, voiced).lastVisibleResponse().text());
 		assertEquals("hold on, resetting myself once", DialogueCore.onPlannerDegradedBlocked(DialogueState.initial().withDegraded(true),
 			"Alex", true, 3L, DialogueCore.ResetGuidance.HOSTED_AUTO_PENDING, voiced).lastVisibleResponse().text());
 		assertEquals("ok, fresh start", DialogueCore.onReset(DialogueState.initial(), "Alex", 4L, voiced).lastVisibleResponse().text());

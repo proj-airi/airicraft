@@ -15,6 +15,10 @@ public final class PlannerSessionCoordinator {
 		void onSubmitted(long generation, int attempt, PlannerSessionPhase phase, PlannerRequest request, LlmConversation conversation);
 	}
 
+	/** Retries of one turn after a timeout or transient provider error, before the failure reaches the dialogue. */
+	static final int MAX_TRANSIENT_PROVIDER_RETRIES = 4;
+	static final long MAX_TRANSIENT_RETRY_BACKOFF_MS = 30_000L;
+
 	private static final SubmissionObserver NO_OP_SUBMISSION_OBSERVER = (generation, attempt, phase, request, conversation) -> {
 	};
 
@@ -239,6 +243,7 @@ public final class PlannerSessionCoordinator {
 				|| activeSession.generation() != generation
 				|| !activeSession.replaceable()
 				|| activeSession.conversation() == null
+				|| !activeSession.takeChatRepair()
 		) {
 			return false;
 		}
@@ -347,16 +352,25 @@ public final class PlannerSessionCoordinator {
 			return;
 		}
 
-		if (
-			!result.succeeded()
-				&& shouldRetry(result.failureType())
-				&& activeSession.recordFailure() <= maxConsecutiveRepairableFailures
-		) {
-			activeSession.scheduleRetry(clock.millis() + retryBackoffMs);
-			return;
+		if (!result.succeeded() && result.retryable() && shouldRetry(result.failureType())) {
+			int failures = activeSession.recordTransientFailure();
+			if (failures <= MAX_TRANSIENT_PROVIDER_RETRIES) {
+				long backoff = transientRetryBackoffMs(failures);
+				activeSession.scheduleRetry(clock.millis() + backoff);
+				ai.moeru.airicraft.Airicraft.LOGGER.info("Planner {} failure; retry {}/{} in {}ms generation={} cause={}",
+					result.failureType(), failures, MAX_TRANSIENT_PROVIDER_RETRIES, backoff, result.generation(), result.failureMessage());
+				return;
+			}
 		}
 
 		readyResults.addLast(result);
+	}
+
+	/** 250 ms, 1 s, 4 s, 16 s with the default base: short enough for one-off gateway errors, long enough to ride out a brief outage. */
+	long transientRetryBackoffMs(int failures) {
+		long backoff = retryBackoffMs;
+		for (int i = 1; i < failures && backoff < MAX_TRANSIENT_RETRY_BACKOFF_MS; i++) backoff *= 4;
+		return Math.min(backoff, MAX_TRANSIENT_RETRY_BACKOFF_MS);
 	}
 
 	private static boolean shouldRetry(LlmFailureType failureType) {

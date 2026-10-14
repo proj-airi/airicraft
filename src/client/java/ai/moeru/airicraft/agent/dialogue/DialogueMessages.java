@@ -20,7 +20,7 @@ public record DialogueMessages(
 		"degraded", "hostedAutoReset", "hostedResetExhausted", "reset", "parseError", "timeout", "providerUnavailable");
 
 	public static final DialogueMessages DEFAULTS = new DialogueMessages(
-		"I'm having trouble understanding right now. Send '" + DialogueCore.RESET_COMMAND + "' to recover my planner.",
+		"I'm having trouble understanding right now. I'll try again shortly, or send '" + DialogueCore.RESET_COMMAND + "' to recover my planner now.",
 		"I'm having trouble with my planner. This playtest will try one automatic reset.",
 		"My planner is having trouble again. This playtest has already used its automatic reset and won't reset again.",
 		"Planner state reset.",

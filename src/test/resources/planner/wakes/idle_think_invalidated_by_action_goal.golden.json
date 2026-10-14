@@ -49,10 +49,10 @@
         "createdTick": 1,
         "creationOrder": 0,
         "cursor": 0,
-        "executionId": "action-graph-<uuid>",
+        "executionId": "graph-N",
         "executionPhase": "PLANNING",
         "failureCode": "",
-        "foregroundExecutionId": "action-graph-<uuid>",
+        "foregroundExecutionId": "graph-N",
         "goal": {
           "countAtLeast": 1,
           "fact": "inventory.item",
@@ -84,7 +84,7 @@
     },
     {
       "payload": {
-        "executionId": "action-graph-<uuid>",
+        "executionId": "graph-N",
         "goal": "inventory.item|itemId=minecraft:bread|countAtLeast>=1"
       },
       "seqNo": 6,
@@ -110,7 +110,7 @@
         "phase": "RESOLVING",
         "state": "QUEUED",
         "updatedTick": 1,
-        "workId": "GRAPH:action-graph-<uuid>"
+        "workId": "GRAPH:graph-N"
       },
       "seqNo": 7,
       "tick": 2,
@@ -164,7 +164,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -177,10 +177,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 1
     }
   ],

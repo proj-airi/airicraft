@@ -152,7 +152,7 @@ class SelfToolProviderTest {
 			 "air":false,"fluid":false,"collisionEmpty":false,"collisionBoxes":[[0,0,0,1,0.875,1]]}]}
 			""");
 		String result=run(new SelfToolProvider(queries(world)),"survey_surroundings",json("{}"));
-		assertTrue(result.startsWith("Tool result for survey_surroundings:\nCoverage: minecraft:overworld tick=42 box=0,64,0..0,64,0"),result);
+		assertTrue(result.startsWith("Tool result for survey_surroundings:\nCoverage: minecraft:overworld box=0,64,0..0,64,0"),result);
 		assertTrue(result.contains("1 chest(0,64,0) type=single"));
 		assertTrue(result.contains("Terrain:\n 1?\nHeight relative to self feet:\n  ?"),result);
 		assertFalse(result.contains("\\n"));

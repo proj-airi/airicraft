@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.actions;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -8,7 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.PriorityQueue;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
@@ -82,7 +82,7 @@ public final class ActionGraphCoordinator {
 			);
 		}
 
-		String executionId = "action-graph-" + UUID.randomUUID();
+		String executionId = ReadableIds.next("graph");
 		ActionGraphExecutionRuntime runtime = runtimeFactory.get();
 		runtime.submit(goal, assumedInventory, context, tick, executionId);
 		ManagedExecution managed = new ManagedExecution(runtime, nextCreationOrder++, tick, tick, ActionGraphResidency.FOREGROUND);

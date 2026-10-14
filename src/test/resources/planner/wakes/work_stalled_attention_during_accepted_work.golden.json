@@ -91,10 +91,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "5f4cd7311ab2922f918b277e88e94eaf9984f6f049ae31114c19dbbefba0f610",
-        "toolsSha": "f49ad0837da036c8f7528e98b64a38a578bcde796c2c1595957198b07e10eaaf"
-      },
       "tick": 2
     }
   ],

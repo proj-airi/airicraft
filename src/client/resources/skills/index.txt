@@ -1,0 +1,5 @@
+mining-light
+furnaces
+positions-and-placement
+attention-rules
+slow-mining

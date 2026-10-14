@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.actions;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import ai.moeru.actionplan.MethodKey;
 
 import ai.moeru.airicraft.agent.tasks.CraftingOpportunity;
@@ -16,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -88,7 +88,7 @@ public final class ActionGraphExecutionRuntime {
 		ActionResolverContext context,
 		long tick
 	) {
-		return submit(goal, assumedInventory, context, tick, "action-graph-" + UUID.randomUUID());
+		return submit(goal, assumedInventory, context, tick, ReadableIds.next("graph"));
 	}
 
 	public synchronized ActionGraphExecutionSnapshot submit(
@@ -100,7 +100,7 @@ public final class ActionGraphExecutionRuntime {
 	) {
 		cancelResolution();
 		this.executionId = executionId == null || executionId.isBlank()
-			? "action-graph-" + UUID.randomUUID()
+			? ReadableIds.next("graph")
 			: executionId;
 		this.goal = Objects.requireNonNull(goal, "goal");
 		this.route = ActionRoute.empty();

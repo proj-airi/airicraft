@@ -66,7 +66,7 @@
         "phase": "RUNNING",
         "state": "QUEUED",
         "updatedTick": 2,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:mine-blocks-N"
       },
       "seqNo": 4,
       "tick": 2,
@@ -121,7 +121,7 @@
         "phase": "RUNNING",
         "state": "RUNNING",
         "updatedTick": 3,
-        "workId": "JOB:job-<uuid>"
+        "workId": "JOB:mine-blocks-N"
       },
       "seqNo": 6,
       "tick": 3,
@@ -186,7 +186,7 @@
               "phase": "RUNNING",
               "state": "QUEUED",
               "updatedTick": 2,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:mine-blocks-N"
             },
             "seqNo": 4,
             "tick": 2,
@@ -208,7 +208,7 @@
               "phase": "RUNNING",
               "state": "RUNNING",
               "updatedTick": 3,
-              "workId": "JOB:job-<uuid>"
+              "workId": "JOB:mine-blocks-N"
             },
             "seqNo": 6,
             "tick": 3,
@@ -237,7 +237,7 @@
           "Session mode is currently remote multiplayer.",
           "There is no primary interaction player right now.",
           "Direct action goal: Mine 3 of minecraft:diamond_ore.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -258,10 +258,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 32
     }
   ],

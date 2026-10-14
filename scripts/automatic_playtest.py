@@ -39,6 +39,13 @@ PERMANENT_COMPACTION_ERROR = re.compile(
     r'Provider returned HTTP (400|401|403|404|405|413|415|422)(?:\D|$)')
 
 
+def planner_outage_exceeded(agent_status: dict, timeout_seconds: float) -> bool:
+    """A degraded planner recovers by itself (the game is paused meanwhile); only a long provider outage ends the run."""
+    if timeout_seconds <= 0:
+        return agent_status.get("degraded") is True
+    return float(agent_status.get("providerOutageMillis") or 0) >= timeout_seconds * 1000
+
+
 def drain_fatal_client_error(client) -> str | None:
     """Read process diagnostics even when Minecraft caught a fatal error and kept its JVM alive."""
     failure = None
@@ -299,7 +306,7 @@ def run(args: argparse.Namespace, handoff: dict | None = None) -> int:
                 status = evaluation.bridge_json(bridge, "GET", "/v1/status")
                 if status.get("automaticPlaytest", {}).get("state") == "RECORDING":
                     agent_status = evaluation.bridge_json(bridge, "GET", "/v1/agent/status")
-                    if agent_status.get("degraded") is True:
+                    if planner_outage_exceeded(agent_status, args.degraded_timeout):
                         termination_reason = "planner_degraded"
                         break
             except (evaluation.BridgeHttpError, OSError) as error:
@@ -387,6 +394,9 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=REPO / "automatic_playtest")
     parser.add_argument("--max-seconds", type=float, default=1800, help="Wall-clock budget after joining, including hangs; 0 means no time limit (default 1800).")
     parser.add_argument("--startup-timeout", type=float, default=240)
+    parser.add_argument("--degraded-timeout", type=float, default=1800,
+                        help="End the run once the planner's provider has been failing this many seconds; it pauses the game "
+                             "and retries meanwhile. 0 ends it on the first degraded period (default 1800).")
     parser.add_argument("--no-codex-notify", action="store_true",
                         help="Disable Codex follow-ups and use save-and-exit behavior on reports.")
     args = parser.parse_args()

@@ -476,7 +476,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			+ " blockInteractionResult=" + blockResult
 			+ " itemInteractionResult=" + (itemResult == null ? "not_attempted" : itemResult)
 			+ " beforeBlockId=" + blockId(before)
-			+ " afterBlockId=" + blockId(after);
+			+ " afterBlockId=" + blockId(after)
+			+ " afterBlockState=" + blockStateProperties(after);
 		if (waterPlacement) {
 			pendingWaterPlacementConfirmation = new PendingWaterPlacementConfirmation(
 				target,
@@ -552,7 +553,9 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
                 return Optional.empty();
             }
 			pendingPlacementConfirmation = null;
-			return completeTarget(tick, request, pending.successMessage()
+			// The immediate message described the block before the server confirmed it; report the confirmed state.
+			return completeTarget(tick, request, pending.successMessage().replaceFirst(" afterBlockState=\\S*", "")
+				+ " afterBlockState=" + blockStateProperties(current)
 				+ " confirmedBlockId=" + blockId(current)
 				+ " confirmationTicks=" + (tick - pending.startedTick()));
 		}
@@ -1626,6 +1629,26 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 
 	private static String blockId(BlockState state) {
 		return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+	}
+
+	/** The block state's properties, such as {@code axis=x,waterlogged=false}, so a placement shows its orientation. */
+	private static String blockStateProperties(BlockState state) {
+		if (state.getProperties().isEmpty()) {
+			return "none";
+		}
+		java.util.List<String> parts = new java.util.ArrayList<>();
+		for (net.minecraft.world.level.block.state.properties.Property<?> property : state.getProperties()) {
+			parts.add(propertyValue(state, property));
+		}
+		java.util.Collections.sort(parts);
+		return String.join(",", parts);
+	}
+
+	private static <T extends Comparable<T>> String propertyValue(
+		BlockState state,
+		net.minecraft.world.level.block.state.properties.Property<T> property
+	) {
+		return property.getName() + "=" + property.getName(state.getValue(property));
 	}
 
 	private static String itemId(ItemStack stack) {

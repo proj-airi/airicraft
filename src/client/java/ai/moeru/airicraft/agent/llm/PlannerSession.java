@@ -11,6 +11,8 @@ final class PlannerSession {
 	private LlmConversation conversation;
 	private int attemptCount;
 	private int consecutiveFailureCount;
+	private int transientFailureCount;
+	private boolean chatRepairUsed;
 	private long retryReadyAtMs = -1L;
 
 	PlannerSession(long generation, PlannerContextSnapshot contextSnapshot) {
@@ -99,8 +101,22 @@ final class PlannerSession {
 		return consecutiveFailureCount;
 	}
 
+	/** Counts provider-side failures (timeouts, gateway errors) separately from repairable model output. */
+	int recordTransientFailure() {
+		transientFailureCount++;
+		return transientFailureCount;
+	}
+
+	/** One visible-chat repair per phase; transport retries do not use it up. Returns false once it was taken. */
+	boolean takeChatRepair() {
+		if (chatRepairUsed) return false;
+		chatRepairUsed = true;
+		return true;
+	}
+
 	void clearConsecutiveFailures() {
 		consecutiveFailureCount = 0;
+		transientFailureCount = 0;
 	}
 
 	void clearRetry() {
@@ -108,6 +124,7 @@ final class PlannerSession {
 	}
 
 	void moveToToolWait() {
+		chatRepairUsed = false;
 		phase = PlannerSessionPhase.TOOL_WAIT;
 		// A tool wait suspends model execution, not the conversation that produced it.
 		attemptCount = 0;
@@ -116,6 +133,7 @@ final class PlannerSession {
 	}
 
 	void moveToToolFollowUp(PlannerRequest replacementRequest, LlmConversation replacementConversation) {
+		chatRepairUsed = false;
 		request = replacementRequest;
 		phase = PlannerSessionPhase.TOOL_FOLLOW_UP;
 		conversation = replacementConversation;

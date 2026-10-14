@@ -29,6 +29,34 @@ class DecisionHintsTest {
 		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("recorded combat outcomes"));
 	}
 
+	@Test void loopNoticesGetAHintOnWhateverWakeFollowsThem() {
+		var events = List.of(
+			new SemanticEvent(1, 1, 50, "planner.loop_detected", Map.of("kind", "no_progress", "count", 3, "tools", List.of("inspect_world"))),
+			new SemanticEvent(2, 1, 50, "planner.loop_detected", Map.of("kind", "repeated_failure", "count", 3, "tools", List.of("craft_item"))),
+			new SemanticEvent(3, 1, 50, "planner.loop_held", Map.of("kind", "no_progress", "count", 6, "holdSeconds", 60L)),
+			new SemanticEvent(4, 1, 50, "planner.loop_released", Map.of("kind", "no_progress")),
+			new SemanticEvent(5, 1, 50, "planner.loop_detected", Map.of("kind", "abandoned_work", "count", 3, "tools", List.of("construct_blueprint"))));
+		var hints = DecisionHints.render(List.of(wake(9, "smelting.output_ready")), events);
+		assertEquals(List.of(1L, 2L, 3L, 5L), hints.stream().map(hint -> hint.get("seqNo")).toList());
+		assertTrue(String.valueOf(hints.get(3).get("hint")).startsWith("You cancelled your own running construct_blueprint 3 times"));
+		assertTrue(String.valueOf(hints.get(0).get("hint")).contains("tools: inspect_world"));
+		assertTrue(String.valueOf(hints.get(1).get("hint")).startsWith("craft_item failed the same way 3 times"));
+		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("held for 60 seconds"));
+		var later = DecisionHints.render(List.of(wake(9, "smelting.output_ready")), events, 3L);
+		assertEquals(List.of(5L), later.stream().map(hint -> hint.get("seqNo")).toList(), "notices an earlier observation delivered get no hint again");
+	}
+
+	@Test void toolWearHintsSayWhenToReplaceATool() {
+		var events = List.of(
+			new SemanticEvent(1, 1, 50, "tool.durability_low", Map.of("itemId", "minecraft:iron_pickaxe", "toolKind", "pickaxe", "remaining", 25, "sparesOfKind", 0L)),
+			new SemanticEvent(2, 1, 50, "tool.broken", Map.of("itemId", "minecraft:iron_pickaxe", "toolKind", "pickaxe", "sparesOfKind", 0L)),
+			new SemanticEvent(3, 1, 50, "tool.broken", Map.of("itemId", "minecraft:stone_pickaxe", "toolKind", "pickaxe", "sparesOfKind", 1L)));
+		var hints = DecisionHints.render(List.of(wake(1, "tool.durability_low"), wake(2, "tool.broken"), wake(3, "tool.broken")), events);
+		assertEquals(List.of(1L, 2L), hints.stream().map(hint -> hint.get("seqNo")).toList(), "a break with a spare left needs no advice");
+		assertTrue(String.valueOf(hints.get(0).get("hint")).contains("last pickaxe"));
+		assertTrue(String.valueOf(hints.get(1).get("hint")).contains("no pickaxe left"));
+	}
+
 	@Test void idleThinkHintCarriesTheCharactersInterestsAndIdeas() {
 		var scheduler = new ai.moeru.airicraft.agent.idle.IdleIdeaScheduler(
 			new ai.moeru.airicraft.agent.idle.IdleIdeasConfig(true, 1, 1, List.of("build a shelter")), List.of("collecting flowers"));

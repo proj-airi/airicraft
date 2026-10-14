@@ -61,7 +61,8 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
             if(explicitRevision&&(blueprintId==null||!blueprintId.equals(args.get("revise").getAsString())||!anchor.equals(site)))throw new IllegalArgumentException("revision blueprintId or site does not match this session");
             boolean revise=explicitRevision||sameSite(blueprintId,site,anchor);
             String token=service.beginDesign();lease=token;
-            if(!revise)blueprintId=UUID.randomUUID().toString();site=anchor;
+            // A new design gets its id from its first saved draft.
+            if(!revise)blueprintId=null;site=anchor;
             transcript.clear();transcriptChars=0;recordedStatus="";status="running";modelSummary=config.model();publish(token);
             var result=new CompletableFuture<String>();
             workerThread=Thread.ofPlatform().daemon().name("airicraft-blueprint-designer").unstarted(()->{
@@ -80,8 +81,12 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
                     var model=localBackend;
                     var worker=new BlueprintDesigner(c->model.generate(c).payload(),a->{
                         if(a.get("op").getAsString().equals("lint"))a.add("origin",anchor);
-                        if(a.get("op").getAsString().equals("draft"))a.addProperty("blueprintId",blueprintId);
-                        return invoke(token,a);
+                        boolean draftOp=a.get("op").getAsString().equals("draft");String current;
+                        synchronized(this){current=blueprintId;}
+                        if(draftOp){if(current==null)a.addProperty("newBlueprint",token);else a.addProperty("blueprintId",current);}
+                        String reply=invoke(token,a);
+                        if(draftOp&&current==null&&!reply.startsWith("TOOL_ERROR:")){var saved=JsonParser.parseString(reply).getAsJsonObject();if(saved.has("blueprintId"))synchronized(this){blueprintId=saved.get("blueprintId").getAsString();}}
+                        return reply;
                     },()->service.designActive(token),(kind,text)->record(token,kind,text),16);
                     var outcome=worker.run(brief,docs.get("components").getAsString(),"World origin "+anchor+"; ground captured in input.terrain. Dimensions and coordinates in the draft are local.",existing);
                     String receipt;
@@ -122,7 +127,7 @@ public final class BlueprintPlannerToolProvider implements PlannerToolProvider {
         var event=new JsonObject();event.addProperty("runId",token);event.addProperty("blueprintId",blueprintId);event.addProperty("model",modelSummary);event.add("site",site.deepCopy());event.addProperty("kind",kind);event.addProperty("at",System.currentTimeMillis());
         boolean truncated=text.length()>1_000_000;event.addProperty("text",truncated?text.substring(0,1_000_000)+"\n[recording truncated]":text);event.addProperty("truncated",truncated);service.recordDesigner(token,event);
     }
-    private synchronized void publish(String token){if(!recordedStatus.equals(status)){recordEvent(token,"status",status);recordedStatus=status;}service.publishDesigner(token,JSON.toJson(Map.of("status",status,"blueprintId",blueprintId,"model",modelSummary,"site",site,"transcript",transcript)));}
+    private synchronized void publish(String token){if(!recordedStatus.equals(status)){recordEvent(token,"status",status);recordedStatus=status;}service.publishDesigner(token,JSON.toJson(Map.of("status",status,"blueprintId",blueprintId==null?"":blueprintId,"model",modelSummary,"site",site,"transcript",transcript)));}
     private synchronized void cancel(String token){if(token!=null&&token.equals(lease)){status="cancelled";publish(token);service.endDesign(token,true);if(workerThread!=null)workerThread.interrupt();lease=null;}}
     @Override public synchronized void reset(){cancel(lease);}
     private synchronized String compact(String status,String summary,JsonObject draft,JsonObject lint){

@@ -122,6 +122,11 @@ tasks.named("test") {
 def sharedDevRunDir = rootProject.layout.projectDirectory.dir("run")
 def journeyMapCompatCacheDir = rootProject.layout.projectDirectory.dir(".airicraft-compat/integration")
 def journeyMapCompatModsDir = journeyMapCompatCacheDir.dir("mods")
+// Optional extra jars (for example a modpack mod under test) loaded next to the compatibility mods.
+// Never vendored: point -Pairicraft.extraModsDir at a local directory of jars.
+def extraModsDir = providers.gradleProperty("airicraft.extraModsDir")
+def extraModJars = extraModsDir.isPresent() ? fileTree(extraModsDir.get()) { include "*.jar" } : files()
+
 def journeyMapCompatLibrariesDir = journeyMapCompatCacheDir.dir("libraries")
 
 tasks.register("syncJourneyMapCompatMods", Sync) {
@@ -137,6 +142,7 @@ tasks.register("syncJourneyMapCompatMods", Sync) {
 	from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	from(tasks.named("remapJar").flatMap { it.archiveFile })
 	from(configurations.journeyMapCompatMods)
+	from(extraModJars)
 	if (reiCompatProject != null) {
 		from(reiCompatProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	}
@@ -160,6 +166,7 @@ tasks.register("runClientJourneyMapCompat", net.fabricmc.loom.task.prod.ClientPr
 	mods.from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(configurations.journeyMapCompatMods)
+	mods.from(extraModJars)
 	if (reiCompatProject != null) {
 		mods.from(reiCompatProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	}

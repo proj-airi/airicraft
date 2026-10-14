@@ -81,6 +81,7 @@ public final class WorkProjection {
 			case BREAK_BLOCKS -> job.blockBreak();
 			case TEND_CROPS -> job.cropTending();
 			case LURE_ENTITIES -> job.lureEntities();
+			case FIGHT_ENDER_DRAGON -> Map.of("target", "minecraft:ender_dragon");
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;

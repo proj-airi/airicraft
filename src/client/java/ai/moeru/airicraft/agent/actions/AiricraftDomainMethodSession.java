@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.agent.actions;
 
+import ai.moeru.airicraft.modded.ItemGroups;
 import ai.moeru.airicraft.agent.tasks.ResourceGatheringCatalog;
 import ai.moeru.airicraft.agent.tasks.SmeltingFuelCost;
 import ai.moeru.actionplan.ResolutionContext;
@@ -7,6 +8,7 @@ import ai.moeru.actionplan.ResolutionContext;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -132,22 +134,29 @@ final class AiricraftDomainMethodSession {
 			return Optional.of(new ProviderCandidate(ActionRoute.empty(), "resource_provider", resourceKind));
 		}
 		if (!entry.get().aggregate()) {
-			String itemId = entry.get().primaryItemId();
-			if (itemId.isBlank()) {
+			String primaryItemId = entry.get().primaryItemId();
+			if (primaryItemId.isBlank()) {
 				return Optional.empty();
 			}
-			trace.add(event(
-				"route_candidate_built",
-				"resource_provider",
-				resourceKind,
-				"",
-				Map.of("goal", goal.normalizedKey(), "cost", 35, "resourceKind", resourceKind, "itemId", itemId)
-			));
-			Optional<ProviderCandidate> miningRoute = resolveMiningProviderGoal(
-				ActionGoal.inventoryItem(itemId, targetCount),
-				trace
-			);
-			if (miningRoute.isEmpty()) {
+			// The primary item first, then modded alternatives the kind also accepts.
+			LinkedHashSet<String> candidateItemIds = new LinkedHashSet<>();
+			candidateItemIds.add(primaryItemId);
+			candidateItemIds.addAll(entry.get().acceptedItemIds());
+			for (String itemId : candidateItemIds) {
+				trace.add(event(
+					"route_candidate_built",
+					"resource_provider",
+					resourceKind,
+					"",
+					Map.of("goal", goal.normalizedKey(), "cost", 35, "resourceKind", resourceKind, "itemId", itemId)
+				));
+				Optional<ProviderCandidate> miningRoute = resolveMiningProviderGoal(
+					ActionGoal.inventoryItem(itemId, targetCount),
+					trace
+				);
+				if (miningRoute.isPresent()) {
+					return Optional.of(new ProviderCandidate(miningRoute.get().route(), "resource_provider", resourceKind));
+				}
 				trace.add(event(
 					"route_candidate_rejected",
 					"resource_provider",
@@ -155,9 +164,8 @@ final class AiricraftDomainMethodSession {
 					"",
 					Map.of("goal", goal.normalizedKey(), "reason", "mining_route_unavailable", "itemId", itemId)
 				));
-				return Optional.empty();
 			}
-			return Optional.of(new ProviderCandidate(miningRoute.get().route(), "resource_provider", resourceKind));
+			return Optional.empty();
 		}
 		int resourceCost = estimateAggregateResourceCost(entry.get(), deficitCount);
 		trace.add(event(
@@ -292,11 +300,11 @@ final class AiricraftDomainMethodSession {
 		}
 		String bestObservedLogPlank = "";
 		int bestObservedLogCount = 0;
-		for (int index = 0; index < ActionGraphDomainKnowledge.logItemIds().size(); index++) {
-			String logItemId = ActionGraphDomainKnowledge.logItemIds().get(index);
+		for (String logItemId : ActionGraphDomainKnowledge.logItemIds()) {
 			int count = existingGoalCount(ActionGoal.inventoryItem(logItemId, 1));
-			if (count > bestObservedLogCount && index < ActionGraphDomainKnowledge.plankItemIds().size()) {
-				bestObservedLogPlank = ActionGraphDomainKnowledge.plankItemIds().get(index);
+			String plank = ItemGroups.plankFor(logItemId);
+			if (count > bestObservedLogCount && !plank.isEmpty()) {
+				bestObservedLogPlank = plank;
 				bestObservedLogCount = count;
 			}
 		}
@@ -387,11 +395,7 @@ final class AiricraftDomainMethodSession {
 	}
 
 	private static String logItemForPlank(String plankItemId) {
-		int index = ActionGraphDomainKnowledge.plankItemIds().indexOf(plankItemId);
-		if (index < 0 || index >= ActionGraphDomainKnowledge.logItemIds().size()) {
-			return "";
-		}
-		return ActionGraphDomainKnowledge.logItemIds().get(index);
+		return ItemGroups.logFor(plankItemId);
 	}
 
 	private boolean observedAnyWoodMaterial() {

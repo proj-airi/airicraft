@@ -88,8 +88,15 @@ route constraints and flanker clearance.
 
 Combat water recovery delegates movement to the existing underwater escape
 controller until the player reaches safe, grounded dry terrain. Low air prioritizes
-a breathable destination. An exhausted search stays afloat and reports the failure;
-this controller does not dig or place blocks to escape a dry pit.
+a breathable destination. An exhausted search stays afloat, reports the failure and
+searches again from the current cell after 100 ticks; this controller does not dig or
+place blocks to escape a dry pit.
+
+A visible melee threat within four blocks pauses the escape (`reflex.wet_fight`):
+the reflex faces it, keeps afloat, swims in to reach and strikes when the attack is
+ready, because spiders and drowned follow a swimmer and hit it from behind. Low air
+and an igniting creeper keep the escape in charge. When the fight ends the escape
+starts fresh, since knockback during the fight fails targets that are fine to retry.
 
 A combat progress monitor detects stalemate after 200 game ticks (ten seconds at
 20 TPS). Progress requires a new one-block closing-distance improvement, a new

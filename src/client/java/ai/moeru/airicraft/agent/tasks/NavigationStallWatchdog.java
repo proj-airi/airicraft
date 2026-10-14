@@ -2,12 +2,17 @@ package ai.moeru.airicraft.agent.tasks;
 
 /** Movement measured in active game ticks, so debug pauses do not consume the budget. */
 final class NavigationStallWatchdog {
-	private static final long STALL_TICKS = 100;
+	private static final long DEFAULT_STALL_TICKS = 100;
+	private final long stallTicks;
 	private static final double MIN_MOVEMENT_SQUARED = 0.75 * 0.75;
 	private long anchorTick = -1;
 	private double anchorX, anchorY, anchorZ;
 	private double supportedY = Double.NaN;
 	private final java.util.Map<String, Float> breakingProgressByTarget = new java.util.HashMap<>();
+
+	NavigationStallWatchdog() { this(DEFAULT_STALL_TICKS); }
+
+	NavigationStallWatchdog(long stallTicks) { this.stallTicks = stallTicks; }
 
 	boolean observe(long tick, ai.moeru.airicraft.agent.navigation.NavigationFacade.NavigationProgress sample) {
 		if (Double.isNaN(supportedY) || sample.supported()) supportedY = sample.y();
@@ -32,7 +37,7 @@ final class NavigationStallWatchdog {
 			anchorY = y;
 			anchorZ = z;
 		}
-		return tick - anchorTick >= STALL_TICKS;
+		return tick - anchorTick >= stallTicks;
 	}
 
 	void clear() { anchorTick = -1; supportedY = Double.NaN; breakingProgressByTarget.clear(); }

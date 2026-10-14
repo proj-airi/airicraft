@@ -169,6 +169,15 @@
       "extraWake": null
     },
     {
+      "type": "equipment.armor_equipped",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "food.unavailable",
       "producers": [
         "EmbodiedAgentRuntime"
@@ -355,6 +364,33 @@
       "profile": null,
       "observeVisible": false,
       "extraWake": null
+    },
+    {
+      "type": "planner.loop_detected",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "planner.loop_held",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "planner.loop_released",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W2"
     },
     {
       "type": "planner.parse_error",
@@ -701,6 +737,15 @@
     },
     {
       "type": "reflex.movement_recovery",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.wet_fight",
       "producers": [
         "SurvivalReflexRuntime"
       ],
@@ -1106,6 +1151,32 @@
       "profile": null,
       "observeVisible": true,
       "extraWake": "W2"
+    },
+    {
+      "type": "tool.broken",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "tool.durability_low",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
     },
     {
       "type": "work.changed",

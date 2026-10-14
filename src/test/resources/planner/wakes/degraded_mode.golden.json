@@ -30,7 +30,8 @@
     {
       "payload": {
         "consecutiveFailureCount": 3,
-        "failureType": "TIMEOUT"
+        "failureType": "TIMEOUT",
+        "retryAfterMillis": 30000
       },
       "seqNo": 4,
       "tick": 4,

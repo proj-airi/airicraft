@@ -99,6 +99,9 @@ def evaluatorRecorderJar = providers.gradleProperty("airicraft.evaluator.recorde
 def evaluatorScenariosDir = rootProject.layout.projectDirectory.dir("scenarios")
 def scenarioManifest = providers.gradleProperty("airicraft.evaluator.scenarioManifest")
 	.orElse(providers.environmentVariable("AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST"))
+// Optional extra jars (a modpack mod under test); see AGENTS.md. Never vendored.
+def extraModsDirProperty = providers.gradleProperty("airicraft.extraModsDir")
+def extraModJars = extraModsDirProperty.isPresent() ? fileTree(extraModsDirProperty.get()) { include "*.jar" } : files()
 def requiredMods = []
 if (scenarioManifest.isPresent()) {
 	def manifest = rootProject.file(scenarioManifest.get())
@@ -157,6 +160,7 @@ tasks.register("runClientEvaluator", net.fabricmc.loom.task.prod.ClientProductio
 	mods.from(rootProject.tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(tasks.named("remapJar").flatMap { it.archiveFile })
 	mods.from(configurations.evaluatorRuntimeMods)
+	mods.from(extraModJars)
 	requiredMods.each { modId ->
 		def compatName = modId == "journeymap" ? "journeymap" : "rei"
 		def compatProject = rootProject.findProject(":compat:${compatName}")

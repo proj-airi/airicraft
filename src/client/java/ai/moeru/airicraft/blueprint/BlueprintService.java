@@ -1,5 +1,6 @@
 package ai.moeru.airicraft.blueprint;
 
+import ai.moeru.airicraft.agent.work.ReadableIds;
 import ai.moeru.airicraft.policy.GraalPolicyInvocation;
 import com.google.gson.*;
 import net.minecraft.client.Minecraft;
@@ -42,6 +43,8 @@ public final class BlueprintService {
     private BlueprintStore store;
     private boolean restored;
     private String draftId, lastCommitId, storageError;
+    // The id given to a designer run's new blueprint, reused if its first draft must be retried.
+    private String newBlueprintRun, newBlueprintId;
     private final LinkedHashMap<String,JsonObject> savedDesigns=new LinkedHashMap<>();
     private final LinkedHashMap<String,Blueprint> committedPlans=new LinkedHashMap<>();
     private final LinkedHashMap<String,JsonObject> integrity=new LinkedHashMap<>();
@@ -83,7 +86,7 @@ public final class BlueprintService {
     }
     private void reset() {
         dashboardDesignJson=null;dashboardTailJson=null;
-        store=null;restored=false;draftId=null;lastCommitId=null;storageError=null;savedDesigns.clear();committedPlans.clear();integrity.clear();resetScan();
+        store=null;restored=false;draftId=null;newBlueprintRun=null;newBlueprintId=null;lastCommitId=null;storageError=null;savedDesigns.clear();committedPlans.clear();integrity.clear();resetScan();
         ownerServer=null;draft=null;committed=null;source=null;lastLint=null;revision=0;committedRevision=0;
         committedOrigin=null;committedWorld=null;terrain=null;surface=null;terrainOrigin=null;terrainWorld=null;draftWorld=null;draftDimension=null;
     }
@@ -175,12 +178,13 @@ public final class BlueprintService {
                         if(client.getSingleplayerServer()!=server||expectedGeneration!=generation)throw new IllegalStateException("world_changed");
                         if(terrainWorld!=null&&terrainWorld!=server.getLevel(client.level.dimension()))throw new IllegalStateException("terrain_world_changed");
                         Blueprint next=new Blueprint(tree.getAsJsonObject(),surface,terrain==null||!terrain.has("obstacles")?null:readObstacles(terrainRecord()));
-                        String nextId=a.has("blueprintId")?a.get("blueprintId").getAsString():(draftId==null?UUID.randomUUID().toString():draftId);
+                        String nextId=a.has("blueprintId")?a.get("blueprintId").getAsString():(draftId==null||a.has("newBlueprint")?newBlueprintId(a.has("newBlueprint")?a.get("newBlueprint").getAsString():null):draftId);
                         if(!savedDesigns.containsKey(nextId)&&savedDesigns.size()>=32)throw new IllegalStateException("saved_blueprint_limit_32");
                         draft=next;draftId=nextId;revision++;draftWorld=worldKey;draftDimension=client.level.dimension().location().toString();source=a.get("source").getAsString();lastLint=null;
                         var record=savedDesigns.computeIfAbsent(draftId,id->{var r=new JsonObject();r.addProperty("id",id);return r;});
                         record.add("draft",captureDesign(client.level.dimension().location().toString(),terrainOrigin));
-                        return JSON.toJson(draft.snapshot(revision));
+                        var snapshot=draft.snapshot(revision);snapshot.put("blueprintId",draftId);
+                        return JSON.toJson(snapshot);
                     },client::execute);
             }
             // Capture player identity and dimension on the client thread, then touch server state on its owner thread.
@@ -322,6 +326,12 @@ public final class BlueprintService {
             BlueprintStore target=store;
             return CompletableFuture.supplyAsync(()->{try{target.save(data);return result;}catch(Exception e){if(expectedGeneration==generation)storageError=e.toString();throw new java.util.concurrent.CompletionException(e);}},STORAGE);
         }).thenApply(result->{if(expectedGeneration!=generation)throw new IllegalStateException("world_changed");publish(expectedGeneration,a.get("op").getAsString());return result;}).exceptionally(error->{Throwable cause=error;while(cause.getCause()!=null)cause=cause.getCause();if(expectedGeneration==generation)publish(expectedGeneration,a.get("op").getAsString());return "TOOL_ERROR: blueprint "+cause.getMessage();});
+    }
+    private String newBlueprintId(String run){
+        if(run!=null&&run.equals(newBlueprintRun))return newBlueprintId;
+        String id=ReadableIds.nextAfter("blueprint",savedDesigns.keySet());
+        if(run!=null){newBlueprintRun=run;newBlueprintId=id;}
+        return id;
     }
     private String currentDraft(){var out=JSON.toJsonTree(draft.snapshot(revision)).getAsJsonObject();out.addProperty("blueprintId",draftId);if(terrainOrigin!=null)out.add("origin",JSON.toJsonTree(Blueprint.xyz(terrainOrigin)));return JSON.toJson(out);}
     private JsonObject captureDesign(String dimension,BlockPos origin) {

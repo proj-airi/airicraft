@@ -4,6 +4,7 @@ import ai.moeru.airicraft.agent.memory.PlaceMemory;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 import ai.moeru.airicraft.agent.spatial.TravelBounds;
 import ai.moeru.airicraft.agent.spatial.WorldTravelPolicy;
+import ai.moeru.airicraft.modded.ItemGroups;
 import ai.moeru.airicraft.navigation.Avoidance;
 import ai.moeru.airicraft.navigation.Box;
 import ai.moeru.airicraft.navigation.MovementPolicy;
@@ -18,14 +19,9 @@ import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /** Builds the movement policy for one navigation request from the live world and inventory. */
 public final class NavigationPolicies {
-	/** Blocks navigation may place for bridges and pillars. */
-	public static final Set<String> THROWAWAY_BLOCKS = Set.of("minecraft:cobblestone", "minecraft:cobbled_deepslate",
-		"minecraft:dirt", "minecraft:netherrack", "minecraft:stone", "minecraft:andesite", "minecraft:diorite",
-		"minecraft:granite", "minecraft:tuff", "minecraft:blackstone", "minecraft:end_stone", "minecraft:deepslate");
 	private static final double MOB_AVOIDANCE_RADIUS = 16;
 	private static final double MOB_AVOIDANCE_COEFFICIENT = 4.0;
 	private static final double MOB_SCAN_RADIUS = 40;
@@ -77,7 +73,8 @@ public final class NavigationPolicies {
 	}
 
 	public static boolean isThrowaway(ItemStack stack) {
-		return !stack.isEmpty() && THROWAWAY_BLOCKS.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+		return !stack.isEmpty() && ItemGroups.contains(ItemGroups.Group.THROWAWAY_BLOCKS,
+			BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
 	}
 
 	private static List<Avoidance> mobAvoidances(Minecraft minecraft) {

@@ -72,6 +72,13 @@ public final class ClientRuntimeController {
 			System.getProperty("airicraft.automaticPlaytestDir", "automatic_playtest")));
 
 	public ai.moeru.airicraft.playtest.AutomaticPlaytestRuntime automaticPlaytest() { return automaticPlaytest; }
+	private final ProviderOutagePause providerOutagePause = new ProviderOutagePause();
+	public ProviderOutagePause providerOutagePause() { return providerOutagePause; }
+
+	/** The client tick gate: true while a provider outage holds the game (the hold may end in this call). */
+	public boolean holdForProviderOutage(Minecraft minecraft) {
+		return providerOutagePause.maintain(minecraft, currentAgentRuntime());
+	}
 
 	public ClientRuntimeController() {
 		this.config = AiricraftConfigLoader.load();
@@ -255,6 +262,7 @@ public final class ClientRuntimeController {
 			}
 		}
 		automaticPlaytest.onClientTick(minecraft);
+		providerOutagePause.onClientTick(minecraft, currentAgentRuntime());
 		pollConversationScrollKeys(minecraft);
 		announceDashboardUrl(minecraft);
 	}
@@ -409,6 +417,7 @@ public final class ClientRuntimeController {
 	}
 
 	public synchronized ReloadResult reload() {
+		ai.moeru.airicraft.agent.modded.ClientItemGroups.install();
 		AiricraftConfig nextConfig;
 		AgentConfig nextAgentConfig;
 		IdleIdeasConfig nextIdleIdeasConfig;
@@ -506,7 +515,8 @@ public final class ClientRuntimeController {
 			underwaterHarvestTaskExecutor,
 			new ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor(navigationFacade, cameraController,
 				new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade)),
-			new ai.moeru.airicraft.agent.tasks.LureEntitiesTaskExecutor(navigationFacade)
+			new ai.moeru.airicraft.agent.tasks.LureEntitiesTaskExecutor(navigationFacade),
+			new ai.moeru.airicraft.agent.tasks.DragonFightTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);

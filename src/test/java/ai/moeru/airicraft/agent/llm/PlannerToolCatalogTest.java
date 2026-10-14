@@ -19,6 +19,19 @@ class PlannerToolCatalogTest {
 		assertEquals("minecraft:oak_stairs[facing=south,half=bottom]", PlannerToolCatalog.parseToolCall(toolCall("place_block", args)).arguments().get("expectedState").getAsString());
 		assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("place_block", args.replace("\"minecraft:oak_stairs[facing=south,half=bottom]\"", "42"))));
 	}
+	@Test void armorPolicyCanBeReadAndChangedAtomically() {
+		assertEquals("configure_armor", PlannerToolCatalog.parseToolCall(toolCall("configure_armor", "{}")).name());
+		assertEquals(1, PlannerToolCatalog.parseToolCall(toolCall("configure_armor",
+			"{\"enabled\":true,\"reservedItemIds\":[\"minecraft:diamond_chestplate\"]}"))
+			.arguments().getAsJsonArray("reservedItemIds").size());
+		for (String bad : java.util.List.of("{\"enabled\":false}",
+			"{\"reservedItemIds\":[]}",
+			"{\"enabled\":true,\"reservedItemIds\":[\"diamond_chestplate\"]}",
+			"{\"enabled\":true,\"reservedItemIds\":\"minecraft:iron_boots\"}")) {
+			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("configure_armor", bad)));
+		}
+	}
+
 	@Test void foodPolicyCanBeReadAndChangedAtomically() {
 		assertEquals("configure_food", PlannerToolCatalog.parseToolCall(toolCall("configure_food", "{}")).name());
 		assertEquals("heal", PlannerToolCatalog.parseToolCall(toolCall("configure_food",

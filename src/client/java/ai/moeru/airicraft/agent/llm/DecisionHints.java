@@ -23,6 +23,14 @@ public final class DecisionHints {
 
 	/** Hints for the wakes in this batch; {@code events} are the observation's retained events. */
 	public static List<Map<String, Object>> render(List<PlannerTrigger> wakes, List<SemanticEvent> events) {
+		return render(wakes, events, 0L);
+	}
+
+	/**
+	 * As {@link #render(List, List)}; loop notices at or before {@code sinceSequence} were already delivered with an
+	 * earlier observation and get no hint again.
+	 */
+	public static List<Map<String, Object>> render(List<PlannerTrigger> wakes, List<SemanticEvent> events, long sinceSequence) {
 		var bySeqNo = new LinkedHashMap<Long, SemanticEvent>();
 		for (SemanticEvent event : events) bySeqNo.put(event.seqNo(), event);
 		var hints = new ArrayList<Map<String, Object>>();
@@ -40,6 +48,12 @@ public final class DecisionHints {
 				if (hint != null) hints.add(entry(0L, null, "idle_think", hint));
 			}
 		}
+		// A loop notice rides on whatever wake follows it; it never wakes the planner itself.
+		for (SemanticEvent event : events) {
+			if (event.seqNo() <= sinceSequence) continue;
+			String hint = loopHint(event);
+			if (hint != null && seen.add("event#" + event.seqNo())) hints.add(entry(event.seqNo(), event.type(), null, hint));
+		}
 		return hints;
 	}
 
@@ -56,8 +70,40 @@ public final class DecisionHints {
 			case "social.item_offered" -> "The player and intent are inferred from spawn position and motion; this is not a confirmed pickup. "
 				+ "Decide whether to collect or acknowledge the items using current world evidence.";
 			case "reflex.resolved" -> reflexHint(payload);
+			case "tool.durability_low" -> "This is your last " + payload.get("toolKind") + " that is not worn out. Plan a replacement before "
+				+ "it breaks: craft a spare when you have the materials, or keep enough for one. Running work keeps using it.";
+			case "tool.broken" -> Long.valueOf(0L).equals(asLong(payload.get("sparesOfKind")))
+				? "You have no " + payload.get("toolKind") + " left. Blocks that need one drop nothing without it, and mining work that needs "
+					+ "it fails with missing_suitable_tool; craft a replacement before resuming that work."
+				: null;
 			default -> null;
 		};
+	}
+
+	static String loopHint(SemanticEvent event) {
+		Map<String, Object> payload = event.payload();
+		return switch (event.type()) {
+			case "planner.loop_detected" -> PlannerLoopWatchdog.REPEATED_FAILURE.equals(payload.get("kind"))
+				? names(payload.get("tools")) + " failed the same way " + payload.get("count") + " times. What you did between attempts did not "
+					+ "change the result, so find out why before calling it again, or choose another approach."
+				: PlannerLoopWatchdog.ABANDONED_WORK.equals(payload.get("kind"))
+				? "You cancelled your own running " + names(payload.get("tools")) + " " + payload.get("count") + " times before it finished. "
+					+ "Starting over throws away what it had done: resume or let it finish unless it hit something it cannot handle."
+				: "Your last " + payload.get("count") + " turns changed nothing: no item, place or work changed (tools: " + names(payload.get("tools"))
+					+ "). More of the same will not either. Start the work your goal needs, or reply without tool calls to wait for the "
+					+ "next event; if turns like these continue, autonomous wakes are held for a while.";
+			case "planner.loop_held" -> "Autonomous wakes are held for " + payload.get("holdSeconds") + " seconds because your turns kept "
+				+ "changing nothing. The player's messages, damage and urgent events still wake you.";
+			default -> null;
+		};
+	}
+
+	private static String names(Object value) {
+		return value instanceof List<?> list ? String.join(", ", list.stream().map(String::valueOf).toList()) : String.valueOf(value);
+	}
+
+	private static Long asLong(Object value) {
+		return value instanceof Number number ? number.longValue() : null;
 	}
 
 	private static String reflexHint(Map<String, Object> payload) {

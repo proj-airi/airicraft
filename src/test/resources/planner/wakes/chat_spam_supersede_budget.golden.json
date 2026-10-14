@@ -167,7 +167,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "stateBaseline": true,
@@ -180,10 +180,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 1
     },
     {
@@ -207,7 +203,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 6,
@@ -219,10 +215,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 41
     },
     {
@@ -246,7 +238,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 8,
@@ -258,10 +250,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 81
     },
     {
@@ -285,7 +273,7 @@
           "Session mode is currently remote multiplayer.",
           "Primary interaction player is Alex.",
           "No direct action goal is active (navigation, following or mining). Planner objectives and action graphs are reported separately.",
-          "World evidence snapshot: {dimension=null, position=0,0,0, equippedItemId=null, inventoryCounts={}}"
+          "World evidence snapshot: unknown dimension at 0,0,0; tracked resources none."
         ],
         "serverTick": -1,
         "throughEventSequence": 10,
@@ -297,10 +285,6 @@
       },
       "owner": "controller",
       "phase": "PLANNER_REQUEST",
-      "prefix": {
-        "systemSha": "31d62b0158853884e642b6317d2e27cf427ad8862ba3b23a4f5043377c514bf8",
-        "toolsSha": "f729e8c62a6990e001e145ad40b2e18cf8c256f3869505da083a2eb01244851e"
-      },
       "tick": 121
     }
   ],
