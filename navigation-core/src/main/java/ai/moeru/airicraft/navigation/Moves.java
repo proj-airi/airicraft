@@ -266,15 +266,17 @@ public final class Moves {
 
 	private boolean descend(int dx, int dz, int x, int y, int z, double fromBase, Result out) {
 		int tx = x + dx, tz = z + dz;
-		// With support at our level the column is a traverse, not a drop.
-		if (probe(tx, y, tz) != KIND_INVALID) return false;
+		// With support at our level the column is a traverse, not a drop, unless that support is dug out:
+		// the first step of a staircase down from open ground.
+		boolean level = probe(tx, y, tz) != KIND_INVALID;
+		if (level && !policy.allowBreak()) return false;
 		int exit = CellInfo.edgeRegion(dx, dz), entry = CellInfo.edgeRegion(-dx, -dz);
 		double entryCost = sweepPair(x, z, 1 << exit, tx, tz, (1 << entry) | (1 << CENTER), fromBase, fromBase + HEIGHT, out);
 		if (entryCost < 0) return false;
 		int limit = Math.max(policy.maxSafeFall(), policy.maxWaterFall()) + 1;
 		for (int n = 1; n <= limit; n++) {
 			int ly = y - n;
-			int kind = probe(tx, ly, tz);
+			int kind = level ? KIND_INVALID : probe(tx, ly, tz);
 			if (kind != KIND_INVALID) {
 				double height = fromBase - probeBase;
 				boolean water = kind == KIND_WATER;
@@ -297,6 +299,7 @@ public final class Moves {
 					Costs.WALK_OFF_EDGE + Costs.fallTicks(fromBase - base) + Costs.CENTER_AFTER_FALL + entryCost + dig);
 				return true;
 			}
+			if (level) return false;
 			if (!sweepFree(tx, tz, 1 << CENTER, ly, ly + 1)) return false;
 		}
 		return false;
