@@ -1218,8 +1218,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean free = !reflex.holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
 			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current());
+		// A plain walk leaves the hands free; eating on the way beats arriving hungry. Other jobs switch tools.
+		boolean walking = !reflex.holdsNormalTasks() && !policyActive() && !actionGraphCoordinator.hasNonterminal()
+			&& walkingOnly(taskExecutionSnapshot);
 		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
-			&& (free || quietHold)
+			&& (free || quietHold || walking)
 			&& !playerItemUseController.eating() && !player.isUsingItem()
 			&& !minecraft.gameMode.isDestroying()
 			&& player.containerMenu == player.inventoryMenu
@@ -1243,6 +1246,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					"reason", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()));
 			}
 		});
+	}
+
+	static boolean walkingOnly(TaskExecutionSnapshot execution) {
+		return execution != null && execution.state() == TaskExecutionState.RUNNING && execution.activeGoal() != null
+			&& execution.activeGoal().type() == ai.moeru.airicraft.agent.goals.GoalType.NAVIGATE_TO;
 	}
 
 	private static List<FoodSelector.Candidate> foodCandidates(net.minecraft.client.player.LocalPlayer player) {
