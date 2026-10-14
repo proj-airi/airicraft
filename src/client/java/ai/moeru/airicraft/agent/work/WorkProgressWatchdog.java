@@ -75,7 +75,9 @@ public final class WorkProgressWatchdog {
 				// An eye of ender flies for 80 ticks while the body stands still; the task has its own deadlines.
 				|| w.label().equals("LOCATE_STRONGHOLD")
 				// Waiting at the spawner for blazes stands still; the task has its own no-blaze and overall deadlines.
-				|| w.label().equals("COLLECT_BLAZE_RODS")) continue;
+				|| w.label().equals("COLLECT_BLAZE_RODS")
+				// A night in a dug shelter stands still for 10,000 ticks; the task has its own leg, shelter and overall deadlines.
+				|| w.label().equals("EXPLORE_FOR")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			// Cells are recorded while navigating too, so a restart between attempts finds nothing new.
