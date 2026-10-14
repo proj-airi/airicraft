@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -15,6 +16,7 @@ import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.item.enchantment.EnchantmentEffectComponents;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,7 +57,7 @@ public final class ArmorAutoEquip {
 			|| player.getAbilities().instabuild) return Optional.empty();
 		InventoryMenu menu = player.inventoryMenu;
 		if (player.containerMenu != menu || !menu.getCarried().isEmpty()) return Optional.empty();
-		var swaps = ArmorSelector.choose(pieces(player), policy);
+		var swaps = ArmorSelector.choose(pieces(player), policy, player.level().dimension() == Level.NETHER);
 		if (swaps.isEmpty()) return Optional.empty();
 		ArmorSelector.Swap swap = swaps.getFirst();
 		int source = menuSlot(swap.inventorySlot());
@@ -97,7 +99,8 @@ public final class ArmorAutoEquip {
 		}
 		int remaining = stack.isDamageableItem() ? stack.getMaxDamage() - stack.getDamageValue() : Integer.MAX_VALUE;
 		boolean locked = EnchantmentHelper.has(stack, EnchantmentEffectComponents.PREVENT_ARMOR_CHANGE);
-		return new ArmorSelector.Piece(slot.getName(), inventorySlot, itemId(stack), totals[0], totals[1], remaining, locked);
+		return new ArmorSelector.Piece(slot.getName(), inventorySlot, itemId(stack), totals[0], totals[1], remaining, locked,
+			stack.is(ItemTags.PIGLIN_SAFE_ARMOR));
 	}
 
 	private static EquipmentSlot slot(String name) {

@@ -6,3 +6,4 @@ slow-mining
 strongholds
 exploring
 blaze-rods
+nether-trip
