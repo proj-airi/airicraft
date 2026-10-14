@@ -178,6 +178,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                 if(repairEdit!=null)environment.repairFailed(repairEdit);
                 if(repairEdit!=null && target.air())deferredCleanup.add(repairEdit.position());
                 failures++;consecutiveFailures++;repairQueue.clear();environment.repairDestination();deferred.put(target,geometryRevision);lastFailure=target.key()+": "+result;
+                // A block no stance or repair could place after many tries is set aside so the rest of the build and its teardown still finish.
+                if(repairEdit==null && !adjusting && placementFailures.merge(target.key(),1,Integer::sum)>=MAX_PLACEMENT_FAILURES)abandoned.add(target.key());
             }
             target=null;repairEdit=null;inspected=false;adjusting=false;
         }
@@ -189,8 +191,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             var args=new JsonObject();args.addProperty("x",accessDestination.x());args.addProperty("y",accessDestination.y());args.addProperty("z",accessDestination.z());args.addProperty("exactY",true);
             return effect("navigate_to",args);
         }
-        List<Cell> pending=cells.stream().filter(c->!c.state().equals(environment.state(c))).toList();
-        remaining=pending.size();
+        List<Cell> unfinished=cells.stream().filter(c->!c.state().equals(environment.state(c))).toList();
+        remaining=unfinished.size();
+        List<Cell> pending=abandoned.isEmpty()?unfinished:unfinished.stream().filter(c->!abandoned.contains(c.key())).toList();
         // Resource failures cannot be repaired by changing geometry. Check before
         // any access search, and again after every child effect consumes inventory.
         var checkedItems=new HashSet<String>();
@@ -214,6 +217,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         if(!onlyCleanup && consecutiveFailures>=3 && repairQueue.isEmpty() && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS) {
             consecutiveFailures=0;repairPlans++;repairPlansWithoutProgress++;planRepair(false);
         }
+        if(pending.isEmpty() && ledger.entries().isEmpty() && pending.size()<unfinished.size())
+            throw new IllegalStateException("construction_incomplete unplaced="+unfinished.stream().limit(8).map(c->c.key()+"{"+c.state()+"}").toList()
+                +" reason=no stance could place them after "+MAX_PLACEMENT_FAILURES+" tries; everything else is built and scaffolds are removed. last="+lastFailure);
         if(pending.isEmpty() && ledger.entries().isEmpty()) {
             var value=new JsonObject();value.addProperty("placed",placed);value.addProperty("retries",failures);value.addProperty("verifiedCells",cells.size());
             var done=new JsonObject();done.addProperty("done",true);done.add("value",value);return done;
@@ -323,6 +329,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
     private final Set<ConstructionEscape.Position> digs=new HashSet<>();
     /** Early clearance attempts per cell: count and the geometry revision of the last one. */
     private final Map<ConstructionEscape.Position,int[]> earlyClearance=new HashMap<>();
+    private final Map<String,Integer> placementFailures=new HashMap<>();
+    private final Set<String> abandoned=new HashSet<>();
+    private static final int MAX_PLACEMENT_FAILURES=10;
     private static final int EARLY_CLEARANCE_ATTEMPTS=3,EARLY_CLEARANCE_SPACING=10;
     private final ArrayDeque<String> planLog=new ArrayDeque<>();
     private void planRepair(boolean initial) {
