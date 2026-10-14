@@ -23,6 +23,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -114,6 +115,7 @@ public final class SurvivalReflexRuntime {
 	private boolean foodUnavailableReported;
 	private final EmergencyBunker bunker = new EmergencyBunker();
 	private final ReflexArchery archery = new ReflexArchery();
+	private final UnarmedFlight flight = new UnarmedFlight();
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -374,6 +376,7 @@ public final class SurvivalReflexRuntime {
 
 	public void reset(Minecraft minecraft) {
 		bunker.reset();
+		flight.reset(navigationFacade);
 		extinguishPour = null;
 		extinguishAttempts = 0;
 		foodRetreatStartedTick = -1L;
@@ -428,6 +431,7 @@ public final class SurvivalReflexRuntime {
 		Runnable releaseNormalActuators
 	) {
 		bunker.allowRetry();
+		flight.reset(navigationFacade);
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -874,7 +878,12 @@ public final class SurvivalReflexRuntime {
 
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
-		if (tickBunker(minecraft, player, threats, tick, combatEating)) return;
+		if (tickBunker(minecraft, player, threats, tick, combatEating)) {
+			// Digging in outranks running; a failed bunker lets the flight start again.
+			flight.reset(navigationFacade);
+			return;
+		}
+		if (tickFlight(minecraft, player, threats, tick)) return;
 		if (combatProgress != null && combatProgress.stalled()) {
 			tacticalWindow = new TacticalWindow(tick + 1200, tick);
 			resolve(minecraft, player, threats, tick, "combat_stalemate", true);
@@ -947,6 +956,84 @@ public final class SurvivalReflexRuntime {
 			recordActuatorFailure("defend", exception, tick);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
 		}
+	}
+
+	/**
+	 * Runs instead of fighting when the body has no real melee weapon and the threats are not trivially beatable (see
+	 * {@link UnarmedFlight}). A bow shot at a ranged mob still comes first. Returns whether the flight handled this tick;
+	 * false means fight as before, including after a flight is given up.
+	 */
+	private boolean tickFlight(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
+			if (flight.active()) flight.abandon("navigation_unavailable", navigationFacade);
+			return false;
+		}
+		ItemStack weapon = combatWeapon(player);
+		double damage = UnarmedFlight.attackDamage(weapon);
+		List<UnarmedFlight.Threat> view = threats.stream().map(threat -> new UnarmedFlight.Threat(
+			threat.entity().getX(), threat.entity().getZ(), threat.entity().getHealth(), isRangedThreat(threat.entity()),
+			threat.entity() instanceof net.minecraft.world.entity.monster.Creeper, threat.distance(), threat.lineOfSight())).toList();
+		if (!flight.active()) {
+			if (flight.abandoned() || archeryTarget(player, threats) != null) return false;
+			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view);
+			if (reason == null) return false;
+			flight.start(tick, lastMobDamageTick);
+			archery.cancel(minecraft, actuator);
+			releaseShield(minecraft);
+			stopCombatNavigation();
+			combatPositioning = null;
+			movementController.stop(minecraft);
+			changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.FLEE, tick);
+			pendingEvents.add(new SurvivalReflexEvent("reflex.fled_unarmed", mapOfNullable(
+				"reason", reason,
+				"weaponItemId", BuiltInRegistries.ITEM.getKey(weapon.getItem()).toString(),
+				"weaponDamage", damage,
+				"health", player.getHealth(),
+				"threatCount", threats.size(),
+				"entityTypeIds", threats.stream().map(threat -> threat.observed().entityTypeId()).distinct().toList(),
+				"nearestDistance", threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(-1D),
+				"tick", tick)));
+		}
+		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE) flight.abandon("armed", navigationFacade);
+		UnarmedFlight.Outcome outcome = flight.active()
+			? flight.tick(minecraft, player, view, tick, lastMobDamageTick, config.threatCooldownTicks(), navigationFacade)
+			: UnarmedFlight.Outcome.ABANDONED;
+		// Running is neither progress against a target nor a stalled approach.
+		combatProgress = null;
+		progressThreats = null;
+		combatStalemate = null;
+		switch (outcome) {
+			case FLEEING -> {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			case ESCAPED -> {
+				resolve(minecraft, player, threats, tick, "escaped_unarmed", false);
+				return true;
+			}
+			default -> {
+				var payload = new LinkedHashMap<String, Object>(flight.summary(tick));
+				payload.put("reason", flight.abandonReason());
+				payload.put("health", player.getHealth());
+				payload.put("threatCount", threats.size());
+				payload.put("tick", tick);
+				pendingEvents.add(new SurvivalReflexEvent("reflex.flight_abandoned", payload));
+				return false;
+			}
+		}
+	}
+
+	/** What the reflex fights with: the weapon it would equip, or whatever is in hand when it carries none. */
+	private static ItemStack combatWeapon(LocalPlayer player) {
+		int slot = bestCombatInventorySlot(inventoryItemIds(player));
+		return slot >= 0 ? player.getInventory().getItem(slot) : player.getMainHandItem();
+	}
+
+	private static List<String> inventoryItemIds(LocalPlayer player) {
+		List<String> itemIds = new ArrayList<>();
+		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
+			itemIds.add(BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(slot).getItem()).toString());
+		return itemIds;
 	}
 
 	/**
@@ -1368,6 +1455,7 @@ public final class SurvivalReflexRuntime {
 		foodUnavailableReported = false;
 		wetFighting = false;
 		archery.cancel(minecraft, actuator);
+		flight.reset(navigationFacade);
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();
@@ -1455,10 +1543,7 @@ public final class SurvivalReflexRuntime {
 	}
 
 	private void equipBestCombatItem(Minecraft minecraft, LocalPlayer player) {
-		List<String> itemIds = new ArrayList<>();
-		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++)
-			itemIds.add(BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(slot).getItem()).toString());
-		int bestSlot = bestCombatInventorySlot(itemIds);
+		int bestSlot = bestCombatInventorySlot(inventoryItemIds(player));
 		if (bestSlot < 0) return;
 		if (bestSlot < 9) {
 			actuator.selectHotbar(minecraft, bestSlot);

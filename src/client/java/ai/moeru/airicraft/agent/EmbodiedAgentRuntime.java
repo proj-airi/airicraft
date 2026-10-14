@@ -1287,7 +1287,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (event.type().equals("reflex.started")) dialogueRuntime.queueTaskPreemption(tickCount, observed.seqNo());
 			else if (List.of("reflex.resolved", "reflex.threat_detected", "reflex.actuator_failed").contains(event.type()))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, observed.seqNo());
-			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable"))
+			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable")
+				|| event.type().equals("reflex.flight_abandoned"))
 				dialogueRuntime.queueTaskAttention(tickCount, observed.seqNo());
 		}
 		SurvivalReflexSnapshot reflex = survivalReflexRuntime.snapshot();

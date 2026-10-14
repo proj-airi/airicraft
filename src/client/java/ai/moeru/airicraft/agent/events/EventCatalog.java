@@ -103,6 +103,8 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.combat_progress", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_progress")),
 			new EventTypeSpec("reflex.combat_reposition", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_reposition")),
 			new EventTypeSpec("reflex.extinguished", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.extinguished")),
+			new EventTypeSpec("reflex.fled_unarmed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.fled_unarmed")),
+			new EventTypeSpec("reflex.flight_abandoned", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.flight_abandoned")),
 			new EventTypeSpec("reflex.food_eat_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_failed")),
 			new EventTypeSpec("reflex.food_eat_interrupted", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_interrupted")),
 			new EventTypeSpec("reflex.food_eat_started", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_started")),
