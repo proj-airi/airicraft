@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -127,11 +128,16 @@ class BlockInteractionTaskExecutorTest {
 
 	@Test
 	void directWaterPlacementRequiresAHorizontalCavity() {
-		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(0));
-		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(1));
-		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(2));
-		assertTrue(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(3));
-		assertTrue(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(4));
+		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(0, false));
+		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(1, false));
+		assertFalse(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(2, false));
+		assertTrue(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(3, false));
+		assertTrue(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(4, false));
+	}
+
+	@Test
+	void waterPouredOntoLavaCastsWithoutACavity() {
+		assertTrue(BlockInteractionTaskExecutor.isSafeDirectWaterTarget(0, true));
 	}
 
 	@Test
@@ -302,6 +308,18 @@ class BlockInteractionTaskExecutorTest {
 		assertFalse(BlockInteractionTaskExecutor.shouldUseDirectInteractionApproach(16.0D, false, true, 0L));
 		assertFalse(BlockInteractionTaskExecutor.shouldUseDirectInteractionApproach(16.0D, false, false, 81L));
 		assertTrue(BlockInteractionTaskExecutor.shouldUseDirectInteractionApproach(16.0D, false, false, 80L));
+	}
+
+	@Test
+	void directInteractionApproachDefersWhenTheNextStepIsLava() {
+		// Standing on the pool edge at (-12,28,43) with lava at y=27 from x=-11 eastward, aiming across the pool.
+		Vec3 edge = new Vec3(-11.5D, 28.0D, 43.5D);
+		Vec3 acrossPool = new Vec3(-7.5D, 27.5D, 41.5D);
+		Vec3 alongWall = new Vec3(-11.5D, 28.5D, 47.5D);
+		Predicate<BlockPos> lava = cell -> cell.getY() == 27 && cell.getX() >= -11;
+		assertTrue(BlockInteractionTaskExecutor.directStepEntersHazard(edge, acrossPool, lava));
+		assertFalse(BlockInteractionTaskExecutor.directStepEntersHazard(edge, alongWall, cell -> cell.getY() == 27 && cell.getX() >= -10));
+		assertFalse(BlockInteractionTaskExecutor.directStepEntersHazard(edge, edge, lava));
 	}
 
 	@Test
