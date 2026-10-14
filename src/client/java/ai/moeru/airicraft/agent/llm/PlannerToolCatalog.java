@@ -236,7 +236,7 @@ public final class PlannerToolCatalog {
 				prop("constraints", acquisitionConstraintsSchema())
 			), List.of("resourceKind", "quantity")), PlannerToolCatalog::validateCollectResourceArguments),
 		builtInTool(CRAFT_RECIPE, false, tool(CRAFT_RECIPE, "Run a listed crafting recipe, including automatic crafting-table setup for 3x3 recipes.", properties(
-				prop("recipeId", string("Exact recipe id from check_craftables.")),
+				prop("recipeId", string("Exact recipe id from check_craftables, or an output item id such as minecraft:chest to use the first craftable recipe for it.")),
 				prop("times", integer("Recipe run count."))
 			), List.of("recipeId", "times")), PlannerToolCatalog::validateCraftRecipeArguments),
 		builtInTool(SMELT_ITEMS, false, tool(SMELT_ITEMS, "Start one background smelting process from an exact optionId returned by check_smeltables.", properties(

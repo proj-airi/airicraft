@@ -181,6 +181,22 @@ public final class CraftingOpportunityResolver {
 				);
 			}
 		}
+		// Recipe ids read like "oak_planks_x8_to_chest", so callers often pass the output item instead; take
+		// the first craftable recipe for it, as a player clicking that item in the recipe book would.
+		String outputId = recipeId == null ? "" : recipeId.trim().toLowerCase(Locale.ROOT);
+		if (!outputId.isBlank() && !outputId.contains(":")) outputId = "minecraft:" + outputId;
+		for (ResolvedCraftingOption option : options) {
+			if (itemId(option.outputItem()).equals(outputId)) {
+				return CraftingRecipeResolution.success(
+					option.networkRecipeId(),
+					option.outputItem(),
+					option.opportunity().outputCount(),
+					times,
+					option.gridKind(),
+					option.placements()
+				);
+			}
+		}
 
 		return CraftingRecipeResolution.failure("recipe_not_found");
 	}
