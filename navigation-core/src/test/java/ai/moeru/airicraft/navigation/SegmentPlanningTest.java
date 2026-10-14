@@ -44,6 +44,23 @@ class SegmentPlanningTest {
 	}
 
 	@Test
+	void aWaypointUnderWaterIsNotASegmentEnd() {
+		MapTerrain terrain = corridor(300);
+		// A flooded, roofed stretch around the waypoint: crossing it keeps the head under water.
+		for (int x = 40; x <= 90; x++) for (int z = 0; z <= 2; z++) {
+			terrain.set(x, 1, z, CellInfo.WATER).set(x, 2, z, CellInfo.WATER);
+			for (int y = 3; y <= 8; y++) terrain.set(x, y, z, AsciiTerrain.BEDROCK);
+		}
+
+		SearchResult result = SegmentPlanning.plan(terrain, MovementPolicy.defaults().noEdits(), new GridPos(0, 1, 1),
+			new Goal.Block(299, 1, 1), new GridPos(299, 1, 1), SearchBudget.defaults(), () -> false);
+
+		Path path = result instanceof SearchResult.Found found ? found.path() : assertInstanceOf(SearchResult.Partial.class, result).path();
+		GridPos end = path.end();
+		assertTrue(terrain.cell(end.x(), end.y() + 1, end.z()).fluid() != CellInfo.Fluid.WATER, "stops under water at " + end);
+	}
+
+	@Test
 	void theWaypointAndTheFallbackShareOneBudget() {
 		MapTerrain terrain = corridor(300);
 		for (int x = 50; x <= 80; x++) for (int y = 1; y <= 6; y++) for (int z = 0; z <= 2; z++) terrain.set(x, y, z, AsciiTerrain.BEDROCK);

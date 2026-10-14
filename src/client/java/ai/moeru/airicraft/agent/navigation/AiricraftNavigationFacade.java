@@ -156,6 +156,13 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 	}
 
 	@Override
+	public Optional<Destination> destination() {
+		if (mode == Mode.IDLE || goalCell == null) return Optional.empty();
+		int radius = goal instanceof Goal.Near near ? near.radius() : 0;
+		return Optional.of(new Destination(goalCell.x(), goalCell.y(), goalCell.z(), goalHasY, radius));
+	}
+
+	@Override
 	public boolean navigationGoalReached(GoalPosition position) {
 		Minecraft minecraft = Minecraft.getInstance();
 		if (position == null || minecraft == null || minecraft.player == null) return false;

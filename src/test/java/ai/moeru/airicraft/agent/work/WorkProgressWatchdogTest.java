@@ -85,4 +85,67 @@ class WorkProgressWatchdogTest {
 		watchdog.observe(List.of(),sample(0,0,false),true);
 		assertTrue(watchdog.observe(List.of(work),sample(0,0,false),true).isEmpty());
 	}
+
+	private final WorkSnapshot walk = new WorkSnapshot(WorkHandle.of(WorkHandle.Kind.JOB, "walk"), "",
+		WorkSnapshot.State.RUNNING, "NAVIGATE", "RUNNING", true, 1, Map.of());
+	/** A body at (x, 64, z) heading for (100, 64, 0). */
+	private static WorkProgressWatchdog.Sample heading(double x, double z, boolean swimming) {
+		double distance = Math.hypot(100 - x, z);
+		return new WorkProgressWatchdog.Sample(x, 64, z, Map.of(), true,
+			new WorkProgressWatchdog.Destination("100,64,0", distance), swimming);
+	}
+	private static WorkProgressWatchdog.Sample wandering(double x, double z, boolean swimming) {
+		return new WorkProgressWatchdog.Sample(x, 64, z, Map.of(), true, null, swimming);
+	}
+	@Test void circlingOverNewCellsWithoutNearingTheDestinationHardFails() {
+		var watchdog = new WorkProgressWatchdog(10);
+		int hard = 0;
+		// A wide circle around the destination: every tick a new cell, never any closer.
+		for (int i = 0; i < 40; i++) {
+			double angle = i * 0.2;
+			var found = watchdog.observe(List.of(walk), new WorkProgressWatchdog.Sample(100 + 20 * Math.cos(angle), 64, 20 * Math.sin(angle),
+				Map.of(), true, new WorkProgressWatchdog.Destination("100,64,0", 20), true), true);
+			for (var notice : found) {
+				assertEquals("not_nearing_destination", notice.reason());
+				if (notice.hard()) hard++;
+			}
+		}
+		assertEquals(1, hard);
+	}
+	@Test void nearingTheDestinationIsProgressEvenThroughWater() {
+		var watchdog = new WorkProgressWatchdog(10);
+		for (int i = 0; i < 300; i++) assertTrue(watchdog.observe(List.of(walk), heading(i * 0.25, 0, true), true).isEmpty());
+	}
+	@Test void driftingAwayAndBackToTheSameBestDistanceIsNotProgress() {
+		var watchdog = new WorkProgressWatchdog(10);
+		int soft = 0;
+		for (int i = 0; i < 40; i++) soft += soft(watchdog.observe(List.of(walk), heading(-(i % 8), i, true), true));
+		assertEquals(1, soft);
+	}
+	@Test void restartingNavigationToTheSameDestinationEarnsNoCredit() {
+		var watchdog = new WorkProgressWatchdog(10);
+		int soft = 0;
+		for (int i = 0; i < 40; i++) {
+			// Every fourth tick navigation is between attempts and the body stands on a cell it already visited.
+			var sample = i % 4 == 3 ? wandering(0, 0, true) : heading(0, (i % 4) * 0.4, true);
+			soft += soft(watchdog.observe(List.of(walk), sample, true));
+		}
+		assertEquals(1, soft);
+	}
+	@Test void arrivingThenHeadingBackToTheSameDestinationCountsAgain() {
+		var watchdog = new WorkProgressWatchdog(10);
+		for (int round = 0; round < 3; round++) {
+			for (int i = 0; i < 100; i++) assertTrue(watchdog.observe(List.of(walk), heading(i, 0, false), true).isEmpty());
+			// Walked back out without navigating, over cells already visited.
+			for (int i = 5; i > 0; i--) assertTrue(watchdog.observe(List.of(walk), wandering(i * 20, 0, false), true).isEmpty());
+		}
+	}
+	@Test void swimmingIntoNewWaterWithoutADestinationIsNotProgressButWalkingIs() {
+		var watchdog = new WorkProgressWatchdog(10);
+		int soft = 0;
+		for (int i = 0; i < 40; i++) soft += soft(watchdog.observe(List.of(walk), wandering(i, 0, true), true));
+		assertEquals(1, soft);
+		var walker = new WorkProgressWatchdog(10);
+		for (int i = 0; i < 40; i++) assertTrue(walker.observe(List.of(walk), wandering(i, 0, false), true).isEmpty());
+	}
 }

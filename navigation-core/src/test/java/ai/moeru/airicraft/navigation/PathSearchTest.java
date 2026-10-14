@@ -672,6 +672,90 @@ class PathSearchTest {
 		assertTrue(result.stats().millis() < 1000, "took " + result.stats().millis() + " ms");
 	}
 
+	@Test
+	void aPartialRouteNeverEndsUnderWater() {
+		// The goal is sealed in bedrock; the deepest water is closest to it, but no place to wait.
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			BBBBBBBBB
+			y1
+			GBBBBBBBB
+			y2
+			BBBwwwBBB
+			y3
+			BBBwwwBBB
+			y4
+			BBBwwwBBB
+			y5
+			BBBwwwBBB
+			y6
+			........S
+			""");
+
+		SearchResult.Partial partial = assertInstanceOf(SearchResult.Partial.class, world.search(WALK_ONLY));
+
+		GridPos end = partial.path().end();
+		assertTrue(world.terrain.cell(end.x(), end.y() + 1, end.z()).fluid() != CellInfo.Fluid.WATER, "ends submerged at " + end);
+	}
+
+	@Test
+	void aSubmergedStartStillGetsAPartialRouteUpToAir() {
+		// Under a roof with the only air behind the start; the goal ahead is sealed in bedrock.
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			BBBBBBBBBBBB
+			y1
+			wwwwwwwBBBBG
+			y2
+			wwwwwwwBBBBB
+			y3
+			wwwwwwwBBBBB
+			y4
+			...wwwwBBBBB
+			y5
+			BBBBBBBBBBBB
+			""");
+
+		SearchResult result = PathSearch.search(world.terrain, WALK_ONLY, new GridPos(6, 1, 0),
+			new Goal.Block(world.goal.x(), world.goal.y(), world.goal.z()), SearchBudget.defaults(), () -> false);
+
+		SearchResult.Partial partial = assertInstanceOf(SearchResult.Partial.class, result);
+		GridPos end = partial.path().end();
+		assertEquals(3, end.y(), "surfaces in the air pocket: " + end);
+		assertTrue(end.x() <= 2, "surfaces in the air pocket: " + end);
+	}
+
+	@Test
+	void swimmingDownPaysTheWaterPenaltyAndDeeperWaterCostsMore() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			###
+			y1
+			#w#
+			y2
+			#w#
+			y3
+			#w#
+			y4
+			#w#
+			y5
+			#w#
+			y6
+			#w#
+			y7
+			...
+			""");
+		Moves moves = new Moves(world.terrain, WALK_ONLY);
+
+		Step shallow = moves.stepBetween(new GridPos(1, 6, 0), new GridPos(1, 5, 0));
+		Step deep = moves.stepBetween(new GridPos(1, 3, 0), new GridPos(1, 2, 0));
+
+		assertEquals(MoveType.SWIM_DOWN, shallow.type());
+		assertEquals(Costs.WALK_IN_WATER + WALK_ONLY.waterPenalty() + Costs.SUBMERGED, shallow.cost(), 1e-9);
+		// Three blocks of water over the head at y3: each one is a block to swim back up for air.
+		assertEquals(Costs.WALK_IN_WATER + WALK_ONLY.waterPenalty() + Costs.SUBMERGED + 3 * Costs.SUBMERGED_PER_DEPTH, deep.cost(), 1e-9);
+	}
+
 	static MapTerrain flatField(int size) {
 		MapTerrain terrain = new MapTerrain(CellInfo.AIR, new Box(0, 0, 0, size - 1, 6, size - 1));
 		for (int x = 0; x < size; x++) for (int z = 0; z < size; z++) terrain.set(x, 0, z, AsciiTerrain.STONE);

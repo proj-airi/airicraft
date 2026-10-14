@@ -307,7 +307,7 @@ public final class Moves {
 		int toKind = probe(x, ty, z);
 		if (fromKind == KIND_WATER) {
 			if (toKind != KIND_WATER || !policy.permitsMovement(x, y, z, x, ty, z, false)) return false;
-			out.set(MoveType.SWIM_UP, x, ty, z, Costs.WALK_IN_WATER + submerged(x, ty, z));
+			out.set(MoveType.SWIM_UP, x, ty, z, Costs.WALK_IN_WATER + policy.waterPenalty() + submerged(x, ty, z));
 			return true;
 		}
 		if (toKind == KIND_CLIMB) {
@@ -333,7 +333,7 @@ public final class Moves {
 		int toKind = probe(x, ty, z);
 		if (!policy.permitsMovement(x, y, z, x, ty, z, false)) return false;
 		if (fromKind == KIND_WATER && toKind == KIND_WATER) {
-			out.set(MoveType.SWIM_DOWN, x, ty, z, Costs.WALK_IN_WATER + submerged(x, ty, z));
+			out.set(MoveType.SWIM_DOWN, x, ty, z, Costs.WALK_IN_WATER + policy.waterPenalty() + submerged(x, ty, z));
 			return true;
 		}
 		if (fromKind == KIND_CLIMB && (toKind == KIND_CLIMB || toKind == KIND_STAND)) {
@@ -353,8 +353,20 @@ public final class Moves {
 		return factor > 0 && factor < 1 ? cost / factor : cost;
 	}
 
+	/**
+	 * Extra cost of a move ending with the head under water: the air it uses, plus the climb back to
+	 * air, which grows with each block of water above the head.
+	 */
 	private double submerged(int x, int y, int z) {
-		return cell(x, y + 1, z).fluid() == CellInfo.Fluid.WATER ? Costs.SUBMERGED : 0;
+		if (!submergedAt(x, y, z)) return 0;
+		int depth = 0;
+		while (depth < Costs.MAX_COSTED_DEPTH && cell(x, y + 2 + depth, z).fluid() == CellInfo.Fluid.WATER) depth++;
+		return Costs.SUBMERGED + depth * Costs.SUBMERGED_PER_DEPTH;
+	}
+
+	/** Whether a body with its feet in this cell has its head under water. */
+	public boolean submergedAt(int x, int y, int z) {
+		return cell(x, y + 1, z).fluid() == CellInfo.Fluid.WATER;
 	}
 
 	/** Feet height when standing on the cell's top surface, or NaN when it cannot be stood on. */

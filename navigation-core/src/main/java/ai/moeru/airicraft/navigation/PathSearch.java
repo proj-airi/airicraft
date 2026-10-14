@@ -18,7 +18,16 @@ public final class PathSearch {
 
 	public static SearchResult search(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal,
 		SearchBudget budget, BooleanSupplier cancelled) {
-		return new Run(new Moves(terrain, policy), start, goal, budget, cancelled).search();
+		return search(terrain, policy, start, goal, budget, cancelled, false);
+	}
+
+	/**
+	 * With {@code breathableGoal}, only goal cells where the head is out of water count as reached: for a
+	 * waypoint, where the body stops to plan the next segment.
+	 */
+	public static SearchResult search(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal,
+		SearchBudget budget, BooleanSupplier cancelled, boolean breathableGoal) {
+		return new Run(new Moves(terrain, policy), start, goal, budget, cancelled, breathableGoal).search();
 	}
 
 	private static final class Node {
@@ -61,9 +70,11 @@ public final class PathSearch {
 		private final Heap open = new Heap();
 		private final Moves.Result result = new Moves.Result();
 		private final double weight;
+		private final boolean breathableGoal;
 
-		Run(Moves moves, GridPos start, Goal goal, SearchBudget budget, BooleanSupplier cancelled) {
+		Run(Moves moves, GridPos start, Goal goal, SearchBudget budget, BooleanSupplier cancelled, boolean breathableGoal) {
 			this.moves = moves;
+			this.breathableGoal = breathableGoal;
 			this.start = start;
 			this.goal = goal;
 			this.budget = budget;
@@ -77,7 +88,9 @@ public final class PathSearch {
 			origin.g = 0;
 			origin.f = origin.h * weight;
 			open.add(origin);
-			Node best = origin;
+			// A partial route never ends under water: the body could not wait there for the next segment.
+			// Null until a node with the head out of water is reached.
+			Node best = null;
 			int expanded = 0;
 			while (!open.isEmpty()) {
 				if (expanded % CHECK_INTERVAL == 0 && expanded > 0) {
@@ -90,11 +103,12 @@ public final class PathSearch {
 				Node current = open.poll();
 				current.closed = true;
 				expanded++;
-				if (goal.isGoal(current.x, current.y, current.z)) {
+				moves.overlay(current.overlay);
+				boolean breathable = !moves.submergedAt(current.x, current.y, current.z);
+				if (goal.isGoal(current.x, current.y, current.z) && (breathable || !breathableGoal)) {
 					return new SearchResult.Found(path(current), stats(expanded, started));
 				}
-				if (current.h < best.h || current.h == best.h && current.g < best.g) best = current;
-				moves.overlay(current.overlay);
+				if (breathable && (best == null || current.h < best.h || current.h == best.h && current.g < best.g)) best = current;
 				int kind = moves.probe(current.x, current.y, current.z);
 				double base = moves.probeBase();
 				if (kind == Moves.KIND_INVALID) {
@@ -126,7 +140,7 @@ public final class PathSearch {
 
 		private SearchResult partial(Node best, SearchResult.Reason reason, int expanded, long started) {
 			SearchResult.Stats stats = stats(expanded, started);
-			if (best.parent == null) return new SearchResult.Unreachable(reason, stats);
+			if (best == null || best.parent == null) return new SearchResult.Unreachable(reason, stats);
 			Path path = path(best);
 			GridPos end = path.end();
 			double dx = end.x() - start.x(), dy = end.y() - start.y(), dz = end.z() - start.z();
