@@ -39,6 +39,15 @@ class SurvivalReflexRuntimeTest {
 		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
 	}
 
+	@Test void noContactHoldsResumeByThemselvesOnlyAFewTimesAWindow() {
+		var history = new java.util.ArrayDeque<Long>();
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 100));
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 200));
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 300));
+		assertFalse(SurvivalReflexRuntime.admitNoContactResume(history, 400), "a fourth within the window goes to the planner");
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 100 + SurvivalReflexRuntime.NO_CONTACT_RESUME_WINDOW + 1));
+	}
+
 	@Test void combatMealNeedsShelterAndAFullUseWindow() {
 		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, true, false, 4D));
 		assertTrue(SurvivalReflexRuntime.safeToEatDuringCombat(true, false, false, false, false, 12D));

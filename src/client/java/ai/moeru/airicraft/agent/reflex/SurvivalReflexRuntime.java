@@ -61,6 +61,8 @@ public final class SurvivalReflexRuntime {
 	static final int LAVA_ESCAPE_RADIUS = 5;
 	/** Ticks without closing in on the chosen bank before trying another. */
 	static final int LAVA_STALL_TICKS = 30;
+	static final int NO_CONTACT_RESUME_LIMIT = 3;
+	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -73,6 +75,9 @@ public final class SurvivalReflexRuntime {
 	private SurvivalReflexSnapshot snapshot = SurvivalReflexSnapshot.idle();
 	private boolean drowningDamageObserved;
 	private long lastMobDamageTick = Long.MIN_VALUE;
+	/** Set when a hold came from a mob episode with no contact; see {@link #takeNoContactResume}. */
+	private boolean noContactHold;
+	private final java.util.ArrayDeque<Long> noContactResumes = new java.util.ArrayDeque<>();
 	private boolean safetyHoldActuating;
 	private int secureEscapeTicks;
 	private long mobRoutesTick = Long.MIN_VALUE;
@@ -451,6 +456,7 @@ public final class SurvivalReflexRuntime {
 	) {
 		bunker.allowRetry();
 		flight.reset(navigationFacade);
+		noContactHold = false;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -1471,6 +1477,8 @@ public final class SurvivalReflexRuntime {
 		String reason,
 		boolean keepSafetyHold
 	) {
+		boolean noContact = "no_eligible_threats".equals(reason) && snapshot.cause() == SurvivalReflexCause.MOB_ATTACK
+			&& lastMobDamageTick == Long.MIN_VALUE && player.getHealth() >= player.getMaxHealth() * 0.5F;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -1511,6 +1519,27 @@ public final class SurvivalReflexRuntime {
 		}
 		lastMobDamageTick = Long.MIN_VALUE;
 		resetSecurityProgress();
+		noContactHold = noContact && nextState == SurvivalReflexState.AWAITING_PLANNER && !keepSafetyHold;
+	}
+
+	/**
+	 * Whether to hand the held work straight back. A mob that came within reach and then stayed out of it, without
+	 * ever hurting the body, held a playtest's walk, and even its attack on that same spider, for planner turn after
+	 * planner turn. Such a hold resumes by itself, at most {@value #NO_CONTACT_RESUME_LIMIT} times per
+	 * {@value #NO_CONTACT_RESUME_WINDOW} ticks; past that the planner decides as before.
+	 */
+	public boolean takeNoContactResume(long tick) {
+		if (!noContactHold || snapshot.state() != SurvivalReflexState.AWAITING_PLANNER) return false;
+		noContactHold = false;
+		return admitNoContactResume(noContactResumes, tick);
+	}
+
+	/** Records a resume at {@code tick} unless the window already holds the limit. */
+	static boolean admitNoContactResume(java.util.ArrayDeque<Long> history, long tick) {
+		while (!history.isEmpty() && tick - history.peekFirst() > NO_CONTACT_RESUME_WINDOW) history.removeFirst();
+		if (history.size() >= NO_CONTACT_RESUME_LIMIT) return false;
+		history.addLast(tick);
+		return true;
 	}
 
 	static Long noProgressTicks(CombatProgress progress, CombatStalemate approach, long tick) {

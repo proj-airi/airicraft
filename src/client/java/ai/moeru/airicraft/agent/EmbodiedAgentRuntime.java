@@ -1170,6 +1170,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			combatEating
 		);
 		processSurvivalReflexEvents();
+		if (survivalReflexRuntime.takeNoContactResume(tickCount)) {
+			resumeSafetyHold(survivalReflexRuntime.snapshot().holdId(), "reflex_no_contact");
+		}
 	}
 
 	private void tickArmor(Minecraft minecraft) {
