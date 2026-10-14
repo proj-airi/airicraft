@@ -15,6 +15,13 @@ public final class Costs {
 	public static final double DOOR = 6;
 	/** Extra cost per move that ends with the head under water. */
 	public static final double SUBMERGED = 4;
+	/**
+	 * Further cost per move for each block of water above the head: the swim back up to air. A route
+	 * along the bottom of deep water pays for the air it would run short of.
+	 */
+	public static final double SUBMERGED_PER_DEPTH = 2;
+	/** Blocks of water above the head beyond which depth costs no more. */
+	public static final int MAX_COSTED_DEPTH = 16;
 	/** Per-block lower bound used by the heuristics; slightly below the sprint cost. */
 	public static final double HEURISTIC_PER_BLOCK = 3.563;
 

@@ -93,8 +93,10 @@ public final class PathSearch {
 				if (goal.isGoal(current.x, current.y, current.z)) {
 					return new SearchResult.Found(path(current), stats(expanded, started));
 				}
-				if (current.h < best.h || current.h == best.h && current.g < best.g) best = current;
 				moves.overlay(current.overlay);
+				// A partial route never ends under water: the body could not wait there for the next segment.
+				if ((current.h < best.h || current.h == best.h && current.g < best.g)
+					&& !moves.submergedAt(current.x, current.y, current.z)) best = current;
 				int kind = moves.probe(current.x, current.y, current.z);
 				double base = moves.probeBase();
 				if (kind == Moves.KIND_INVALID) {

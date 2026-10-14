@@ -326,6 +326,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private boolean initialized;
 	private volatile long tickCount;
 	private final ai.moeru.airicraft.agent.work.WorkHistory workHistory = new ai.moeru.airicraft.agent.work.WorkHistory();
+	/** Null in tests that run without navigation. */
+	private final NavigationFacade navigationFacade;
 	private final ai.moeru.airicraft.agent.work.WorkProgressWatchdog workProgressWatchdog =
 		new ai.moeru.airicraft.agent.work.WorkProgressWatchdog(ai.moeru.airicraft.agent.work.WorkProgressWatchdog.DEFAULT_STALL_TICKS);
 	private Object workWorld;
@@ -426,6 +428,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.miningOpportunityJournal = Objects.requireNonNull(miningOpportunityJournal, "miningOpportunityJournal");
 		this.codexDriverActive = Boolean.getBoolean("airicraft.codexDriver");
 		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), navigationFacade, cameraController);
+		this.navigationFacade = navigationFacade;
 		this.worldTaskExecutor = Objects.requireNonNull(worldTaskExecutor, "worldTaskExecutor");
 		this.observability = new FlightRecordingObservability(Objects.requireNonNull(observability, "observability"), llmFlightRecorder);
 		this.smeltingProcessManager = Objects.requireNonNull(smeltingProcessManager, "smeltingProcessManager");
@@ -1032,7 +1035,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		var input = player.input == null ? net.minecraft.world.entity.player.Input.EMPTY : player.input.keyPresses;
 		boolean hasInput = input.forward() || input.backward() || input.left() || input.right() || input.jump()
 			|| minecraft.options.keyAttack.isDown() || minecraft.options.keyUse.isDown() || player.isUsingItem();
-		var sample = new ai.moeru.airicraft.agent.work.WorkProgressWatchdog.Sample(player.getX(), player.getY(), player.getZ(), metrics, hasInput);
+		var destination = navigationFacade == null ? null : navigationFacade.destination()
+			.map(target -> new ai.moeru.airicraft.agent.work.WorkProgressWatchdog.Destination(target.key(),
+				target.distanceFrom(player.getX(), player.getY(), player.getZ())))
+			.orElse(null);
+		var sample = new ai.moeru.airicraft.agent.work.WorkProgressWatchdog.Sample(player.getX(), player.getY(), player.getZ(), metrics, hasInput,
+			destination, player.isInWater());
 		// A follower already at its destination legitimately has nothing to actuate.
 		var work = workHistory.list().stream().map(w -> w.label().equals("FOLLOW_PLAYER") && behaviorTreeRuntime.snapshot().activeNodePath().contains("ObserveAndWait")
 			? new ai.moeru.airicraft.agent.work.WorkSnapshot(w.handle(), w.parentWorkId(),

@@ -43,6 +43,24 @@ public interface NavigationFacade {
 
 	record NavigationProgress(double x, double y, double z, boolean supported, String breakingTarget, float breakingProgress) {}
 
+	/** Where the current navigate or follow request is headed; empty while idle. */
+	default Optional<Destination> destination() { return Optional.empty(); }
+
+	/**
+	 * A request's target: within {@code radius} blocks of a cell, or of its column without {@code exactY}.
+	 */
+	record Destination(int x, int y, int z, boolean exactY, int radius) {
+		public String key() {
+			return (exactY ? x + "," + y + "," + z : x + ",*," + z) + (radius > 0 ? "~" + radius : "");
+		}
+
+		/** Blocks from a body position to the nearest edge of the target, horizontal only without {@code exactY}. */
+		public double distanceFrom(double px, double py, double pz) {
+			double dx = x + 0.5 - px, dy = exactY ? y - py : 0, dz = z + 0.5 - pz;
+			return Math.max(0, Math.sqrt(dx * dx + dy * dy + dz * dz) - radius);
+		}
+	}
+
 	boolean navigationGoalReached(GoalPosition position);
 
 	/** Backend details for a finished task's diagnostics, such as plan outcomes and timings. */
