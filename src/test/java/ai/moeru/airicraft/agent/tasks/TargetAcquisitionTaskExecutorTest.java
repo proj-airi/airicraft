@@ -440,6 +440,27 @@ class TargetAcquisitionTaskExecutorTest {
 		assertEquals(0, f.env.rejections);
 	}
 
+	@Test void eachCollectedItemRestartsTheAttemptBudget() {
+		Fixture f = new Fixture();
+		f.request = WorldTaskRequest.collectMine("mine", "job", new GoalSnapshot(GoalType.MINE_BLOCKS, null, null,
+			new GoalMineSpec(List.of("log"), 3), 0, "test"));
+		f.env.sources = List.of(new Candidate(Kind.BLOCK, "ore", pos(12,64,0), pos(11,64,0)));
+		int ticks = 0;
+		for (int x = 0; ticks < TargetAcquisitionTaskExecutor.BUDGET_TICKS * 2; x++, ticks += 30) {
+			if (ticks == 1800) f.env.count = 1;
+			if (ticks == 3600) f.env.count = 2;
+			f.env.position = pos(x % 2, 64, 0); // The route keeps moving while it digs.
+			f.tick(30);
+		}
+		assertEquals(TaskExecutionState.RUNNING, f.executor.snapshot().state(), "still collecting after two full budgets");
+		for (int x = 0; f.events.isEmpty() && x < 200; x++) {
+			f.env.position = pos(x % 2, 64, 0);
+			f.tick(30);
+		}
+		assertEquals(TaskExecutionState.FAILED, f.executor.snapshot().state(), "a budget with no gain still ends it");
+		assertTrue(f.events.getFirst().message().contains("acquisition_budget_exhausted"), f.events.getFirst().message());
+	}
+
 	@Test void detourAwayFromOreIsProgressEvenBeforeBeatingStartingDistance() {
 		Fixture f = new Fixture();
 		f.env.sources = List.of(new Candidate(Kind.BLOCK, "ore", pos(249,63,489), pos(249,63,488)));

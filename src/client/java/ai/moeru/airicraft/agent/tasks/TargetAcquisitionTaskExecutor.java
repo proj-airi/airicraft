@@ -34,7 +34,11 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 	private Phase phase = Phase.SELECT;
 	private final Set<String> rejected = new HashSet<>();
 	private final Set<GoalPosition> observedSources = new HashSet<>();
+	/** Active ticks an attempt may go without collecting another matching item. */
+	static final int BUDGET_TICKS = 2400;
 	private int activeTicks;
+	/** The highest matching inventory count this attempt; the budget restarts each time it rises. */
+	private int bestCount = -1;
 	private int phaseTicks;
 	private int progressTicks;
 	private int targetInventoryCount;
@@ -100,6 +104,7 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 			observedSources.clear();
 			lastRejection = "none";
 			activeTicks = 0;
+			bestCount = -1;
 			extraBlocks = 0;
 			extraTicks = 0;
 			extraMinedByBlock.clear();
@@ -118,6 +123,12 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 		GoalMineSpec spec = request.goal().mineSpec();
 		int count = environment.inventoryCount(spec);
 		boolean goalMet = count >= spec.quantity() || ((WorldTaskRequest.Mine) request.task()).mineGoalSatisfied();
+		// The budget bounds time without a gain, not the whole attempt: thirty blocks dug out of the ground
+		// take longer than two minutes, and each one collected shows the attempt is still working.
+		if (count > bestCount) {
+			if (bestCount >= 0) activeTicks = 1;
+			bestCount = count;
+		}
 		if (!opportunityPolicy.policy().enabled() && (opportunitySpec != null || opportunityPickupSpec != null)) {
 			endInterruptedOpportunity("policy_disabled");
 			release();
@@ -146,8 +157,8 @@ public final class TargetAcquisitionTaskExecutor implements WorldTaskExecutor {
 		}
 		if (!goalMet && !environment.requiredToolAvailable(spec))
 			return finish(false, "missing_required_harvest_tool itemIds=" + spec.requiredToolItemIds(), TaskFailureCode.MISSING_ITEM);
-		if (activeTicks > 2400) return goalMet ? finish(true, "opportunity_budget_exhausted")
-			: finish(false, "acquisition_budget_exhausted itemCount=" + count);
+		if (activeTicks > BUDGET_TICKS) return goalMet ? finish(true, "opportunity_budget_exhausted")
+			: finish(false, "acquisition_budget_exhausted itemCount=" + count + " targetItemCount=" + spec.quantity());
 		if (!NavigationRelease.idle(navigation) && !navigationOwned) {
 			if (phaseTicks > 100) return finish(false, "acquisition_release_timeout");
 			setSnapshot(TaskExecutionState.RUNNING, "waiting_for_navigation_release");
