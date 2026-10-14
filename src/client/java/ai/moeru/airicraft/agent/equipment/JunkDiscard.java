@@ -30,7 +30,8 @@ public final class JunkDiscard {
 	/** At or below this many free main-inventory slots the inventory counts as nearly full. */
 	static final int NEARLY_FULL_FREE_SLOTS = 3;
 	private static final long CHECK_INTERVAL_TICKS = 20L;
-	private static final double MIN_TRAVEL_SPEED_SQUARED = 0.1 * 0.1;
+	/** Walking pace: a body slowed by digging a route stays near what it throws and picks it back up. */
+	private static final double MIN_TRAVEL_SPEED_SQUARED = 0.18 * 0.18;
 
 	private long nextCheckTick;
 
@@ -54,7 +55,8 @@ public final class JunkDiscard {
 		InventoryMenu menu = player.inventoryMenu;
 		if (player.containerMenu != menu || !menu.getCarried().isEmpty()) return Optional.empty();
 		var motion = player.getDeltaMovement();
-		if (motion.x * motion.x + motion.z * motion.z < MIN_TRAVEL_SPEED_SQUARED) return Optional.empty();
+		if (motion.x * motion.x + motion.z * motion.z < MIN_TRAVEL_SPEED_SQUARED || ai.moeru.airicraft.agent.control.Actuator.breakingForNavigation()
+			|| minecraft.gameMode.isDestroying()) return Optional.empty();
 		List<Stack> stacks = new ArrayList<>();
 		for (int index = 0; index < Inventory.INVENTORY_SIZE; index++) {
 			ItemStack stack = player.getInventory().getItem(index);
@@ -69,7 +71,7 @@ public final class JunkDiscard {
 	}
 
 	/**
-	 * The stack to throw: of the junk item with the most over its allowance, the smallest stack that fits
+	 * The stack to throw: of the junk item with the most over its allowance, the largest stack that fits
 	 * within that surplus, never the selected hotbar slot. Empty when nothing is over its allowance.
 	 */
 	static Optional<Discard> choose(List<Stack> inventory, int selectedSlot, Predicate<String> junk) {
@@ -88,13 +90,13 @@ public final class JunkDiscard {
 		for (var entry : totals.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
 			int surplus = entry.getValue() - keep;
 			if (surplus <= bestSurplus) continue;
-			Stack smallest = null;
+			Stack chosen = null;
 			for (Stack stack : inventory) {
 				if (!entry.getKey().equals(stack.itemId()) || stack.inventorySlot() == selectedSlot || stack.count() > surplus) continue;
-				if (smallest == null || stack.count() < smallest.count()) smallest = stack;
+				if (chosen == null || stack.count() > chosen.count()) chosen = stack;
 			}
-			if (smallest == null) continue;
-			best = new Discard(smallest.inventorySlot(), entry.getKey(), smallest.count(), entry.getValue() - smallest.count());
+			if (chosen == null) continue;
+			best = new Discard(chosen.inventorySlot(), entry.getKey(), chosen.count(), entry.getValue() - chosen.count());
 			bestSurplus = surplus;
 		}
 		return Optional.ofNullable(best);

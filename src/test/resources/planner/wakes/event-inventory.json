@@ -651,6 +651,15 @@
       "extraWake": "W2"
     },
     {
+      "type": "reflex.arrow_shot",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "reflex.bunker_failed",
       "producers": [
         "SurvivalReflexRuntime"

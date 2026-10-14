@@ -113,6 +113,7 @@ public final class SurvivalReflexRuntime {
 	private boolean foodRetreatAbandoned;
 	private boolean foodUnavailableReported;
 	private final EmergencyBunker bunker = new EmergencyBunker();
+	private final ReflexArchery archery = new ReflexArchery();
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -895,13 +896,27 @@ public final class SurvivalReflexRuntime {
 			resolve(minecraft, player, threats, tick, "no_eligible_threats", false);
 			return;
 		}
-		equipBestCombatItem(minecraft, player);
-		if (blockShieldThreat(minecraft, player, threats, tick)) {
+		ResolvedThreat shot = archeryTarget(player, threats);
+		if (shot == null) {
+			archery.cancel(minecraft, actuator);
+			equipBestCombatItem(minecraft, player);
+		}
+		// A started draw is finished rather than dropped for the shield: the next arrow is the way out.
+		if (!archery.drawing() && blockShieldThreat(minecraft, player, threats, tick)) {
 			if (usePositioning) reposition(minecraft, threats, tick, true);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
 			return;
 		}
 		releaseShield(minecraft);
+		if (shot != null) {
+			stopCombatNavigation();
+			if (archery.tick(minecraft, player, shot.entity(), tick, actuator, cameraController, movementController,
+				item -> selectInventoryItem(minecraft, player, item), pendingEvents)) {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return;
+			}
+			equipBestCombatItem(minecraft, player);
+		}
 		attemptCloseQuarterAttack(minecraft, player, threats, tick);
 		SecurityKind security = assessMobSecurity(player, threats, tick);
 		if (security == SecurityKind.SEALED) {
@@ -932,6 +947,22 @@ public final class SurvivalReflexRuntime {
 			recordActuatorFailure("defend", exception, tick);
 			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
 		}
+	}
+
+	/**
+	 * The nearest ranged mob worth a bow shot, or null while a melee mob is close enough that the sword comes first.
+	 */
+	private static ResolvedThreat archeryTarget(LocalPlayer player, List<ResolvedThreat> threats) {
+		boolean hasBow = ReflexArchery.hasBow(player), hasArrows = ReflexArchery.hasArrows(player);
+		if (!hasBow || !hasArrows) return null;
+		ResolvedThreat best = null;
+		for (ResolvedThreat threat : threats) {
+			boolean ranged = isRangedThreat(threat.entity());
+			if (!ranged && threat.distance() <= MELEE_THREAT_DISTANCE) return null;
+			if (!ReflexArchery.worthShooting(ranged, threat.lineOfSight(), threat.distance(), true, true)) continue;
+			if (best == null || threat.distance() < best.distance()) best = threat;
+		}
+		return best;
 	}
 
 	/**
@@ -1336,6 +1367,7 @@ public final class SurvivalReflexRuntime {
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
 		wetFighting = false;
+		archery.cancel(minecraft, actuator);
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();
