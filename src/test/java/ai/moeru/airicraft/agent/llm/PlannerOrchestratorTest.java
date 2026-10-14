@@ -585,6 +585,31 @@ class PlannerOrchestratorTest {
 
 
 	@Test
+	void queuedMachineBlockResultNamesItsSkillOnce() throws Exception {
+		var backend = new RecordingBackend();
+		var provider = new PlannerToolProvider() {
+			public String id() { return "block_fixture"; }
+			public boolean handles(String name) { return name.equals("use_block"); }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("use_block", "Use", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { return CompletableFuture.completedFuture("Tool result for use_block: done"); }
+		};
+		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		try {
+			orchestrator.submit(baseRequest(null)); backend.awaitCalls(1, Duration.ofSeconds(1));
+			var crank = new JsonObject(); crank.addProperty("itemId", "create:hand_crank");
+			var stone = new JsonObject(); stone.addProperty("itemId", "minecraft:stone");
+			backend.succeed(0, PlannerResponse.toolCalls(List.of(new PlannerToolCall("A", "use_block", crank, null), new PlannerToolCall("B", "use_block", crank, null),
+				new PlannerToolCall("C", "use_block", stone, null), new PlannerToolCall("checkpoint", "report_to_me", new JsonObject(), null)), null));
+			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
+			String text = conversationText(backend.conversation(1));
+			assertEquals(1, text.split("Skill hint: rules for these blocks are in modded-machines", -1).length - 1, text);
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
 	void reportToMeWithNothingQueuedIsNotQueuedAndSchedulesNoReview() throws Exception {
 		var backend = new RecordingBackend();
 		var registry = PlannerToolRegistry.of(new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));

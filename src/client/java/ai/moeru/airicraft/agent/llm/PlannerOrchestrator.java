@@ -1221,6 +1221,7 @@ public final class PlannerOrchestrator {
 	}
 
 	private void queueReport(PlannerToolCall call, ToolExecutionOutcome outcome) {
+		outcome = withSkillHint(outcome, List.of(call));
 		if (!List.of(PlannerObservation.TOOL_NAME, PlannerQueueToolProvider.CONTINUE, PlannerQueueToolProvider.CLEAR,
 			PlannerQueueToolProvider.REPORT).contains(call.name())) {
 			var notice = loopWatchdog.onResult(call.name(), outcome.toolResultText());

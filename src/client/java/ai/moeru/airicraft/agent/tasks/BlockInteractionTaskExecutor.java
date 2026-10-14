@@ -7,6 +7,7 @@ import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.client.Minecraft;
@@ -520,7 +521,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		int holdTicks = request.type() == WorldTaskType.USE_BLOCK ? useArgs(request).holdTicks() : 0;
 		if (holdTicks > 0) {
-			pendingHold = new PendingHold(target, interactionHit.get(), hand, tick, holdTicks, message);
+			pendingHold = new PendingHold(target, interactionHit.get(), hand, tick, holdTicks, message, before.getBlock());
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "holding_use targetIndex=" + targetIndex
 				+ " targetPos=" + compactPos(target) + " holdTicks=" + holdTicks);
 			return Optional.empty();
@@ -535,15 +536,21 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			pendingHold = null;
 			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_unloaded_during_hold"));
 		}
-		if (minecraft.level.getBlockState(hold.target()).isAir()) {
+		hold.advance(tick);
+		long elapsed = hold.elapsed(tick);
+		BlockState current = minecraft.level.getBlockState(hold.target());
+		if (current.isAir()) {
 			pendingHold = null;
-			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_removed_during_hold heldTicks=" + (tick - hold.startedTick())));
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_removed_during_hold heldTicks=" + elapsed));
+		}
+		if (current.getBlock() != hold.block()) {
+			pendingHold = null;
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "target_replaced_during_hold heldTicks=" + elapsed));
 		}
 		if (player.getEyePosition().distanceToSqr(hold.hit().getLocation()) > INTERACTION_RANGE_SQUARED) {
 			pendingHold = null;
-			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "out_of_range_during_hold heldTicks=" + (tick - hold.startedTick())));
+			return fail(request, targetFailure(TaskFailureCode.ENVIRONMENT_CHANGED, hold.target(), "out_of_range_during_hold heldTicks=" + elapsed));
 		}
-		long elapsed = tick - hold.startedTick();
 		if (elapsed >= hold.holdTicks()) {
 			pendingHold = null;
 			return completeTarget(tick, request, hold.message() + " heldTicks=" + elapsed + " uses=" + hold.uses());
@@ -1945,10 +1952,15 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		private final long startedTick;
 		private final int holdTicks;
 		private final String message;
+		private final Block block;
 		private long nextUseTick;
+		private long lastTick;
+		private long pausedTicks;
 		private int uses = 1;
 
-		PendingHold(BlockPos target, BlockHitResult hit, InteractionHand hand, long startedTick, int holdTicks, String message) {
+		PendingHold(BlockPos target, BlockHitResult hit, InteractionHand hand, long startedTick, int holdTicks, String message, Block block) {
+			this.block = block;
+			this.lastTick = startedTick;
 			this.target = target;
 			this.hit = hit;
 			this.hand = hand;
@@ -1958,6 +1970,17 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 			this.nextUseTick = startedTick + HOLD_USE_INTERVAL_TICKS;
 		}
 
+		/** Ticks the executor was not run (session gate) do not count toward the hold or the repeat schedule. */
+		void advance(long tick) {
+			long gap = tick - lastTick - 1;
+			if (gap > 0) {
+				pausedTicks += gap;
+				nextUseTick += gap;
+			}
+			lastTick = tick;
+		}
+		long elapsed(long tick) { return tick - startedTick - pausedTicks; }
+		Block block() { return block; }
 		BlockPos target() { return target; }
 		BlockHitResult hit() { return hit; }
 		InteractionHand hand() { return hand; }
