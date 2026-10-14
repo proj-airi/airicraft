@@ -71,6 +71,10 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		if (minecraft == null || minecraft.gameMode == null || minecraft.level == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
 		}
+		if (ScreenCloseSafety.closeLeftoverContainer(player, "break_blocks_open_screen_close")) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "closing_open_screen");
+			return Optional.empty();
+		}
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "interaction_busy"));
 		}

@@ -536,6 +536,7 @@ public final class ReturnToSurfaceTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private boolean selectHotbarFiller(Minecraft minecraft, LocalPlayer player, List<String> fillerBlockIds) {
+		ScreenCloseSafety.closeLeftoverContainer(player, "return_to_surface_open_screen_close");
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return false;
 		}

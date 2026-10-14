@@ -120,6 +120,10 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "screen_dismissed");
 			return Optional.empty();
 		}
+		if (ScreenCloseSafety.closeLeftoverContainer(player, "entity_interaction_open_screen_close")) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "closing_open_screen");
+			return Optional.empty();
+		}
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			if (shouldWaitForBusyState(busyStateTicks)) {
 				busyStateTicks++;
