@@ -16,7 +16,9 @@ import java.util.Optional;
  * {@code /skills/index.txt}. The system prompt carries only the one-line index; {@code use_skill} returns a body.
  */
 public final class PlannerSkills {
-	public record Skill(String name, String description, String body) {}
+	public record Skill(String name, String description, String body, List<String> blocks) {}
+
+	private static final java.util.regex.Pattern ID = java.util.regex.Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+");
 
 	private static final String INDEX = "/skills/index.txt";
 	private static final PlannerSkills BUNDLED = load();
@@ -37,6 +39,27 @@ public final class PlannerSkills {
 
 	public Optional<Skill> find(String name) {
 		return Optional.ofNullable(name == null ? null : skills.get(name.strip()));
+	}
+
+	/**
+	 * Skills whose {@code blocks} frontmatter ({@code namespace:*} or an exact id) names a block id found in {@code text}.
+	 * Lets a tool result point at the rules for the block it just touched without any always-on prompt text.
+	 */
+	public List<Skill> matchingBlocks(String text) {
+		if (text == null || text.isEmpty()) return List.of();
+		List<Skill> found = new ArrayList<>();
+		for (Skill skill : skills.values()) {
+			if (skill.blocks().isEmpty()) continue;
+			var ids = ID.matcher(text);
+			while (ids.find()) if (matchesBlock(skill, ids.group())) { found.add(skill); break; }
+		}
+		return found;
+	}
+
+	private static boolean matchesBlock(Skill skill, String id) {
+		for (String pattern : skill.blocks())
+			if (pattern.endsWith(":*") ? id.startsWith(pattern.substring(0, pattern.length() - 1)) : pattern.equals(id)) return true;
+		return false;
 	}
 
 	/** One line per skill, for the system prompt. */
@@ -62,16 +85,18 @@ public final class PlannerSkills {
 		int end = normalized.indexOf("\n---\n", 4);
 		if (end < 0) throw new IllegalStateException("skill " + expectedName + " frontmatter is not closed");
 		String name = null, description = null;
+		List<String> blocks = new ArrayList<>();
 		for (String line : normalized.substring(4, end).split("\n")) {
 			int colon = line.indexOf(':');
 			if (colon < 0) continue;
 			String key = line.substring(0, colon).strip(), value = line.substring(colon + 1).strip();
 			if (key.equals("name")) name = value;
 			if (key.equals("description")) description = value;
+			if (key.equals("blocks")) for (String id : value.split(",")) if (!id.isBlank()) blocks.add(id.strip());
 		}
 		if (!expectedName.equals(name)) throw new IllegalStateException("skill " + expectedName + " declares name " + name);
 		if (description == null || description.isBlank()) throw new IllegalStateException("skill " + expectedName + " has no description");
-		return new Skill(name, description, normalized.substring(end + 5).strip());
+		return new Skill(name, description, normalized.substring(end + 5).strip(), List.copyOf(blocks));
 	}
 
 	private static String read(String resource) {

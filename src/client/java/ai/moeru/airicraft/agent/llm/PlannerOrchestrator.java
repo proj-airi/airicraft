@@ -93,6 +93,7 @@ public final class PlannerOrchestrator {
 	private final PlannerVisionService plannerVision;
 	// Backend-managed history is remote; conservatively budget until its session resets.
 	private int backendHistoryImages;
+	private final java.util.Set<String> hintedSkills = new java.util.HashSet<>();
 
 	public PlannerOrchestrator(
 		PlannerExecutor plannerExecutor,
@@ -1318,6 +1319,7 @@ public final class PlannerOrchestrator {
 		toolRegistry.resetProviders();
 		decisionWorldSessionId = null;
 		incorporatedDecisionEventSequence = 0;
+		hintedSkills.clear();
 		cancelPendingTool();
 		sessionCoordinator.reset();
 		compactionService.reset();
@@ -1608,6 +1610,7 @@ public final class PlannerOrchestrator {
 			captureInFlight = false;
 		}
 
+		toolOutcome = withSkillHint(toolOutcome, toolExecution.toolCalls());
 		PlannerContextSnapshot snapshot = sessionCoordinator.contextSnapshotFor(toolExecution.generation());
 		if (snapshot == null) {
 			return null;
@@ -2243,6 +2246,18 @@ public final class PlannerOrchestrator {
 
 	private void recordConversationSources() {
 		debugRecorder.recordConversationSources(conversationDebugSnapshot(), projectedConversationDebugSnapshot());
+	}
+
+	/** Names the skill for a block the call touched, once per skill per session; see {@link PlannerSkills#matchingBlocks}. */
+	private ToolExecutionOutcome withSkillHint(ToolExecutionOutcome outcome, List<PlannerToolCall> calls) {
+		if (!(outcome instanceof TextToolExecutionOutcome text) || calls == null || calls.size() != 1) return outcome;
+		String name = normalizedToolName(calls.getFirst());
+		if (!"use_block".equals(name) && !"place_block".equals(name)) return outcome;
+		var skills = PlannerSkills.bundled().matchingBlocks(calls.getFirst().arguments() + " " + text.toolResultText());
+		List<String> fresh = skills.stream().map(PlannerSkills.Skill::name).filter(hintedSkills::add).toList();
+		if (fresh.isEmpty()) return outcome;
+		return new TextToolExecutionOutcome(text.toolResultText() + "\nSkill hint: rules for these blocks are in " + String.join(", ", fresh)
+			+ "; call use_skill (alone) before the next attempt.");
 	}
 
 	private record ToolExecutionResult(

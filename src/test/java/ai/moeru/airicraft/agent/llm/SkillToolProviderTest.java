@@ -48,4 +48,15 @@ class SkillToolProviderTest {
 		var skill = PlannerSkills.parse("a", "---\nname: a\ndescription: d\n---\n\nbody\n");
 		assertEquals(Map.of("a", "body").get("a"), skill.body());
 	}
+
+	@Test void blocksFrontmatterMatchesNamespacesAndExactIds() {
+		var skill = PlannerSkills.parse("a", "---\nname: a\ndescription: d\nblocks: create:*, minecraft:furnace\n---\nbody");
+		assertEquals(List.of("create:*", "minecraft:furnace"), skill.blocks());
+		assertEquals(List.of(), PlannerSkills.parse("a", "---\nname: a\ndescription: d\n---\nbody").blocks());
+	}
+
+	@Test void aCreateBlockPointsAtTheModdedMachinesSkillAndVanillaDoesNot() {
+		assertEquals(List.of("modded-machines"), skills.matchingBlocks("{\"expectedState\":\"create:hand_crank[facing=north]\"}").stream().map(PlannerSkills.Skill::name).toList());
+		assertEquals(List.of(), skills.matchingBlocks("minecraft:stone_bricks placed; createx:thing"));
+	}
 }

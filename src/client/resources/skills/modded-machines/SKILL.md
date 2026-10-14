@@ -1,6 +1,7 @@
 ---
 name: modded-machines
 description: Using and building modded machines (Create): hand cranks, held clicks, facings, pressing.
+blocks: create:*
 ---
 
 Modded blocks are ordinary blocks to use_block and place_block; read their state with inspect_world and recipes with search_recipes before building.
