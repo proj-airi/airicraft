@@ -61,6 +61,10 @@ public final class SurvivalReflexRuntime {
 	static final int LAVA_ESCAPE_RADIUS = 5;
 	/** Ticks without closing in on the chosen bank before trying another. */
 	static final int LAVA_STALL_TICKS = 30;
+	/** Ticks of escaping a lit creeper with no distance gained before running straight away. */
+	static final int CREEPER_STALL_TICKS = 8;
+	static final int CREEPER_RUN_TICKS = 60;
+	static final int CREEPER_RUN_BLOCKS = 12;
 	static final int NO_CONTACT_RESUME_LIMIT = 3;
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 
@@ -103,6 +107,12 @@ public final class SurvivalReflexRuntime {
 	private List<ResolvedThreat> progressThreats;
 	private MinecraftCombatPositioning combatPositioning;
 	private String escapingCreeper;
+	/** A straight run from a lit creeper, taken when stepping about gains no distance (see {@link #tickCreeperRun}). */
+	private ai.moeru.airicraft.navigation.GridPos creeperRunTarget;
+	private long creeperRunTick;
+	private double creeperBestDistance = -1;
+	private long creeperGainTick;
+	private ai.moeru.airicraft.agent.navigation.MinecraftCellClassifier creeperClassifier;
 	private String reportedCombatFocus;
 	private CombatRecovery combatRecovery;
 	private boolean wetFighting;
@@ -923,6 +933,10 @@ public final class SurvivalReflexRuntime {
 		}
 		boolean usePositioning = shouldReposition(threats.size()) && navigationFacade != null && navigationFacade.isLoaded();
 		updateCreeperEscape(threats);
+		if (tickCreeperRun(minecraft, player, threats, tick)) {
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+			return;
+		}
 		if (tickCombatEating(minecraft, player, threats, tick, combatEating, usePositioning)) return;
 		if (threats.stream().noneMatch(threat ->
 			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())
@@ -1352,6 +1366,59 @@ public final class SurvivalReflexRuntime {
 	}
 
 	static boolean shouldReposition(int threatCount) { return threatCount >= 1; }
+
+	/**
+	 * Runs straight away from a lit creeper once stepping about has stopped gaining distance. A playtest body at
+	 * twelve health on a hillside flipped between three nearby cells for sixty ticks with a creeper at its side,
+	 * never climbing the slope, and was blown up. A creeper's fuse stops beyond seven blocks and its blast barely
+	 * hurts at six, so a sprint along the ground, routed by the navigator, is the way out.
+	 */
+	private boolean tickCreeperRun(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		ResolvedThreat creeper = escapingCreeper == null ? null : threats.stream()
+			.filter(t -> t.observed().uuid().equals(escapingCreeper)).findFirst().orElse(null);
+		if (creeper == null || navigationFacade == null || !navigationFacade.isLoaded()) {
+			endCreeperRun();
+			return false;
+		}
+		if (creeperRunTarget != null) {
+			if (navigationFacade.processActive() && tick - creeperRunTick < CREEPER_RUN_TICKS) return true;
+			creeperRunTarget = null;
+			creeperGainTick = tick;
+			creeperBestDistance = creeper.distance();
+		}
+		if (creeperBestDistance < 0 || creeper.distance() > creeperBestDistance + 0.3D) {
+			creeperBestDistance = Math.max(creeperBestDistance, creeper.distance());
+			creeperGainTick = tick;
+			return false;
+		}
+		if (tick - creeperGainTick < CREEPER_STALL_TICKS) return false;
+		var feet = player.blockPosition();
+		if (creeperClassifier == null) creeperClassifier = ai.moeru.airicraft.agent.navigation.MinecraftCellClassifier.forPlayer(null);
+		var entity = creeper.entity();
+		UnarmedFlight.Leg leg = UnarmedFlight.fleeTarget(
+			new ai.moeru.airicraft.agent.navigation.LiveWorldTerrain(minecraft.level, creeperClassifier),
+			new ai.moeru.airicraft.navigation.GridPos(feet.getX(), feet.getY(), feet.getZ()),
+			List.of(new UnarmedFlight.Threat(entity.getX(), entity.getZ(), entity.getHealth(), false, true, creeper.distance(), creeper.lineOfSight())),
+			CREEPER_RUN_BLOCKS);
+		creeperGainTick = tick;
+		if (leg == null) return false;
+		stopCombatNavigation();
+		combatPositioning = null;
+		movementController.stop(minecraft);
+		navigationFacade.startNavigateNear(new GoalPosition(leg.stand().x(), leg.stand().y(), leg.stand().z(), false), 1, UnarmedFlight.OPTIONS);
+		creeperRunTarget = leg.stand();
+		creeperRunTick = tick;
+		pendingEvents.add(new SurvivalReflexEvent("reflex.creeper_run", Map.of(
+			"tick", tick, "distance", creeper.distance(), "health", player.getHealth(),
+			"target", new GoalPosition(leg.stand().x(), leg.stand().y(), leg.stand().z(), true))));
+		return true;
+	}
+
+	private void endCreeperRun() {
+		if (creeperRunTarget != null && navigationFacade != null) navigationFacade.cancel();
+		creeperRunTarget = null;
+		creeperBestDistance = -1;
+	}
 
 	private void updateCreeperEscape(List<ResolvedThreat> threats) {
 		// Keep tracking the live pursuer, not the position where it first ignited.
@@ -1891,6 +1958,7 @@ public final class SurvivalReflexRuntime {
 	}
 
 	private void resetSecurityProgress() {
+		endCreeperRun();
 		escapingCreeper = null;
 		reportedCombatFocus = null;
 		combatPositioning = null;

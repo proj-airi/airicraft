@@ -750,6 +750,15 @@
       "extraWake": "W3"
     },
     {
+      "type": "reflex.creeper_run",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W3"
+    },
+    {
       "type": "reflex.food_eat_failed",
       "producers": [
         "SurvivalReflexRuntime"
