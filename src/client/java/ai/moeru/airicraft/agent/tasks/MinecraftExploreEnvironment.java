@@ -326,7 +326,16 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 		ClientLevel level = minecraft.level;
 		if (player == null || level == null) return ExploreForTaskExecutor.ShelterTick.FAILED;
 		BlockPos at = player.blockPosition();
-		if (at.getX() != plan.top().getX() || at.getZ() != plan.top().getZ() || at.getY() > plan.top().getY())
+		boolean offColumn = at.getX() != plan.top().getX() || at.getZ() != plan.top().getZ();
+		if (offColumn && at.getY() == plan.top().getY() && Math.abs(at.getX() - plan.top().getX()) <= 1
+			&& Math.abs(at.getZ() - plan.top().getZ()) <= 1 && !digging) {
+			// Arrived with momentum and slid one cell over before the first dig: step back.
+			Vec3 center = Vec3.atBottomCenterOf(plan.top());
+			camera.lookAt(minecraft, center.add(0.0D, player.getEyeHeight(), 0.0D));
+			movement.moveForward(minecraft, false, false, ticks);
+			return ExploreForTaskExecutor.ShelterTick.WORKING;
+		}
+		if (offColumn || at.getY() > plan.top().getY())
 			return failShelter("left_column at=" + at.toShortString() + " top=" + plan.top().toShortString());
 		var step = ExploreShelter.step(plan, at.getY(), player.onGround(), level.getBlockState(plan.roof()).isSolidRender());
 		shelterState = step + " at=" + at.toShortString() + " top=" + plan.top().toShortString() + " roof=" + plan.roof().toShortString()
