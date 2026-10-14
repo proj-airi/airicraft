@@ -305,7 +305,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                     .map(c->c.key()+"{"+c.item()+(unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z())?" below_unfinished":"")
                         +(environment.eligible(c)?" eligible":" not_eligible")+(immediate.contains(c)?" immediate":"")+(deferred.containsKey(c)?" deferred":"")+"}").toList();
                 throw new IllegalStateException("construction_no_feasible_target remaining="+pending.size()+" eligible="+eligible.size()+" deferred="+deferred.size()+" repairDebt="+ledger.entries().size()
-                    +" repairPlansWithoutProgress="+repairPlansWithoutProgress+" lowestPending="+lowest+" recentPlans="+planLog+" last="+lastFailure);
+                    +" repairPlansWithoutProgress="+repairPlansWithoutProgress+" lowestPending="+lowest
+                    +(abandoned.isEmpty()?"":" setAside="+abandoned.stream().sorted().limit(8).toList())+" recentPlans="+planLog+" last="+lastFailure);
             }
             repairEdit=repairQueue.removeFirst();var p=repairEdit.position();
             selectionReason="access_repair_or_cleanup";
