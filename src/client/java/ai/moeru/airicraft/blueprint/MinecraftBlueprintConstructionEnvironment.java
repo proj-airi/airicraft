@@ -9,6 +9,38 @@ import net.minecraft.core.Direction;
 
 /** Live geometry adapter; tool effects remain owned by the ordinary task executors. */
 public final class MinecraftBlueprintConstructionEnvironment implements BlueprintConstructionProgram.Environment {
+    /**
+     * Cells whose block cannot stay in the finished design, such as a torch over planned air: no stance or repair can ever place them.
+     * Checked against the world with every planned cell already in place.
+     */
+    public static java.util.List<BlueprintConstructionProgram.Cell> unsupportedInDesign(net.minecraft.world.level.LevelReader world,java.util.List<BlueprintConstructionProgram.Cell> cells) {
+        var planned=new java.util.HashMap<BlockPos,net.minecraft.world.level.block.state.BlockState>();
+        for(var c:cells)planned.put(new BlockPos(c.x(),c.y(),c.z()),Blueprint.parseState(c.state()));
+        var finished=plannedView(world,planned);
+        var unsupported=new java.util.LinkedHashSet<BlueprintConstructionProgram.Cell>();
+        // Skipping a block can strand what stands on it (a cactus on a skipped cactus): repeat until nothing more falls.
+        for(boolean changed=true;changed;){
+            changed=false;
+            for(var c:cells){
+                var pos=new BlockPos(c.x(),c.y(),c.z());var state=planned.get(pos);
+                if(unsupported.contains(c) || state.isAir() || !world.hasChunkAt(pos) || state.canSurvive(finished,pos))continue;
+                unsupported.add(c);planned.put(pos,world.getBlockState(pos));changed=true;
+            }
+        }
+        return java.util.List.copyOf(unsupported);
+    }
+    /** The world with planned states laid over it. Matched by signature, not name, so it survives remapping. */
+    static net.minecraft.world.level.LevelReader plannedView(net.minecraft.world.level.LevelReader world,java.util.Map<BlockPos,net.minecraft.world.level.block.state.BlockState> planned) {
+        return (net.minecraft.world.level.LevelReader)java.lang.reflect.Proxy.newProxyInstance(net.minecraft.world.level.LevelReader.class.getClassLoader(),
+            new Class<?>[]{net.minecraft.world.level.LevelReader.class},(proxy,method,args)->{
+                if(args!=null && args.length==1 && args[0] instanceof BlockPos pos){
+                    if(method.getReturnType()==net.minecraft.world.level.block.state.BlockState.class){var state=planned.get(pos);if(state!=null)return state;}
+                    if(method.getReturnType()==net.minecraft.world.level.material.FluidState.class){var state=planned.get(pos);if(state!=null)return state.getFluidState();}
+                }
+                if(method.isDefault())return java.lang.reflect.InvocationHandler.invokeDefault(proxy,method,args);
+                try{return method.invoke(world,args);}catch(java.lang.reflect.InvocationTargetException e){throw e.getCause();}
+            });
+    }
     private final Minecraft client;
     private final ClientLevel world;
     private final boolean previousBreak,previousPlace,previousAllowFlying,initiallyFlying;

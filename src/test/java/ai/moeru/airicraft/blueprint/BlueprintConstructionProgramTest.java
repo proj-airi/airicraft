@@ -192,7 +192,9 @@ class BlueprintConstructionProgramTest {
         for(int n=0;n<600;n++){
             try {step=program.resume(applyRepairFixtureEffect(step,world,true)).join().getAsJsonObject();}
             catch(java.util.concurrent.CompletionException error){
-                assertTrue(error.getCause().getMessage().startsWith("construction_no_feasible_target"));bounded=true;break;
+                // Either the repair budget runs out or the never-placeable cell is set aside.
+                var message=error.getCause().getMessage();
+                assertTrue(message.startsWith("construction_no_feasible_target") || message.startsWith("construction_incomplete"),message);bounded=true;break;
             }
         }
         assertTrue(bounded,"Cut-and-patch churn must exhaust a finite budget");
@@ -524,6 +526,75 @@ class BlueprintConstructionProgramTest {
         assertTrue(error.toString().contains("construction_material_missing itemId=minecraft:oak_planks"),error.toString());
         assertTrue(tools.contains("break_blocks"),tools.toString());
         assertEquals("minecraft:stone",world.states.get(0),tools.toString());
+    }
+    @Test void plannedAirIsClearedBeforeTheWallsCloseItIn(){
+        // Leaves at y=3 inside the room; walls at y=0..2 are placeable from the start.
+        var world=new World(){
+            {states.put(3,"minecraft:oak_leaves");}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return c.air() && states.containsKey(c.y());}
+            public ConstructionEscape.Position digStance(BlueprintConstructionProgram.Cell c){return new ConstructionEscape.Position(1,c.y(),0);}
+        };
+        var leaves=new BlueprintConstructionProgram.Cell(0,3,0,"minecraft:air","minecraft:air","house.interior");
+        var program=new BlueprintConstructionProgram(List.of(cell(0),cell(1),cell(2),leaves),world);
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        assertEquals("navigate_to",tool(step),"walk to the dig stance first");
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("inspect_world",tool(step));
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("break_blocks",tool(step),"leaves go before any wall");
+        world.states.remove(3);
+        step=program.resume(OK).join().getAsJsonObject();
+        step=program.resume(OK).join().getAsJsonObject();
+        assertEquals("place_block",tool(step));
+    }
+    @Test void anOpenDoorIsClosedNotDugOut(){
+        var door=new BlueprintConstructionProgram.Cell(0,5,0,"minecraft:oak_door[half=lower,open=false]","minecraft:oak_door","house.door");
+        var world=new World(){
+            {states.put(5,"minecraft:oak_door[half=lower,open=true]");}
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return c.y()==0;}
+            public boolean blocked(BlueprintConstructionProgram.Cell c){return c.y()==5;}
+            public boolean canToggle(BlueprintConstructionProgram.Cell c){return c.y()==5 && states.get(5).contains("open=true");}
+        };
+        var program=new BlueprintConstructionProgram(List.of(cell(0),door),world);
+        var tools=new ArrayList<String>();
+        var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+        for(int i=0;i<8 && !step.get("done").getAsBoolean();i++){
+            var name=tool(step);tools.add(name);
+            if(name.equals("place_block"))world.states.put(0,"minecraft:stone");
+            if(name.equals("use_block"))world.states.put(5,door.state());
+            step=program.resume(OK).join().getAsJsonObject();
+        }
+        assertTrue(step.get("done").getAsBoolean(),tools.toString());
+        assertFalse(tools.contains("break_blocks"),tools.toString());
+        assertTrue(tools.contains("use_block"),tools.toString());
+    }
+    @Test void aBlockNoStanceCanPlaceIsSetAsideAndTheRestFinishes(){
+        var torch=new BlueprintConstructionProgram.Cell(0,5,0,"minecraft:wall_torch","minecraft:torch","house.torch");
+        var world=new World(){
+            int scaffolds;
+            public boolean eligible(BlueprintConstructionProgram.Cell c){return c.y()==0 || c.y()==5;}
+            public BlueprintConstructionProgram.Cell repairTarget(){return torch;}
+            public List<AccessRepairSearch.Edit> repairPlan(List<BlueprintConstructionProgram.Cell> cells,boolean accessOnly){
+                return accessOnly?List.of():List.of(new AccessRepairSearch.Edit(new ConstructionEscape.Position(0,200+scaffolds++,0),"minecraft:air","minecraft:dirt",1));
+            }
+            public List<AccessRepairSearch.Edit> cleanupPlan(List<BlueprintConstructionProgram.Cell> cells,Map<ConstructionEscape.Position,ConstructionRepairLedger.Debt> debts){
+                return debts.keySet().stream().map(p->new AccessRepairSearch.Edit(p,"minecraft:dirt","minecraft:air",1)).toList();
+            }
+        };
+        var program=new BlueprintConstructionProgram(List.of(cell(0),torch),world);
+        var error=assertThrows(RuntimeException.class,()->{
+            var step=program.resume(JsonNull.INSTANCE).join().getAsJsonObject();
+            for(int i=0;i<600;i++){
+                var name=tool(step);var args=step.getAsJsonObject("value").getAsJsonObject("arguments").getAsJsonObject("args");
+                JsonElement result=OK;
+                if(name.equals("place_block")){int y=args.get("y").getAsInt();if(y==5)result=FAIL;else world.states.put(y,args.get("itemId").getAsString().equals("minecraft:dirt")?"minecraft:dirt":"minecraft:stone");}
+                if(name.equals("break_blocks"))world.states.remove(args.getAsJsonArray("targets").get(0).getAsJsonObject().get("y").getAsInt());
+                step=program.resume(result).join().getAsJsonObject();
+            }
+        });
+        assertTrue(error.toString().contains("construction_incomplete unplaced=[0,5,0{minecraft:wall_torch}]"),error.toString());
+        assertEquals("minecraft:stone",world.states.get(0));
+        assertTrue(world.states.keySet().stream().allMatch(y->y==0),"scaffolds are torn down: "+world.states);
     }
     @Test void bedHeadAndCreativeDoNotInflateTheShortfall(){
         var world=new World(){

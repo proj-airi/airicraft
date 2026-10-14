@@ -178,6 +178,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                 if(repairEdit!=null)environment.repairFailed(repairEdit);
                 if(repairEdit!=null && target.air())deferredCleanup.add(repairEdit.position());
                 failures++;consecutiveFailures++;repairQueue.clear();environment.repairDestination();deferred.put(target,geometryRevision);lastFailure=target.key()+": "+result;
+                // A block no stance or repair could place after many tries is set aside so the rest of the build and its teardown still finish.
+                if(repairEdit==null && !adjusting && placementFailures.merge(target.key(),1,Integer::sum)>=MAX_PLACEMENT_FAILURES)abandoned.add(target.key());
             }
             target=null;repairEdit=null;inspected=false;adjusting=false;
         }
@@ -189,8 +191,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             var args=new JsonObject();args.addProperty("x",accessDestination.x());args.addProperty("y",accessDestination.y());args.addProperty("z",accessDestination.z());args.addProperty("exactY",true);
             return effect("navigate_to",args);
         }
-        List<Cell> pending=cells.stream().filter(c->!c.state().equals(environment.state(c))).toList();
-        remaining=pending.size();
+        List<Cell> unfinished=cells.stream().filter(c->!c.state().equals(environment.state(c))).toList();
+        remaining=unfinished.size();
+        List<Cell> pending=abandoned.isEmpty()?unfinished:unfinished.stream().filter(c->!abandoned.contains(c.key())).toList();
         // Resource failures cannot be repaired by changing geometry. Check before
         // any access search, and again after every child effect consumes inventory.
         var checkedItems=new HashSet<String>();
@@ -214,6 +217,9 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         if(!onlyCleanup && consecutiveFailures>=3 && repairQueue.isEmpty() && repairPlansWithoutProgress<MAX_REPAIR_PLANS_WITHOUT_PROGRESS) {
             consecutiveFailures=0;repairPlans++;repairPlansWithoutProgress++;planRepair(false);
         }
+        if(pending.isEmpty() && ledger.entries().isEmpty() && pending.size()<unfinished.size())
+            throw new IllegalStateException("construction_incomplete unplaced="+unfinished.stream().limit(8).map(c->c.key()+"{"+c.state()+"}").toList()
+                +" reason=no stance could place them after "+MAX_PLACEMENT_FAILURES+" tries; everything else is built and scaffolds are removed. last="+lastFailure);
         if(pending.isEmpty() && ledger.entries().isEmpty()) {
             var value=new JsonObject();value.addProperty("placed",placed);value.addProperty("retries",failures);value.addProperty("verifiedCells",cells.size());
             var done=new JsonObject();done.addProperty("done",true);done.add("value",value);return done;
@@ -231,6 +237,26 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         var ordering=Comparator.comparingInt((Cell c)->c.equals(repairObjective)?0:1)
             .thenComparingInt(c->immediate.contains(c)?0:1)
             .thenComparingDouble(c->score(c,pendingPositions)).thenComparing(Cell::key);
+        // Clear planned air (leaves, trunks in the room) while the building is still open: once the walls and
+        // roof are up it can be reached only through the door, if at all. A cell that cannot be reached yet (the
+        // floor under its stance is not built) is retried after more geometry, a few times; then the dig fallback below takes over.
+        if(repairQueue.isEmpty() && !onlyCleanup){
+            var clear=pending.stream().filter(c->{
+                    var p=new ConstructionEscape.Position(c.x(),c.y(),c.z());var tried=earlyClearance.get(p);
+                    return c.air() && (tried==null || tried[0]<EARLY_CLEARANCE_ATTEMPTS && geometryRevision>=tried[1]+EARLY_CLEARANCE_SPACING)
+                        && !ledger.entries().containsKey(p) && !deferredCleanup.contains(p) && environment.blocked(c);
+                }).min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
+            if(clear!=null){
+                var p=new ConstructionEscape.Position(clear.x(),clear.y(),clear.z());
+                earlyClearance.merge(p,new int[]{1,geometryRevision},(old,next)->new int[]{old[0]+1,geometryRevision});
+                var stance=environment.digStance(clear);
+                if(stance!=null){
+                    digs.add(p);
+                    repairQueue.add(new AccessRepairSearch.Edit(p,environment.state(clear),"minecraft:air",1.0,stance));
+                    planLog.addLast("clear "+clear.key());if(planLog.size()>6)planLog.removeFirst();
+                }
+            }
+        }
         target=selectTarget(eligible,immediate,ordering,pending);
         // No shortlisted target has a known usable stance. Try a bounded access
         // macro before spending native attempts on the whole inaccessible layer.
@@ -251,7 +277,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
             if(repairQueue.isEmpty()) {
                 // Walls and floors that sit inside a hillside, and planned air (clearance) that holds a tree, have nothing to place over or are not yet empty.
                 // Dig the nearest one out; the ledger keeps the intended block owed. Scaffolds the build added inside planned air (ledger entries) are cleaned up by teardown, not dug.
-                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && (c.air() || !missingItems.contains(c.item())) && environment.blocked(c)
+                // A door left open by walking through it is closed at the end, never dug out.
+                var dig=pending.stream().filter(c->!c.state().contains("half=upper") && (c.air() || !missingItems.contains(c.item())) && !environment.canToggle(c) && environment.blocked(c)
                     && !(c.air() && ledger.entries().containsKey(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     && !deferredCleanup.contains(new ConstructionEscape.Position(c.x(),c.y(),c.z())))
                     .min(Comparator.comparingDouble(environment::distanceSquared)).orElse(null);
@@ -278,7 +305,8 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
                     .map(c->c.key()+"{"+c.item()+(unfinishedSolids.contains(c.x()+","+(c.y()-1)+","+c.z())?" below_unfinished":"")
                         +(environment.eligible(c)?" eligible":" not_eligible")+(immediate.contains(c)?" immediate":"")+(deferred.containsKey(c)?" deferred":"")+"}").toList();
                 throw new IllegalStateException("construction_no_feasible_target remaining="+pending.size()+" eligible="+eligible.size()+" deferred="+deferred.size()+" repairDebt="+ledger.entries().size()
-                    +" repairPlansWithoutProgress="+repairPlansWithoutProgress+" lowestPending="+lowest+" recentPlans="+planLog+" last="+lastFailure);
+                    +" repairPlansWithoutProgress="+repairPlansWithoutProgress+" lowestPending="+lowest
+                    +(abandoned.isEmpty()?"":" setAside="+abandoned.stream().sorted().limit(8).toList())+" recentPlans="+planLog+" last="+lastFailure);
             }
             repairEdit=repairQueue.removeFirst();var p=repairEdit.position();
             selectionReason="access_repair_or_cleanup";
@@ -300,6 +328,12 @@ public final class BlueprintConstructionProgram implements PolicyRuntime.Program
         return edit.after().equals("minecraft:air") && ((digs.contains(edit.position()) && actual.equals("minecraft:air")) || edit.before().split("\\[")[0].equals(actual.split("\\[")[0]));
     }
     private final Set<ConstructionEscape.Position> digs=new HashSet<>();
+    /** Early clearance attempts per cell: count and the geometry revision of the last one. */
+    private final Map<ConstructionEscape.Position,int[]> earlyClearance=new HashMap<>();
+    private final Map<String,Integer> placementFailures=new HashMap<>();
+    private final Set<String> abandoned=new HashSet<>();
+    private static final int MAX_PLACEMENT_FAILURES=10;
+    private static final int EARLY_CLEARANCE_ATTEMPTS=3,EARLY_CLEARANCE_SPACING=10;
     private final ArrayDeque<String> planLog=new ArrayDeque<>();
     private void planRepair(boolean initial) {
         var plan=environment.repairPlan(cells,initial);
