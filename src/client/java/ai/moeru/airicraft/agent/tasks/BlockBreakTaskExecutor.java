@@ -111,6 +111,13 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		if (!target.expectedBlockIds().contains(currentBlockId)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_block_mismatch targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 		}
+		if (!breakingActive && supportsBody(player, pos)) {
+			String unsafe = unsafeDropUnder(pos, below -> minecraft.level.hasChunkAt(below)
+				&& !minecraft.level.getBlockState(below).getCollisionShape(minecraft.level, below).isEmpty(),
+				below -> !minecraft.level.getFluidState(below).isEmpty() || minecraft.level.getBlockState(below).is(net.minecraft.tags.BlockTags.FIRE));
+			if (unsafe != null) return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, unsafe + " targetPos=" + compactPos(pos)
+				+ "; the body stands on it: dig a staircase with navigate_to instead"));
+		}
 		if (!withinInteractionRange(player, Vec3.atCenterOf(pos))) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range targetPos=" + compactPos(pos)));
 		}
@@ -186,6 +193,29 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		}
 		terminalEventEmitted = true;
 		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.FAILED, failure.detail(), null, failure.code()));
+	}
+
+	/** Highest fall the body takes without damage. */
+	static final int SAFE_DROP = 3;
+
+	private static boolean supportsBody(LocalPlayer player, BlockPos pos) {
+		var box = player.getBoundingBox();
+		return pos.getY() == (int) Math.floor(player.getY() - 0.01D) && box.maxX > pos.getX() && box.minX < pos.getX() + 1
+			&& box.maxZ > pos.getZ() && box.minZ < pos.getZ() + 1;
+	}
+
+	/**
+	 * Why breaking the block under the body is unsafe, or null: a fall of more than {@link #SAFE_DROP} blocks, or a
+	 * landing in lava, water or fire. A session lost its whole kit by breaking soul soil over a blaze spawner room.
+	 */
+	static String unsafeDropUnder(BlockPos target, java.util.function.Predicate<BlockPos> solid,
+		java.util.function.Predicate<BlockPos> hazard) {
+		for (int depth = 1; depth <= SAFE_DROP; depth++) {
+			BlockPos below = target.below(depth);
+			if (hazard.test(below)) return "unsafe_drop_into_hazard depth=" + depth;
+			if (solid.test(below)) return null;
+		}
+		return "unsafe_drop_below_target minDrop=" + (SAFE_DROP + 1);
 	}
 
 	private static boolean satisfied(BlockState state) {
