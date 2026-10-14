@@ -39,6 +39,14 @@ class SurvivalReflexRuntimeTest {
 		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
 	}
 
+	@Test void drowningEscapeIsSizedByAirAndHealthLeft() {
+		assertEquals(160, SurvivalReflexRuntime.survivableTicks(20, 16.0F));
+		assertEquals(0, SurvivalReflexRuntime.survivableTicks(-5, 2.0F));
+		// The lake-bed death: 20 air and 16 health still reach open water seven cells away.
+		assertTrue(ai.moeru.airicraft.agent.tasks.UnderwaterEscapeSearch.maxPathStepsForAir(
+			SurvivalReflexRuntime.survivableTicks(20, 16.0F)) >= 7);
+	}
+
 	@Test void noContactHoldsResumeByThemselvesOnlyAFewTimesAWindow() {
 		var history = new java.util.ArrayDeque<Long>();
 		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 100));

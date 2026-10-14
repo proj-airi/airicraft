@@ -571,7 +571,7 @@ public final class SurvivalReflexRuntime {
 				underwaterEscape.tick(
 					minecraft,
 					mode,
-					player.getAirSupply(),
+					survivableTicks(player.getAirSupply(), player.getHealth()),
 					tick,
 					mode == UnderwaterEscapeSearch.SearchMode.BREATHABLE
 						? !player.isUnderWater()
@@ -1770,6 +1770,16 @@ public final class SurvivalReflexRuntime {
 
 	static boolean shouldStartDrowning(boolean submerged, int air, int lowAirTicks, boolean drowningDamageObserved) {
 		return drowningDamageObserved || (submerged && air <= Math.max(0, lowAirTicks));
+	}
+
+	/**
+	 * How long the body can stay under before it dies: the air left and then one drowning hit of 2 every 20 ticks,
+	 * keeping the last heart. Sizing the escape route by air alone left a body with 20 air and 16 health a one-step
+	 * search, so it found nothing, sat on the lake bed and drowned with seven blocks of open water above it.
+	 */
+	static int survivableTicks(int air, float health) {
+		int hits = Math.max(0, (int) Math.ceil(health / 2.0F) - 1);
+		return Math.max(0, air) + hits * 20;
 	}
 
 	static boolean airRecoveryMarginReached(boolean submerged, int air, int maxAir) {

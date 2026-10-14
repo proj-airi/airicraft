@@ -885,7 +885,8 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		if (!allowsDirectInteractionApproach(approachReason)
 			|| !shouldUseDirectInteractionApproach(squaredDistance, movementController.snapshot().stuck(), sameTargetColumn, elapsedTicks)
 			|| player == null || aimPoint == null
-			|| directStepEntersHazard(player.position(), aimPoint, cell -> burnsOnContact(minecraft.level, cell))) {
+			|| directStepEntersHazard(player.position(), aimPoint,
+				cell -> burnsOnContact(minecraft.level, cell) || deepWater(minecraft.level, cell))) {
 			if (continuing || movementController.snapshot().stuck()) {
 				movementController.stop(minecraft);
 			}
@@ -943,6 +944,18 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		}
 		BlockState state = level.getBlockState(cell);
 		return state.getFluidState().is(FluidTags.LAVA) || state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE) || state.is(Blocks.MAGMA_BLOCK);
+	}
+
+	/**
+	 * Water two blocks deep. The direct approach only walks forward, so a body that steps into it sinks: a playtest
+	 * bucket fill aimed at a lake from the shore walked the body in and down onto the bed six blocks under, where it
+	 * drowned. Navigation, which knows how to swim, takes over instead.
+	 */
+	static boolean deepWater(Level level, BlockPos cell) {
+		if (level == null || !level.hasChunkAt(cell)) {
+			return false;
+		}
+		return level.getFluidState(cell).is(FluidTags.WATER) && level.getFluidState(cell.below()).is(FluidTags.WATER);
 	}
 
 	static boolean shouldUseDirectInteractionApproach(double squaredDistance, boolean movementStuck) {

@@ -29,6 +29,7 @@ public final class UnderwaterEscapeNavigator {
 	private double progressCheckpointDistance = Double.POSITIVE_INFINITY;
 	private int waypointIndex;
 	private String lastTransition = "idle";
+	private boolean swimDirectly;
 
 	public UnderwaterEscapeNavigator(NavigationFacade navigationFacade, WaypointDriver waypointDriver) {
 		this(navigationFacade, waypointDriver, Config.defaults());
@@ -74,6 +75,15 @@ public final class UnderwaterEscapeNavigator {
 
 	public void reset() {
 		resetNavigation(true);
+	}
+
+	/**
+	 * Swims each verified route cell by cell instead of handing the target to the pathfinder first. A drowning body has
+	 * no air to spend on a planner that is not a swimmer: in a playtest the exact navigation pulled it a block down and
+	 * sideways under a roof while the open column was straight above.
+	 */
+	public void swimDirectly(boolean swimDirectly) {
+		this.swimDirectly = swimDirectly;
 	}
 
 	/** Starts another search mode without forgetting failed targets in this recovery. */
@@ -179,6 +189,10 @@ public final class UnderwaterEscapeNavigator {
 		String reason
 	) {
 		initializeProgress(observation, currentCandidate.target());
+		if (swimDirectly) {
+			startWaypointFallback(candidates, observation, reason + "_direct_swim");
+			return;
+		}
 		if (navigationFacade != null && navigationFacade.isLoaded()) {
 			NavigationRelease.release(navigationFacade);
 			if (navigationAttemptedTargets.contains(currentCandidate.target())) {
