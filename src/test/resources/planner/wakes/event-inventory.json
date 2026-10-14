@@ -178,6 +178,15 @@
       "extraWake": null
     },
     {
+      "type": "inventory.junk_discarded",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "food.unavailable",
       "producers": [
         "EmbodiedAgentRuntime"
@@ -670,6 +679,15 @@
     },
     {
       "type": "reflex.combat_reposition",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.extinguished",
       "producers": [
         "SurvivalReflexRuntime"
       ],

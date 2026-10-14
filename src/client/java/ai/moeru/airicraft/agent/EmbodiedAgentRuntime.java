@@ -290,6 +290,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final MiningOpportunityJournal miningOpportunityJournal;
 	private final PlayerItemUseController playerItemUseController = new PlayerItemUseController();
 	private final ai.moeru.airicraft.agent.equipment.ArmorAutoEquip armorAutoEquip = new ai.moeru.airicraft.agent.equipment.ArmorAutoEquip();
+	private final ai.moeru.airicraft.agent.equipment.JunkDiscard junkDiscard = new ai.moeru.airicraft.agent.equipment.JunkDiscard();
 	private final FoodRuntime foodRuntime = new FoodRuntime();
 	private final SurvivalReflexRuntime.CombatEating combatEating = new SurvivalReflexRuntime.CombatEating() {
 		@Override public boolean needed(net.minecraft.client.player.LocalPlayer player) {
@@ -608,6 +609,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();
+		junkDiscard.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		toolWearTracker.reset();
@@ -1172,6 +1174,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (swap.replacedItemId() != null) payload.put("replacedItemId", swap.replacedItemId());
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "equipment.armor_equipped", payload);
 		});
+		ActiveJob job = activeJobRuntime.current();
+		boolean travelling = job != null && !job.status().terminal() && navigationFacade != null && navigationFacade.processActive()
+			&& (job.type() == ActiveJobType.NAVIGATE_TO || job.type() == ActiveJobType.FOLLOW_PLAYER
+				|| job.type() == ActiveJobType.RETURN_TO_SURFACE);
+		junkDiscard.tick(minecraft, tickCount, travelling).ifPresent(discard -> {
+			var payload = new LinkedHashMap<String, Object>();
+			payload.put("itemId", discard.itemId());
+			payload.put("count", discard.count());
+			payload.put("kept", discard.kept());
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "inventory.junk_discarded", payload);
+		});
 	}
 
 	private void tickIdleEating(Minecraft minecraft) {
@@ -1468,6 +1481,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();
+		junkDiscard.reset();
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();

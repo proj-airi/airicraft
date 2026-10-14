@@ -34,6 +34,7 @@ public final class EventCatalog {
 			new EventTypeSpec("food.eat_started", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eat_started")),
 			new EventTypeSpec("food.eaten", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.eaten")),
 			new EventTypeSpec("equipment.armor_equipped", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("equipment.armor_equipped")),
+			new EventTypeSpec("inventory.junk_discarded", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("inventory.junk_discarded")),
 			new EventTypeSpec("food.unavailable", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("food.unavailable")),
 
 			// lighting
@@ -97,6 +98,7 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.combat_focus", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_focus")),
 			new EventTypeSpec("reflex.combat_progress", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_progress")),
 			new EventTypeSpec("reflex.combat_reposition", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_reposition")),
+			new EventTypeSpec("reflex.extinguished", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.extinguished")),
 			new EventTypeSpec("reflex.food_eat_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_failed")),
 			new EventTypeSpec("reflex.food_eat_interrupted", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_interrupted")),
 			new EventTypeSpec("reflex.food_eat_started", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_started")),
