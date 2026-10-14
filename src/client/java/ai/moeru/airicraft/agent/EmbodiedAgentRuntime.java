@@ -291,6 +291,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final PlayerItemUseController playerItemUseController = new PlayerItemUseController();
 	private final ai.moeru.airicraft.agent.equipment.ArmorAutoEquip armorAutoEquip = new ai.moeru.airicraft.agent.equipment.ArmorAutoEquip();
 	private final ai.moeru.airicraft.agent.equipment.JunkDiscard junkDiscard = new ai.moeru.airicraft.agent.equipment.JunkDiscard();
+	private final ai.moeru.airicraft.agent.reflex.TreadWater treadWater = new ai.moeru.airicraft.agent.reflex.TreadWater();
 	private final FoodRuntime foodRuntime = new FoodRuntime();
 	private final SurvivalReflexRuntime.CombatEating combatEating = new SurvivalReflexRuntime.CombatEating() {
 		@Override public boolean needed(net.minecraft.client.player.LocalPlayer player) {
@@ -610,6 +611,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		foodRuntime.reset();
 		armorAutoEquip.reset();
 		junkDiscard.reset();
+		treadWater.reset(Minecraft.getInstance());
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		toolWearTracker.reset();
@@ -688,6 +690,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		tickSurvivalReflex(minecraft);
 		tickIdleEating(minecraft);
 		tickArmor(minecraft);
+		tickTreadWater(minecraft);
 		drainEventPipeline();
 
 		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, minecraft);
@@ -1187,6 +1190,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		});
 	}
 
+	private void tickTreadWater(Minecraft minecraft) {
+		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
+			&& !survivalReflexRuntime.snapshot().holdsNormalTasks() && !policyActive()
+			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
+			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current())
+			&& (navigationFacade == null || !navigationFacade.processActive());
+		treadWater.tick(minecraft, idle);
+	}
+
 	private void tickIdleEating(Minecraft minecraft) {
 		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) return;
 		var player = minecraft.player;
@@ -1482,6 +1494,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		foodRuntime.reset();
 		armorAutoEquip.reset();
 		junkDiscard.reset();
+		treadWater.reset(Minecraft.getInstance());
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();
