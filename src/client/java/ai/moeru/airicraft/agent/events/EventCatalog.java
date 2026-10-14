@@ -94,6 +94,9 @@ public final class EventCatalog {
 			// reflex
 			new EventTypeSpec("reflex.action_changed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.action_changed", true, null, true)),
 			new EventTypeSpec("reflex.actuator_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.actuator_failed", true, null, true)),
+			new EventTypeSpec("reflex.bunker_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunker_failed")),
+			new EventTypeSpec("reflex.bunker_started", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunker_started")),
+			new EventTypeSpec("reflex.bunkered", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunkered")),
 			new EventTypeSpec("reflex.close_quarter_attack", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.close_quarter_attack")),
 			new EventTypeSpec("reflex.combat_focus", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_focus")),
 			new EventTypeSpec("reflex.combat_progress", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.combat_progress")),

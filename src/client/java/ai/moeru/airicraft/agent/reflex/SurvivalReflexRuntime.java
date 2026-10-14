@@ -112,6 +112,7 @@ public final class SurvivalReflexRuntime {
 	private long lavaTargetProgressTick;
 	private boolean foodRetreatAbandoned;
 	private boolean foodUnavailableReported;
+	private final EmergencyBunker bunker = new EmergencyBunker();
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -371,6 +372,7 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public void reset(Minecraft minecraft) {
+		bunker.reset();
 		extinguishPour = null;
 		extinguishAttempts = 0;
 		foodRetreatStartedTick = -1L;
@@ -424,6 +426,7 @@ public final class SurvivalReflexRuntime {
 		long tick,
 		Runnable releaseNormalActuators
 	) {
+		bunker.allowRetry();
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -870,6 +873,7 @@ public final class SurvivalReflexRuntime {
 
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
+		if (tickBunker(minecraft, player, threats, tick, combatEating)) return;
 		if (combatProgress != null && combatProgress.stalled()) {
 			tacticalWindow = new TacticalWindow(tick + 1200, tick);
 			resolve(minecraft, player, threats, tick, "combat_stalemate", true);
@@ -930,6 +934,30 @@ public final class SurvivalReflexRuntime {
 		}
 	}
 
+	/**
+	 * At low health the fight turns into digging in (see {@link EmergencyBunker}); inside a closed bunker the body
+	 * eats and waits for the threats to leave. Returns whether the bunker handled this tick.
+	 */
+	private boolean tickBunker(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		if (!bunker.active() && (threats.isEmpty() || player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD)) return false;
+		try {
+			if (!bunker.closed(minecraft.level, player)) {
+				releaseShield(minecraft);
+				stopCombatNavigation();
+			}
+			if (!bunker.tick(minecraft, player, tick, actuator, cameraController, movementController,
+				item -> selectInventoryItem(minecraft, player, item), pendingEvents)) return false;
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("bunker", exception, tick);
+			return false;
+		}
+		if (bunker.closed(minecraft.level, player)) tickCombatEating(minecraft, player, threats, tick, combatEating, true);
+		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+		return true;
+	}
+
 	private boolean tickCombatEating(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating eating, boolean usePositioning) {
 		if (eating == null) return false;
@@ -950,7 +978,8 @@ public final class SurvivalReflexRuntime {
 		boolean immediate = immediateCombatDanger(minecraft, player, threats, tick);
 		boolean visible = threats.stream().anyMatch(ResolvedThreat::lineOfSight);
 		double nearest = threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
-		boolean sheltered = !immediate && assessMobSecurity(player, threats, tick) == SecurityKind.SEALED;
+		boolean sheltered = !immediate && (bunker.closed(minecraft.level, player)
+			|| assessMobSecurity(player, threats, tick) == SecurityKind.SEALED);
 		boolean safe = safeToEatDuringCombat(player.onGround(), player.isInWater(), immediate,
 			sheltered, visible, nearest);
 		if (eating.eating()) {
