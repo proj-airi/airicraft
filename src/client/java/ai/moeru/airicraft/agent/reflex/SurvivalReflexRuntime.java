@@ -23,6 +23,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
@@ -55,6 +56,7 @@ public final class SurvivalReflexRuntime {
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
 	static final int LAVA_CLEAR_TICKS = 5;
+	static final int EXTINGUISH_MAX_ATTEMPTS = 20;
 	static final int LAVA_ESCAPE_RADIUS = 5;
 	/** Ticks without closing in on the chosen bank before trying another. */
 	static final int LAVA_STALL_TICKS = 30;
@@ -84,8 +86,13 @@ public final class SurvivalReflexRuntime {
 	private CombatEpisode combatEpisode;
 	private final Map<String, ResolvedThreat> combatParticipants = new LinkedHashMap<>();
 	private TacticalWindow tacticalWindow;
-	record TacticalWindow(long untilTick) {
-		boolean active(long tick, float health) { return tick < untilTick && health > 4; }
+	/** The planner's turn to pick a tactic; a mob that lands a hit after it opened ends it, so the reflex fights again. */
+	record TacticalWindow(long untilTick, long openedTick) {
+		TacticalWindow(long untilTick) { this(untilTick, Long.MIN_VALUE); }
+		boolean active(long tick, float health) { return active(tick, health, Long.MIN_VALUE); }
+		boolean active(long tick, float health, long lastMobDamageTick) {
+			return tick < untilTick && health > 4 && lastMobDamageTick <= openedTick;
+		}
 	}
 	private List<ResolvedThreat> progressThreats;
 	private MinecraftCombatPositioning combatPositioning;
@@ -96,6 +103,8 @@ public final class SurvivalReflexRuntime {
 	private long escapeExhaustedTick = -1L;
 	private ReflexPolicy policyOverride;
 	private long foodRetreatStartedTick = -1L;
+	private BlockPos extinguishPour;
+	private int extinguishAttempts;
 	/** Banks the body could not close in on during this escape. */
 	private final Set<BlockPos> lavaBlockedTargets = new HashSet<>();
 	private BlockPos lavaTarget;
@@ -228,7 +237,7 @@ public final class SurvivalReflexRuntime {
 			return snapshot;
 		}
 
-		if (tacticalWindow != null && (!tacticalWindow.active(tick, player.getHealth()) || minecraft.level.getEntitiesOfClass(
+		if (tacticalWindow != null && (!tacticalWindow.active(tick, player.getHealth(), lastMobDamageTick) || minecraft.level.getEntitiesOfClass(
 			net.minecraft.world.entity.monster.Creeper.class, player.getBoundingBox().inflate(4),
 			c -> c.isAlive() && c.getSwellDir() > 0 && c.getSwelling(1) >= .5F).size() > 0)) tacticalWindow = null;
 		boolean lavaDanger = player.isInLava();
@@ -324,7 +333,7 @@ public final class SurvivalReflexRuntime {
 		if (snapshot.state() != SurvivalReflexState.AWAITING_PLANNER) {
 			return false;
 		}
-		if (tacticalWindow != null) tacticalWindow = new TacticalWindow(tick + 600);
+		if (tacticalWindow != null) tacticalWindow = new TacticalWindow(tick + 600, tick);
 		pendingEvents.add(new SurvivalReflexEvent("reflex.hold_released", mapOfNullable(
 			"holdId", snapshot.holdId(),
 			"reason", reason == null || reason.isBlank() ? "released" : reason,
@@ -362,6 +371,8 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public void reset(Minecraft minecraft) {
+		extinguishPour = null;
+		extinguishAttempts = 0;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -547,6 +558,10 @@ public final class SurvivalReflexRuntime {
 		}
 		boolean clear = !inLava && player.onGround();
 		int clearTicks = clear ? snapshot.breathableTicks() + 1 : 0;
+		if (clear && extinguish(minecraft, player, tick)) {
+			refreshSnapshot(player, threats, snapshot.lastDangerTick(), Math.min(clearTicks, LAVA_CLEAR_TICKS - 1), null);
+			return;
+		}
 		if (clearTicks >= LAVA_CLEAR_TICKS) {
 			if (!mobThreatsResolved(threats.size(), tick, lastMobDamageTick, config.threatCooldownTicks())) {
 				changeAction(SurvivalReflexCause.MOB_ATTACK, chooseMobAction(player, threats), tick);
@@ -579,6 +594,84 @@ public final class SurvivalReflexRuntime {
 			recordActuatorFailure("escape_lava", exception, tick);
 			refreshSnapshot(player, threats, inLava ? tick : snapshot.lastDangerTick(), clearTicks, failureText(exception));
 		}
+	}
+
+	/**
+	 * Out of lava the body keeps burning for up to fifteen seconds, which killed it from eight health once. With a
+	 * water bucket it pours water at its own feet, which puts the fire out, and scoops the water straight back.
+	 * Returns whether this tick acted, so the reflex holds until the fire is out and the bucket is refilled.
+	 */
+	private boolean extinguish(Minecraft minecraft, LocalPlayer player, long tick) {
+		ExtinguishStep step = extinguishStep(player.isOnFire(), player.isInWater(), extinguishPour != null,
+			extinguishAttempts, hasItem(player, Items.WATER_BUCKET), hasItem(player, Items.BUCKET));
+		if (step == ExtinguishStep.DONE) {
+			if (extinguishPour != null) pendingEvents.add(new SurvivalReflexEvent("reflex.extinguished", mapOfNullable(
+				"burning", player.isOnFire(), "bucketRefilled", hasItem(player, Items.WATER_BUCKET), "tick", tick)));
+			extinguishPour = null;
+			extinguishAttempts = 0;
+			return false;
+		}
+		extinguishAttempts++;
+		try {
+			movementController.stop(minecraft);
+			BlockPos feet = player.blockPosition();
+			if (step == ExtinguishStep.POUR) {
+				if (!selectInventoryItem(minecraft, player, Items.WATER_BUCKET)) return false;
+				cameraController.lookAt(minecraft, new Vec3(feet.getX() + 0.5D, feet.getY(), feet.getZ() + 0.5D));
+				if (actuator.useItem(minecraft, player, InteractionHand.MAIN_HAND).consumesAction()) {
+					extinguishPour = feet.immutable();
+					extinguishAttempts = 0;
+				}
+			}
+			else {
+				if (!selectInventoryItem(minecraft, player, Items.BUCKET)) return false;
+				cameraController.lookAt(minecraft, new Vec3(extinguishPour.getX() + 0.5D, extinguishPour.getY() + 0.5D,
+					extinguishPour.getZ() + 0.5D));
+				actuator.useItem(minecraft, player, InteractionHand.MAIN_HAND);
+			}
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("extinguish", exception, tick);
+		}
+		return true;
+	}
+
+	enum ExtinguishStep { POUR, SCOOP, DONE }
+
+	/** Pour while burning and dry; scoop the poured water back once the fire is out; give up after a few tries. */
+	static ExtinguishStep extinguishStep(boolean burning, boolean inWater, boolean poured, int attempts,
+		boolean hasWaterBucket, boolean hasEmptyBucket) {
+		if (attempts >= EXTINGUISH_MAX_ATTEMPTS) return ExtinguishStep.DONE;
+		if (!poured) return burning && !inWater && hasWaterBucket ? ExtinguishStep.POUR : ExtinguishStep.DONE;
+		if (burning && !inWater) return hasWaterBucket ? ExtinguishStep.POUR : ExtinguishStep.DONE;
+		return hasEmptyBucket && !hasWaterBucket ? ExtinguishStep.SCOOP : ExtinguishStep.DONE;
+	}
+
+	private static boolean hasItem(LocalPlayer player, net.minecraft.world.item.Item item) {
+		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++) {
+			if (player.getInventory().getItem(slot).is(item)) return true;
+		}
+		return false;
+	}
+
+	/** Puts the item in the selected hotbar slot, matching backing inventory indices in case a container menu is open. */
+	private boolean selectInventoryItem(Minecraft minecraft, LocalPlayer player, net.minecraft.world.item.Item item) {
+		if (player.getInventory().getSelectedItem().is(item)) return true;
+		for (int slot = 0; slot < 9; slot++) {
+			if (player.getInventory().getItem(slot).is(item)) return actuator.selectHotbar(minecraft, slot);
+		}
+		if (minecraft.gameMode == null) return false;
+		for (int slot = 9; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++) {
+			if (!player.getInventory().getItem(slot).is(item)) continue;
+			for (var menuSlot : player.containerMenu.slots) {
+				if (menuSlot.container == player.getInventory() && menuSlot.getContainerSlot() == slot) {
+					minecraft.gameMode.handleInventoryMouseClick(player.containerMenu.containerId, menuSlot.index,
+						player.getInventory().getSelectedSlot(), net.minecraft.world.inventory.ClickType.SWAP, player);
+					return player.getInventory().getSelectedItem().is(item);
+				}
+			}
+		}
+		return false;
 	}
 
 	/** Gives up on a bank the body has not closed in on for a while, so the next search picks another. */
@@ -778,7 +871,7 @@ public final class SurvivalReflexRuntime {
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
 		if (combatProgress != null && combatProgress.stalled()) {
-			tacticalWindow = new TacticalWindow(tick + 1200);
+			tacticalWindow = new TacticalWindow(tick + 1200, tick);
 			resolve(minecraft, player, threats, tick, "combat_stalemate", true);
 			return;
 		}

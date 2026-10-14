@@ -417,4 +417,28 @@ class SurvivalReflexRuntimeTest {
 		assertFalse(window.active(600, 20));
 		assertFalse(window.active(100, 4));
 	}
+
+	@Test void burningOutOfLavaPoursWaterAtTheFeetThenScoopsItBack() {
+		var POUR = SurvivalReflexRuntime.ExtinguishStep.POUR;
+		var SCOOP = SurvivalReflexRuntime.ExtinguishStep.SCOOP;
+		var DONE = SurvivalReflexRuntime.ExtinguishStep.DONE;
+		assertEquals(POUR, SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false));
+		// No water bucket, or not burning: nothing to do.
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(true, false, false, 0, false, true));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(false, false, false, 0, true, false));
+		// Poured and the fire is out: scoop the water back into the empty bucket.
+		assertEquals(SCOOP, SurvivalReflexRuntime.extinguishStep(false, true, true, 0, false, true));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(false, false, true, 0, true, false));
+		// A pour that did not land is retried, but not forever.
+		assertEquals(POUR, SurvivalReflexRuntime.extinguishStep(true, false, true, 3, true, false));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(true, false, true,
+			SurvivalReflexRuntime.EXTINGUISH_MAX_ATTEMPTS, true, false));
+	}
+
+	@Test void mobDamageAfterTheTacticalWindowOpensEndsIt() {
+		var window = new SurvivalReflexRuntime.TacticalWindow(1300, 100);
+		assertTrue(window.active(200, 14, 100));
+		assertTrue(window.active(200, 14, 40));
+		assertFalse(window.active(200, 11, 150));
+	}
 }

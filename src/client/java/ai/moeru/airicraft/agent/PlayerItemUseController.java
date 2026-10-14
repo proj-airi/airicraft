@@ -9,7 +9,7 @@ import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.InteractionHand;
@@ -142,23 +142,36 @@ final class PlayerItemUseController {
 		if (itemId == null || itemId.isBlank()) {
 			throw new IllegalArgumentException("itemId is required");
 		}
-		AbstractContainerMenu menu = player.containerMenu;
-		int sourceSlot = findInventorySlot(menu, itemId);
-		if (sourceSlot < 0) {
+		// A task can leave a container menu open with no screen shown (a carried furnace once did); item use and
+		// eating then misbehave until it is closed.
+		if (minecraft.screen == null && player.containerMenu != player.inventoryMenu && player.containerMenu.getCarried().isEmpty()) {
+			player.closeContainer();
+		}
+		int inventorySlot = findInventorySlot(player, itemId);
+		if (inventorySlot < 0) {
 			throw new IllegalArgumentException("item_not_found itemId=" + itemId);
 		}
 		int hotbarSlot;
-		if (sourceSlot >= InventoryMenu.USE_ROW_SLOT_START && sourceSlot < InventoryMenu.USE_ROW_SLOT_END) {
-			hotbarSlot = sourceSlot - InventoryMenu.USE_ROW_SLOT_START;
+		if (inventorySlot < Inventory.getSelectionSize()) {
+			hotbarSlot = inventorySlot;
 		}
 		else {
 			if (minecraft.gameMode == null) {
 				throw new IllegalStateException("interaction_manager_unavailable");
 			}
+			// The open menu may be a furnace or chest left open by a task, whose slot numbers are not the
+			// inventory menu's: swap through the menu slot that backs this inventory slot.
+			AbstractContainerMenu menu = player.containerMenu;
+			int menuSlot = menuSlotFor(menu, player.getInventory(), inventorySlot);
+			if (menuSlot < 0) {
+				throw new IllegalStateException("item_equip_failed itemId=" + itemId + " reason=no_menu_slot");
+			}
 			hotbarSlot = player.getInventory().getSelectedSlot();
-			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, sourceSlot, hotbarSlot, ClickType.SWAP, player);
+			minecraft.gameMode.handleInventoryMouseClick(menu.containerId, menuSlot, hotbarSlot, ClickType.SWAP, player);
 		}
-		actuator.selectHotbarAndSync(minecraft, hotbarSlot);
+		if (!actuator.selectHotbarAndSync(minecraft, hotbarSlot)) {
+			throw new IllegalStateException("control_held_by_another_owner itemId=" + itemId);
+		}
 		ItemStack selected = player.getInventory().getSelectedItem();
 		if (selected.isEmpty() || !itemId.equals(itemId(selected))) {
 			throw new IllegalStateException("item_equip_failed itemId=" + itemId);
@@ -166,15 +179,20 @@ final class PlayerItemUseController {
 		return selected;
 	}
 
-	private static int findInventorySlot(AbstractContainerMenu menu, String itemId) {
-		if (menu == null) {
-			return -1;
-		}
-		for (int slot = InventoryMenu.INV_SLOT_START; slot < InventoryMenu.USE_ROW_SLOT_END; slot++) {
-			ItemStack stack = menu.getSlot(slot).getItem();
+	private static int findInventorySlot(LocalPlayer player, String itemId) {
+		for (int slot = 0; slot < Inventory.INVENTORY_SIZE; slot++) {
+			ItemStack stack = player.getInventory().getItem(slot);
 			if (!stack.isEmpty() && itemId.equals(itemId(stack))) {
 				return slot;
 			}
+		}
+		return -1;
+	}
+
+	static int menuSlotFor(AbstractContainerMenu menu, Inventory inventory, int inventorySlot) {
+		if (menu == null) return -1;
+		for (var slot : menu.slots) {
+			if (slot.container == inventory && slot.getContainerSlot() == inventorySlot) return slot.index;
 		}
 		return -1;
 	}

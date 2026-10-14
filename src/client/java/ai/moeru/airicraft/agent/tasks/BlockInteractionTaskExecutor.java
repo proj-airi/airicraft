@@ -937,7 +937,7 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		return false;
 	}
 
-	private static boolean burnsOnContact(Level level, BlockPos cell) {
+	static boolean burnsOnContact(Level level, BlockPos cell) {
 		if (level == null || !level.hasChunkAt(cell)) {
 			return false;
 		}
