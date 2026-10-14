@@ -17,10 +17,17 @@ public final class MinecraftBlueprintConstructionEnvironment implements Blueprin
         var planned=new java.util.HashMap<BlockPos,net.minecraft.world.level.block.state.BlockState>();
         for(var c:cells)planned.put(new BlockPos(c.x(),c.y(),c.z()),Blueprint.parseState(c.state()));
         var finished=plannedView(world,planned);
-        return cells.stream().filter(c->{
-            var pos=new BlockPos(c.x(),c.y(),c.z());var state=planned.get(pos);
-            return !state.isAir() && world.hasChunkAt(pos) && !state.canSurvive(finished,pos);
-        }).toList();
+        var unsupported=new java.util.LinkedHashSet<BlueprintConstructionProgram.Cell>();
+        // Skipping a block can strand what stands on it (a cactus on a skipped cactus): repeat until nothing more falls.
+        for(boolean changed=true;changed;){
+            changed=false;
+            for(var c:cells){
+                var pos=new BlockPos(c.x(),c.y(),c.z());var state=planned.get(pos);
+                if(unsupported.contains(c) || state.isAir() || !world.hasChunkAt(pos) || state.canSurvive(finished,pos))continue;
+                unsupported.add(c);planned.put(pos,world.getBlockState(pos));changed=true;
+            }
+        }
+        return java.util.List.copyOf(unsupported);
     }
     /** The world with planned states laid over it. Matched by signature, not name, so it survives remapping. */
     static net.minecraft.world.level.LevelReader plannedView(net.minecraft.world.level.LevelReader world,java.util.Map<BlockPos,net.minecraft.world.level.block.state.BlockState> planned) {

@@ -70,6 +70,23 @@ class BlueprintDiagnosticsTest {
         assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(1,4,1)).state().isAir(),"inside the room");
         assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(2,3,1)).state().isAir(),"walking room at floor level");
     }
+    @Test void aRoomWithNoFloorClearsTheTrunkUnderItsRoof(){
+        String wall="{\"id\":\"%s\",\"at\":[%d,0,%d],\"volume\":{\"size\":[%d,3,%d],\"state\":\"minecraft:stone\"}}";
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":["
+            +String.format(wall,"w",0,0,1,5)+","+String.format(wall,"e",4,0,1,5)+","+String.format(wall,"n",1,0,3,1)+","+String.format(wall,"s",1,4,3,1)+","
+            +"{\"id\":\"roof\",\"at\":[0,3,0],\"volume\":{\"size\":[5,1,5],\"state\":\"minecraft:stone\"}}]}").getAsJsonObject();
+        var blueprint=new Blueprint(tree,null,Map.of("2,2",java.util.List.of("oak_log@0..2")));
+        for(int y=0;y<3;y++)assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(2,y,2)).state().isAir(),"trunk inside the room y="+y);
+    }
+    @Test void aLowFoundationBesideARaisedFloorDoesNotDigTheDoorstep(){
+        var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":["
+            +"{\"id\":\"floor\",\"at\":[0,3,0],\"volume\":{\"size\":[2,1,1],\"state\":\"minecraft:stone\"}},"
+            +"{\"id\":\"footing\",\"at\":[1,0,0],\"volume\":{\"size\":[1,1,1],\"state\":\"minecraft:cobblestone\"}},"
+            +"{\"id\":\"roof\",\"at\":[0,6,0],\"volume\":{\"size\":[2,1,1],\"state\":\"minecraft:stone\"}}]}").getAsJsonObject();
+        var blueprint=new Blueprint(tree,null,Map.of("0,1",java.util.List.of("mushroom_stem@0..4")));
+        for(int y=0;y<3;y++)assertNull(blueprint.cells.get(new net.minecraft.core.BlockPos(0,y,1)),"doorstep support y="+y);
+        assertTrue(blueprint.cells.get(new net.minecraft.core.BlockPos(0,3,1)).state().isAir(),"walking room at floor level");
+    }
     @Test void attachmentsOverPlannedAirAreUnsupportedInTheDesign(){
         // An empty, loaded world: every unplanned position is air.
         var world=(net.minecraft.world.level.LevelReader)java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
@@ -86,6 +103,23 @@ class BlueprintDiagnosticsTest {
         var hole=new BlueprintConstructionProgram.Cell(2,0,0,"minecraft:air","minecraft:air","alcove");
         var floating=new BlueprintConstructionProgram.Cell(2,1,0,"minecraft:torch","minecraft:torch","torchB");
         assertEquals(java.util.List.of(floating),MinecraftBlueprintConstructionEnvironment.unsupportedInDesign(world,java.util.List.of(floor,held,hole,floating)));
+    }
+    @Test void skippingASupportAlsoSkipsWhatStandsOnIt(){
+        var world=(net.minecraft.world.level.LevelReader)java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{net.minecraft.world.level.LevelReader.class},(proxy,method,args)->{
+                if(method.getReturnType()==net.minecraft.world.level.block.state.BlockState.class)return net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
+                if(method.getReturnType()==net.minecraft.world.level.material.FluidState.class)return net.minecraft.world.level.material.Fluids.EMPTY.defaultFluidState();
+                if(method.getReturnType()==boolean.class)return true;
+                if(method.getReturnType()==int.class)return 0;
+                if(method.isDefault())return java.lang.reflect.InvocationHandler.invokeDefault(proxy,method,args);
+                return null;
+            });
+        var hole=new BlueprintConstructionProgram.Cell(0,0,0,"minecraft:air","minecraft:air","pit");
+        var lower=new BlueprintConstructionProgram.Cell(0,1,0,"minecraft:torch","minecraft:torch","lower");
+        var bottom=new BlueprintConstructionProgram.Cell(2,1,0,"minecraft:cactus","minecraft:cactus","cactusBottom");
+        var top=new BlueprintConstructionProgram.Cell(2,2,0,"minecraft:cactus","minecraft:cactus","cactusTop");
+        var skipped=MinecraftBlueprintConstructionEnvironment.unsupportedInDesign(world,java.util.List.of(hole,lower,top,bottom));
+        assertEquals(java.util.Set.of(lower,bottom,top),java.util.Set.copyOf(skipped));
     }
     @Test void missingIdIsNamedNotANullPointer(){
         var tree=JsonParser.parseString("{\"id\":\"a\",\"children\":[{\"type\":\"WalkableArea\"}]}").getAsJsonObject();

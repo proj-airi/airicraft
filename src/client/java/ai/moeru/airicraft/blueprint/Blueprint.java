@@ -29,25 +29,34 @@ public final class Blueprint {
     public static final String DERIVED_CLEARANCE="derived_clearance";
     /**
      * Clears every sampled obstacle block that is inside the columns the blueprint touches (plus one block of walking room) and not above its highest cell.
-     * Blocks below a column's lowest built block (or, in the walking room, its neighbours' lowest) are support, not obstacles: digging them leaves pits under floors and in front of doors.
+     * Blocks below a column's floor are support, not obstacles: digging them leaves pits under floors and in front of doors.
+     * A column's floor is its lowest built block, except a lone run at the top of the upper half of the building (a roof), which covers
+     * room volume down to the building's lowest block. The walking room keeps everything below its highest neighbouring floor.
      */
     private void deriveClearance(Map<String,List<String>> obstacles) {
-        int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,maxY=Integer.MIN_VALUE;
-        var lowest=new HashMap<Long,Integer>();
+        int minX=Integer.MAX_VALUE,maxX=Integer.MIN_VALUE,minZ=Integer.MAX_VALUE,maxZ=Integer.MIN_VALUE,minY=Integer.MAX_VALUE,maxY=Integer.MIN_VALUE;
+        var lowest=new HashMap<Long,Integer>();var highest=new HashMap<Long,Integer>();var solids=new HashMap<Long,Integer>();
         for(var c:cells.values()) {
             if(c.state().isAir()) continue;
-            var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());maxY=Math.max(maxY,p.getY());
-            lowest.merge(BlockPos.asLong(p.getX(),0,p.getZ()),p.getY(),Math::min);
+            var p=c.position();minX=Math.min(minX,p.getX());maxX=Math.max(maxX,p.getX());minZ=Math.min(minZ,p.getZ());maxZ=Math.max(maxZ,p.getZ());minY=Math.min(minY,p.getY());maxY=Math.max(maxY,p.getY());
+            long key=BlockPos.asLong(p.getX(),0,p.getZ());
+            lowest.merge(key,p.getY(),Math::min);highest.merge(key,p.getY(),Math::max);solids.merge(key,1,Integer::sum);
         }
         if(maxY==Integer.MIN_VALUE) return;
+        var floor=new HashMap<Long,Integer>();
+        for(var e:lowest.entrySet()){
+            long key=e.getKey();int low=e.getValue();
+            boolean loneRun=solids.get(key)==highest.get(key)-low+1;
+            floor.put(key,loneRun && highest.get(key)>=maxY-1 && 2*low>minY+maxY?minY:low);
+        }
         var air=Blocks.AIR.defaultBlockState();int cleared=0;
         softOwners.add(DERIVED_CLEARANCE);
         for(var column:obstacles.entrySet()) {
             String[] xz=column.getKey().split(",");int x=Integer.parseInt(xz[0]),z=Integer.parseInt(xz[1]);
             if(x<minX-1||x>maxX+1||z<minZ-1||z>maxZ+1) continue;
-            Integer base=lowest.get(BlockPos.asLong(x,0,z));
+            Integer base=floor.get(BlockPos.asLong(x,0,z));
             if(base==null)for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
-                var near=lowest.get(BlockPos.asLong(x+dx,0,z+dz));if(near!=null)base=base==null?near:Math.min(base,near);
+                var near=floor.get(BlockPos.asLong(x+dx,0,z+dz));if(near!=null)base=base==null?near:Math.max(base,near);
             }
             if(base==null) continue;
             for(String run:column.getValue()) {
