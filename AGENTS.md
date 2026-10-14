@@ -131,6 +131,7 @@
 - `airicraft reload`
 - `airicraft worlds list`
 - `airicraft worlds join --world-id <id>`
+- `airicraft worlds leave` (save and quit to the title screen; use it before stopping a client so the world keeps its progress)
 - `airicraft servers list`
 - `airicraft servers join --server-id <id>`
 - `airicraft player focus`
@@ -188,6 +189,7 @@
 - `POST /v1/reload`
 - `GET /v1/worlds`
 - `POST /v1/worlds/join`
+- `POST /v1/worlds/leave`
 - `GET /v1/servers`
 - `POST /v1/servers/join`
 - `GET /v1/focus`
