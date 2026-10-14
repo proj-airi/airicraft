@@ -39,6 +39,12 @@ class SurvivalReflexRuntimeTest {
 		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
 	}
 
+	@Test void digsInOnlyWithRoomBeforeTheNearestMeleeMobArrives() {
+		assertFalse(SurvivalReflexRuntime.roomToDig(1.5D));
+		assertTrue(SurvivalReflexRuntime.roomToDig(9.0D));
+		assertTrue(SurvivalReflexRuntime.roomToDig(Double.POSITIVE_INFINITY));
+	}
+
 	@Test void digsInEarlyOnlyWhenOutnumberedWithNoWayToHeal() {
 		assertTrue(SurvivalReflexRuntime.losingFight(9.18F, 2, false));
 		assertFalse(SurvivalReflexRuntime.losingFight(9.18F, 1, false));

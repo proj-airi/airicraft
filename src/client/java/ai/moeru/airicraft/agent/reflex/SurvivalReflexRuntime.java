@@ -66,6 +66,7 @@ public final class SurvivalReflexRuntime {
 	static final int CREEPER_RUN_TICKS = 60;
 	static final int CREEPER_RUN_BLOCKS = 12;
 	static final float LOSING_FIGHT_HEALTH = 12.0F;
+	static final double BUNKER_MELEE_CLEARANCE = 6.0D;
 	static final int NO_CONTACT_RESUME_LIMIT = 3;
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 
@@ -1105,6 +1106,7 @@ public final class SurvivalReflexRuntime {
 		boolean losing = losingFight(player.getHealth(), threats.size(), canHeal);
 		if (!bunker.active() && (threats.isEmpty()
 			|| player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered && !losing)) return false;
+		if (!bunker.active() && !cornered && !roomToDig(nearestMeleeDistance(threats))) return false;
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
@@ -1126,6 +1128,20 @@ public final class SurvivalReflexRuntime {
 	 * Outnumbered with health that cannot come back. A playtest body at 9 health and 14 food, with nothing it would eat,
 	 * fought a skeleton and a zombie until an arrow took it to 6; it only started digging in then and died in the hole.
 	 */
+	/**
+	 * Digging three blocks down and roofing over takes about three seconds by hand, in which a zombie walks seven
+	 * blocks. A playtest body at 5 health started digging with one beside it, was knocked out of its column by the
+	 * first hit and died; running (or fighting, when armed) is the answer to a mob that close.
+	 */
+	static boolean roomToDig(double nearestMeleeDistance) {
+		return nearestMeleeDistance >= BUNKER_MELEE_CLEARANCE;
+	}
+
+	private static double nearestMeleeDistance(List<ResolvedThreat> threats) {
+		return threats.stream().filter(threat -> !isRangedThreat(threat.entity()))
+			.mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
+	}
+
 	static boolean losingFight(float health, int threatCount, boolean canHeal) {
 		return !canHeal && threatCount >= 2 && health <= LOSING_FIGHT_HEALTH;
 	}
