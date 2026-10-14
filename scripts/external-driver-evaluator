@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+	printf '%s\n' \
+		'Usage: scripts/external-driver-evaluator [Gradle run arguments...]' \
+		'' \
+		'Launch the evaluator addon with its embedded planner dormant.' \
+		'An external agent (a coding agent, a script, or you) drives scenarios through the wrapper CLI.' \
+		'' \
+		'Use a fresh worktree when the run must not inherit an existing' \
+		'provider or observability configuration.' \
+		'' \
+		'Set AIRICRAFT_BRIDGE_STATE_FILE to an absolute path to isolate discovery.' \
+		'Set AIRICRAFT_EVALUATOR_GAME_DIR to an absolute path to isolate game data.' \
+		'Set AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST to its scenario.yml to load requiredMods.'
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+	usage
+	exit 0
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+cd "$repo_root"
+
+envrc_path="$repo_root/.envrc"
+if [[ ! -f "$envrc_path" ]]; then
+	git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "$git_common_dir" && -f "$(dirname -- "$git_common_dir")/.envrc" ]]; then
+		envrc_path="$(dirname -- "$git_common_dir")/.envrc"
+	fi
+fi
+
+if [[ -f "$envrc_path" ]]; then
+	# shellcheck disable=SC1091
+	source "$envrc_path"
+fi
+
+printf '%s\n' \
+	'Launching the Airicraft evaluator in external-driver mode.' \
+	'This script starts Minecraft only; it does not start any agent.' \
+	'Use the wrapper CLI to start a scenario, act, and poll its report.' \
+	"Bridge state: ${AIRICRAFT_BRIDGE_STATE_FILE:-$HOME/.airicraft/bridge-state.json}"
+
+gradle_args=()
+if [[ -n "${AIRICRAFT_EVALUATOR_GAME_DIR:-}" ]]; then
+	if [[ "$AIRICRAFT_EVALUATOR_GAME_DIR" != /* ]]; then
+		printf 'AIRICRAFT_EVALUATOR_GAME_DIR must be an absolute path\n' >&2
+		exit 2
+	fi
+	gradle_args+=("-Pairicraft.evaluator.runDir=$AIRICRAFT_EVALUATOR_GAME_DIR")
+fi
+gradle_args+=("-Pairicraft.evaluator.jdwp.enabled=${AIRICRAFT_EVALUATOR_JDWP_ENABLED:-true}")
+
+exec ./gradlew \
+	"${gradle_args[@]}" \
+	wrapper:installDist \
+	-Pairicraft.includeEvaluator=true \
+	-Pairicraft.externalDriver=true \
+	:addons:evaluator:runClientEvaluator \
+	"$@"

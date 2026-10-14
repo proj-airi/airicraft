@@ -465,7 +465,7 @@ pass review unnoticed.
 - [x] `idle_think_invalidated_by_action_goal`: queue idle think while a turn is held, start an action goal, release. Expect the IDLE_THINK trigger to be gone.
 - [x] `tick_debug_pause_then_resume`: idle, `advanceWallClock(5 min)` with no ticks, then one tick. Pins D7.
 - [x] `degraded_mode`: inject timeouts until degraded, then chat. Expect no request, and the fixed character line queued.
-- [x] `external_driver`: set `airicraft.codexDriver=true` before construction and restore it in `finally`. Expect no autonomous requests.
+- [x] `external_driver`: set `airicraft.externalDriver=true` before construction and restore it in `finally`. Expect no autonomous requests.
 - [x] `evaluation_chat_then_suppression`: `emitEvaluationChat`, then `finishEvaluation()`, then autonomous events. Expect the listed types suppressed. If `prepareForEvaluation` needs a live client, cover only the reachable part and note the gap in the test comment.
 
 If a scenario turns out not to be reachable with a null client, move it to

@@ -45,7 +45,7 @@ the error identifies it. Creation uses the standard installed datapack loading f
 ## Launch directly into a saved world
 
 ```sh
-scripts/codex-driver --world "New survival"
+scripts/external-driver --world "New survival"
 # Normal launch with the embedded planner:
 ./gradlew runClient -Pairicraft.world="New survival"
 ```

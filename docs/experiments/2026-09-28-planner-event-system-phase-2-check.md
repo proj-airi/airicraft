@@ -5,7 +5,7 @@
 ## Setup
 
 - Dev client: `./gradlew runClient -Pairicraft.includeCompat=false`, under Xvfb with Mesa llvmpipe (software rendering, 4 cores).
-- Driving: `-Pairicraft.codexDriver=true`. The agent was driven through `airicraft agent tools call`, with no LLM configured.
+- Driving: `-Pairicraft.externalDriver=true`. The agent was driven through `airicraft agent tools call`, with no LLM configured.
 - Recording: `-Pairicraft.automaticPlaytest=true` wrote `attention-decisions.jsonl` next to `events.jsonl`.
 - State reads: bridge JSON from `/v1/agent/debug/state`, and the dashboard in headless Chromium.
 - Worlds: `run/saves/smoke` from `scenarios/pickup` and `run/saves/smoke2` from `scenarios/iron-pickaxe`.

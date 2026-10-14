@@ -83,8 +83,8 @@ own reviewed golden diff; wake audits did not change in any of them.
   next line (`…}Tool queue:`); they now end their own line. `reflexPolicy`
   (3d) always lands there. The goldens record JSON, so neither change moves
   them.
-- **Live smoke needs a stub endpoint, not the codex driver.** In
-  codex-driver mode the external driver owns decisions and planner wakes
+- **Live smoke needs a stub endpoint, not the external driver.** In
+  external-driver mode the external driver owns decisions and planner wakes
   are dropped, so `agent tools call observe` shows events and `current`
   but never `wake` or `hints`.
 

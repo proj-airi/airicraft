@@ -396,7 +396,7 @@ Status (2026-09-30): done; the in-house backend is the only backend (see Phase 6
     Baritone's walked length;
   - pass rate 60/60 against 60/60; no stalls on either backend; no fall damage;
   - not yet measured: preserved-area refusal (no benchmark course), follow, the ten
-    model-driven scenarios, and the live Codex-driver session.
+    model-driven scenarios, and the live external-driver session.
 
 - **Movement executors.** Add `MoveExecutor`s for walk, diagonal, ascend,
   descend, fall, swim, climb and door. Add the `PathFollower` with live
@@ -502,7 +502,7 @@ Decided deliberately during implementation:
 - **Click-channel bounds stay in the mixin.** Travel-bounds and preserved-area enforcement for
   clicks is still the existing `ClientPlayerInteractionManagerMixin` backstop; `Actuator`
   only serialises the calls behind a lease.
-- **The live Codex-driver session gate was not run.** It needs a model. Instead the
+- **The live external-driver session gate was not run.** It needs a model. Instead the
   deterministic benchmark, the reflex fixtures and the live tool smoke ran, which cover
   movement, reflex recovery and the tool executors, but not model-driven planning.
 
@@ -526,7 +526,7 @@ They are the merge criterion for the Phase 6 change.
     `GoalXZ` scenario passes on arrival; its path cost is not compared, because
     segmented planning differs from Baritone's cached-chunk pathing by design;
   - no regression in the existing ten scenarios.
-- **Live session:** one Codex-driver session on the flip branch covering travel,
+- **Live session:** one external-driver session on the flip branch covering travel,
   resource acquisition, combat and underwater recovery, in place of a soak.
 - **Stalls:** stall rate ≤ baseline.
 

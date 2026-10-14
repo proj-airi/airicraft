@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive planner tools without a model and check their effect on the world.
 
-Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner dormant) and
+Start a client with scripts/external-driver-evaluator (evaluator loaded, native planner dormant) and
 join a disposable singleplayer world while standing on open ground. Each scenario builds a scratch
 arena through POST /v1/evaluation/tool-fixture, gives the player what the tool needs, calls the
 tool through the external-driver route, and judges it by what changed in the world (inventory,

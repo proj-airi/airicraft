@@ -17,7 +17,8 @@
 - Mod version comes from axion-release: a `v*` tag on HEAD builds that exact version, other commits build a `-SNAPSHOT`. `mod_version` in `gradle.properties` only seeds tagless repos / SCM failure; `./gradlew printModVersion` prints the resolved version; there is no manual override — release versions exist only as git tags. `AIRICRAFT_RELEASE_CHANNEL=dev` turns a plain release tag into `-alpha` (CI release flow); channel builds fail when HEAD lacks a parseable `v*` tag or the tag shape is disallowed (`-SNAPSHOT` means axion silently skipped the tag). Do NOT run `./gradlew release`/`publish` — axion provides those tasks but this repo releases by pushing `v*` tags for CI; the plugin tasks bypass the dev/main channel checks.
 - Requires git submodules: `git submodule update --init --recursive` (build fails on `action-plan-advisor` if absent).
 - `ffmpeg` must be on PATH or `PlaytestVideoRecorder`-related tests fail with `IOException` (playtest screen recording spawns it). Install: `brew install ffmpeg`.
-- Normal Minecraft launches (`./gradlew runClient`, `scripts/codex-driver`, `scripts/arthas kickstart`) enable all supported mod integrations by default.
+- External-driver mode: `scripts/external-driver` (or `scripts/external-driver-evaluator`) launches the client with the embedded planner dormant so an outside agent drives it through the wrapper CLI (`agent tools list|call`); status reports `externalDriverActive: true`. See `.agents/skills/airicraft-external-driver/SKILL.md`. It was called the "Codex driver"; `scripts/codex-driver*` and `-Pairicraft.codexDriver` still work as aliases.
+- Normal Minecraft launches (`./gradlew runClient`, `scripts/external-driver`, `scripts/arthas kickstart`) enable all supported mod integrations by default.
 - `runClient` starts JDWP by default on `127.0.0.1:5005` with `suspend=n`
 - Attach a debugger with `jdb -attach 127.0.0.1:5005` or any JDWP client
 - Override JDWP settings with Gradle properties, for example:
@@ -30,7 +31,7 @@
   - Config shared with normal dev: `run/config/airicraft`.
   - Jar cache ignored: `.airicraft-compat/integration/`; never vendor optional-mod jars or copy them into `run/mods`.
   - Setup/list jars: `scripts/compat setup`, `scripts/compat mods`.
-  - Test an extra mod (for example Create Fly for 1.21.8) without vendoring it: put its jar in a local directory and pass `-Pairicraft.extraModsDir=<dir>` to `scripts/compat` or `scripts/codex-driver`.
+  - Test an extra mod (for example Create Fly for 1.21.8) without vendoring it: put its jar in a local directory and pass `-Pairicraft.extraModsDir=<dir>` to `scripts/compat` or `scripts/external-driver`.
   - Verify live: mod list has `airicraft` + `airicraft-journeymap-compat` + `journeymap` + `airicraft-rei-compat` + `roughlyenoughitems`; `airicraft map status` says `available: true`, `preferredProvider: journeymap`; planner still exposes `search_recipes`.
 - Evaluation batches:
   - Each `scenarios/<id>/scenario.yml` declares `requiredMods: [journeymap, roughlyenoughitems]` as needed. Omitted or empty means no optional integrations; dependencies of a declared mod are included automatically.
@@ -41,7 +42,7 @@
   - Passed worker directories are deleted. Failed, review, stalled, and interrupted directories remain under `run/evaluator-workers/`.
   - A scenario with no planner turn, in-flight planner call, or new agent event for `budget.maxStallTicks` (default 6,000; `0` disables) ends as `STALLED`, a terminal non-pass.
   - Batch clients disable JDWP. Manual evaluator launches keep JDWP on `127.0.0.1:5008`.
-- Navigation baseline: `xvfb-run -a python3 scripts/run-navigation-baseline --runs 5` launches an evaluator client, loads a scenario world, builds deterministic courses and drives `navigate_to` without a model (or run `scripts/navigation-baseline` by hand against `scripts/codex-driver-evaluator` in a disposable world). See `docs/navigation-baseline.md`.
+- Navigation baseline: `xvfb-run -a python3 scripts/run-navigation-baseline --runs 5` launches an evaluator client, loads a scenario world, builds deterministic courses and drives `navigate_to` without a model (or run `scripts/navigation-baseline` by hand against `scripts/external-driver-evaluator` in a disposable world). See `docs/navigation-baseline.md`.
 - Navigation is in-house: there is no Baritone dependency. Users with a Baritone jar in their mods folder should remove it.
 - Perception baseline: `scripts/perception-baseline` against the same client walks the evaluator's `notice_walk` course without a model and checks honest noticing (exposed vein noticed, sealed ore never, garbage dropped) and sensor cost. See `docs/perception.md`.
 - Arthas CLI live-debug:

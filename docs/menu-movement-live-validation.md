@@ -1,8 +1,8 @@
 # Menu closing during movement: live validation
 
-Validated `635b9b53` on 2026-09-29 in external Codex-driver mode, Minecraft
+Validated `635b9b53` on 2026-09-29 in external-driver mode, Minecraft
 1.21.8, with JourneyMap and REI loaded. All nine checks passed without a code
-change. The embedded planner remained disabled (`codexDriverActive: true`).
+change. The embedded planner remained disabled (`externalDriverActive: true`).
 
 ## Fixture
 

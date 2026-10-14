@@ -1,0 +1,4 @@
+interface:
+  display_name: "Airicraft External Driver"
+  short_description: "Drive a live Airicraft client from this agent session"
+  default_prompt: "Use $airicraft-external-driver to launch and directly debug a live Airicraft client from this task."

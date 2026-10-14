@@ -276,7 +276,7 @@ public final class BlueprintService {
                 }
                 if(!server.getWorldPath(LevelResource.ROOT).normalize().getFileName().toString().startsWith("Blueprint-"))throw new IllegalStateException("requires_Blueprint_scratch_world");
                 if(op.equals("prepare")) {
-                    if(!Boolean.getBoolean("airicraft.codexDriver"))throw new IllegalStateException("codex_driver_required");
+                    if(!Boolean.getBoolean("airicraft.externalDriver"))throw new IllegalStateException("external_driver_required");
                     String requestedMode=a.has("gameMode")?a.get("gameMode").getAsString():"creative";
                     GameType gameMode=switch(requestedMode){
                         case "creative" -> GameType.CREATIVE;
@@ -298,7 +298,7 @@ public final class BlueprintService {
                     return JSON.toJson(Map.of("saved",server.saveEverything(false,true,true)));
                 }
                 if(op.equals("view")) {
-                    if(!Boolean.getBoolean("airicraft.codexDriver"))throw new IllegalStateException("codex_driver_required");
+                    if(!Boolean.getBoolean("airicraft.externalDriver"))throw new IllegalStateException("external_driver_required");
                     BlockPos p=Blueprint.vector(a.get("position"));
                     player.teleportTo(world,p.getX()+.5,p.getY(),p.getZ()+.5,Set.<Relative>of(),a.has("yaw")?a.get("yaw").getAsFloat():0,a.has("pitch")?a.get("pitch").getAsFloat():20,true);
                     player.getAbilities().flying=true;player.onUpdateAbilities();return JSON.toJson(Map.of("position",Blueprint.xyz(p)));

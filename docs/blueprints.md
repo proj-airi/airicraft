@@ -13,7 +13,7 @@ Blueprint state is owned by `BlueprintService` inside the mod. The normal `bluep
 
 ## Authoring and inspection
 
-The normal planner delegates authoring to `design_blueprint` (see below). In Codex driver mode, use `blueprint` with `op:"rule_docs"` to retrieve the component library, rule API and defaults, then submit JavaScript defining `function design(input)` with `op:"draft", source:...`. `get` returns compact draft metadata to the ordinary planner and the full draft in driver mode; `explain` traces a local position to its owner and overridden contributors. The authoring library and advisory sources live under `src/main/resources/blueprint/`.
+The normal planner delegates authoring to `design_blueprint` (see below). In external driver mode, use `blueprint` with `op:"rule_docs"` to retrieve the component library, rule API and defaults, then submit JavaScript defining `function design(input)` with `op:"draft", source:...`. `get` returns compact draft metadata to the ordinary planner and the full draft in driver mode; `explain` traces a local position to its owner and overridden contributors. The authoring library and advisory sources live under `src/main/resources/blueprint/`.
 
 Components include `Assembly`, `Room`, `Floor`, `Door`, `Window`, `Staircase`, `GableRoof`, `Foundation`, `Solid` and `Clearance`. Explicit `replaces` relationships resolve intentional overlaps. `Clearance` emits owned air; unspecified cells do not change the world.
 
@@ -30,7 +30,7 @@ Annotate circulation surfaces rather than furniture footprints. The compiler ret
 
 `commit` requires an exact revision and origin. It currently spawns the draft's cells directly and is limited to creative worlds named `Blueprint-*`. `verify` checks those committed cells against the world. Unspecified cells remain untouched: moving/removing geometry in a later draft does not automatically undo an earlier commit. Use explicit Clearance or separate test sites for those changes. The separate `construct_blueprint` tool below performs normal movement and placement; supplied-material Survival qualifications are listed below.
 
-`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are Codex-driver-only diagnostics (test setup and camera positioning). `prepare` accepts `gameMode: "creative"` (default) or `"survival"`, preserves inventory (or, with `give: {"minecraft:oak_planks": 128}`, replaced by exactly that kit), and sets peaceful daytime in a `Blueprint-*` scratch world. Survival construction still consumes supplied materials; direct-block `commit` remains Creative-only. The normal planner delegates drafting and linting to its designer and can inspect, commit and verify without external-driver mode. The dashboard exposes none of these mutation operations.
+`sample` captures terrain for foundation authoring; `save` saves the scratch world. `prepare` and `view` are external-driver-only diagnostics (test setup and camera positioning). `prepare` accepts `gameMode: "creative"` (default) or `"survival"`, preserves inventory (or, with `give: {"minecraft:oak_planks": 128}`, replaced by exactly that kit), and sets peaceful daytime in a `Blueprint-*` scratch world. Survival construction still consumes supplied materials; direct-block `commit` remains Creative-only. The normal planner delegates drafting and linting to its designer and can inspect, commit and verify without external-driver mode. The dashboard exposes none of these mutation operations.
 
 ## Validation
 
@@ -48,7 +48,7 @@ The normal planner calls `design_blueprint({brief,site:[x,y,z],revise?})`. A sep
 
 The specialist can only draft, inspect coordinates/components and run the bundled advisory rules. Each successful draft updates the Blueprint preview. Full cell maps are omitted from its repeated conversational feedback. It has a 16-turn and 240,000-character conversation budget; budget exhaustion is reported rather than treated as completion. A final host-run lint is required before a completed result. Findings remain advisory, and rule failures are returned for review.
 
-`revise` refers to the ID returned by this planner session and must retain the same site. A repeated request at the same site is also treated as a revision, so the completed building is not resampled as terrain. Terrain sampling preserves the last accepted draft, source and advice until another draft succeeds. It seeds a fresh specialist conversation with the existing component tree rather than unrelated earlier chat. There is one active design and a world-local catalog of up to 32 independent designs. `blueprint list` discovers saved IDs and `blueprint load` selects one for inspection or revision. Planner reset cancels an active design; world leave invalidates its lease and clears the in-memory preview; the saved catalog reloads on joining the world. Late model responses cannot write into a new session. Direct authoring through the raw `blueprint` tool remains available only in Codex driver mode; ordinary planners use the specialist.
+`revise` refers to the ID returned by this planner session and must retain the same site. A repeated request at the same site is also treated as a revision, so the completed building is not resampled as terrain. Terrain sampling preserves the last accepted draft, source and advice until another draft succeeds. It seeds a fresh specialist conversation with the existing component tree rather than unrelated earlier chat. There is one active design and a world-local catalog of up to 32 independent designs. `blueprint list` discovers saved IDs and `blueprint load` selects one for inspection or revision. Planner reset cancels an active design; world leave invalidates its lease and clears the in-memory preview; the saved catalog reloads on joining the world. Late model responses cannot write into a new session. Direct authoring through the raw `blueprint` tool remains available only in external driver mode; ordinary planners use the specialist.
 
 The **Blueprint designer** dashboard tab is separate from the main LLM transcript. Dedicated `blueprint_designer` observations record the system/authoring prompt, brief, supplied context, progress, assistant replies (including text alongside tool calls), tool calls/results, errors and terminal status, tagged by run ID and blueprint ID. The tab displays recorded runs through the selected timeline moment, including offline JSONL replay. Raw developer exports include these records; normal diagnostic reports include metadata only. The live snapshot remains bounded independently, while recorded entries are capped at 1,000,000 characters each with explicit truncation. Recording follows the dashboard's existing rolling time/byte retention and a 4,096-entry type cap; export a session to retain its transcript beyond that window or a client restart. The worker is not fed the viewer transcript, and its internal conversation is not added to the main planner's transcript. Runs from before recording was enabled cannot be reconstructed.
 
@@ -1583,7 +1583,7 @@ with these requirement-to-evidence links:
 
 | Requirement | Implementation and authoritative evidence |
 | --- | --- |
-| Existing pathfinder/motor, legitimate actions, no construction LLM | EmbodiedAgentRuntime starts BlueprintConstructionProgram through ToolPolicyHost; house effect inventory and gap-free recording above; Codex driver verified active |
+| Existing pathfinder/motor, legitimate actions, no construction LLM | EmbodiedAgentRuntime starts BlueprintConstructionProgram through ToolPolicyHost; house effect inventory and gap-free recording above; external driver verified active |
 | Foundation and jump/roof failure diagnosis | Recorded roof-jump trajectories and landing/headroom fixes above; current Moves/MoveExecutors regression tests; latest house foundation and upper traces, full completion and usable stairs |
 | Ordering, locality, travel cost, bounded lookahead | BlueprintConstructionProgram structural-support ordering, current-stance 24-candidate lookahead, route-cost shortlist and local allowance; focused tests; two separated-site repetitions and current house/pavilion metrics |
 | Exact states and dynamic replanning | Native placement-state prediction, fresh state reads after effects, geometry invalidation; exact 599-cell completion and zero-edit recheck; partial-shape pavilion completion |
@@ -1636,7 +1636,7 @@ not a confirmed diagnosis. Retry after restoring the display.
 ### Additional structures: live Survival retry
 
 After the display was available, the normal compatibility client launched in
-Codex driver mode with all integrations. The following fresh-site trials used
+External driver mode with all integrations. The following fresh-site trials used
 supplied inventory, normal movement/placement, and no structure spawning. Setup
 teleports and game-mode changes occurred before each construction operation.
 

@@ -1,6 +1,6 @@
 # Navigation watchdog live validation — 2026-09-22
 
-Revision tested: `20f54bb3`. Two fresh evaluator Minecraft clients, external Codex driver enabled, embedded planner disabled. Isolated game directory; the archived Cortico cooperative world was not changed. No production class hot swap. The evaluator used Zulu Java 21.0.5 rather than the crashed cooperative run's JBR/DCEVM runtime, so this is not a reproduction or clearance of that native GC crash.
+Revision tested: `20f54bb3`. Two fresh evaluator Minecraft clients, external driver enabled, embedded planner disabled. Isolated game directory; the archived Cortico cooperative world was not changed. No production class hot swap. The evaluator used Zulu Java 21.0.5 rather than the crashed cooperative run's JBR/DCEVM runtime, so this is not a reproduction or clearance of that native GC crash.
 
 ## Results
 

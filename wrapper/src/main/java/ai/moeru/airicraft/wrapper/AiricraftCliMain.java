@@ -57,7 +57,7 @@ public final class AiricraftCliMain {
 		root.addSubcommand("agent", new UsageCommand(out, "airicraft agent", "Agent observability and debug commands"));
 		CommandLine agent = root.getSubcommands().get("agent");
 		agent.addSubcommand(new AgentStatusCommand(context));
-		agent.addSubcommand("tools", new UsageCommand(out, "airicraft agent tools", "External Codex driver tool commands"));
+		agent.addSubcommand("tools", new UsageCommand(out, "airicraft agent tools", "External driver tool commands"));
 		CommandLine agentTools = agent.getSubcommands().get("tools");
 		agentTools.addSubcommand(new AgentToolsListCommand(context));
 		agentTools.addSubcommand(new AgentToolsCallCommand(context));
@@ -312,7 +312,7 @@ public final class AiricraftCliMain {
 		}
 	}
 
-	@Command(name = "list", mixinStandardHelpOptions = true, description = "List every planner tool available to an external Codex driver.")
+	@Command(name = "list", mixinStandardHelpOptions = true, description = "List every planner tool available to an external driver.")
 	private static final class AgentToolsListCommand extends BaseCommand {
 		private AgentToolsListCommand(CliContext context) {
 			super(context, "agent tools list");
@@ -324,7 +324,7 @@ public final class AiricraftCliMain {
 		}
 	}
 
-	@Command(name = "call", mixinStandardHelpOptions = true, description = "Call any planner tool through the external Codex driver.")
+	@Command(name = "call", mixinStandardHelpOptions = true, description = "Call any planner tool through the external driver.")
 	private static final class AgentToolsCallCommand extends BaseCommand {
 		@Option(names = "--name", required = true, description = "Planner tool name.")
 		private String name;
@@ -2504,7 +2504,7 @@ public final class AiricraftCliMain {
 
 		private static Map<String, Object> agentStatus(Map<String, Object> payload, boolean verbose) {
 			LinkedHashMap<String, Object> view = new LinkedHashMap<>();
-			copy(view, payload, "available", "initialized", "tickCount", "codexDriverActive", "llmAvailable", "visionAvailable", "plannerVisionMode", "degraded");
+			copy(view, payload, "available", "initialized", "tickCount", "externalDriverActive", "llmAvailable", "visionAvailable", "plannerVisionMode", "degraded");
 			if (payload.containsKey("session")) {
 				view.put("session", payload.get("session"));
 			}
@@ -2530,7 +2530,7 @@ public final class AiricraftCliMain {
 
 		private static Map<String, Object> agentTools(Map<String, Object> payload, boolean verbose) {
 			LinkedHashMap<String, Object> view = new LinkedHashMap<>();
-			copy(view, payload, "available", "codexDriverActive", "toolCount");
+			copy(view, payload, "available", "externalDriverActive", "toolCount");
 			List<Map<String, Object>> tools = maps(payload.get("tools"));
 			List<Map<String, Object>> projected = new ArrayList<>();
 			for (Map<String, Object> tool : tools) {
@@ -2548,7 +2548,7 @@ public final class AiricraftCliMain {
 
 		private static Map<String, Object> agentToolResult(Map<String, Object> payload, boolean verbose) {
 			LinkedHashMap<String, Object> view = new LinkedHashMap<>();
-			copy(view, payload, "available", "codexDriverActive", "toolName", "result", "imageAttached", "imageOutputPath");
+			copy(view, payload, "available", "externalDriverActive", "toolName", "result", "imageAttached", "imageOutputPath");
 			if (verbose) {
 				copy(view, payload, "imageMimeType", "imageDetail");
 			}

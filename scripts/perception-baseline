@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check honest noticing on the evaluator's deterministic notice course, without a model.
 
-Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner
+Start a client with scripts/external-driver-evaluator (evaluator loaded, native planner
 dormant) and join a disposable singleplayer world. For each run, this script:
 
 1. builds the notice_walk course through POST /v1/evaluation/notice-course,

@@ -506,7 +506,7 @@ public final class EvaluationAddonRuntime {
 
 		@Override
 		public boolean externalDriverActive() {
-			return runtime.codexDriverActive();
+			return runtime.externalDriverActive();
 		}
 
 		@Override

@@ -298,14 +298,14 @@ class WakeCharacterizationTest {
 		}
 	}
 	@Test void external_driver() {
-		String prior = System.getProperty("airicraft.codexDriver");
-		System.setProperty("airicraft.codexDriver", "true");
+		String prior = System.getProperty("airicraft.externalDriver");
+		System.setProperty("airicraft.externalDriver", "true");
 		try (var h = new WakeScenarioHarness()) {
 			h.tick(1); h.chat("Alex", "@agent hello"); h.runtime.onPlayerPickedUpItem("minecraft:oak_log", 1); h.tick(10);
 			assertTrue(h.backend.requests().isEmpty());
 			h.transcript("external_driver").assertMatchesGolden("external_driver");
 		} finally {
-			if (prior == null) System.clearProperty("airicraft.codexDriver"); else System.setProperty("airicraft.codexDriver", prior);
+			if (prior == null) System.clearProperty("airicraft.externalDriver"); else System.setProperty("airicraft.externalDriver", prior);
 		}
 	}
 	@Test void addressed_chat_while_turn_in_flight() {

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive one blueprint construction trial against a running driver-mode client and record metrics.
 
-Prerequisites: a client launched with scripts/codex-driver on a Blueprint-* world, AIRICRAFT_BRIDGE_STATE_FILE set
+Prerequisites: a client launched with scripts/external-driver on a Blueprint-* world, AIRICRAFT_BRIDGE_STATE_FILE set
 if isolated, and the wrapper built (./gradlew wrapper:installDist). Experimental; the flow, not the numbers, is the contract.
 
   scripts/terrain-trial --site 60 65 20 --blueprint-id <saved id> --out run/blueprint-evidence/trials/slope
