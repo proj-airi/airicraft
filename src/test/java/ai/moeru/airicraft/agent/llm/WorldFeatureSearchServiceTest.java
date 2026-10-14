@@ -176,6 +176,35 @@ class WorldFeatureSearchServiceTest {
 		assertTrue(result.text().contains("standPos=9,21,0"), result.text());
 	}
 
+	@Test
+	void endPortalFramesDeepUnderTheSurfaceAreOnePortal() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// The twelve frames of a portal room: three on each side of the 3x3 opening at x 10..12, z 10..12.
+		for (int i = 10; i <= 12; i++) {
+			access.exposed.add(new BlockPos(i, 30, 9));
+			access.exposed.add(new BlockPos(i, 30, 13));
+			access.exposed.add(new BlockPos(9, 30, i));
+			access.exposed.add(new BlockPos(13, 30, i));
+		}
+		access.standable(new BlockPos(10, 31, 8));
+
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("end_portal"));
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=end_portal"), result.text());
+		assertTrue(result.text().contains("exposedBlocks=12"), result.text());
+		assertTrue(result.text().contains("standPos=10,31,8"), result.text());
+	}
+
+	@Test
+	void aFewStrayFramesAreNotAPortal() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.exposed.add(new BlockPos(10, 30, 9));
+		access.exposed.add(new BlockPos(11, 30, 9));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("end_portal"));
+		assertTrue(result.text().contains("returned=0"), result.text());
+	}
+
 	private static JsonObject args(String featureKind) {
 		JsonObject args = new JsonObject();
 		args.addProperty("featureKind", featureKind);

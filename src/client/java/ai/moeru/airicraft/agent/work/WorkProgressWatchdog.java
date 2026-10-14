@@ -71,7 +71,9 @@ public final class WorkProgressWatchdog {
 				// Waiting for the dragon to perch is the fight; the task has its own no-progress deadline.
 				|| w.label().equals("FIGHT_ENDER_DRAGON")
 				// Mining one obsidian stands still for 188 ticks; the task has its own no-progress deadline.
-				|| w.label().equals("COLLECT_OBSIDIAN")) continue;
+				|| w.label().equals("COLLECT_OBSIDIAN")
+				// An eye of ender flies for 80 ticks while the body stands still; the task has its own deadlines.
+				|| w.label().equals("LOCATE_STRONGHOLD")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			// Cells are recorded while navigating too, so a restart between attempts finds nothing new.

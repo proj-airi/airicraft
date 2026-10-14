@@ -83,7 +83,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		List<FeatureCandidate> candidates = switch (request.featureKind()) {
 			case WATER_BODY -> findWaterBodies(access, origin, request);
 			case FOREST -> findForests(access, origin, request);
-			case LAVA_POOL, NETHER_FORTRESS -> findExposedClusters(access, origin, request);
+			case LAVA_POOL, NETHER_FORTRESS, END_PORTAL -> findExposedClusters(access, origin, request);
 		};
 		List<FeatureCandidate> limited = candidates.stream()
 			.sorted(FeatureCandidate.ORDERING)
@@ -489,7 +489,9 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		/** Lava sources, for casting obsidian. */
 		LAVA_POOL("lava_pool", 4),
 		/** Nether bricks, fences and stairs: only fortresses generate them. */
-		NETHER_FORTRESS("nether_fortress", 24);
+		NETHER_FORTRESS("nether_fortress", 24),
+		/** End portal frames: only a stronghold's portal room has them. */
+		END_PORTAL("end_portal", 4);
 
 		private final String wireValue;
 		private final int minExposedBlocks;
@@ -676,6 +678,7 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 				case LAVA_POOL -> state -> state.is(Blocks.LAVA) && state.getFluidState().isSource();
 				case NETHER_FORTRESS -> state -> state.is(Blocks.NETHER_BRICKS) || state.is(Blocks.NETHER_BRICK_FENCE)
 					|| state.is(Blocks.NETHER_BRICK_STAIRS);
+				case END_PORTAL -> state -> state.is(Blocks.END_PORTAL_FRAME);
 				default -> state -> false;
 			};
 			int minChunkX = (origin.getX() - maxDistanceBlocks) >> 4, maxChunkX = (origin.getX() + maxDistanceBlocks) >> 4;

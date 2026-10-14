@@ -6,6 +6,7 @@ import ai.moeru.airicraft.agent.tasks.BlockBreakStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs;
 import ai.moeru.airicraft.agent.tasks.CropTendingStepArgs;
 import ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs;
+import ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockPlacementStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockUseStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
@@ -36,8 +37,32 @@ public record ActiveJobProposal(
 	String askPrompt,
 	CropTendingStepArgs cropTending,
 	LureEntitiesStepArgs lureEntities,
-	CollectObsidianStepArgs collectObsidian
+	CollectObsidianStepArgs collectObsidian,
+	LocateStrongholdStepArgs locateStronghold
 ) {
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, null);
+	}
+
 	public ActiveJobProposal(
 		ActiveJobType type,
 		String targetPlayer,
@@ -204,6 +229,10 @@ public record ActiveJobProposal(
 
 	public static ActiveJobProposal fightEnderDragon() {
 		return new ActiveJobProposal(ActiveJobType.FIGHT_ENDER_DRAGON, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+	}
+
+	public static ActiveJobProposal locateStronghold(LocateStrongholdStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.LOCATE_STRONGHOLD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
 	}
 
 	public static ActiveJobProposal collectObsidian(CollectObsidianStepArgs args) {

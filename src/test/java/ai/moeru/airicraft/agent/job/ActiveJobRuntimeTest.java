@@ -740,6 +740,26 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void strongholdSearchPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs(6);
+		runtime.applyPlannerResponse(new DialogueResponse("Finding the stronghold.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.locateStronghold(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.LOCATE_STRONGHOLD, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.LocateStronghold(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().locateStronghold());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.LocateStronghold(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().locateStronghold());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void lurePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs(java.util.List.of("aaaaaaaa"), "minecraft:wheat_seeds", 1, 63, 2, 3, 64, 4);
