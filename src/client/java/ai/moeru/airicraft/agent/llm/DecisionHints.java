@@ -23,6 +23,14 @@ public final class DecisionHints {
 
 	/** Hints for the wakes in this batch; {@code events} are the observation's retained events. */
 	public static List<Map<String, Object>> render(List<PlannerTrigger> wakes, List<SemanticEvent> events) {
+		return render(wakes, events, 0L);
+	}
+
+	/**
+	 * As {@link #render(List, List)}; loop notices at or before {@code sinceSequence} were already delivered with an
+	 * earlier observation and get no hint again.
+	 */
+	public static List<Map<String, Object>> render(List<PlannerTrigger> wakes, List<SemanticEvent> events, long sinceSequence) {
 		var bySeqNo = new LinkedHashMap<Long, SemanticEvent>();
 		for (SemanticEvent event : events) bySeqNo.put(event.seqNo(), event);
 		var hints = new ArrayList<Map<String, Object>>();
@@ -42,6 +50,7 @@ public final class DecisionHints {
 		}
 		// A loop notice rides on whatever wake follows it; it never wakes the planner itself.
 		for (SemanticEvent event : events) {
+			if (event.seqNo() <= sinceSequence) continue;
 			String hint = loopHint(event);
 			if (hint != null && seen.add("event#" + event.seqNo())) hints.add(entry(event.seqNo(), event.type(), null, hint));
 		}

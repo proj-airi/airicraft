@@ -87,6 +87,7 @@ public final class PlannerOrchestrator {
 	private final PlannerLoopWatchdog loopWatchdog = new PlannerLoopWatchdog();
 	private final ArrayDeque<PlannerLoopWatchdog.Notice> loopNotices = new ArrayDeque<>();
 	private long loopTick;
+	private long loopStateCheckedTick = Long.MIN_VALUE;
 	private long minimumSafetyEpoch;
 	private String currentSafetyHoldId;
 	private boolean safetyLaunchBlocked;
@@ -417,7 +418,7 @@ public final class PlannerOrchestrator {
 		var payload = new java.util.LinkedHashMap<String, Object>();
 		var wake = WakeRef.render(wakes);
 		if (!wake.isEmpty()) payload.put("wake", wake);
-		var hints = DecisionHints.render(wakes, context.observations().events());
+		var hints = DecisionHints.render(wakes, context.observations().events(), sinceSequence);
 		if (!hints.isEmpty()) payload.put("hints", hints);
 		payload.putAll(context.observation(sinceSequence, decisionRefreshPending));
 		if (usesToolQueue()) payload.put("toolQueue", queueState());
@@ -536,12 +537,21 @@ public final class PlannerOrchestrator {
 	/** Loop notices since the last drain, including the end of a hold by {@code tick}. Called once per client tick. */
 	public List<PlannerLoopWatchdog.Notice> drainLoopNotices(long tick) {
 		loopTick = tick;
+		if (loopWatchdog.holding(tick) && loopStateCheckedTick != tick && decisionContextSource != null)
+			observeHeldProgress(decisionContextSource.get());
 		var released = loopWatchdog.release(loopTick);
 		if (released != null) loopNotices.addLast(released);
 		if (loopNotices.isEmpty()) return List.of();
 		var drained = List.copyOf(loopNotices);
 		loopNotices.clear();
 		return drained;
+	}
+
+	/** Running work that changes inventory, place or goal during a hold ends it; see {@link PlannerLoopWatchdog#observeState}. */
+	private void observeHeldProgress(PlannerDecisionContext context) {
+		if (context == null) return;
+		loopStateCheckedTick = context.tick();
+		loopWatchdog.observeState(progressState(context.current()));
 	}
 
 	private void observeLoopTurn(PlannerExecutionResult result, List<PlannerToolCall> calls) {
@@ -1186,7 +1196,8 @@ public final class PlannerOrchestrator {
 		if (toolQueue.reports.isEmpty() || toolQueue.seed == null || sessionCoordinator.hasInFlight()
 			|| pendingToolExecution != null || awaitingAcceptedReplyRecord || compactionService.hasInFlight() || coalescePending) return;
 		if (!toolQueue.tools.isEmpty() && toolQueue.checkpoints.isEmpty()) return;
-		// A held loop keeps its results; the review runs when the hold ends.
+		// A held loop keeps its results; the review runs when the hold ends, or once the work changed something.
+		if (loopWatchdog.holding(toolQueue.observationTick)) observeHeldProgress(context);
 		if (loopWatchdog.holding(toolQueue.observationTick)) return;
 		long now = clock.millis();
 		PlannerRequest seed = toolQueue.seed;

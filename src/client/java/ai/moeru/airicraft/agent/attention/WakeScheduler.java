@@ -287,7 +287,7 @@ public final class WakeScheduler {
 			host.audit(trigger, "dropped", "G4.blocked_goal");
 			return;
 		}
-		if (!direct && host.plannerLoopHold() && trigger.type() != PlannerTriggerType.DAMAGE && !protectedUrgency(trigger)) {
+		if (!direct && loopHolds(trigger, host)) {
 			host.audit(trigger, "dropped", "G8.planner_loop");
 			return;
 		}
@@ -344,7 +344,7 @@ public final class WakeScheduler {
 	/**
 	 * Releases the held debounced wakes as one batch once {@link #DEBOUNCE_QUIET_TICKS} passed without a new one, or
 	 * the oldest waited {@link #DEBOUNCE_MAX_HOLD_TICKS}. Wakes whose event an observation already carried, and
-	 * wakes a newly blocked goal holds, are dropped on the way. Returns whether anything was delivered.
+	 * wakes a newly blocked goal or planner loop hold drops, are dropped on the way. Returns whether anything was delivered.
 	 */
 	public boolean releaseDebounced(long tick, TriggerHost host) {
 		if (debounced.isEmpty()) return false;
@@ -378,6 +378,11 @@ public final class WakeScheduler {
 		return !protectedUrgency(trigger);
 	}
 
+	/** A planner loop hold drops every autonomous trigger except damage and protected urgencies. */
+	private static boolean loopHolds(PlannerTrigger trigger, TriggerHost host) {
+		return host.plannerLoopHold() && trigger.type() != PlannerTriggerType.DAMAGE && !protectedUrgency(trigger);
+	}
+
 	private static boolean protectedUrgency(PlannerTrigger trigger) {
 		String urgency = trigger.wake() == null ? null : trigger.wake().urgency();
 		return urgency != null && List.of("critical", "direct", "high").contains(urgency);
@@ -392,6 +397,10 @@ public final class WakeScheduler {
 			}
 			else if (host.blockedGoal()) {
 				host.audit(held, "dropped", "G4.blocked_goal");
+			}
+			// A loop hold that began while it waited drops it as it would a new one.
+			else if (!held.maySupersedeLaunchedTurn() && loopHolds(held, host)) {
+				host.audit(held, "dropped", "G8.planner_loop");
 			}
 			else {
 				host.audit(held, "released", gate);

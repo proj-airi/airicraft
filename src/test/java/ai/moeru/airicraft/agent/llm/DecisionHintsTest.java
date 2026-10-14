@@ -42,6 +42,8 @@ class DecisionHintsTest {
 		assertTrue(String.valueOf(hints.get(0).get("hint")).contains("tools: inspect_world"));
 		assertTrue(String.valueOf(hints.get(1).get("hint")).startsWith("craft_item failed the same way 3 times"));
 		assertTrue(String.valueOf(hints.get(2).get("hint")).contains("held for 60 seconds"));
+		var later = DecisionHints.render(List.of(wake(9, "smelting.output_ready")), events, 3L);
+		assertEquals(List.of(5L), later.stream().map(hint -> hint.get("seqNo")).toList(), "notices an earlier observation delivered get no hint again");
 	}
 
 	@Test void toolWearHintsSayWhenToReplaceATool() {

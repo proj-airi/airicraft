@@ -127,6 +127,16 @@ public final class PlannerLoopWatchdog {
 		return new Notice(ABANDONED_WORK, count, List.of(toolName), null, 0L, false);
 	}
 
+	/**
+	 * Checks the progress state while a hold is on: work that was already running may still get somewhere without a
+	 * planner turn. A change ends the hold at once, as progress between turns would, and {@link #release} reports it.
+	 */
+	public void observeState(Object state) {
+		if (!holdActive || holdUntil == Long.MIN_VALUE || state == null || Objects.equals(baseline, state)) return;
+		clearStreak(state);
+		holds = 0;
+	}
+
 	/** Autonomous wakes are held until {@code tick} reaches the end of the cooldown. */
 	public boolean holding(long tick) {
 		return holdActive && tick < holdUntil;

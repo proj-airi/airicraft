@@ -681,6 +681,46 @@ class PlannerOrchestratorTest {
 	}
 
 	@Test
+	void workThatGetsSomewhereDuringAHoldEndsItAndItsReviewRuns() throws Exception {
+		var backend = new RecordingBackend();
+		var provider = new PlannerToolProvider() {
+			public String id() { return "inspect_fixture"; }
+			public boolean handles(String name) { return name.equals("inspect_world"); }
+			public boolean isReadTool(String name) { return true; }
+			public List<Map<String, Object>> openAiTools() { return List.of(PlannerToolCatalog.toolForProvider("inspect_world", "Inspect", Map.of(), List.of())); }
+			public CompletableFuture<String> execute(PlannerToolCall call) { return CompletableFuture.completedFuture("Tool result for inspect_world: {}"); }
+		};
+		var registry = PlannerToolRegistry.of(provider, new PlannerQueueToolProvider(call -> CompletableFuture.completedFuture("Plan retained")));
+		registry.freezeToolPrefix();
+		var orchestrator = newOrchestrator(backend, CurrentViewVisionTool.disabled(), CurrentInventoryTool.disabled(),
+			PlannerVisionMode.EXTERNAL_SUMMARY, registry, PlannerActionToolExecutor.DISABLED);
+		var events = new ai.moeru.airicraft.agent.events.SemanticEventBuffer(8);
+		var dirt = new java.util.concurrent.atomic.AtomicInteger(3);
+		orchestrator.configureDecisionContext(() -> new PlannerDecisionContext("world", 10, 10, "controller", "idle",
+			Map.of("inventory", Map.of("minecraft:dirt", dirt.get())), events.query(null)));
+		try {
+			orchestrator.submit(baseRequest(null));
+			int turns = 1 + PlannerLoopWatchdog.REPEAT_TURNS + PlannerLoopWatchdog.HOLD_AFTER_TURNS;
+			for (int turn = 0; turn < turns; turn++) {
+				awaitBackendCallCount(orchestrator, backend, turn + 1, Duration.ofSeconds(2));
+				backend.succeed(turn, PlannerResponse.toolCalls(List.of(new PlannerToolCall("inspect-" + turn, "inspect_world", new JsonObject(), null)), null));
+				backend.awaitCompletions(turn + 1, Duration.ofSeconds(1));
+				orchestrator.poll();
+			}
+			long deadline = System.nanoTime() + Duration.ofMillis(200).toNanos();
+			while (System.nanoTime() < deadline) { orchestrator.poll(); orchestrator.tickToolQueue(); Thread.sleep(5); }
+			assertTrue(orchestrator.holdsAutonomousWakes());
+			assertEquals(turns, backend.callCount());
+
+			dirt.set(4);
+			awaitBackendCallCount(orchestrator, backend, turns + 1, Duration.ofSeconds(2));
+			assertEquals(turns + 1, backend.callCount(), "the held review runs as soon as the work changed something");
+			assertFalse(orchestrator.holdsAutonomousWakes());
+			assertTrue(orchestrator.drainLoopNotices(10).getLast().released(), "well before the cooldown ends");
+		} finally { orchestrator.shutdown(); }
+	}
+
+	@Test
 	void bugReportCommitsTheReceiptBeforePausingAndDoesNotRequestAnotherModelTurn() throws Exception {
 		RecordingBackend backend = new RecordingBackend();
 		var order = new ArrayList<String>();

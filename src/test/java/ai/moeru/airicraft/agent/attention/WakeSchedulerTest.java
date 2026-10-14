@@ -328,6 +328,22 @@ class WakeSchedulerTest {
 		assertEquals(List.of("debounced:debounce.hold:3", "released:debounce.piggyback:3", "deliver:3,4"), host.log);
 	}
 
+	@Test void aLoopHoldThatBeginsWhileWakesAreDebouncedDropsThem() {
+		var scheduler = new WakeScheduler();
+		var host = new Triggers();
+		scheduler.offerTrigger(percept(3, 10, "LOW"), host);
+		host.loopHold = true;
+		assertFalse(scheduler.releaseDebounced(20, host));
+		assertEquals(List.of("debounced:debounce.hold:3", "dropped:G8.planner_loop:3"), host.log);
+		host.log.clear();
+		host.loopHold = false;
+		scheduler.offerTrigger(percept(4, 30, "LOW"), host);
+		host.loopHold = true;
+		scheduler.offerTrigger(percept(5, 31, "HIGH"), host);
+		assertEquals(List.of("debounced:debounce.hold:4", "dropped:G8.planner_loop:4", "deliver:5"), host.log,
+			"a protected wake during the hold does not carry the routine ones along");
+	}
+
 	@Test void heldWakesAlreadyObservedOrBlockedAreDroppedAndResetsClearThem() {
 		var scheduler = new WakeScheduler();
 		var host = new Triggers();

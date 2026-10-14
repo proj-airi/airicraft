@@ -63,6 +63,23 @@ class PlannerLoopWatchdogTest {
 		for (int turn = 23; turn < 40; turn++) assertNull(watchdog.onTurn(turn, false, List.of(), List.of("moved")), "so is waiting");
 	}
 
+	@Test void runningWorkThatChangesSomethingDuringAHoldEndsIt() {
+		var watchdog = new PlannerLoopWatchdog();
+		watchdog.observeState(List.of("moved"));
+		for (int turn = 0; turn < 6; turn++) watchdog.onTurn(turn, false, List.of("report_to_me"), STILL);
+		watchdog.observeState(STILL);
+		assertTrue(watchdog.holding(7), "nothing changed yet");
+		watchdog.observeState(null);
+		assertTrue(watchdog.holding(7), "unknown state changes nothing");
+		watchdog.observeState(List.of("moved"));
+		assertFalse(watchdog.holding(7));
+		assertTrue(watchdog.release(7).released());
+		assertNull(watchdog.release(8), "released once");
+		for (int turn = 8; turn < 14; turn++) watchdog.onTurn(turn, false, List.of("report_to_me"), List.of("moved"));
+		assertTrue(watchdog.holding(14));
+		assertFalse(watchdog.holding(14 + PlannerLoopWatchdog.HOLD_TICKS), "progress also reset the doubling");
+	}
+
 	@Test void aToolFailingTheSameWayIsNoticedEveryThirdTimeWhatEverChangedBetween() {
 		var watchdog = new PlannerLoopWatchdog();
 		String shortfall = "Tool result for construct_blueprint: {\"accepted\":false,\"workId\":\"build-%d\",\"updatedTick\":%d,"

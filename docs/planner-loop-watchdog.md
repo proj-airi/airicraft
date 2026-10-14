@@ -27,18 +27,20 @@ not counted: it is the planner waiting for the next event, which is what a loop 
 
 ## What it does
 
-1. **Notice** (`planner.loop_detected`, advisory): the event rides on the next wake as evidence with an
+1. **Notice** (`planner.loop_detected`, advisory): the event rides on the next wake as evidence with a one-time
    `observe.hints` entry saying what repeated and that more of the same will not change anything. It never wakes the
    planner by itself. Repeated failures and abandoned work are only ever noticed, every third time.
 2. **Hold** (`planner.loop_held`): if a no-progress streak goes on for 3 more turns after its notice
    (`HOLD_AFTER_TURNS`), autonomous wakes are held for 60 s, doubling per hold up to 10 min:
    - tool-queue reviews wait, keeping their results (they run when the hold ends);
    - ordinary task wakes are deferred (gate `G5.planner_loop`);
-   - other autonomous triggers are dropped (gate `G8.planner_loop`), as degraded mode drops them;
+   - other autonomous triggers are dropped (gate `G8.planner_loop`), as degraded mode drops them, including debounced
+     ones that were waiting when the hold began;
    - the player's messages, damage, high or critical urgency, attention and reflex wakes still go through.
 3. **Release** (`planner.loop_released`): when the cooldown ends, or progress or guidance ends it early, the event is
    published and queued as a task wake so the planner looks again. A loop that resumes after release is held again,
-   twice as long. Real progress resets the doubling.
+   twice as long. Real progress resets the doubling. Progress is checked every tick during a hold too, so work that was
+   already running and changes inventory, place or goal ends the hold without waiting for a planner turn.
 
 The events are planner-visible and recorded like any other event, so the dashboard and wake ledger show them. An agent
 reset clears the watchdog.
