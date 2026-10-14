@@ -165,7 +165,7 @@ Scenario evaluations load only the optional integrations declared by the scenari
 requiredMods: [journeymap, roughlyenoughitems]
 ```
 
-Use either supported Fabric mod ID, both, or `[]`. Omitting `requiredMods` means no optional integrations. Dependencies (such as REI's Architectury and Cloth Config) are included automatically. Unknown IDs or malformed declarations fail before launch. The evaluation harness passes each worker its own manifest; the discovery client has no optional integrations. Manual launches use `AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST=/absolute/path/scenario.yml scripts/eval run` (also supported by `scripts/codex-driver-evaluator`), or pass `-Pairicraft.evaluator.scenarioManifest=/absolute/path/scenario.yml` to Gradle. Restart with the appropriate manifest before switching to a scenario requiring a different mod set. The recording profile is configured separately from `requiredMods`.
+Use either supported Fabric mod ID, both, or `[]`. Omitting `requiredMods` means no optional integrations. Dependencies (such as REI's Architectury and Cloth Config) are included automatically. Unknown IDs or malformed declarations fail before launch. The evaluation harness passes each worker its own manifest; the discovery client has no optional integrations. Manual launches use `AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST=/absolute/path/scenario.yml scripts/eval run` (also supported by `scripts/external-driver-evaluator`), or pass `-Pairicraft.evaluator.scenarioManifest=/absolute/path/scenario.yml` to Gradle. Restart with the appropriate manifest before switching to a scenario requiring a different mod set. The recording profile is configured separately from `requiredMods`.
 
 Evaluation scenarios in `scenarios/*/scenario.yml` can use deterministic checks. `inventory_contains` verifies an item count, `block_state` verifies one exact block position, and `block_count` verifies at least `count` matching blocks in either `scope: self` with `horizontalRadius`/`verticalRadius` or `scope: box` with `x1/y1/z1/x2/y2/z2`.
 
@@ -318,7 +318,7 @@ Related upstream references:
 
 The wrapper can create and join new worlds, rename save display names, and delete
 closed saves. Launch straight into an existing save with
-`scripts/codex-driver --world "Save folder"` (or `./gradlew runClient -Pairicraft.world="Save folder"`).
+`scripts/external-driver --world "Save folder"` (or `./gradlew runClient -Pairicraft.world="Save folder"`).
 See [save management](docs/save-management.md) for commands and behavior.
 
 ### Agent debug CLI
@@ -575,7 +575,7 @@ The window size multiplied by the entity limit cannot exceed 100000. A trace can
 
 ### Compatibility client
 
-Normal `./gradlew runClient` launches include all supported integrations through the production-style Fabric client with the remapped Airicraft jar. `scripts/codex-driver` and `scripts/arthas kickstart` inherit this default. For an explicit bare development-client test, use `./gradlew runClient -Pairicraft.includeCompat=false`.
+Normal `./gradlew runClient` launches include all supported integrations through the production-style Fabric client with the remapped Airicraft jar. `scripts/external-driver` and `scripts/arthas kickstart` inherit this default. For an explicit bare development-client test, use `./gradlew runClient -Pairicraft.includeCompat=false`.
 
 The client includes JourneyMap, REI, Fabric API, Architectury, Cloth Config, and local runtime mods. Normal `runClient` uses JDWP on `127.0.0.1:5005`; `scripts/compat run` uses `127.0.0.1:5007`.
 

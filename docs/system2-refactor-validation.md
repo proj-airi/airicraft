@@ -22,7 +22,7 @@ These tests establish code behavior. The separately recorded world trials below 
 
 ## Actual planner and world evidence
 
-World: `planner playtest`, Easy. Normal configured controller/thinker client, without Codex-driver gameplay tool execution. The old GIVEN_UP objective6713b725 was explicitly migrated to v2 without reactivation. The controller created objectiveb8230738-0152-4146-be67-df874622b2c6, which remained ACTIVE through the provider failure. After provider recovery the controller explicitly finished it GIVEN_UP due to repeated invalid chest arguments; a new chest-verification objective succeeded without rewriting that outcome.
+World: `planner playtest`, Easy. Normal configured controller/thinker client, without external-driver gameplay tool execution. The old GIVEN_UP objective6713b725 was explicitly migrated to v2 without reactivation. The controller created objectiveb8230738-0152-4146-be67-df874622b2c6, which remained ACTIVE through the provider failure. After provider recovery the controller explicitly finished it GIVEN_UP due to repeated invalid chest arguments; a new chest-verification objective succeeded without rewriting that outcome.
 
 - Collection JOB:job-0efc7ae9-5333-4377-b8fc-fe364ee7523b produced3spruce logs. Pickup events12–14, terminal event15, fresh inventory and the paused player snapshot agree.
 - The controller delegated a bounded repair. The thinker navigated, waited through work handles, inspected geometry, crafted3logs into12planks, recovered from a support_not_found placement by changing support face, and placed2planks. Inventory ended with10planks.

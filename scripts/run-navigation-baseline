@@ -3,7 +3,7 @@
 
 This is the unattended form of the manual steps in docs/navigation-baseline.md and is
 what CI runs. It needs a display; on Linux CI wrap it in xvfb-run. The client runs in
-Codex-driver mode (no model) with no optional integrations, in its own game directory.
+External-driver mode (no model) with no optional integrations, in its own game directory.
 
 Exit codes: 0 when the benchmark ran (course failures are data, unless --require-pass),
 1 when --require-pass is set and a course failed, 3 when the client could not be driven.
@@ -99,7 +99,7 @@ def client_command(game_dir: Path) -> list[str]:
         f"-Pairicraft.evaluator.runDir={game_dir}",
         "-Pairicraft.evaluator.jdwp.enabled=false",
         "-Pairicraft.includeEvaluator=true",
-        "-Pairicraft.codexDriver=true",
+        "-Pairicraft.externalDriver=true",
         ":addons:evaluator:runClientEvaluator",
     ]
 

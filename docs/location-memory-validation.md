@@ -18,7 +18,7 @@ Both location providers exercise the same create/recall/list/update/rename/delet
 
 ## Disposable JourneyMap client
 
-The client used `scripts/codex-driver`, an isolated bridge/game directory under `/tmp/airicraft-location-live`, and copies of the pickup fixture. External-driver mode was verified before mutations. Native UI actions targeted only this disposable client; UI evidence came from Minecraft's F2 screenshots.
+The client used `scripts/external-driver`, an isolated bridge/game directory under `/tmp/airicraft-location-live`, and copies of the pickup fixture. External-driver mode was verified before mutations. Native UI actions targeted only this disposable client; UI evidence came from Minecraft's F2 screenshots.
 
 - A seeded legacy `places.json` contained a local-only location. JourneyMap started empty and never imported it.
 - `remember_place` created a persistent native waypoint with a GUID, purpose note, and protected bounds. The map CLI and native waypoint manager displayed the same single entry.
@@ -32,7 +32,7 @@ World/server store switching and unavailable states also have provider-level tes
 
 ## Client without JourneyMap
 
-The same disposable game directory was launched through `scripts/codex-driver-evaluator` with `AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST` unset. The runtime loaded no optional integrations and map status reported unavailable.
+The same disposable game directory was launched through `scripts/external-driver-evaluator` with `AIRICRAFT_EVALUATOR_SCENARIO_MANIFEST` unset. The runtime loaded no optional integrations and map status reported unavailable.
 
 `list_places` selected `backend=airicraft` and returned only the original legacy local location, even though native JourneyMap waypoint files remained in the game directory. Creating a local location, reloading Airicraft, and recalling its ID preserved the complete coordinates, note, and protected area. Deleting it left only the legacy location. JourneyMap's `WaypointData.dat` checksum remained unchanged during fallback mutations.
 

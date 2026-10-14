@@ -40,7 +40,7 @@ One in-memory draft and last commit per world session in the shared mod service;
 
 ## Live experiment — 2026-09-30
 
-Driven through `scripts/codex-driver`, with `codexDriverActive: true`, normal optional integrations enabled, and the embedded planner suppressed.
+Driven through `scripts/external-driver`, with `externalDriverActive: true`, normal optional integrations enabled, and the embedded planner suppressed.
 
 | Check | Observed result |
 | --- | --- |

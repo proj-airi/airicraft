@@ -1,9 +1,9 @@
-# Codex Driver Survival Playthrough
+# External Driver Survival Playthrough
 
 Latest follow-up: the [2026-09-11 autonomous capability run](autonomous-playtest-log.md#verified-checkpoint-after-the-autonomous-run) completed renewable food, maintained farming, a usable shelter/bed, full iron armor, and more than two Easy day/night cycles. Its decision log records fixes, reversions, live evidence and remaining limitations; historical observations below retain their original context.
 
 Date: 2026-09-01  
-Mode: external Codex driver (`scripts/codex-driver`)  
+Mode: external driver (`scripts/external-driver`)  
 Objective: progress from a fresh survival world to the Ender Dragon, using only the exposed Airicraft agent tools for gameplay.
 
 ## Rules of this log
@@ -49,7 +49,7 @@ Recorder exports still report truncation; the previously documented retention de
 
 ### 2026-09-10: rolling-recorder survival playtest
 
-Ran commit `4cb23bac` through `scripts/codex-driver`, resuming the existing `driver` survival save with empty inventory and 20 health at `(76,67,-91)`. This was not a new world or the earlier peaceful recording fixture. Goal: obtain wood, then basic tools and iron. Paused server ticks at each suspected failure and exported the retained recorder window before diagnosis. No gameplay fixes were applied during this run.
+Ran commit `4cb23bac` through `scripts/external-driver`, resuming the existing `driver` survival save with empty inventory and 20 health at `(76,67,-91)`. This was not a new world or the earlier peaceful recording fixture. Goal: obtain wood, then basic tools and iron. Paused server ticks at each suspected failure and exported the retained recorder window before diagnosis. No gameplay fixes were applied during this run.
 
 **Stopped for a fundamental diagnosis failure: tick-debug pause freezes the server and recorder, but not agent decisions.** At the final pause, snapshot client tick was `6442`, server tick `4397`, debug session `ba52cfa8-0d2f-44b4-a508-d74b421217b2`, epoch `1`. Later reads still reported server tick `4397` and the same pause identity while client ticks advanced through `7148` and `7372`. Event sequence advanced from `119` to `201` to `246`, emitting repeated `reflex.close_quarter_attack` attempts against the same Husk at the same distance `2.2503225803375244`. Recorder status remained byte-for-byte unchanged at sequence `3917`, 65,407,244 retained bytes. Thus inspection time changes reflex state/events without recording those changes. These are client attack attempts, not proof of server damage while paused. Source confirms `ClientRuntimeController.onClientTick` still calls `EmbodiedAgentRuntime.onClientTick`, including survival-reflex ticking. The earlier server-pause fix remains valid; the stronger pause-all decision-state requirement does not hold.
 
@@ -181,7 +181,7 @@ The final pause is session `ced76f3c-06f1-4ab1-a130-402a203064b5`, epoch 3, clie
 
 ### Launch
 
-- Client launch started with an isolated bridge-state file at `/private/tmp/airicraft-codex-driver-01a05cde.json`.
+- Client launch started with an isolated bridge-state file at `/private/tmp/airicraft-external-driver-01a05cde.json`.
 - Initial sandboxed launch could not open Gradle's user-cache lock file. Retried the same local launcher outside the sandbox; this is an environment permission boundary, not an Airicraft gameplay defect.
 
 ### Tick-debug proof
@@ -440,7 +440,7 @@ D091 adds `player.physical` episodes to the planner feed and flight recorder: si
 
 Fixed the false-arrival predicate from D090: airborne block equality cannot establish success. An immediate support check initially cancelled a normal step-up before landing, reproduced live and exported; replaced with up to10 ticks of observation after path end, without reissuing movement. The return ascent subsequently completed twice. Original descent retries correctly cancelled with actual318,-10,279 position, but did not reproduce the original full overshoot; its movement cause remains unresolved.
 
-A two-block live drop produced start/landed events with task target and actual coordinates. After correcting a stale static routing table retained by HotSwap, physical-planner-fall.jsonl explicitly shows semantic delivery and SYSTEM triggers for both events. No client restart was needed. Full build and focused tests passed. Drift, burning and low-air behavior have automated coverage only; embedded LLM recovery was not exercised in Codex driver mode. Game paused at the verified lower landing for review; no diamond found.
+A two-block live drop produced start/landed events with task target and actual coordinates. After correcting a stale static routing table retained by HotSwap, physical-planner-fall.jsonl explicitly shows semantic delivery and SYSTEM triggers for both events. No client restart was needed. Full build and focused tests passed. Drift, burning and low-air behavior have automated coverage only; embedded LLM recovery was not exercised in external driver mode. Game paused at the verified lower landing for review; no diamond found.
 
 
 ### 2026-09-13: Actual Qwen planner with streaming

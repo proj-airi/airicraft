@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+	printf '%s\n' \
+		'Usage: scripts/external-driver [--world <save-folder>] [Gradle runClient arguments...]' \
+		'' \
+		'Launch the Airicraft dev client with its embedded planner dormant.' \
+		'An external agent (a coding agent, a script, or you) drives the client through the wrapper CLI.' \
+		'Use --world to load an existing save directly through Minecraft Quick Play.' \
+		'' \
+		'The launch prepares Minecraft options so a new worktree bypasses' \
+		'the narrator/accessibility onboarding screen unattended.' \
+		'' \
+		'Set AIRICRAFT_BRIDGE_STATE_FILE to an absolute path to isolate discovery.'
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+	usage
+	exit 0
+fi
+
+gradle_args=()
+world_selected=false
+while (( $# )); do
+	case "$1" in
+		--world)
+			if [[ "$world_selected" == true || $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+				printf '%s\n' 'Provide --world once with a save folder name.' >&2
+				exit 2
+			fi
+			world_selected=true
+			gradle_args+=("-Pairicraft.world=$2")
+			shift 2
+			;;
+		*) gradle_args+=("$1"); shift ;;
+	esac
+done
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+cd "$repo_root"
+
+envrc_path="$repo_root/.envrc"
+if [[ ! -f "$envrc_path" ]]; then
+	git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [[ -n "$git_common_dir" && -f "$(dirname -- "$git_common_dir")/.envrc" ]]; then
+		envrc_path="$(dirname -- "$git_common_dir")/.envrc"
+	fi
+fi
+
+if [[ -f "$envrc_path" ]]; then
+	# shellcheck disable=SC1091
+	source "$envrc_path"
+fi
+
+printf '%s\n' \
+	'Launching Airicraft in external-driver mode.' \
+	'This script starts Minecraft only; it does not start any agent.' \
+	'Keep this process running while the external agent uses the wrapper CLI.' \
+	"Bridge state: ${AIRICRAFT_BRIDGE_STATE_FILE:-$HOME/.airicraft/bridge-state.json}"
+
+exec ./gradlew wrapper:installDist runClient -Pairicraft.externalDriver=true "${gradle_args[@]}"

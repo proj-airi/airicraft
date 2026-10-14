@@ -70,7 +70,7 @@ Velocity and sub-block movement are left out. `inspect_inventory` still gives th
 
 ## Verifying
 
-Without a model, the evaluator's `notice_walk` course checks honesty end to end. Start `scripts/codex-driver-evaluator`,
+Without a model, the evaluator's `notice_walk` course checks honesty end to end. Start `scripts/external-driver-evaluator`,
 join a disposable singleplayer world, then run:
 
 ```sh

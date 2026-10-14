@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure navigation on the evaluator's deterministic benchmark courses.
 
-Start a client with scripts/codex-driver-evaluator (evaluator loaded, native planner
+Start a client with scripts/external-driver-evaluator (evaluator loaded, native planner
 dormant) and join a disposable singleplayer world while standing on open ground. For
 every course and run, this script:
 

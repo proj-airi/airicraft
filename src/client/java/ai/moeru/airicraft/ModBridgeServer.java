@@ -1039,10 +1039,10 @@ public final class ModBridgeServer {
 
 	private Object createAgentToolsResponse() {
 		return onClientThread(() -> {
-			List<Map<String, Object>> tools = agentRuntime().codexDriverTools();
+			List<Map<String, Object>> tools = agentRuntime().externalDriverTools();
 			Map<String, Object> response = new LinkedHashMap<>();
 			response.put("available", true);
-			response.put("codexDriverActive", true);
+			response.put("externalDriverActive", true);
 			response.put("toolCount", tools.size());
 			response.put("tools", tools);
 			return response;
@@ -1056,7 +1056,7 @@ public final class ModBridgeServer {
 		long timeoutMillis = requestedCodexToolTimeoutMillis(request.timeoutMs());
 		CompletableFuture<ExternalPlannerToolResult> resultFuture;
 		try {
-			resultFuture = onClientThread(() -> agentRuntime().executeCodexDriverTool(request.name(), request.arguments()));
+			resultFuture = onClientThread(() -> agentRuntime().executeExternalDriverTool(request.name(), request.arguments()));
 		}
 		catch (com.google.gson.JsonParseException | IllegalArgumentException exception) {
 			throw new BridgeUnavailableException("invalid_request", nonEmpty(exception.getMessage(), "Invalid tool arguments"));
@@ -1065,7 +1065,7 @@ public final class ModBridgeServer {
 		ExternalPlannerToolResult result = awaitAgentTool(resultFuture, timeoutMillis);
 		Map<String, Object> response = new LinkedHashMap<>();
 		response.put("available", true);
-		response.put("codexDriverActive", true);
+		response.put("externalDriverActive", true);
 		response.put("toolName", result.toolName());
 		response.put("result", result.text());
 		response.put("imageAttached", result.hasImage());
@@ -1924,7 +1924,7 @@ public final class ModBridgeServer {
 			response.put("missionExecution", snapshot.missionExecution());
 			response.put("reflex", snapshot.reflex());
 			response.put("activeJob", agentRuntime().activeJob());
-			response.put("codexDriverActive", agentRuntime().codexDriverActive());
+			response.put("externalDriverActive", agentRuntime().externalDriverActive());
 			response.put("llmAvailable", agentRuntime().llmAvailable());
 			response.put("visionAvailable", agentRuntime().visionAvailable());
 			response.put("plannerVisionMode", plannerSnapshot.plannerVisionMode());

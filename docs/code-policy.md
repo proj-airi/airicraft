@@ -62,7 +62,7 @@ Reads run on the integrated server thread; click submission runs on the client t
 
 ## Run and inspect
 
-The controller's tool schema and external Codex-driver tool list expose `run_policy` with `source` and `input` fields. A call returns an `OPERATION:` work ID and yields the planner turn until the work changes. Use `inspect_work` for the result and effect evidence, or `cancel_work` with the exact work ID. The thinking planner does not receive this mutation tool.
+The controller's tool schema and external-driver tool list expose `run_policy` with `source` and `input` fields. A call returns an `OPERATION:` work ID and yields the planner turn until the work changes. Use `inspect_work` for the result and effect evidence, or `cancel_work` with the exact work ID. The thinking planner does not receive this mutation tool.
 
 For a driver client with an open chest:
 
@@ -108,7 +108,7 @@ A 2026-09-19 dev-client query smoke in the same isolated world copy read all 260
 
 Focused tests execute the real GraalJS generator with delayed host completions, cancellation, failed transfers, host-access rejection and bounded loops. The restock test checks that three dependent effects complete in one policy invocation without inference between them. Container arithmetic tests require matching source and destination totals. These tests do not by themselves qualify live Minecraft packet handling or model-authored gameplay.
 
-The 2026-09-19 dev-client smoke used an isolated copy of the latest playtest world, a separate bridge and Codex-driver mode. One invocation (`OPERATION:efafe461-2ca5-4644-8416-22a3b56f6812`) completed observe → withdraw → close in 27 client ticks. The server-observed chest changed from 18 to 10 torches and 13 to 9 oak planks; carried storage changed from zero to 8 and 4 respectively. A separate inventory tool confirmed those counts. Repeating the same stock targets issued only observe and close, transferring nothing. A second policy was explicitly cancelled while observing; a competing transfer was rejected as `policy_active`. Evidence remains locally under `run/policy-smoke-20260919/`.
+The 2026-09-19 dev-client smoke used an isolated copy of the latest playtest world, a separate bridge and external-driver mode. One invocation (`OPERATION:efafe461-2ca5-4644-8416-22a3b56f6812`) completed observe → withdraw → close in 27 client ticks. The server-observed chest changed from 18 to 10 torches and 13 to 9 oak planks; carried storage changed from zero to 8 and 4 respectively. A separate inventory tool confirmed those counts. Repeating the same stock targets issued only observe and close, transferring nothing. A second policy was explicitly cancelled while observing; a competing transfer was rejected as `policy_active`. Evidence remains locally under `run/policy-smoke-20260919/`.
 
 This smoke validates the hand-authored procedure through the real tool/work path. It does not measure model-authored policy quality, live reflex takeover, multiplayer support, restart recovery, or the packaged production client's Graal class loading. The production artifact is built with the engine JARs nested separately; the dev smoke caught and removed aggregate Graal POM dependencies from Fabric's launch classpath.
 

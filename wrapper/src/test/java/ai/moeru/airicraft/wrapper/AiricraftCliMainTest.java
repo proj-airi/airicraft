@@ -773,7 +773,7 @@ class AiricraftCliMainTest {
 			"available", true,
 			"initialized", true,
 			"tickCount", 42,
-			"codexDriverActive", true,
+			"externalDriverActive", true,
 			"llmAvailable", true,
 			"visionAvailable", false,
 			"plannerVisionMode", "native_tool_image",
@@ -785,7 +785,7 @@ class AiricraftCliMainTest {
 
 		assertEquals(0, result.exitCode());
 		assertTrue(result.output().contains("command: agent status\n"));
-		assertTrue(result.output().contains("codexDriverActive: true\n"));
+		assertTrue(result.output().contains("externalDriverActive: true\n"));
 		assertTrue(result.output().contains("plannerVisionMode: native_tool_image\n"));
 		assertTrue(result.output().contains("state: AWAITING_PLANNER\n"));
 		assertTrue(result.output().contains("holdId: hold-42\n"));
@@ -796,7 +796,7 @@ class AiricraftCliMainTest {
 		TestTransport transport = new TestTransport();
 		transport.when("GET", "/v1/agent/tools").payload = linkedMap(
 			"available", true,
-			"codexDriverActive", true,
+			"externalDriverActive", true,
 			"toolCount", 1,
 			"tools", List.of(linkedMap(
 				"type", "function",
@@ -812,7 +812,7 @@ class AiricraftCliMainTest {
 
 		assertEquals(0, result.exitCode());
 		assertTrue(result.output().contains("command: agent tools list\n"));
-		assertTrue(result.output().contains("codexDriverActive: true\n"));
+		assertTrue(result.output().contains("externalDriverActive: true\n"));
 		assertTrue(result.output().contains("name: navigate_to\n"));
 		assertTrue(result.output().contains("[parameters]\n"));
 	}
@@ -822,7 +822,7 @@ class AiricraftCliMainTest {
 		TestTransport transport = new TestTransport();
 		transport.when("POST", "/v1/agent/tools").payload = linkedMap(
 			"available", true,
-			"codexDriverActive", true,
+			"externalDriverActive", true,
 			"toolName", "take_a_look",
 			"result", "current view attached",
 			"imageAttached", true,

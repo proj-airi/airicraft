@@ -1,6 +1,6 @@
 # Self-tool survey validation
 
-Verified on 2026-09-19 through `scripts/codex-driver`, using an isolated copy of
+Verified on 2026-09-19 through `scripts/external-driver`, using an isolated copy of
 `planner playtest` named `codex-survey-20260919`. The embedded planner was disabled.
 These tests exercise the wrapper, bridge, provider registry and GraalJS in Minecraft;
 they do not establish that an LLM chooses or interprets the tools correctly.
@@ -57,8 +57,8 @@ not exercise the wall-clock timeout. Test clients were stopped after verificatio
 
 ## Reproduce
 
-Launch `scripts/codex-driver`, join a copied world and confirm
-`codexDriverActive: true`. Source `.envrc` before invoking the wrapper:
+Launch `scripts/external-driver`, join a copied world and confirm
+`externalDriverActive: true`. Source `.envrc` before invoking the wrapper:
 
 ```sh
 source .envrc
@@ -80,7 +80,7 @@ landmarks use `label block(x,y,z) state=value` lines followed by the aligned map
 The wrapper's single-line transport display escapes newlines, but the provider's
 planner-facing result contains actual newline characters.
 
-A fresh Codex-driver run verified the text survey at the same camp position. Its
+A fresh external-driver run verified the text survey at the same camp position. Its
 wrapper result shrank from 6,424 to 3,451 characters (46.3%). This is a character
 comparison, not a model-specific token measurement. Full build/tests passed;
 regressions cover real newlines, compact landmark syntax, geometry, and protection
@@ -89,7 +89,7 @@ Local preview: `/tmp/survey-compact-preview.md`.
 
 ## Gameplay trials and ore option
 
-A subsequent Codex-driver session tested actual actions on the copied camp world:
+A subsequent external-driver session tested actual actions on the copied camp world:
 
 | Scenario | Survey evidence used | Observed outcome |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ fixed vertical capture range, leaving many unknown cells; those unknowns were no
 interpreted as blocked terrain. Repeated logs also consume secondary landmark slots.
 Potential next improvements are grouping natural blocks and adapting vertical
 coverage; neither behavior was added without broader terrain measurements. These
-were Codex-driven trials, not an embedded-planner comprehension evaluation.
+were externally driven trials, not an embedded-planner comprehension evaluation.
 
 An unrelated control limitation appeared: close_container rejected FurnaceScreen
 (container_not_open); subsequent navigation closed the screen and succeeded. It

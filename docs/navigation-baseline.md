@@ -41,7 +41,7 @@ remembered place), and counts of blocks broken or placed.
 
    ```sh
    export AIRICRAFT_BRIDGE_STATE_FILE="$PWD/run/navigation-bridge-state.json"
-   scripts/codex-driver-evaluator
+   scripts/external-driver-evaluator
    ```
 
 2. Join a disposable singleplayer world while standing on open ground. The fixture
@@ -69,7 +69,7 @@ that still carried it (`5323aa09^`).
 ### Unattended and in CI
 
 `scripts/run-navigation-baseline` does all of the above without a person. It launches
-the evaluator in Codex-driver mode in `run/navigation-baseline/game`, loads
+the evaluator in external-driver mode in `run/navigation-baseline/game`, loads
 `scenarios/farm_easy/world.zip` as a plain save, joins it, runs the courses and stops
 the client. It needs a display, so on Linux use `xvfb-run -a python3
 scripts/run-navigation-baseline`. Course failures are recorded data; pass

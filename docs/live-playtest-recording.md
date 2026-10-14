@@ -24,7 +24,7 @@ Sampling defaults to once per 20 server ticks. Identical sampled pixels are skip
 
 For survival progression tests, `airicraft world difficulty` reads the local world's difficulty, lock state and time of day. `airicraft world difficulty --set easy` changes it on the integrated server thread through the normal authenticated control bridge. Supported values are `peaceful`, `easy`, `normal`, and `hard`; locked and hardcore worlds cannot be overridden. Continue tick debugging before using this command. This is a manual driver control, not a planner tool.
 
-Launch `scripts/codex-driver` and use the same `AIRICRAFT_BRIDGE_STATE_FILE` for every command. The wrapper distribution is `wrapper/build/install/airicraft/bin/airicraft`.
+Launch `scripts/external-driver` and use the same `AIRICRAFT_BRIDGE_STATE_FILE` for every command. The wrapper distribution is `wrapper/build/install/airicraft/bin/airicraft`.
 
 ```sh
 airicraft agent debug ticks pause --output-image /tmp/failure-now.png

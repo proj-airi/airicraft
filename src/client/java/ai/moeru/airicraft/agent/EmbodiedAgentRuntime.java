@@ -316,7 +316,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	};
 	private final EmbodiedPlannerActionToolExecutor plannerActionToolExecutor;
 	private final MinecraftBlockAcquisitionKnowledgeService blockAcquisitionKnowledgeService = new MinecraftBlockAcquisitionKnowledgeService();
-	private final boolean codexDriverActive;
+	private final boolean externalDriverActive;
 	private ai.moeru.airicraft.policy.PolicyRuntime policyRuntime;
 	private ai.moeru.airicraft.agent.work.WorkHandle policyWork;
 	private final ai.moeru.airicraft.agent.llm.PlannerOrchestrator policyToolDispatcher;
@@ -424,7 +424,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		this.config = Objects.requireNonNull(config, "config");
 		this.miningOpportunityPolicy = Objects.requireNonNull(miningOpportunityPolicy, "miningOpportunityPolicy");
 		this.miningOpportunityJournal = Objects.requireNonNull(miningOpportunityJournal, "miningOpportunityJournal");
-		this.codexDriverActive = Boolean.getBoolean("airicraft.codexDriver");
+		this.externalDriverActive = Boolean.getBoolean("airicraft.externalDriver");
 		this.survivalReflexRuntime = new SurvivalReflexRuntime(this.config.reflex(), navigationFacade, cameraController);
 		this.worldTaskExecutor = Objects.requireNonNull(worldTaskExecutor, "worldTaskExecutor");
 		this.observability = new FlightRecordingObservability(Objects.requireNonNull(observability, "observability"), llmFlightRecorder);
@@ -509,7 +509,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		});
 		this.dialogueRuntime.configureDecisionContext(this::currentPlannerDecisionContext);
 		this.llmFlightRecorder.configureClock(() -> tickCount, EmbodiedAgentRuntime::integratedServerTick);
-		if (codexDriverActive) {
+		if (externalDriverActive) {
 			this.dialogueRuntime.enableExternalDriver();
 		}
 		this.plannerJournal = plannerShell.plannerJournal();
@@ -1723,17 +1723,17 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return dialogueRuntime.llmAvailable();
 	}
 
-	public boolean codexDriverActive() {
-		return codexDriverActive;
+	public boolean externalDriverActive() {
+		return externalDriverActive;
 	}
 
-	public List<Map<String, Object>> codexDriverTools() {
-		requireCodexDriverActive();
+	public List<Map<String, Object>> externalDriverTools() {
+		requireExternalDriverActive();
 		return dialogueRuntime.allAvailableTools();
 	}
 
-	public CompletableFuture<ExternalPlannerToolResult> executeCodexDriverTool(String name, JsonObject arguments) {
-		requireCodexDriverActive();
+	public CompletableFuture<ExternalPlannerToolResult> executeExternalDriverTool(String name, JsonObject arguments) {
+		requireExternalDriverActive();
 		String callId = UUID.randomUUID().toString();
 		debugRecorder.recordExternalTool(tickCount, callId, name, "requested", arguments == null ? Map.of() : arguments.deepCopy());
 		try {
@@ -1754,11 +1754,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 	}
 
-	private void requireCodexDriverActive() {
-		if (!codexDriverActive) {
+	private void requireExternalDriverActive() {
+		if (!externalDriverActive) {
 			throw new BridgeUnavailableException(
-				"codex_driver_inactive",
-				"Codex driver tools require launching Airicraft with scripts/codex-driver"
+				"external_driver_inactive",
+				"External driver tools require launching Airicraft with scripts/external-driver"
 			);
 		}
 	}

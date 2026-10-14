@@ -1118,7 +1118,7 @@ original recommendation; the rest were accepted as recommended.
   shown in the decision log. The planner-authored ruleset is an explicit
   playtest review item.
 - **Rendering differences between the Codex and OpenAI backends.** Both use
-  the decision context today. Include one Codex-driver smoke test in the
+  the decision context today. Include one external-driver smoke test in the
   Phase 3 checks.
 
 ## Appendix A: Phase 0 event inventory

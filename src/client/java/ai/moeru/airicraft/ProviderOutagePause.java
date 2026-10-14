@@ -36,7 +36,7 @@ public final class ProviderOutagePause {
 	private static boolean shouldHold(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
 		MinecraftServer server = minecraft.getSingleplayerServer();
 		return minecraft.level != null && minecraft.player != null && eligible(server != null,
-			server == null ? 0 : server.getPlayerCount(), runtime.isDegraded(), runtime.plannerEnabled(), runtime.codexDriverActive());
+			server == null ? 0 : server.getPlayerCount(), runtime.isDegraded(), runtime.plannerEnabled(), runtime.externalDriverActive());
 	}
 
 	private void pause(Minecraft minecraft, EmbodiedAgentRuntime runtime) {
