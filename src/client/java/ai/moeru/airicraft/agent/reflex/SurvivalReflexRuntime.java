@@ -65,6 +65,7 @@ public final class SurvivalReflexRuntime {
 	static final int CREEPER_STALL_TICKS = 8;
 	static final int CREEPER_RUN_TICKS = 60;
 	static final int CREEPER_RUN_BLOCKS = 12;
+	static final float LOSING_FIGHT_HEALTH = 12.0F;
 	static final int NO_CONTACT_RESUME_LIMIT = 3;
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 
@@ -1099,7 +1100,11 @@ public final class SurvivalReflexRuntime {
 		CombatEating combatEating) {
 		// An unarmed body that could not outrun its attackers digs in at once rather than fight bare-handed.
 		boolean cornered = flight.abandoned() && !"armed".equals(flight.abandonReason());
-		if (!bunker.active() && (threats.isEmpty() || player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered)) return false;
+		boolean canHeal = player.getFoodData().getFoodLevel() >= 18
+			|| combatEating != null && combatEating.hasEligibleFood(player);
+		boolean losing = losingFight(player.getHealth(), threats.size(), canHeal);
+		if (!bunker.active() && (threats.isEmpty()
+			|| player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered && !losing)) return false;
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
@@ -1115,6 +1120,14 @@ public final class SurvivalReflexRuntime {
 		if (bunker.closed(minecraft.level, player)) tickCombatEating(minecraft, player, threats, tick, combatEating, true);
 		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
 		return true;
+	}
+
+	/**
+	 * Outnumbered with health that cannot come back. A playtest body at 9 health and 14 food, with nothing it would eat,
+	 * fought a skeleton and a zombie until an arrow took it to 6; it only started digging in then and died in the hole.
+	 */
+	static boolean losingFight(float health, int threatCount, boolean canHeal) {
+		return !canHeal && threatCount >= 2 && health <= LOSING_FIGHT_HEALTH;
 	}
 
 	private boolean tickCombatEating(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,

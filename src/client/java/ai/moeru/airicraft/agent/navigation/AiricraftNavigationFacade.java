@@ -146,8 +146,11 @@ public final class AiricraftNavigationFacade implements NavigationFacade {
 		String breakingTarget = null;
 		float progress = 0;
 		if (motor.breaking() != null && minecraft.gameMode != null) {
+			// Not isDestroying(): the game clears it on every tick the attack key is up, though progress on the
+			// same block carries on. Gating on it left a hand-dug block (150 ticks for stone after the pickaxe broke)
+			// looking like no progress, so the stall watchdog failed the route with PATH_STUCK before it broke.
 			var gameMode = minecraft.gameMode;
-			if (gameMode.isDestroying()) {
+			if (motor.breaking().equals(gameMode.destroyBlockPos)) {
 				breakingTarget = gameMode.destroyBlockPos.toShortString();
 				progress = gameMode.destroyProgress;
 			}

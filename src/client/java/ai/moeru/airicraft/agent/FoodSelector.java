@@ -22,5 +22,21 @@ public final class FoodSelector {
 			.map(Candidate::itemId);
 	}
 
+	/**
+	 * Last-resort food for a body losing a fight with nothing else to eat. Rotten flesh usually brings hunger, but four
+	 * points of food take 14 to 18, where health regenerates again. A playtest body died at 9 health and 14 food
+	 * with two rotten flesh in its pack and its reflex reporting no food.
+	 */
+	public static Optional<String> emergency(List<Candidate> inventory, FoodPolicy.FoodChoice choice, int hunger,
+		float health, float maxHealth) {
+		if (inventory == null || choice != FoodPolicy.FoodChoice.ANY || hunger >= 20 || health > maxHealth / 2.0F) {
+			return Optional.empty();
+		}
+		return inventory.stream().filter(candidate -> candidate != null && EMERGENCY_FOOD.equals(candidate.itemId()))
+			.findFirst().map(Candidate::itemId);
+	}
+
+	static final String EMERGENCY_FOOD = "minecraft:rotten_flesh";
+
 	public record Candidate(String itemId, int nutrition) { }
 }

@@ -26,4 +26,12 @@ class FoodSelectorTest {
 			new FoodSelector.Candidate("minecraft:pufferfish", 1),
 			new FoodSelector.Candidate("minecraft:beef", 3)), FoodPolicy.FoodChoice.ANY, 17));
 	}
+
+	@Test void rottenFleshIsOnlyALosingFightsLastResort() {
+		var inventory = List.of(new FoodSelector.Candidate("minecraft:rotten_flesh", 4));
+		assertEquals(Optional.empty(), FoodSelector.choose(inventory, FoodPolicy.FoodChoice.ANY, 14));
+		assertEquals(Optional.of("minecraft:rotten_flesh"), new FoodRuntime().combatCandidate(14, 9.18F, 20.0F, inventory));
+		assertEquals(Optional.empty(), new FoodRuntime().combatCandidate(14, 12.0F, 20.0F, inventory));
+		assertEquals(Optional.empty(), FoodSelector.emergency(inventory, FoodPolicy.FoodChoice.COOKED_ONLY, 14, 9.0F, 20.0F));
+	}
 }

@@ -300,8 +300,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				player.getHealth(), player.getMaxHealth());
 		}
 		@Override public boolean hasEligibleFood(net.minecraft.client.player.LocalPlayer player) {
-			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(),
-				player.getFoodData().getFoodLevel()).isPresent();
+			int hunger = player.getFoodData().getFoodLevel();
+			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger)
+				.or(() -> FoodSelector.emergency(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger, player.getHealth(), player.getMaxHealth()))
+				.isPresent();
 		}
 		@Override public Optional<String> candidate(net.minecraft.client.player.LocalPlayer player) {
 			if (player.containerMenu != player.inventoryMenu
