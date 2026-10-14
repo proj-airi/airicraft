@@ -77,6 +77,8 @@ public final class LightingRuntime {
 			|| player.isUsingItem() || minecraft.gameMode.isDestroying()
 			|| player.containerMenu != player.inventoryMenu
 			|| !player.containerMenu.getCarried().isEmpty()) return Optional.empty();
+		// Only overworld mobs need darkness to spawn; Nether and End spawns ignore light, so torches there are waste.
+		if (!minecraft.level.dimensionType().hasSkyLight()) return Optional.empty();
 		BlockPos origin = player.blockPosition();
 		// Do not interpret an unloaded edge of the sampling area as darkness.
 		for (BlockPos sample : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {

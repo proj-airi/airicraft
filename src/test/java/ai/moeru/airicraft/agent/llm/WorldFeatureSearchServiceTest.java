@@ -140,6 +140,42 @@ class WorldFeatureSearchServiceTest {
 		assertTrue(result.text().contains("returned=0"));
 	}
 
+	@Test
+	void fortressSearchFindsExposedBricksAtAnyDepthAndStandsOnTheBridge() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// A bridge deck three wide and forty long, far below the search origin.
+		for (int x = 30; x < 70; x++) for (int z = -1; z <= 1; z++) access.exposed.add(new BlockPos(x, 64, z));
+		access.standable(new BlockPos(31, 65, 0));
+		JsonObject args = args("nether_fortress");
+
+		var result = WorldFeatureSearchService.search(access, new BlockPos(0, 100, 0), args);
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=nether_fortress"), result.text());
+		assertTrue(result.text().contains("exposedBlocks=120"), result.text());
+		assertTrue(result.text().contains("standPos=31,65,0"), result.text());
+	}
+
+	@Test
+	void aFewStrayBricksAreNotAFortress() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		for (int x = 30; x < 40; x++) access.exposed.add(new BlockPos(x, 64, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("nether_fortress"));
+		assertTrue(result.text().contains("returned=0"), result.text());
+	}
+
+	@Test
+	void separateLavaPoolsAreSeparateFeatures() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		for (int x = 10; x < 13; x++) for (int z = 0; z < 2; z++) access.exposed.add(new BlockPos(x, 20, z));
+		for (int x = 60; x < 63; x++) for (int z = 0; z < 2; z++) access.exposed.add(new BlockPos(x, 20, z));
+		access.standable(new BlockPos(9, 21, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("lava_pool"));
+		assertTrue(result.text().contains("returned=2"), result.text());
+		assertTrue(result.text().contains("targetPos=10,20,0"), result.text());
+		assertTrue(result.text().contains("standPos=9,21,0"), result.text());
+	}
+
 	private static JsonObject args(String featureKind) {
 		JsonObject args = new JsonObject();
 		args.addProperty("featureKind", featureKind);
@@ -159,6 +195,14 @@ class WorldFeatureSearchServiceTest {
 		public boolean isSurface(BlockPos pos) { return pos.getY() >= surfaceY; }
 		private final HashMap<BlockPos, WorldFeatureSearchService.SampledBlock> samples = new HashMap<>();
 		private final HashSet<BlockPos> standable = new HashSet<>();
+		private final HashSet<BlockPos> exposed = new HashSet<>();
+
+		@Override
+		public void forEachExposedBlock(BlockPos origin, int maxDistanceBlocks, WorldFeatureSearchService.FeatureKind featureKind,
+			Consumer<BlockPos> consumer) {
+			exposed.stream().sorted(Comparator.<BlockPos>comparingInt(BlockPos::getX).thenComparingInt(BlockPos::getY)
+				.thenComparingInt(BlockPos::getZ)).forEach(consumer);
+		}
 
 		private void water(BlockPos pos) {
 			put(pos, new WorldFeatureSearchService.SampledBlock(true, false, false));
