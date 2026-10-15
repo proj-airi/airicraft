@@ -204,7 +204,7 @@ class PathSearchTest {
 	}
 
 	@Test
-	void walksBesideLavaWhenThereIsNoOtherWay() {
+	void neverStepsWhereLavaTouchesTheBody() {
 		AsciiTerrain world = AsciiTerrain.parse("""
 			y0
 			#######
@@ -214,9 +214,7 @@ class PathSearchTest {
 			S.....G
 			""");
 
-		Path path = found(world.search(WALK_ONLY));
-
-		assertEquals(6 * (Costs.SPRINT + Costs.LAVA_MARGIN), path.cost(), 1e-9);
+		assertFalse(world.search(WALK_ONLY) instanceof SearchResult.Found, "a corridor along lava at body height is no route");
 	}
 
 	@Test

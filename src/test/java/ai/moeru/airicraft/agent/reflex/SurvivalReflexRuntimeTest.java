@@ -39,6 +39,19 @@ class SurvivalReflexRuntimeTest {
 		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
 	}
 
+	@Test void lavaEscapePrefersABankThatLavaDoesNotTouch() {
+		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
+		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
+		java.util.function.Predicate<net.minecraft.core.BlockPos> bank = cell -> cell.getY() == 26 && cell.getZ() == 0
+			&& (cell.getX() == 1 || cell.getX() == -2);
+		// Lava falls beside the nearer bank: the farther one wins by less than the penalty but not by more.
+		java.util.function.Predicate<net.minecraft.core.BlockPos> besideLava = cell -> cell.getX() == 1;
+		assertEquals(new net.minecraft.core.BlockPos(-2, 26, 0),
+			SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false, besideLava));
+		assertEquals(new net.minecraft.core.BlockPos(1, 26, 0),
+			SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
+	}
+
 	@Test void digsInOnlyWithRoomBeforeTheNearestMeleeMobArrives() {
 		assertFalse(SurvivalReflexRuntime.roomToDig(1.5D));
 		assertTrue(SurvivalReflexRuntime.roomToDig(9.0D));

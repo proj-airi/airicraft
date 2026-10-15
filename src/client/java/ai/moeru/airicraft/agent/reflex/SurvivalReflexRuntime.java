@@ -60,6 +60,7 @@ public final class SurvivalReflexRuntime {
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
 	static final int LAVA_CLEAR_TICKS = 5;
+	static final double LAVA_BESIDE_PENALTY = 2.0D;
 	static final int EXTINGUISH_MAX_ATTEMPTS = 20;
 	static final int LAVA_ESCAPE_RADIUS = 5;
 	/** Ticks without closing in on the chosen bank before trying another. */
@@ -627,7 +628,8 @@ public final class SurvivalReflexRuntime {
 			else {
 				BlockPos target = lavaEscapeTarget(player.blockPosition(), player.position(), LAVA_ESCAPE_RADIUS,
 					cell -> !lavaBlockedTargets.contains(cell) && lavaSafeStand(minecraft.level, cell),
-					cell -> !minecraft.level.getBlockState(cell).getCollisionShape(minecraft.level, cell).isEmpty());
+					cell -> !minecraft.level.getBlockState(cell).getCollisionShape(minecraft.level, cell).isEmpty(),
+					cell -> besideLava(minecraft.level, cell));
 				target = trackLavaTarget(target, player.position(), tick);
 				if (target == null) {
 					movementController.hold(minecraft, true, false);
@@ -748,6 +750,15 @@ public final class SurvivalReflexRuntime {
 	 * the straight way there is open at the height the body arrives at, so a bank behind a wall loses to an open one.
 	 */
 	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand, Predicate<BlockPos> solid) {
+		return lavaEscapeTarget(feet, position, radius, safeStand, solid, cell -> false);
+	}
+
+	/**
+	 * Like the above, but a bank whose body cells share a face with lava counts {@link #LAVA_BESIDE_PENALTY} blocks
+	 * farther: the body stops a little past the cell centre and a Nether lava fall set it alight again from such a bank.
+	 */
+	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand,
+		Predicate<BlockPos> solid, Predicate<BlockPos> besideLava) {
 		BlockPos best = null;
 		double bestCost = Double.MAX_VALUE;
 		for (int dy = -1; dy <= 2; dy++) {
@@ -757,6 +768,10 @@ public final class SurvivalReflexRuntime {
 					double horizontal = Math.hypot(cell.getX() + 0.5D - position.x, cell.getZ() + 0.5D - position.z);
 					double cost = horizontal + 0.5D * Math.max(0, cell.getY() - feet.getY());
 					if (cost >= bestCost || !safeStand.test(cell) || !openWay(position, cell, solid)) continue;
+					if (besideLava.test(cell)) {
+						cost += LAVA_BESIDE_PENALTY;
+						if (cost >= bestCost) continue;
+					}
 					bestCost = cost;
 					best = cell;
 				}
@@ -775,6 +790,15 @@ public final class SurvivalReflexRuntime {
 			if (solid.test(column) || solid.test(column.above())) return false;
 		}
 		return true;
+	}
+
+	private static boolean besideLava(Level level, BlockPos cell) {
+		for (BlockPos body : List.of(cell, cell.above())) {
+			for (Direction side : Direction.Plane.HORIZONTAL) {
+				if (level.getFluidState(body.relative(side)).is(FluidTags.LAVA)) return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean lavaSafeStand(Level level, BlockPos cell) {
