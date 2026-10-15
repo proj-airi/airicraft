@@ -25,7 +25,7 @@ public enum TaskFailureCode {
 
 	public static TaskFailureCode fromLegacyDetail(String detail) {
 		String text = detail == null ? "" : detail.toLowerCase(Locale.ROOT);
-		if (text.contains("required_item_missing")) {
+		if (text.contains("required_item_missing") || text.contains("missing_ingredients") || text.contains("ingredients_ran_out")) {
 			return MISSING_ITEM;
 		}
 		if (text.contains("busy") || text.contains("occupied")) {
@@ -56,8 +56,8 @@ public enum TaskFailureCode {
 		return switch (code.trim().toLowerCase(Locale.ROOT)) {
 			case "transient", "timeout", "temporary" -> TRANSIENT;
 			case "busy", "occupied" -> BUSY;
-			case "missing_fact", "recipe_not_found", "smelting_option_not_found" -> MISSING_FACT;
-			case "missing_item" -> MISSING_ITEM;
+			case "missing_fact", "recipe_not_found", "recipe_not_craftable", "smelting_option_not_found" -> MISSING_FACT;
+			case "missing_item", "missing_ingredients", "ingredients_ran_out" -> MISSING_ITEM;
 			case "environment_changed" -> ENVIRONMENT_CHANGED;
 			case "invalid_action", "invalid_step_args", "unsupported_primitive", "unsupported_step_kind", "missing_step" -> INVALID_ACTION;
 			case "destructive_denied" -> DESTRUCTIVE_DENIED;
