@@ -48,4 +48,18 @@ class SkillToolProviderTest {
 		var skill = PlannerSkills.parse("a", "---\nname: a\ndescription: d\n---\n\nbody\n");
 		assertEquals(Map.of("a", "body").get("a"), skill.body());
 	}
+
+	@Test void modFrontmatterBindsASkillToItsBlocksAndHidesItFromTheList() {
+		var bound = PlannerSkills.parse("a", "---\nname: a\ndescription: d\nmod: create, other\n---\nbody");
+		assertEquals(List.of("create", "other"), bound.mods());
+		assertEquals(List.of(), PlannerSkills.parse("a", "---\nname: a\ndescription: d\n---\nbody").mods());
+		assertFalse(skills.names().contains("create-machines"), "bound skills are attached, not chosen");
+		assertTrue(skills.names().contains("modded-machines"));
+		assertFalse(provider.promptInstructions().contains("create-machines"));
+	}
+
+	@Test void aCreateBlockBindsTheCreateSkillAndVanillaDoesNot() {
+		assertEquals(List.of("create-machines"), skills.boundTo("{\"expectedState\":\"create:hand_crank[facing=north]\"}").stream().map(PlannerSkills.Skill::name).toList());
+		assertEquals(List.of(), skills.boundTo("minecraft:stone_bricks placed; createx:thing"));
+	}
 }

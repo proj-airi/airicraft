@@ -97,6 +97,7 @@ public final class PlannerOrchestrator {
 	private final PlannerVisionService plannerVision;
 	// Backend-managed history is remote; conservatively budget until its session resets.
 	private int backendHistoryImages;
+	private final java.util.Set<String> hintedSkills = new java.util.HashSet<>();
 
 	public PlannerOrchestrator(
 		PlannerExecutor plannerExecutor,
@@ -1220,6 +1221,7 @@ public final class PlannerOrchestrator {
 	}
 
 	private void queueReport(PlannerToolCall call, ToolExecutionOutcome outcome) {
+		outcome = withBoundSkills(outcome, List.of(call));
 		if (!List.of(PlannerObservation.TOOL_NAME, PlannerQueueToolProvider.CONTINUE, PlannerQueueToolProvider.CLEAR,
 			PlannerQueueToolProvider.REPORT).contains(call.name())) {
 			var notice = loopWatchdog.onResult(call.name(), outcome.toolResultText());
@@ -1392,6 +1394,7 @@ public final class PlannerOrchestrator {
 		toolRegistry.resetProviders();
 		decisionWorldSessionId = null;
 		incorporatedDecisionEventSequence = 0;
+		hintedSkills.clear();
 		cancelPendingTool();
 		sessionCoordinator.reset();
 		compactionService.reset();
@@ -1684,6 +1687,7 @@ public final class PlannerOrchestrator {
 			captureInFlight = false;
 		}
 
+		toolOutcome = withBoundSkills(toolOutcome, toolExecution.toolCalls());
 		PlannerContextSnapshot snapshot = sessionCoordinator.contextSnapshotFor(toolExecution.generation());
 		if (snapshot == null) {
 			return null;
@@ -2319,6 +2323,18 @@ public final class PlannerOrchestrator {
 
 	private void recordConversationSources() {
 		debugRecorder.recordConversationSources(conversationDebugSnapshot(), projectedConversationDebugSnapshot());
+	}
+
+	/** Attaches the skill bound to a mod when a call first touches one of its blocks, once per skill per session; see {@link PlannerSkills#boundTo}. */
+	private ToolExecutionOutcome withBoundSkills(ToolExecutionOutcome outcome, List<PlannerToolCall> calls) {
+		if (!(outcome instanceof TextToolExecutionOutcome text) || calls == null || calls.size() != 1) return outcome;
+		String name = normalizedToolName(calls.getFirst());
+		if (!"use_block".equals(name) && !"place_block".equals(name)) return outcome;
+		var fresh = PlannerSkills.bundled().boundTo(calls.getFirst().arguments() + " " + text.toolResultText()).stream().filter(skill -> hintedSkills.add(skill.name())).toList();
+		if (fresh.isEmpty()) return outcome;
+		StringBuilder attached = new StringBuilder(text.toolResultText());
+		for (var skill : fresh) attached.append("\nSkill ").append(skill.name()).append(" (attached automatically for ").append(String.join(", ", skill.mods())).append(" blocks):\n").append(skill.body());
+		return new TextToolExecutionOutcome(attached.toString());
 	}
 
 	private record ToolExecutionResult(

@@ -324,6 +324,22 @@ class PlannerToolCallInterfaceTest {
 	}
 
 	@Test
+	void useBlockAcceptsABoundedHoldForClickAndHoldBlocks() {
+		PlannerToolCall crank = PlannerToolCatalog.parseToolCall(toolCall("use_block", """
+			{"x":5,"y":202,"z":54,"holdTicks":120}
+			"""));
+		assertEquals(120, crank.arguments().get("holdTicks").getAsInt());
+		for (String bad : new String[] {"-1", "1201", "\"long\""}) {
+			assertThrows(com.google.gson.JsonParseException.class, () ->
+				PlannerToolCatalog.parseToolCall(toolCall("use_block", "{\"x\":5,\"y\":202,\"z\":54,\"holdTicks\":" + bad + "}")), bad);
+		}
+		assertThrows(IllegalArgumentException.class, () ->
+			new ai.moeru.airicraft.agent.tasks.BlockUseStepArgs("minecraft:stick",
+				new ai.moeru.airicraft.agent.goals.GoalPosition(1, 2, 3, true), "auto", java.util.List.of(), null,
+				ai.moeru.airicraft.agent.tasks.BlockUseStepArgs.MAX_HOLD_TICKS + 1));
+	}
+
+	@Test
 	void parsesBatchedBlockInteractionTools() {
 		PlannerToolCall placeCall = PlannerToolCatalog.parseToolCall(toolCall("place_block", """
 			{

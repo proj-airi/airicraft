@@ -1818,6 +1818,23 @@ Forest world, search centred on the dense-forest cabin site: the best candidates
 
 Takeaway: choosing a flat clear site removes the terrain problems, but digging the ground under a floor and the scaffold search still make even a flat build slow. A design with a foundation or a floor at ground level (no dig) would avoid the dig entirely; the designer should be told the ground height.
 
+## Modded blocks (Create power line)
+
+A blueprint cell state may name any registered block, for example `create:shaft[axis=z]`; construction places it through `place_block` with `expectedState` and verifies the exact state. Live check on 2026-10-12 with Create Fly 1.21.8 (`examples/create-power-line.js`, flat arena, dirt and cobblestone supplied for scaffolding): water wheel, three shafts, mechanical press and a depot were built from scratch, the whole line ran at -8 RPM once a water source flowed beside the wheel, and an iron ingot on the depot became `create:iron_sheet`.
+
+- Create picks some facings from neighbouring kinetic blocks, so not every state is attainable at every point in the build order. An unattainable state fails with `placement_state_requires_different_approach` rather than placing a different block. In this layout the wheel is placed first and alone (`facing=south`), the press beside shafts (`facing=north`).
+- A press needs one empty block between its head and the depot or belt below it.
+- The evaluator's tool-fixture `state` query returns `blockEntity` data for queried blocks, so machine state (a kinetic `Speed`, a depot's held item) can be checked without a model.
+
+### Using a placed machine (hand crank)
+
+`examples/create-hand-crank-press.js` builds a hand crank on the end of a three-shaft line that drives a mechanical press over a depot. Live check on 2026-10-13 (Create Fly 1.21.8, evaluator arena): construction placed and verified 9/9 cells; `use_block` put iron ingots on the depot; `use_block` on the crank with `holdTicks: 120` kept the crank turning for the whole hold (it re-clicks every 4 ticks, as a held mouse button does), the press ran and the depot's output held `create:iron_sheet` x2 (one sheet per ingot pressed in that time).
+
+- A single click turns a crank for about half a second, so a plain `use_block` does nothing useful; `holdTicks` (0..1200) repeats the click and ends the task when it elapses, or fails with `out_of_range_during_hold`, `target_removed_during_hold` or `hold_use_rejected`.
+- The crank must be attached to a kinetic block, with its back facing the first shaft (`facing=north` at the north end of a z line). A crank on a plain block forms a network of size 1 and spins nothing.
+- The planner reads this guidance from the `modded-machines` skill (general) and `create-machines` (Create specifics).
+- Water is placed after construction with `use_block` and a water bucket. `use_block` refuses to pour a source into a cell with fewer than three solid horizontal neighbours (`unsafe_fluid_target`, so it cannot flood open ground), so the power-line blueprint walls the source cell at `[1,3,0]` (three cobblestone blocks and a cap over the wheel). Live check 2026-10-13: after construction, `use_block` with `minecraft:water_bucket` on that cell succeeded, the water ran down the wheel's side, the network formed (size 5) and the press turned an ingot on the depot into `create:iron_sheet`.
+
 ### Planner-path trial (2026-10-11)
 
 First run of the real planner (glm-5-3-flash, `plannerReasoningEffort: low`, normal client in `Blueprint-Terrain2`, creative world) asked in chat to build a small oak cabin near the player.

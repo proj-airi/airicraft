@@ -4379,6 +4379,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			? stringArrayArg(args, "expectedSupportBlockIds")
 			: List.of();
 		String rootExpectedTargetMaterial = stringArg(args, "expectedTargetMaterial").orElse(null);
+		int holdTicks = intArg(args, "holdTicks").orElse(0);
 		if (hasTargets(args)) {
 			ArrayList<BlockUseStepArgs.Target> targets = new ArrayList<>();
 			for (JsonElement element : args.getAsJsonArray("targets")) {
@@ -4396,14 +4397,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					stringArg(target, "expectedTargetMaterial").orElse(rootExpectedTargetMaterial)
 				));
 			}
-			return new BlockUseStepArgs(stringArg(args, "itemId").orElse(null), targets);
+			return new BlockUseStepArgs(stringArg(args, "itemId").orElse(null), targets, holdTicks);
 		}
 		return new BlockUseStepArgs(
 			stringArg(args, "itemId").orElse(null),
 			parseTargetPosition(args),
 			rootFacePreference,
 			rootExpectedSupportBlockIds,
-			rootExpectedTargetMaterial
+			rootExpectedTargetMaterial,
+			holdTicks
 		);
 	}
 
