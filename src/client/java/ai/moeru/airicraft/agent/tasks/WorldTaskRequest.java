@@ -36,6 +36,7 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case LocateStronghold ignored -> WorldTaskType.LOCATE_STRONGHOLD;
 			case ExploreFor ignored -> WorldTaskType.EXPLORE_FOR;
 			case CollectBlazeRods ignored -> WorldTaskType.COLLECT_BLAZE_RODS;
+			case CollectFlint ignored -> WorldTaskType.COLLECT_FLINT;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -162,6 +163,11 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new CollectBlazeRods(args));
 	}
 	public record CollectBlazeRods(CollectBlazeRodsStepArgs args) implements Task { public CollectBlazeRods { Objects.requireNonNull(args, "collectBlazeRods"); } }
+
+	public static WorldTaskRequest collectFlint(String taskId, String sourceJobId, CollectFlintStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectFlint(args));
+	}
+	public record CollectFlint(CollectFlintStepArgs args) implements Task { public CollectFlint { Objects.requireNonNull(args, "collectFlint"); } }
 
 	public sealed interface Task {
 	}

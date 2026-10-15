@@ -86,6 +86,7 @@ public final class WorkProjection {
 			case LOCATE_STRONGHOLD -> job.locateStronghold();
 			case EXPLORE_FOR -> job.exploreFor();
 			case COLLECT_BLAZE_RODS -> job.collectBlazeRods();
+			case COLLECT_FLINT -> job.collectFlint();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;
