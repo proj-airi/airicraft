@@ -133,6 +133,7 @@ public final class SurvivalReflexRuntime {
 	private boolean foodRetreatAbandoned;
 	private boolean foodUnavailableReported;
 	private final EmergencyBunker bunker = new EmergencyBunker();
+	private boolean bunkerIntruderReported;
 	private final ReflexArchery archery = new ReflexArchery();
 	private final UnarmedFlight flight = new UnarmedFlight();
 
@@ -1107,6 +1108,15 @@ public final class SurvivalReflexRuntime {
 		if (!bunker.active() && (threats.isEmpty()
 			|| player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered && !losing)) return false;
 		if (!bunker.active() && !cornered && !roomToDig(nearestMeleeDistance(threats))) return false;
+		var shaft = bunker.shaft();
+		if (shaft != null && EmergencyBunker.intruded(shaft, threats.stream().map(t -> t.entity().getBoundingBox()).toList())) {
+			// Shut in with a mob, standing still only lets it hit; fight it where it stands.
+			if (!bunkerIntruderReported) pendingEvents.add(new SurvivalReflexEvent("reflex.bunker_intruder", Map.of(
+				"tick", tick, "health", player.getHealth())));
+			bunkerIntruderReported = true;
+			return false;
+		}
+		bunkerIntruderReported = false;
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
