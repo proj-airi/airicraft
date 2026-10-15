@@ -81,7 +81,9 @@ public final class WorkProgressWatchdog {
 				// A night in a shelter changes nothing for minutes; the task has its own wait cap and exit deadline.
 				|| w.label().equals("SHELTER_FOR_NIGHT")
 				// Waiting in a safe spot for endermen to come stands still; the task has its own no-enderman and overall deadlines.
-				|| w.label().equals("COLLECT_ENDER_PEARLS")) continue;
+				|| w.label().equals("COLLECT_ENDER_PEARLS")
+				// Waiting for monsters to clear and lying in bed stand still; the task has its own monster wait and overall deadline.
+				|| w.label().equals("SLEEP_IN_BED")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			// Cells are recorded while navigating too, so a restart between attempts finds nothing new.

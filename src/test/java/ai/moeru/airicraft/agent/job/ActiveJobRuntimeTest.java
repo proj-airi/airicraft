@@ -842,6 +842,25 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void sleepPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs(new ai.moeru.airicraft.agent.goals.GoalPosition(4, 70, -2, true));
+		runtime.applyPlannerResponse(new DialogueResponse("Sleeping.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.sleepInBed(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.SLEEP_IN_BED, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.SleepInBed(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().sleepInBed());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same sleep");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().sleepInBed());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);
