@@ -129,6 +129,8 @@ class ShelterForNightTaskExecutorTest {
 		assertEquals(ShelterForNightTaskExecutor.PillarStep.TOWER, ShelterForNightTaskExecutor.pillarStep(62, 64, false, 2), "places mid-jump");
 		assertEquals(ShelterForNightTaskExecutor.PillarStep.FALLING, ShelterForNightTaskExecutor.pillarStep(64, 64, false, 0));
 		assertEquals(ShelterForNightTaskExecutor.PillarStep.OUT, ShelterForNightTaskExecutor.pillarStep(64, 64, true, 0));
+		assertTrue(ShelterForNightTaskExecutor.atTop(64, 64), "a stuck climb at the shaft top is out");
+		assertFalse(ShelterForNightTaskExecutor.atTop(63, 64));
 		assertEquals(ShelterForNightTaskExecutor.PillarStep.NO_BLOCKS, ShelterForNightTaskExecutor.pillarStep(63, 64, true, 0));
 	}
 

@@ -331,6 +331,9 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 		if (stuck(body, result)) {
+			// At the top but never seen on the ground (a live exit ended exit_failed "pillar_stuck falling" at the
+			// shaft top): the body is out, whatever it is standing in.
+			if (atTop(body.block().getY(), plan.top().getY())) return succeed(body, "pillar");
 			lastNote = "pillar_stuck " + result.note();
 			environment.stop();
 			startClimb(body, ExitMode.STAIRS);
@@ -339,6 +342,7 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> exitStairs(Body body) {
+		if (stairDirection == null && atTop(body.block().getY(), plan.top().getY())) return succeed(body, "pillar");
 		if (stairDirection == null)
 			return exitFailed(body, "no wall to dig a staircase into from " + stairOrigin.toShortString()
 				+ " (water, lava, falling blocks or unbreakable blocks on every side)" + (lastNote.isEmpty() ? "" : "; " + lastNote));
@@ -347,8 +351,16 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 		if (result.state() == ClimbState.OUT)
 			return succeed(body, pillarTried && plan.top().getY() - stairOrigin.getY() <= 1 ? "pillar" : "stairs");
 		if (result.state() == ClimbState.BLOCKED) return exitFailed(body, "the staircase is blocked: " + result.note());
-		if (stuck(body, result)) return exitFailed(body, "no progress on the staircase for " + EXIT_STUCK_TICKS + " ticks: " + result.note());
+		if (stuck(body, result)) {
+			if (atTop(body.block().getY(), plan.top().getY())) return succeed(body, "stairs");
+			return exitFailed(body, "no progress on the staircase for " + EXIT_STUCK_TICKS + " ticks: " + result.note());
+		}
 		return Optional.empty();
+	}
+
+	/** Whether the feet are at or above the shaft top, so the body is out of the shelter. */
+	static boolean atTop(int feetY, int topY) {
+		return feetY >= topY;
 	}
 
 	/** True once the climb has gained no height and placed or broken nothing for {@link #EXIT_STUCK_TICKS}. */
