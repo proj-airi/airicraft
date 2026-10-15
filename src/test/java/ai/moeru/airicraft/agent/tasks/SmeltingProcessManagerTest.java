@@ -9,6 +9,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmeltingProcessManagerTest {
 	@Test
+	void placedFurnacesAreRememberedUntilForgottenAndBounded() {
+		var manager = new SmeltingProcessManager();
+		var key = new SmeltingStationKey("minecraft:overworld", 1, 64, 2);
+		assertFalse(manager.placedStation(key));
+		manager.markPlacedStation(key);
+		assertTrue(manager.placedStation(key));
+		assertFalse(manager.placedStation(new SmeltingStationKey("minecraft:the_nether", 1, 64, 2)));
+		manager.forgetPlacedStation(key);
+		assertFalse(manager.placedStation(key));
+
+		for (int index = 0; index <= SmeltingProcessManager.MAX_PLACED_STATIONS; index++) {
+			manager.markPlacedStation(new SmeltingStationKey("minecraft:overworld", index, 64, 0));
+		}
+		assertFalse(manager.placedStation(new SmeltingStationKey("minecraft:overworld", 0, 64, 0)));
+		assertTrue(manager.placedStation(new SmeltingStationKey("minecraft:overworld", SmeltingProcessManager.MAX_PLACED_STATIONS, 64, 0)));
+	}
+
+	@Test
 	void foregroundSmeltingKeepsItsMenuEvenIfNavigationStillHasMovementInput() {
 		var manager = new SmeltingProcessManager();
 		assertTrue(manager.requiresOpenScreen("minecraft:overworld", 7, WorldTaskType.SMELT_ITEMS));

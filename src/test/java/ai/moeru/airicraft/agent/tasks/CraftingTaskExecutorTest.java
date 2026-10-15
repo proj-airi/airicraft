@@ -78,6 +78,43 @@ class CraftingTaskExecutorTest {
 	}
 
 	@Test
+	void onlyTablesTheTaskPlacedAreTakenBack() {
+		assertFalse(CraftingTaskExecutor.shouldReclaimTables(0));
+		assertTrue(CraftingTaskExecutor.shouldReclaimTables(1));
+		assertTrue(CraftingTaskExecutor.shouldReclaimTables(2));
+	}
+
+	@Test
+	void reclaimOutcomeIsAppendedWithoutChangingTheResult() {
+		assertEquals("crafted tableReclaimed=2,59,-5", CraftingTaskExecutor.withReclaimOutcome("crafted", "tableReclaimed=2,59,-5"));
+		assertEquals(
+			"ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick*2 tableLeftAt=2,59,-5 reason=drop_not_picked_up",
+			CraftingTaskExecutor.withReclaimOutcome(
+				"ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick*2",
+				"tableLeftAt=2,59,-5 reason=drop_not_picked_up"
+			)
+		);
+		assertEquals("crafted", CraftingTaskExecutor.withReclaimOutcome("crafted", ""));
+	}
+
+	@Test
+	void craftingShutdownAlsoShutsDownTheTableBreaker() {
+		RecordingPlacementExecutor placementExecutor = new RecordingPlacementExecutor();
+		RecordingPlacementExecutor breakExecutor = new RecordingPlacementExecutor();
+		CraftingTaskExecutor executor = new CraftingTaskExecutor(
+			() -> null,
+			null,
+			new CameraController(),
+			placementExecutor,
+			breakExecutor
+		);
+
+		executor.shutdown();
+		assertEquals(1, breakExecutor.shutdownCount);
+		assertEquals(1, placementExecutor.shutdownCount);
+	}
+
+	@Test
 	void nearbyTableReuseWinsOverPortableTableSetup() {
 		assertEquals(
 			CraftingTaskExecutor.WorkbenchSetupAction.REUSE_NEARBY_TABLE,
