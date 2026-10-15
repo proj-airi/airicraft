@@ -59,8 +59,27 @@ class CollectBlazeRodsTaskExecutorTest {
 		Spot hidden = new Spot(new GoalPosition(8, 64, 5, true), true, false, false, false, 0, 2, 0);
 		Spot hiddenInLava = new Spot(new GoalPosition(9, 64, 1, true), true, true, false, false, 0, 2, 0);
 		Spot farHidden = new Spot(new GoalPosition(8, 64, 30, true), true, false, false, false, 0, 2, 0);
-		assertEquals(hidden.position(), CollectBlazeRodsTaskExecutor.chooseCover(List.of(seen, hiddenInLava, farHidden, hidden), feet)
-			.orElseThrow().position());
+		assertEquals(hidden.position(), CollectBlazeRodsTaskExecutor.chooseCover(List.of(seen, hiddenInLava, farHidden, hidden), feet, 1,
+			Set.of()).orElseThrow().position());
+		assertTrue(CollectBlazeRodsTaskExecutor.chooseCover(List.of(hidden), feet, 1, Set.of(hidden.position())).isEmpty(),
+			"a cell whose walk failed is not picked again");
+	}
+
+	@Test void amongManyBlazesCoverIsTheCellTheFewestSee() {
+		// Live play: eight blazes saw the body and no cell nearby was out of all their sight; the reflex hid in one two saw.
+		Vec3 feet = new Vec3(8.5, 64, 0.5);
+		Spot seenByFive = new Spot(new GoalPosition(8, 64, 2, true), true, false, false, false, 5, 4, 0);
+		Spot seenByTwo = new Spot(new GoalPosition(14, 64, 4, true), true, false, false, false, 2, 1, 0);
+		Spot seenByOne = new Spot(new GoalPosition(4, 64, 6, true), true, false, false, false, 1, 0, 0);
+		Spot seenByThree = new Spot(new GoalPosition(9, 64, 3, true), true, false, false, false, 3, 4, 0);
+		assertEquals(seenByOne.position(), CollectBlazeRodsTaskExecutor.chooseCover(List.of(seenByFive, seenByTwo, seenByOne), feet, 8,
+			Set.of()).orElseThrow().position(), "fewest lines of fire first");
+		assertEquals(seenByTwo.position(), CollectBlazeRodsTaskExecutor.chooseCover(List.of(seenByFive, seenByTwo, seenByThree), feet, 8,
+			Set.of()).orElseThrow().position());
+		assertTrue(CollectBlazeRodsTaskExecutor.chooseCover(List.of(seenByFive, seenByThree), feet, 8, Set.of()).isEmpty(),
+			"three or more blazes in sight is no cover");
+		assertTrue(CollectBlazeRodsTaskExecutor.chooseCover(List.of(seenByOne), feet, 1, Set.of()).isEmpty(),
+			"with one blaze in sight, cover is out of its sight");
 	}
 
 	// ---- weapons and fireballs ----
@@ -211,6 +230,7 @@ class CollectBlazeRodsTaskExecutorTest {
 
 	@Test void tooManyBlazesInSightSendsItBehindCover() {
 		World world = new World();
+		world.feet = new Vec3(12.5, 64, 0.5);
 		for (int i = 0; i < 5; i++) world.blaze(new Vec3(-2.5 + i, 66, 0.5));
 		world.blazesApproachHiddenBody = false;
 		Set<String> actions = new LinkedHashSet<>();
@@ -218,6 +238,84 @@ class CollectBlazeRodsTaskExecutorTest {
 		world.runTicks(1, 300);
 		assertTrue(actions.contains("cover_thin_out"), "took cover from five blazes: " + actions);
 		assertTrue(world.visited.contains(COVER));
+	}
+
+	@Test void manyBlazesFiringWithoutPauseSendItToCoverInsteadOfHoldingTheShield() {
+		// Live play: eight blazes in sight, a shield and no bow. The shield answered every incoming fireball and stopped the
+		// walk, so the body stood in the open for 700 ticks while the others hit it.
+		World world = new World();
+		world.feet = new Vec3(12.5, 64, 0.5);
+		world.hasShield = true;
+		world.blazesApproachHiddenBody = false;
+		for (int i = 0; i < 8; i++) world.blaze(new Vec3(-3.5 + i, 66, 0.5));
+		int[] reachedCover = {-1};
+		List<Boolean> shieldedWhileWalking = new ArrayList<>();
+		world.beforeTick = w -> {
+			if (w.fireballs.isEmpty()) w.blazes.stream().filter(w::sees).findFirst().ifPresent(w::fire);
+			if (reachedCover[0] < 0 && w.visited.contains(COVER)) reachedCover[0] = w.ticks;
+		};
+		// Every blaze sees the body anywhere but in cover, so a shield raised on a walk away from the cell is a raise while overwhelmed.
+		world.onShield = w -> shieldedWhileWalking.add(w.goal != null
+			&& Math.hypot(w.feet.x - (COVER.x() + 0.5), w.feet.z - (COVER.z() + 0.5)) > 1.0);
+		TaskTerminalEvent end = world.runTicks(1, 200);
+		assertNull(end, end == null ? "" : end.message());
+		assertTrue(reachedCover[0] > 0 && reachedCover[0] <= 40, "walked to cover at once, at tick " + reachedCover[0] + ": " + world.snapshot());
+		assertFalse(shieldedWhileWalking.contains(true), "the shield, which slows a walk to a fifth, stays down on the way to cover");
+		assertTrue(world.snapshot().contains("mode=COVER"), world.snapshot());
+	}
+
+	@Test void aHitOnTheWayInStopsTheApproachAndHidesSoTheBlazeComesClose() {
+		World world = new World();
+		GoalPosition corner = new GoalPosition(16, 64, 5, true);
+		world.hidingCells.add(corner);
+		world.coverSpots.add(new Spot(corner, true, false, false, false, 0, 3, 0));
+		world.blaze(new Vec3(0.5, 66, 0.5));
+		boolean[] hit = {false};
+		world.beforeTick = w -> {
+			if (!hit[0] && w.feet.x <= 17.0) {
+				w.health -= 5.0F; // a fireball
+				hit[0] = true;
+			}
+		};
+		TaskTerminalEvent end = world.run(1, 2_000);
+		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertTrue(world.visited.contains(corner), "hid at the corner it had just passed");
+		assertFalse(world.visited.contains(SPOT), "never walked on into the fire: " + world.visited);
+		assertTrue(world.meleeHits >= 4, "the blaze came round the corner into reach: " + world.meleeHits);
+	}
+
+	@Test void tooManyBlazesAndNoCoverHandsBackAtOnceWithHealthToSpare() {
+		World world = new World();
+		world.feet = new Vec3(14.5, 64, 0.5);
+		world.coverSpots.clear();
+		for (int i = 0; i < 6; i++) world.blaze(new Vec3(-2.5 + i, 66, 0.5));
+		world.beforeTick = w -> {
+			if (w.fireballs.isEmpty()) w.fire(w.blazes.get(w.ticks % w.blazes.size()));
+		};
+		TaskTerminalEvent end = world.run(1, 200);
+		assertEquals(TaskExecutionState.FAILED, end.terminalState());
+		assertTrue(end.message().startsWith("overwhelmed rods=0; 6 blazes in sight"), end.message());
+		assertEquals(TaskFailureCode.ENVIRONMENT_CHANGED, end.failureCode());
+		assertTrue(world.health >= 15.0F, "handed back with health for the walk out: " + world.health);
+		assertFalse(world.visited.contains(SPOT), "did not walk on to the spot");
+	}
+
+	@Test void hitInTheOpenWithNoCoverHandsBackWhileHealthIsStillAboutTwelve() {
+		World world = new World();
+		world.feet = new Vec3(8.5, 64, 0.5);
+		world.coverSpots.clear();
+		world.leftSafe = world.rightSafe = false;
+		world.blazesApproachHiddenBody = false;
+		world.blaze(new Vec3(0.5, 66, 0.5));
+		world.beforeTick = w -> {
+			if (w.fireballs.isEmpty() && w.ticks % 30 == 0) w.fire(w.blazes.getFirst());
+		};
+		TaskTerminalEvent end = world.run(1, 1_000);
+		assertEquals(TaskExecutionState.FAILED, end.terminalState());
+		assertTrue(end.message().startsWith("low_health rods=0; health="), end.message());
+		assertTrue(end.message().contains("no cover out of the blazes' sight"), end.message());
+		assertTrue(world.health >= 10.0F, "not at 8 or below, where one more hit leaves the reflex too little to reach cover: "
+			+ world.health);
 	}
 
 	@Test void picksUpRodsOnlyFromSafeGroundWithNoBlazeClose() {
@@ -367,8 +465,11 @@ class CollectBlazeRodsTaskExecutorTest {
 		final List<Side> strafeSides = new ArrayList<>();
 		int meleeHits, arrowsShot, shieldRaises, eaten, ticks;
 		Consumer<World> beforeTick = w -> {};
+		Consumer<World> onShield = w -> {};
+		/** Cells behind a wall: a body standing in one is out of the blazes' sight. */
+		final Set<GoalPosition> hidingCells = new HashSet<>(Set.of(COVER));
 		private int nextId = 1, spawnCooldown, eatTicks, aimed = -1;
-		private GoalPosition goal;
+		GoalPosition goal;
 		private final Queue<String> events = new ArrayDeque<>();
 		private final CollectBlazeRodsTaskExecutor executor = new CollectBlazeRodsTaskExecutor(this, this);
 
@@ -414,7 +515,7 @@ class CollectBlazeRodsTaskExecutorTest {
 		}
 
 		private boolean hidden() {
-			return hideAtCover && Math.hypot(feet.x - (COVER.x() + 0.5), feet.z - (COVER.z() + 0.5)) < 1.0;
+			return hideAtCover && hidingCells.stream().anyMatch(cell -> Math.hypot(feet.x - (cell.x() + 0.5), feet.z - (cell.z() + 0.5)) < 1.0);
 		}
 
 		private boolean sees(FakeBlaze blaze) {
@@ -488,6 +589,7 @@ class CollectBlazeRodsTaskExecutorTest {
 		}
 		public boolean raiseShield(Vec3 face) {
 			if (!hasShield) return false;
+			onShield.accept(this);
 			shieldRaises++;
 			fireballs.clear(); // blocked
 			return true;

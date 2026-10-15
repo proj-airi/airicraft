@@ -208,11 +208,16 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 		Optional<TaskTerminalEvent> stop = huntStop(body, stock);
 		if (stop.isPresent()) return stop;
 		List<Animal> animals = environment.animals(args.maxDistance());
-		if (chooseTarget(animals, skipped, args.maxDistance()) == null)
+		if (chooseTarget(animals, skipped, args.maxDistance(), keep()) == null) {
+			boolean onlyKept = args.keepHerd() && chooseTarget(animals, skipped, args.maxDistance(), 0) != null;
+			String next = onlyKept
+				? "Only adults kept for the herd are in sight: call again with keepHerd=false to hunt them too, or walk to another herd"
+				: "Walk to grassland (explore_for forest finds open ground nearby) and call again";
 			return finish(false, "no_animals; nothing huntable in sight within " + args.maxDistance() + " blocks ("
-				+ describeSight(animals) + "). It hunts adult cows, mooshrooms, pigs, sheep, chickens and rabbits you can see, keeps the"
-				+ " last " + KEEP_PER_KIND + " adults of a kind for the herd, and leaves babies and named animals. Walk to grassland"
-				+ " (explore_for forest finds open ground nearby) and call again", TaskFailureCode.MISSING_FACT, body, stock);
+				+ describeSight(animals, keep()) + "). It hunts adult cows, mooshrooms, pigs, sheep, chickens and rabbits you can see, "
+				+ (args.keepHerd() ? "keeps the last " + KEEP_PER_KIND + " adults of a kind for the herd unless keepHerd=false, " : "")
+				+ "and leaves babies and named animals. " + next, TaskFailureCode.MISSING_FACT, body, stock);
+		}
 		enter(Phase.HUNT);
 		return Optional.empty();
 	}
@@ -241,7 +246,7 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 		if (stop.isPresent()) return stop;
 		if (phase == Phase.LOOT) return loot(body);
 		if (targetId == null) {
-			Animal next = chooseTarget(environment.animals(args.maxDistance()), skipped, args.maxDistance());
+			Animal next = chooseTarget(environment.animals(args.maxDistance()), skipped, args.maxDistance(), keep());
 			if (next == null) {
 				stopNavigation();
 				environment.stop();
@@ -522,6 +527,11 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 	 * of the last {@link #KEEP_PER_KIND} adults of its kind in sight (counting skipped, named and protected adults: they live).
 	 */
 	static Animal chooseTarget(List<Animal> animals, Set<Integer> skipped, double maxDistance) {
+		return chooseTarget(animals, skipped, maxDistance, KEEP_PER_KIND);
+	}
+
+	/** {@link #chooseTarget(List, Set, double)} sparing {@code keep} adults per kind ({@code 0} when keepHerd is false). */
+	static Animal chooseTarget(List<Animal> animals, Set<Integer> skipped, double maxDistance, int keep) {
 		Map<String, Integer> adults = new HashMap<>();
 		for (Animal animal : animals) {
 			if (FOOD_ANIMALS.contains(animal.type()) && !animal.baby() && !animal.dead() && animal.visible())
@@ -534,7 +544,7 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 		Animal best = null;
 		double bestCost = Double.MAX_VALUE;
 		for (var entry : byKind.entrySet()) {
-			int spare = adults.getOrDefault(entry.getKey(), 0) - KEEP_PER_KIND;
+			int spare = adults.getOrDefault(entry.getKey(), 0) - keep;
 			if (spare <= 0) continue;
 			// The farthest ones are the ones left alive.
 			List<Animal> nearestFirst = entry.getValue().stream().sorted(Comparator.comparingDouble(Animal::distance)).toList();
@@ -550,12 +560,20 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 		return best;
 	}
 
+	private int keep() {
+		return args.keepHerd() ? KEEP_PER_KIND : 0;
+	}
+
 	static double cost(Animal animal) {
 		return animal.distance() + (animal.inWater() ? WATER_COST : 0.0D) + HEIGHT_COST * Math.max(0.0D, Math.abs(animal.heightDifference()) - 2.0D);
 	}
 
 	/** What is in sight, for a no_animals reason: kinds with adults kept for the herd and babies. */
 	static String describeSight(List<Animal> animals) {
+		return describeSight(animals, KEEP_PER_KIND);
+	}
+
+	static String describeSight(List<Animal> animals, int keep) {
 		Map<String, int[]> counts = new TreeMap<>();
 		for (Animal animal : animals) {
 			if (!FOOD_ANIMALS.contains(animal.type()) || !animal.visible()) continue;
@@ -568,7 +586,7 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 		return counts.entrySet().stream().map(entry -> {
 			int[] count = entry.getValue();
 			StringBuilder text = new StringBuilder(entry.getKey()).append(" adults=").append(count[0]);
-			if (count[0] > 0 && count[0] <= KEEP_PER_KIND) text.append(" (kept for the herd)");
+			if (count[0] > 0 && count[0] <= keep) text.append(" (kept for the herd)");
 			if (count[1] > 0) text.append(" babies=").append(count[1]);
 			if (count[2] > 0) text.append(" named_or_protected=").append(count[2]);
 			return text.toString();

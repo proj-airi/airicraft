@@ -35,6 +35,15 @@ class PlannerToolCatalogTest {
 			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("hunt_food", bad)));
 	}
 
+	@Test void enterEndPortalTakesAnOptionalFrameAndEnter() {
+		assertEquals(0, PlannerToolCatalog.parseToolCall(toolCall("enter_end_portal", "{}")).arguments().size());
+		var args = PlannerToolCatalog.parseToolCall(toolCall("enter_end_portal", "{\"x\":5,\"y\":30,\"z\":-8,\"enter\":false}")).arguments();
+		assertEquals(30, args.get("y").getAsInt());
+		assertEquals(false, args.get("enter").getAsBoolean());
+		for (String bad : java.util.List.of("{\"x\":5}", "{\"x\":5,\"y\":30,\"z\":\"-8\"}", "{\"enter\":\"yes\"}", "{\"radius\":8}"))
+			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("enter_end_portal", bad)));
+	}
+
 	@Test void armorPolicyCanBeReadAndChangedAtomically() {
 		assertEquals("configure_armor", PlannerToolCatalog.parseToolCall(toolCall("configure_armor", "{}")).name());
 		assertEquals(1, PlannerToolCatalog.parseToolCall(toolCall("configure_armor",

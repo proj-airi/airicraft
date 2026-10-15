@@ -3853,6 +3853,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				applyPlannerJobTool(ActiveJobProposal.collectEnderPearls(pearls));
 				yield queuedActionToolResult("collect_ender_pearls", "count=" + pearls.count());
 			}
+			case PlannerToolCatalog.ENTER_END_PORTAL -> {
+				var portal = ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.enterEndPortal(portal));
+				yield queuedActionToolResult("enter_end_portal", portal.describe());
+			}
 			case PlannerToolCatalog.HUNT_FOOD -> {
 				var hunt = ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.huntFood(hunt));
@@ -5502,7 +5507,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, SLEEP_IN_BED, HUNT_FOOD, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, SLEEP_IN_BED, HUNT_FOOD, ENTER_END_PORTAL, ASK_USER -> false;
 		};
 	}
 
@@ -5747,7 +5752,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 		return switch (type) {
-			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, HUNT_FOOD -> true;
+			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, HUNT_FOOD, ENTER_END_PORTAL -> true;
 			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON, EXPLORE_FOR, SLEEP_IN_BED -> false;
 		};
 	}

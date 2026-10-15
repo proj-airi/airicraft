@@ -880,6 +880,25 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void endPortalPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs(new ai.moeru.airicraft.agent.goals.GoalPosition(10, 30, -4, true), true);
+		runtime.applyPlannerResponse(new DialogueResponse("Lighting the portal.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.enterEndPortal(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.ENTER_END_PORTAL, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.EnterEndPortal(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().enterEndPortal());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same task");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().enterEndPortal());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);
