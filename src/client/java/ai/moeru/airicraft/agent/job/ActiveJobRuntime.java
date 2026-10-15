@@ -360,7 +360,8 @@ public final class ActiveJobRuntime {
 			activeJob.shelterForNight(),
 			activeJob.collectEnderPearls(),
 			activeJob.sleepInBed(),
-			activeJob.huntFood()
+			activeJob.huntFood(),
+			activeJob.enterEndPortal()
 		);
 		collectResourceDebugSnapshot = activeJob.type() == ActiveJobType.COLLECT_RESOURCE
 			? collectResourceProbe(activeJob, activeJob.baselineResourceCount() + activeJob.collectedCount(), false, lastPrimitiveExecution.state(), reason, tick)
@@ -417,7 +418,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_RESOURCE -> tickCollectResource(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, nearbyResourceTargetAvailable, tick);
 			case CRAFT_RECIPE -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case DROP_ITEMS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, true, tick);
-			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, SLEEP_IN_BED, HUNT_FOOD -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
+			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, SLEEP_IN_BED, HUNT_FOOD, ENTER_END_PORTAL -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ATTACK_ENTITY, USE_ENTITY -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
@@ -496,6 +497,11 @@ public final class ActiveJobRuntime {
 		if (activeJob.type() == ActiveJobType.COLLECT_FLINT && activeJob.collectFlint() != null) {
 			clearAttemptState();
 			desiredPrimitiveTask = WorldTaskRequest.collectFlint(activeJob.jobId(), activeJob.jobId(), activeJob.collectFlint());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.ENTER_END_PORTAL && activeJob.enterEndPortal() != null) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.enterEndPortal(activeJob.jobId(), activeJob.jobId(), activeJob.enterEndPortal());
 			return;
 		}
 		if (activeJob.type() == ActiveJobType.HUNT_FOOD && activeJob.huntFood() != null) {
@@ -1385,6 +1391,9 @@ public final class ActiveJobRuntime {
 			case HUNT_FOOD -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.HUNT_FOOD, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, null, null, null, null, null, proposal.huntFood());
+			case ENTER_END_PORTAL -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.ENTER_END_PORTAL, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, null, null, null, null, null, null, proposal.enterEndPortal());
 			case FIGHT_ENDER_DRAGON -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.FIGHT_ENDER_DRAGON, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick);
@@ -1436,7 +1445,8 @@ public final class ActiveJobRuntime {
 			next.shelterForNight(),
 			next.collectEnderPearls(),
 			next.sleepInBed(),
-			next.huntFood()
+			next.huntFood(),
+			next.enterEndPortal()
 			);
 		}
 		return next;
@@ -1477,6 +1487,7 @@ public final class ActiveJobRuntime {
 		if (left.collectEnderPearls() != null || right.collectEnderPearls() != null) return Objects.equals(left.collectEnderPearls(), right.collectEnderPearls());
 		if (left.sleepInBed() != null || right.sleepInBed() != null) return Objects.equals(left.sleepInBed(), right.sleepInBed());
 		if (left.huntFood() != null || right.huntFood() != null) return Objects.equals(left.huntFood(), right.huntFood());
+		if (left.enterEndPortal() != null || right.enterEndPortal() != null) return Objects.equals(left.enterEndPortal(), right.enterEndPortal());
 		if (left.cropTending() != null || right.cropTending() != null) return Objects.equals(left.cropTending(), right.cropTending());
 		if (left.returnToSurface() != null || right.returnToSurface() != null) {
 			return Objects.equals(left.returnToSurface(), right.returnToSurface());
@@ -1531,6 +1542,8 @@ public final class ActiveJobRuntime {
 			case COLLECT_BLAZE_RODS -> activeJob.collectBlazeRods() == null ? "Collect blaze rods" : "Collect " + activeJob.collectBlazeRods().count() + " blaze rods";
 			case COLLECT_FLINT -> activeJob.collectFlint() == null ? "Collect flint" : "Collect " + activeJob.collectFlint().count() + " flint from gravel";
 			case SHELTER_FOR_NIGHT -> "Dig in and wait out the night";
+			case ENTER_END_PORTAL -> activeJob.enterEndPortal() != null && !activeJob.enterEndPortal().enter()
+				? "Fill the End portal frames with eyes of ender" : "Fill the End portal frames and enter the End";
 			case HUNT_FOOD -> activeJob.huntFood() == null ? "Hunt animals for food"
 				: "Hunt animals for " + activeJob.huntFood().count() + " raw meat" + (activeJob.huntFood().cook() ? " and cook it" : "");
 			case SLEEP_IN_BED -> activeJob.sleepInBed() == null || activeJob.sleepInBed().bed() == null ? "Sleep in the nearest bed"
@@ -1556,7 +1569,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_SMELTED_ITEMS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.COLLECT_SMELTED_ITEMS;
 			case RETURN_TO_SURFACE -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.NAVIGATE_TO_POSITION;
 			case PLACE_BLOCK -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.PLACE_BLOCK;
-			case USE_BLOCK, TEND_CROPS, SLEEP_IN_BED -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
+			case USE_BLOCK, TEND_CROPS, SLEEP_IN_BED, ENTER_END_PORTAL -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
 			case BREAK_BLOCKS, COLLECT_OBSIDIAN, COLLECT_FLINT, SHELTER_FOR_NIGHT -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
 			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_BLAZE_RODS, COLLECT_ENDER_PEARLS, HUNT_FOOD -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
 			case USE_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_ENTITY;
@@ -1659,7 +1672,8 @@ public final class ActiveJobRuntime {
 			job.shelterForNight(),
 			job.collectEnderPearls(),
 			job.sleepInBed(),
-			job.huntFood()
+			job.huntFood(),
+			job.enterEndPortal()
 		);
 	}
 

@@ -91,6 +91,7 @@ public final class WorkProjection {
 			case COLLECT_ENDER_PEARLS -> job.collectEnderPearls();
 			case SLEEP_IN_BED -> job.sleepInBed();
 			case HUNT_FOOD -> job.huntFood();
+			case ENTER_END_PORTAL -> job.enterEndPortal();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;

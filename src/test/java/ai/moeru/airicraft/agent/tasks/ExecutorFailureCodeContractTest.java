@@ -75,7 +75,8 @@ class ExecutorFailureCodeContractTest {
 
 	@Test
 	void systemOneTasksNameATypedCodeForEveryFailure() throws Exception {
-		for (String executorName : List.of("ShelterForNightTaskExecutor", "SleepInBedTaskExecutor", "HuntFoodTaskExecutor")) {
+		for (String executorName : List.of("ShelterForNightTaskExecutor", "SleepInBedTaskExecutor", "HuntFoodTaskExecutor",
+			"EnterEndPortalTaskExecutor")) {
 			String text = Files.readString(Path.of("src/client/java/ai/moeru/airicraft/agent/tasks", executorName + ".java"));
 			assertFalse(text.contains("fromLegacyDetail"), executorName);
 			String[] failures = text.split("finish\\(false,");

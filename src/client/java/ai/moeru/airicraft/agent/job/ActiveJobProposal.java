@@ -14,6 +14,7 @@ import ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs;
 import ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs;
 import ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs;
+import ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockPlacementStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockUseStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
@@ -52,8 +53,40 @@ public record ActiveJobProposal(
 	ShelterForNightStepArgs shelterForNight,
 	CollectEnderPearlsStepArgs collectEnderPearls,
 	SleepInBedStepArgs sleepInBed,
-	HuntFoodStepArgs huntFood
+	HuntFoodStepArgs huntFood,
+	EnterEndPortalStepArgs enterEndPortal
 ) {
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls,
+		SleepInBedStepArgs sleepInBed,
+		HuntFoodStepArgs huntFood
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, huntFood, null);
+	}
+
 	public ActiveJobProposal(
 		ActiveJobType type,
 		String targetPlayer,
@@ -456,6 +489,10 @@ public record ActiveJobProposal(
 
 	public static ActiveJobProposal huntFood(HuntFoodStepArgs args) {
 		return new ActiveJobProposal(ActiveJobType.HUNT_FOOD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal enterEndPortal(EnterEndPortalStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.ENTER_END_PORTAL, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
 	}
 
 	public static ActiveJobProposal shelterForNight(ShelterForNightStepArgs args) {
