@@ -507,7 +507,7 @@ public final class ClientRuntimeController {
 			new CraftingTaskExecutor(navigationFacade, cameraController),
 			new DropItemsTaskExecutor(navigationFacade, cameraController),
 			new EntityInteractionTaskExecutor(navigationFacade, cameraController),
-			new SmeltingTaskExecutor(smeltingProcessManager, navigationFacade),
+			new SmeltingTaskExecutor(smeltingProcessManager, navigationFacade, cameraController),
 			new ReturnToSurfaceTaskExecutor(navigationFacade, cameraController),
 			new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade),
 			new BlockBreakTaskExecutor(cameraController),

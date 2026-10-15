@@ -20,6 +20,29 @@ public final class SmeltingProcessManager {
 	private final Map<String, SmeltingStationKey> confirmedCollectionStations = new HashMap<>();
 
 	private final java.util.ArrayDeque<String> collectedProcesses = new java.util.ArrayDeque<>();
+	/** Furnaces smelt_items placed from the inventory; collect_smelted_items picks one back up once it is empty. */
+	private final java.util.LinkedHashSet<SmeltingStationKey> placedStations = new java.util.LinkedHashSet<>();
+	static final int MAX_PLACED_STATIONS = 64;
+
+	public void markPlacedStation(SmeltingStationKey key) {
+		if (key == null) return;
+		placedStations.remove(key);
+		if (placedStations.size() >= MAX_PLACED_STATIONS) placedStations.remove(placedStations.iterator().next());
+		placedStations.add(key);
+	}
+
+	public boolean placedStation(SmeltingStationKey key) {
+		return key != null && placedStations.contains(key);
+	}
+
+	public void forgetPlacedStation(SmeltingStationKey key) {
+		if (key != null) placedStations.remove(key);
+	}
+
+	public boolean stationHasTrackedProcess(SmeltingStationKey key) {
+		return key != null && processesByStation.containsKey(key);
+	}
+
 	public void markCollected(String processId) {
 		if (cancel(processId)) {
 			if (collectedProcesses.size() == 128) collectedProcesses.removeFirst();

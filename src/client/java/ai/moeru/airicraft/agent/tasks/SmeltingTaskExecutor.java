@@ -4,6 +4,7 @@ import ai.moeru.airicraft.agent.control.Actuator;
 import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.memory.WorldPlacePreservation;
 
+import ai.moeru.airicraft.agent.control.CameraController;
 import ai.moeru.airicraft.agent.navigation.NavigationFacade;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
@@ -41,12 +42,16 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	private final SmeltingProcessManager processManager;
 	private final NavigationFacade navigationFacade;
 	private final PlacementSneakController placementSneakController = new PlacementSneakController();
+	private final WorldTaskExecutor furnaceBreakExecutor;
 
 	private WorldTaskRequest appliedTask;
 	private boolean terminalEventEmitted;
 	private boolean navigationStarted;
 	private boolean openedStationForTask;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
+	private PlacedStationReclaim furnaceReclaim;
+	private SmeltingStationKey furnaceReclaimKey;
+	private String furnaceReclaimMessage;
 
 	public SmeltingTaskExecutor() {
 		this(Minecraft::getInstance, new SmeltingProcessManager(), null);
@@ -60,10 +65,25 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		this(Minecraft::getInstance, processManager, navigationFacade);
 	}
 
+	public SmeltingTaskExecutor(SmeltingProcessManager processManager, NavigationFacade navigationFacade, CameraController cameraController) {
+		this(Minecraft::getInstance, processManager, navigationFacade,
+			new BlockBreakTaskExecutor(Minecraft::getInstance, Objects.requireNonNull(cameraController, "cameraController")));
+	}
+
 	SmeltingTaskExecutor(Supplier<Minecraft> clientSupplier, SmeltingProcessManager processManager, NavigationFacade navigationFacade) {
+		this(clientSupplier, processManager, navigationFacade, new BlockBreakTaskExecutor(clientSupplier, new CameraController()));
+	}
+
+	SmeltingTaskExecutor(
+		Supplier<Minecraft> clientSupplier,
+		SmeltingProcessManager processManager,
+		NavigationFacade navigationFacade,
+		WorldTaskExecutor furnaceBreakExecutor
+	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.processManager = Objects.requireNonNull(processManager, "processManager");
 		this.navigationFacade = navigationFacade;
+		this.furnaceBreakExecutor = Objects.requireNonNull(furnaceBreakExecutor, "furnaceBreakExecutor");
 	}
 
 	@Override
@@ -79,8 +99,14 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		}
 		if (sessionSnapshot == null || !sessionSnapshot.companionActuationAllowed()) {
 			placementSneakController.release(clientSupplier.get());
+			if (furnaceReclaim != null) {
+				furnaceReclaim.pause();
+			}
 			snapshot = snapshot(TaskExecutionState.PAUSED_BY_SESSION_GATE, request, "session_gate");
 			return Optional.empty();
+		}
+		if (furnaceReclaimMessage != null) {
+			return tickFurnaceReclaim(request, sessionSnapshot);
 		}
 
 		Minecraft minecraft = clientSupplier.get();
@@ -214,7 +240,108 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 		if (processId != null) {
 			processManager.markCollected(processId);
 		}
-		return complete(request, "smelting_collected");
+		return finishCollection(request, minecraft, player, menu, key);
+	}
+
+	/**
+	 * After collecting, takes back a furnace smelt_items placed from the inventory once it holds nothing and no other
+	 * process uses it. A furnace drops itself only to a pickaxe; without one it stays and the result says where.
+	 */
+	private Optional<TaskTerminalEvent> finishCollection(
+		WorldTaskRequest request,
+		Minecraft minecraft,
+		LocalPlayer player,
+		AbstractFurnaceMenu menu,
+		SmeltingStationKey key
+	) {
+		BlockPos stationPos = stationPos(key);
+		boolean placedByAgent = stationPos != null && processManager.placedStation(key);
+		boolean stillFurnace = placedByAgent && minecraft.level.hasChunkAt(stationPos)
+			&& minecraft.level.getBlockState(stationPos).is(Blocks.FURNACE);
+		FurnaceReclaim decision = furnaceReclaimDecision(
+			placedByAgent,
+			stillFurnace,
+			processManager.stationHasTrackedProcess(key),
+			furnaceSlotsEmpty(menu),
+			stillFurnace && carriesHarvestTool(player, minecraft.level.getBlockState(stationPos))
+		);
+		if (placedByAgent && !stillFurnace) {
+			processManager.forgetPlacedStation(key);
+		}
+		if (decision == FurnaceReclaim.NOT_PLACED_BY_AGENT || decision == FurnaceReclaim.STATION_IN_USE) {
+			return complete(request, "smelting_collected");
+		}
+		if (decision != FurnaceReclaim.RECLAIM) {
+			return complete(request, "smelting_collected " + PlacedStationReclaim.leftAt("furnace", stationPos, decision.reason()));
+		}
+		closeOpenedStationIfSafe();
+		furnaceReclaimKey = key;
+		furnaceReclaimMessage = "smelting_collected";
+		furnaceReclaim = new PlacedStationReclaim("furnace", stationPos, Blocks.FURNACE, Items.FURNACE, request,
+			furnaceBreakExecutor, clientSupplier, navigationFacade);
+		snapshot = snapshot(TaskExecutionState.RUNNING, request, "reclaiming_furnace pos=" + key.compact());
+		return Optional.empty();
+	}
+
+	private Optional<TaskTerminalEvent> tickFurnaceReclaim(WorldTaskRequest request, SessionSnapshot sessionSnapshot) {
+		if (terminalEventEmitted) {
+			return Optional.empty();
+		}
+		Optional<String> outcome = furnaceReclaim.tick(sessionSnapshot);
+		if (outcome.isEmpty()) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "reclaiming_furnace pos=" + furnaceReclaimKey.compact());
+			return Optional.empty();
+		}
+		if (outcome.get().startsWith("furnaceReclaimed=")) {
+			processManager.forgetPlacedStation(furnaceReclaimKey);
+		}
+		String message = furnaceReclaimMessage + " " + outcome.get();
+		furnaceReclaim = null;
+		furnaceReclaimKey = null;
+		furnaceReclaimMessage = null;
+		return complete(request, message);
+	}
+
+	/**
+	 * Whether collect_smelted_items picks the furnace back up. Only a furnace smelt_items placed from the inventory, still
+	 * standing, used by no other process, with input, fuel and output empty, and with a pickaxe carried.
+	 */
+	static FurnaceReclaim furnaceReclaimDecision(
+		boolean placedByAgent,
+		boolean stillFurnace,
+		boolean otherProcessAtStation,
+		boolean slotsEmpty,
+		boolean harvestToolCarried
+	) {
+		if (!placedByAgent || !stillFurnace) {
+			return FurnaceReclaim.NOT_PLACED_BY_AGENT;
+		}
+		if (otherProcessAtStation) {
+			return FurnaceReclaim.STATION_IN_USE;
+		}
+		if (!slotsEmpty) {
+			return FurnaceReclaim.LEAVE_NOT_EMPTY;
+		}
+		return harvestToolCarried ? FurnaceReclaim.RECLAIM : FurnaceReclaim.LEAVE_NO_PICKAXE;
+	}
+
+	static boolean furnaceSlotsEmpty(SmeltingSlotSnapshot slots) {
+		return slots.inputCount() <= 0 && slots.fuelCount() <= 0 && slots.outputCount() <= 0;
+	}
+
+	private static boolean furnaceSlotsEmpty(AbstractFurnaceMenu menu) {
+		return furnaceSlotsEmpty(screenSlotSnapshot(menu));
+	}
+
+	private static boolean carriesHarvestTool(LocalPlayer player, BlockState state) {
+		var inventory = player.getInventory();
+		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+			ItemStack stack = inventory.getItem(slot);
+			if (!stack.isEmpty() && stack.isCorrectToolForDrops(state)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private StationReadiness ensureStationReady(WorldTaskRequest request, Minecraft minecraft, LocalPlayer player, SmeltingOption option, BlockPos stationPos) {
@@ -240,6 +367,8 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "placing_furnace:" + placement.reason());
 				return StationReadiness.notReady();
 			}
+			processManager.markPlacedStation(new SmeltingStationKey(
+				option.stationObservation().key().dimensionId(), stationPos.getX(), stationPos.getY(), stationPos.getZ()));
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "waiting_for_furnace");
 			return StationReadiness.notReady();
 		}
@@ -741,12 +870,19 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public void shutdown() {
 		reset();
+		furnaceBreakExecutor.shutdown();
 	}
 
 	private void reset() {
 		placementSneakController.release(clientSupplier.get());
 		cancelNavigationIfStarted();
 		closeOpenedStationIfSafe();
+		if (furnaceReclaim != null) {
+			furnaceReclaim.cancel();
+		}
+		furnaceReclaim = null;
+		furnaceReclaimKey = null;
+		furnaceReclaimMessage = null;
 		appliedTask = null;
 		terminalEventEmitted = false;
 		openedStationForTask = false;
@@ -754,6 +890,24 @@ public final class SmeltingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	record FuelSelection(String itemId, int quantity) {
+	}
+
+	enum FurnaceReclaim {
+		NOT_PLACED_BY_AGENT(null),
+		STATION_IN_USE(null),
+		LEAVE_NOT_EMPTY("furnace_not_empty"),
+		LEAVE_NO_PICKAXE("no_pickaxe"),
+		RECLAIM(null);
+
+		private final String reason;
+
+		FurnaceReclaim(String reason) {
+			this.reason = reason;
+		}
+
+		String reason() {
+			return reason;
+		}
 	}
 
 	private record PlacementAttempt(boolean placed, String reason) {

@@ -46,7 +46,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, new CameraController());
 	}
 
-	private BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
+	BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
 		this.cameraController = Objects.requireNonNull(cameraController);
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
