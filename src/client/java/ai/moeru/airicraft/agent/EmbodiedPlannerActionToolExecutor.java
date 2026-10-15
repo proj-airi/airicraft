@@ -57,6 +57,8 @@ record EmbodiedPlannerActionToolExecutor(
 				&& state.activeTaskInProgress()
 				&& policy.preemptsTask()
 				&& !(PlannerToolCatalog.COLLECT_SMELTED_ITEMS.equals(toolName) && state.activeJobType() == ActiveJobType.SMELT_ITEMS)
+				// A plain walk leaves the hands free, so eating does not need to stop it (the body does the same on its own).
+				&& !(PlannerToolCatalog.EAT_FOOD.equals(toolName) && EmbodiedAgentRuntime.walkingOnly(state.taskExecutionSnapshot()))
 			) {
 				return CompletableFuture.completedFuture(activeTaskError(toolName, state));
 			}

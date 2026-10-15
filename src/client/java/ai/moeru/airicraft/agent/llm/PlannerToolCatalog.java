@@ -260,7 +260,7 @@ public final class PlannerToolCatalog {
 		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; configure_armor turns that off or reserves pieces. Use this for a specific wearable such as a carved pumpkin.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
-		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(
+		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out. Allowed during a plain navigate_to walk; other running work must finish or be cleared first.", properties(
 				prop("itemId", string("Exact namespaced food item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(DROP_ITEMS, false, tool(DROP_ITEMS, "Drop exact items from current inventory at the current position.", properties(
