@@ -109,6 +109,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EmbodiedAgentRuntimeTest {
+	@Test void eatingIsAllowedWhileASafetyHoldWaits() {
+		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("eat_food"));
+		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("configure_reflex"));
+		assertFalse(EmbodiedAgentRuntime.allowedDuringSafetyHold("navigate_to"));
+	}
+
 	@Test void rawEventsRetainProducerAndRuntimeClock() {
 		try (var harness = new WakeScenarioHarness()) {
 			harness.runtime.onPlayerPickedUpItem("minecraft:apple", 1);

@@ -1585,6 +1585,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		return survivalReflexRuntime.snapshot();
 	}
 
+	/**
+	 * Tools that leave the held plan alone. Eating is one: a fight that ends in a hold often leaves the body at a few
+	 * hearts, and refusing eat_food until continue made the driver resume the plan hurt before it could heal.
+	 */
+	static boolean allowedDuringSafetyHold(String toolName) {
+		return List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting",
+			"configure_opportunistic_mining", "update_event_policy", "eat_food").contains(toolName);
+	}
+
 	private void releaseSafetyHoldForReplacement(String reason) {
 		releaseSafetyHold(reason, true);
 	}
@@ -3304,10 +3313,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (new ai.moeru.airicraft.agent.work.WorkToolProvider(this).handles(call.name())) return execute(call);
 		if (PlannerToolCatalog.isReadTool(call.name())) return execute(call);
 		if (survivalReflexRuntime.awaitingTacticalPlan() && workHistory.current().isEmpty()
-			&& !List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting", "configure_opportunistic_mining", "update_event_policy").contains(call.name())) {
+			&& !allowedDuringSafetyHold(call.name())) {
 			releaseSafetyHoldForReplacement("planner_tactical_replacement");
 		}
-		if (survivalReflexRuntime.snapshot().holdId() != null && !List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting", "configure_opportunistic_mining", "update_event_policy").contains(call.name())) {
+		if (survivalReflexRuntime.snapshot().holdId() != null && !allowedDuringSafetyHold(call.name())) {
 			if (call.name().equals("run_policy")) return CompletableFuture.completedFuture("TOOL_ERROR: run_policy work_in_safety_hold");
 			return CompletableFuture.completedFuture("Tool result for " + call.name() + ": " + new com.google.gson.Gson().toJson(Map.of(
 				"accepted",false,"reason","work_in_safety_hold","holdId",survivalReflexRuntime.snapshot().holdId(),
