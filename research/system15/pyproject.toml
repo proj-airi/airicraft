@@ -1,0 +1,20 @@
+[project]
+name = "s15"
+version = "0.1.0"
+description = "System 1.5 experiment harness for Airicraft (state documents, fillers, scoring, live probes)"
+requires-python = ">=3.11"
+dependencies = []  # the core harness (extract, label, rules, openai, score, probe, shadow) is stdlib-only
+
+[project.optional-dependencies]
+# DiffusionGemma filler (T1/T2). transformers 5.11.0 (2026-06-10) is the first release with DiffusionGemma;
+# diffusers 0.39.0 is the first with DiffusionGemmaPipeline (used only for the reference comparison).
+diffusion = ["torch>=2.6", "transformers>=5.11.0", "diffusers>=0.39.0", "accelerate", "peft"]
+# CPU tests of the adapter against a tiny random DiffusionGemma.
+test = ["torch>=2.6", "transformers>=5.11.0", "tokenizers"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["s15*"]
