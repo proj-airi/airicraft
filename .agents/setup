@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+SECONDS=0
+step() { printf '\n[orb setup +%ss] %s\n' "$SECONDS" "$*"; }
+
+step "Checking build and headless Minecraft system packages"
+packages=(ca-certificates curl jq git unzip python3 ffmpeg xvfb xauth
+  libgl1 libgl1-mesa-dri libglx-mesa0 libxcursor1 libxrandr2 libxi6
+  libxxf86vm1 libasound2 libxtst6 libfontconfig1 fonts-dejavu-core)
+missing=()
+for package in "${packages[@]}"; do
+  if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != "install ok installed" ]]; then
+    missing+=("$package")
+  fi
+done
+if ((${#missing[@]})); then
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+fi
+
+step "Installing the build JDK pinned by .java-version"
+java_version="$(tr -d '[:space:]' < .java-version)"
+jdk_home="$HOME/.local/share/airicraft/jdk-$java_version"
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+if [[ ! -x "$jdk_home/bin/javac" ]]; then
+  case "$(uname -m)" in
+    x86_64) architecture=x64 ;;
+    aarch64) architecture=aarch64 ;;
+    *) echo "Unsupported JDK architecture: $(uname -m)" >&2; exit 1 ;;
+  esac
+  curl -fsSL --retry 3 --connect-timeout 20 --max-time 120 \
+    "https://api.adoptium.net/v3/assets/latest/$java_version/hotspot?architecture=$architecture&image_type=jdk&os=linux&vendor=eclipse" \
+    -o "$scratch/jdk.json"
+  url="$(jq -er '.[0].binary.package.link' "$scratch/jdk.json")"
+  checksum="$(jq -er '.[0].binary.package.checksum' "$scratch/jdk.json")"
+  curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 "$url" -o "$scratch/jdk.tar.gz"
+  printf '%s  %s\n' "$checksum" "$scratch/jdk.tar.gz" | sha256sum --check
+  mkdir "$scratch/jdk"
+  tar -xzf "$scratch/jdk.tar.gz" -C "$scratch/jdk" --strip-components=1
+  mkdir -p "$(dirname "$jdk_home")"
+  mv "$scratch/jdk" "$jdk_home"
+fi
+
+# Amp and supervised services use fresh login shells. Rewrite our own environment
+# file on stale snapshots so updated defaults do not leave an obsolete profile.
+mkdir -p "$HOME/.config/airicraft"
+cat > "$HOME/.config/airicraft/orb-env.sh" <<EOF
+if [[ "\$PWD" == "$repo_root" || "\$PWD" == "$repo_root/"* ]]; then
+  export JAVA_HOME="\$HOME/.local/share/airicraft/jdk-\$(tr -d '[:space:]' < "$repo_root/.java-version")"
+  case ":\$PATH:" in
+    *":\$JAVA_HOME/bin:"*) ;;
+    *) export PATH="\$JAVA_HOME/bin:\$PATH" ;;
+  esac
+  export GRADLE_OPTS="\${GRADLE_OPTS:--Dorg.gradle.jvmargs=-Xmx1g -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false}"
+fi
+EOF
+profile_marker="# Airicraft orb toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# Airicraft orb toolchain
+if [[ -f "$HOME/.config/airicraft/orb-env.sh" ]]; then
+  source "$HOME/.config/airicraft/orb-env.sh"
+fi
+EOF
+fi
+
+step "Fetching version history and the pinned action-plan-advisor submodule"
+# axion-release derives artifact versions from tags and their ancestry, as in CI.
+if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+  git fetch --quiet --unshallow origin
+fi
+git submodule update --init --recursive
+
+# Resolve test runtime dependencies without running the suite during startup.
+# Gradle's own caches/up-to-date checks handle changes after a stale snapshot.
+cat > "$scratch/dependencies.gradle" <<'EOF'
+gradle.projectsEvaluated {
+    rootProject.tasks.register('orbDependencies') {
+        doLast {
+            rootProject.allprojects.each { project ->
+                project.configurations.findAll {
+                    it.canBeResolved && it.name.toLowerCase().endsWith('runtimeclasspath')
+                }.each { it.resolve() }
+            }
+        }
+    }
+}
+EOF
+
+step "Caching JBR 21, compiled classes, CLI, integrations, and Minecraft assets"
+# No client, planner, credentials, or background services belong in the snapshot.
+/bin/bash -lc './gradlew --no-daemon --console=plain --init-script "$1" testClasses :wrapper:installDist :syncCompatMods :syncCompatLibraries downloadAssets orbDependencies' \
+  bash "$scratch/dependencies.gradle"
+step "Ready"

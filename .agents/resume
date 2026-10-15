@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Toolchains and caches survive pause/resume; the login profile exposes Java.
+# No authentication or services are required until a client is explicitly run.

@@ -63,3 +63,6 @@ eval-output
 
 /automatic_playtest/
 /hosted_playtest/
+
+# orb portal metadata
+.amp/portals/*

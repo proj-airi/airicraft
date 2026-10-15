@@ -76,6 +76,20 @@ Prerequisites:
 ./gradlew test wrapper:test --rerun-tasks
 ```
 
+### Amp orbs
+
+`.agents/setup` installs the JDK pinned by `.java-version`, headless-client Linux
+libraries, and the git submodule. It warms Gradle's JBR 21 toolchain, compile/test
+dependencies, wrapper distribution, compatibility mods, and Minecraft assets so
+Amp can snapshot them for subsequent orbs. Repeat runs use the existing caches;
+setup compiles tests but does not run them or start Minecraft.
+
+Java is available in new login shells within the checkout. Unless `GRADLE_OPTS`
+is already set, orb shells limit Gradle to a 1 GiB heap, one worker, and serial
+projects to fit a 4 GiB orb. `.agents/resume` requires no installations or
+authentication. Planner credentials and recording profiles remain optional,
+operator-provided configuration; setup does not copy them into a snapshot.
+
 ### Releases
 
 CI builds and tests every branch push and pull request, and saves the installable
