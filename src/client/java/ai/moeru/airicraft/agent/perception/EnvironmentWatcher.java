@@ -18,7 +18,7 @@ public final class EnvironmentWatcher {
 
 	public record Sample(String dimension, long timeOfDay, boolean raining, boolean thundering, String biome, int light) {}
 
-	enum Phase { DAY, DUSK, NIGHT, DAWN }
+	public enum Phase { DAY, DUSK, NIGHT, DAWN }
 
 	private Sample baseline;
 	private Phase phase;
@@ -42,7 +42,9 @@ public final class EnvironmentWatcher {
 		Phase next = phase(sample.timeOfDay());
 		if (next != phase) {
 			if (next == Phase.DUSK) candidates.add(change(tick, "dusk", Map.of("timeOfDay", sample.timeOfDay() % 24_000L)));
-			if (next == Phase.DAWN) candidates.add(change(tick, "dawn", Map.of("timeOfDay", sample.timeOfDay() % 24_000L)));
+			// Sleeping through the night jumps from night (or dusk) straight to day: that is a dawn too.
+			if (next == Phase.DAWN || next == Phase.DAY && (phase == Phase.NIGHT || phase == Phase.DUSK))
+				candidates.add(change(tick, "dawn", Map.of("timeOfDay", sample.timeOfDay() % 24_000L)));
 			phase = next;
 		}
 		if (sample.raining() != baseline.raining()) candidates.add(change(tick, sample.raining() ? "rain_started" : "rain_stopped", Map.of()));
@@ -77,7 +79,7 @@ public final class EnvironmentWatcher {
 		baseline = null;
 	}
 
-	static Phase phase(long timeOfDay) {
+	public static Phase phase(long timeOfDay) {
 		long time = Math.floorMod(timeOfDay, 24_000L);
 		return time < 12_000L ? Phase.DAY : time < 13_800L ? Phase.DUSK : time < 22_200L ? Phase.NIGHT : Phase.DAWN;
 	}

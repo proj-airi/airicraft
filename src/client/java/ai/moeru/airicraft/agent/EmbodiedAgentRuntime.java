@@ -988,6 +988,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (minecraft != null && minecraft.level != null && minecraft.player != null) {
 			worldSession = minecraft.level.dimension().location() + ":" + System.identityHashCode(minecraft.level);
 			facts.put("dimension", minecraft.level.dimension().location().toString());
+			if (minecraft.level.dimensionType().hasSkyLight() && !minecraft.level.dimensionType().hasFixedTime())
+				facts.put("time", ai.moeru.airicraft.agent.perception.EnvironmentWatcher.phase(minecraft.level.getDayTime()).name().toLowerCase(java.util.Locale.ROOT));
 			var inventory = new java.util.TreeMap<String, Integer>();
 			for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
 				var stack = minecraft.player.getInventory().getItem(i);
