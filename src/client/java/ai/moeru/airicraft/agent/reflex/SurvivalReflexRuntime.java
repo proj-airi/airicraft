@@ -73,6 +73,8 @@ public final class SurvivalReflexRuntime {
 	static final double BUNKER_MELEE_CLEARANCE = 6.0D;
 	static final int NO_CONTACT_RESUME_LIMIT = 3;
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
+	/** A ghast shoots at a target it can see within 64 blocks, far past the policy's engagement distance. */
+	static final double GHAST_REACH = 64.0D;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -93,6 +95,8 @@ public final class SurvivalReflexRuntime {
 	private long mobRoutesTick = Long.MIN_VALUE;
 	private Map<String, MobRoute> mobRoutes = Map.of();
 	private CompletableFuture<Set<String>> aggroQuery;
+	/** Mobs the server last reported targeting the body (singleplayer only). */
+	private Set<String> aggroTargets = Set.of();
 	private GoalPosition combatTarget;
 	private long combatRouteTick;
 	private boolean shieldUseOwned;
@@ -288,6 +292,7 @@ public final class SurvivalReflexRuntime {
 			net.minecraft.world.entity.monster.Creeper.class, player.getBoundingBox().inflate(4),
 			c -> c.isAlive() && c.getSwellDir() > 0 && c.getSwelling(1) >= .5F).size() > 0)) tacticalWindow = null;
 		boolean lavaDanger = player.isInLava();
+		boolean fireDanger = !lavaDanger && standingInFire(minecraft.level, player);
 		boolean drowningDanger = policy().drowningEnabled() && drowningDanger(player, config.lowAirTicks(), drowningDamageObserved);
 		detectProactiveThreats(minecraft, player, tick);
 		List<ResolvedThreat> threats = resolveThreats(minecraft, player);
@@ -314,13 +319,13 @@ public final class SurvivalReflexRuntime {
 			combatStalemate = CombatStalemate.observe(combatStalemate, tick, player.position(), positions,
 				immediateCombatDanger(minecraft, player, threats, tick));
 		}
-		boolean mobDanger = !combatDeferred() && threats.stream().anyMatch(threat ->
-			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight()));
-		if (shouldBeginReflex(snapshot.state(), lavaDanger || drowningDanger || mobDanger)) {
-			SurvivalReflexCause cause = lavaDanger ? SurvivalReflexCause.LAVA
+		boolean mobDanger = !combatDeferred() && threats.stream().anyMatch(threat -> engages(threat, tick));
+		if (shouldBeginReflex(snapshot.state(), lavaDanger || fireDanger || drowningDanger || mobDanger)) {
+			SurvivalReflexCause cause = lavaDanger ? SurvivalReflexCause.LAVA : fireDanger ? SurvivalReflexCause.FIRE
 				: drowningDanger ? SurvivalReflexCause.DROWNING : SurvivalReflexCause.MOB_ATTACK;
 			boolean hasInterruptedWork = interruptedWork != null && interruptedWork.hasInterruptedWork();
 			SurvivalReflexAction action = lavaDanger ? SurvivalReflexAction.ESCAPE_LAVA
+				: fireDanger ? SurvivalReflexAction.ESCAPE_FIRE
 				: drowningDanger
 				? drowningAction(hasInterruptedWork)
 				: chooseMobAction(player, threats);
@@ -342,10 +347,11 @@ public final class SurvivalReflexRuntime {
 			|| snapshot.cause() == SurvivalReflexCause.MOB_ATTACK && !policy().combatEnabled()) {
 			resolve(minecraft, player, threats, tick, "reflex_policy_disabled", false);
 		}
-		else if (lavaDanger || snapshot.cause() == SurvivalReflexCause.LAVA) {
+		else if (lavaDanger || fireDanger || snapshot.cause() == SurvivalReflexCause.LAVA
+			|| snapshot.cause() == SurvivalReflexCause.FIRE) {
 			if (combatEating != null && combatEating.eating()) combatEating.cancel(minecraft);
 			releaseShield(minecraft);
-			tickLava(minecraft, player, lavaDanger, threats, tick);
+			tickLava(minecraft, player, lavaDanger, fireDanger, threats, tick);
 		}
 		else if (recoverCombatMovement(minecraft, player, threats, tick)) {
 			// The recovery navigator owns all movement until dry supported ground.
@@ -353,8 +359,7 @@ public final class SurvivalReflexRuntime {
 		else if (drowningDanger || snapshot.cause() == SurvivalReflexCause.DROWNING) {
 			if (combatEating != null && combatEating.eating()) combatEating.cancel(minecraft);
 			releaseShield(minecraft);
-			tickDrowning(minecraft, player, drowningDanger, threats.stream().filter(threat ->
-				policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())).toList(), tick);
+			tickDrowning(minecraft, player, drowningDanger, threats.stream().filter(threat -> engages(threat, tick)).toList(), tick);
 		}
 		else {
 			tickMobAttack(minecraft, player, threats, tick, combatEating);
@@ -443,6 +448,7 @@ public final class SurvivalReflexRuntime {
 		safetyHoldActuating = false;
 		stopCombatNavigation();
 		aggroQuery = null;
+		aggroTargets = Set.of();
 		resetSecurityProgress();
 		underwaterEscape.reset(minecraft);
 		long epoch = snapshot.safetyEpoch();
@@ -599,18 +605,24 @@ public final class SurvivalReflexRuntime {
 	}
 
 	/**
-	 * Gets the body out of lava: walks and jumps toward the nearest dry cell with solid ground, and ends once the body has
-	 * stood outside the lava for a few ticks. Lava outranks drowning and mobs because it kills in seconds.
+	 * Gets the body out of lava or a fire block: walks and jumps toward the nearest dry cell with solid ground and no
+	 * fire, and ends once the body has stood clear for a few ticks. Lava and fire outrank drowning and mobs because they
+	 * kill in seconds; a ghast's fireballs leave fire where they land, and the body once stood in it until it died.
 	 */
-	private void tickLava(Minecraft minecraft, LocalPlayer player, boolean inLava, List<ResolvedThreat> threats, long tick) {
-		if (snapshot.cause() != SurvivalReflexCause.LAVA) {
-			lavaBlockedTargets.clear();
-			lavaTarget = null;
-			underwaterEscape.reset(minecraft);
-			combatRecovery = CombatRecovery.READY;
-			changeAction(SurvivalReflexCause.LAVA, SurvivalReflexAction.ESCAPE_LAVA, tick);
+	private void tickLava(Minecraft minecraft, LocalPlayer player, boolean inLava, boolean inFire,
+		List<ResolvedThreat> threats, long tick) {
+		SurvivalReflexCause hazard = hazardCause(inLava, snapshot.cause());
+		if (snapshot.cause() != hazard) {
+			if (snapshot.cause() != SurvivalReflexCause.LAVA && snapshot.cause() != SurvivalReflexCause.FIRE) {
+				lavaBlockedTargets.clear();
+				lavaTarget = null;
+				underwaterEscape.reset(minecraft);
+				combatRecovery = CombatRecovery.READY;
+			}
+			changeAction(hazard, hazard == SurvivalReflexCause.LAVA ? SurvivalReflexAction.ESCAPE_LAVA
+				: SurvivalReflexAction.ESCAPE_FIRE, tick);
 		}
-		boolean clear = !inLava && player.onGround();
+		boolean clear = !inLava && !inFire && player.onGround();
 		int clearTicks = clear ? snapshot.breathableTicks() + 1 : 0;
 		if (clear && extinguish(minecraft, player, tick)) {
 			refreshSnapshot(player, threats, snapshot.lastDangerTick(), Math.min(clearTicks, LAVA_CLEAR_TICKS - 1), null);
@@ -622,7 +634,8 @@ public final class SurvivalReflexRuntime {
 				refreshSnapshot(player, threats, snapshot.lastDangerTick(), 0, null);
 				return;
 			}
-			resolve(minecraft, player, threats, tick, "out_of_lava", false);
+			resolve(minecraft, player, threats, tick,
+				hazard == SurvivalReflexCause.LAVA ? "out_of_lava" : "out_of_fire", false);
 			return;
 		}
 		try {
@@ -643,12 +656,27 @@ public final class SurvivalReflexRuntime {
 					movementController.moveForward(minecraft, false, true, tick);
 				}
 			}
-			refreshSnapshot(player, threats, inLava ? tick : snapshot.lastDangerTick(), clearTicks, null);
+			refreshSnapshot(player, threats, inLava || inFire ? tick : snapshot.lastDangerTick(), clearTicks, null);
 		}
 		catch (RuntimeException exception) {
 			recordActuatorFailure("escape_lava", exception, tick);
-			refreshSnapshot(player, threats, inLava ? tick : snapshot.lastDangerTick(), clearTicks, failureText(exception));
+			refreshSnapshot(player, threats, inLava || inFire ? tick : snapshot.lastDangerTick(), clearTicks, failureText(exception));
 		}
+	}
+
+	/** Lava wins over fire, and an escape that began in lava stays a lava escape while it crosses fire on the bank. */
+	static SurvivalReflexCause hazardCause(boolean inLava, SurvivalReflexCause current) {
+		return inLava || current == SurvivalReflexCause.LAVA ? SurvivalReflexCause.LAVA : SurvivalReflexCause.FIRE;
+	}
+
+	/** Whether the body overlaps a fire or soul fire block. */
+	private static boolean standingInFire(Level level, LocalPlayer player) {
+		var box = player.getBoundingBox().deflate(1.0E-3D);
+		for (BlockPos cell : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ),
+			BlockPos.containing(box.maxX, box.maxY, box.maxZ))) {
+			if (level.getBlockState(cell).is(BlockTags.FIRE)) return true;
+		}
+		return false;
 	}
 
 	/**
@@ -658,7 +686,8 @@ public final class SurvivalReflexRuntime {
 	 */
 	private boolean extinguish(Minecraft minecraft, LocalPlayer player, long tick) {
 		ExtinguishStep step = extinguishStep(player.isOnFire(), player.isInWater(), extinguishPour != null,
-			extinguishAttempts, hasItem(player, Items.WATER_BUCKET), hasItem(player, Items.BUCKET));
+			extinguishAttempts, hasItem(player, Items.WATER_BUCKET), hasItem(player, Items.BUCKET),
+			player.level().dimensionType().ultraWarm());
 		if (step == ExtinguishStep.DONE) {
 			if (extinguishPour != null) pendingEvents.add(new SurvivalReflexEvent("reflex.extinguished", mapOfNullable(
 				"burning", player.isOnFire(), "bucketRefilled", hasItem(player, Items.WATER_BUCKET), "tick", tick)));
@@ -696,7 +725,13 @@ public final class SurvivalReflexRuntime {
 	/** Pour while burning and dry; scoop the poured water back once the fire is out; give up after a few tries. */
 	static ExtinguishStep extinguishStep(boolean burning, boolean inWater, boolean poured, int attempts,
 		boolean hasWaterBucket, boolean hasEmptyBucket) {
-		if (attempts >= EXTINGUISH_MAX_ATTEMPTS) return ExtinguishStep.DONE;
+		return extinguishStep(burning, inWater, poured, attempts, hasWaterBucket, hasEmptyBucket, false);
+	}
+
+	/** As above; where water evaporates (the Nether) pouring would only empty the bucket, so it never pours. */
+	static ExtinguishStep extinguishStep(boolean burning, boolean inWater, boolean poured, int attempts,
+		boolean hasWaterBucket, boolean hasEmptyBucket, boolean waterEvaporates) {
+		if (attempts >= EXTINGUISH_MAX_ATTEMPTS || waterEvaporates && !poured) return ExtinguishStep.DONE;
 		if (!poured) return burning && !inWater && hasWaterBucket ? ExtinguishStep.POUR : ExtinguishStep.DONE;
 		if (burning && !inWater) return hasWaterBucket ? ExtinguishStep.POUR : ExtinguishStep.DONE;
 		return hasEmptyBucket && !hasWaterBucket ? ExtinguishStep.SCOOP : ExtinguishStep.DONE;
@@ -974,8 +1009,7 @@ public final class SurvivalReflexRuntime {
 			return;
 		}
 		if (tickCombatEating(minecraft, player, threats, tick, combatEating, usePositioning)) return;
-		if (threats.stream().noneMatch(threat ->
-			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())
+		if (threats.stream().noneMatch(threat -> engages(threat, tick)
 				|| combatPositioning != null && threat.distance() <= Math.min(10, policy().maxThreatDistance()))) {
 			resolve(minecraft, player, threats, tick, "no_eligible_threats", false);
 			return;
@@ -1114,7 +1148,9 @@ public final class SurvivalReflexRuntime {
 			if (cover.active()) endCover("navigation_unavailable", false, player, threats, tick);
 			return false;
 		}
-		double damage = UnarmedFlight.attackDamage(combatWeapon(player));
+		// A sword is no answer to a ghast floating out of reach: against those alone the body hides as if unarmed.
+		double damage = threats.stream().allMatch(threat -> beyondMelee(threat.observed().entityTypeId()))
+			? 0.0D : UnarmedFlight.attackDamage(combatWeapon(player));
 		List<UnarmedFlight.Threat> view = flightView(threats);
 		boolean bowShot = archeryTarget(player, threats) != null;
 		if (!cover.active()) {
@@ -1145,8 +1181,12 @@ public final class SurvivalReflexRuntime {
 		}
 		RangedCover.Outcome outcome;
 		try {
+			// A ghast in sight is not clear at any distance its fireball carries.
+			boolean longShotInSight = threats.stream().anyMatch(threat -> threat.lineOfSight()
+				&& threat.distance() <= attackReach(threat.observed().entityTypeId()));
 			outcome = cover.tick(minecraft.level, player, view, shooterEyes, shootersInSight, coverStartReason, tick,
-				recentlyDamagedByMob(tick, lastMobDamageTick, config.threatCooldownTicks()), navigationFacade, pendingEvents);
+				recentlyDamagedByMob(tick, lastMobDamageTick, config.threatCooldownTicks()) || longShotInSight,
+				navigationFacade, pendingEvents);
 		}
 		catch (RuntimeException exception) {
 			recordActuatorFailure("take_cover", exception, tick);
@@ -2208,13 +2248,14 @@ public final class SurvivalReflexRuntime {
 		Set<String> targetingPlayer = Set.of();
 		if (minecraft.getSingleplayerServer() != null) {
 			if (aggroQuery != null && aggroQuery.isDone()) {
-				targetingPlayer = aggroQuery.join();
+				aggroTargets = aggroQuery.join();
 				aggroQuery = null;
 			}
+			targetingPlayer = aggroTargets;
 			if (aggroQuery == null) {
 				var server = minecraft.getSingleplayerServer();
 				var dimension = minecraft.level.dimension();
-				var bounds = player.getBoundingBox().inflate(32.0D);
+				var bounds = player.getBoundingBox().inflate(GHAST_REACH);
 				UUID playerId = player.getUUID();
 				aggroQuery = server.submit(() -> {
 					var level = server.getLevel(dimension);
@@ -2227,8 +2268,13 @@ public final class SurvivalReflexRuntime {
 				});
 			}
 		}
-		for (Mob mob : minecraft.level.getEntitiesOfClass(Mob.class,
-			player.getBoundingBox().inflate(32.0D), Entity::isAlive)) {
+		List<Mob> nearby = new ArrayList<>(minecraft.level.getEntitiesOfClass(Mob.class,
+			player.getBoundingBox().inflate(32.0D), Entity::isAlive));
+		for (var ghast : minecraft.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Ghast.class,
+			player.getBoundingBox().inflate(GHAST_REACH), Entity::isAlive)) {
+			if (!nearby.contains(ghast)) nearby.add(ghast);
+		}
+		for (Mob mob : nearby) {
 			// Remote clients may not receive AI targets; damage observations remain authoritative there.
 			boolean targetsUs = targetingPlayer.contains(mob.getStringUUID())
 				|| mob.getTarget() != null && player.getUUID().equals(mob.getTarget().getUUID());
@@ -2236,7 +2282,7 @@ public final class SurvivalReflexRuntime {
 				&& !(mob instanceof net.minecraft.world.entity.NeutralMob) && player.hasLineOfSight(mob);
 			if (!reflexThreat(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString())
 				|| !shouldDetectProactiveThreat(targetsUs || visibleHostile, mob.isAlive())
-				|| !policy().observesMob(player.distanceTo(mob))) {
+				|| !observes(BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType()).toString(), player.distanceTo(mob))) {
 				continue;
 			}
 			String uuid = mob.getStringUUID();
@@ -2318,6 +2364,39 @@ public final class SurvivalReflexRuntime {
 		return !"minecraft:ender_dragon".equals(entityTypeId);
 	}
 
+	/** How far past the policy's engagement distance this mob's attack carries; 0 for mobs it does not. */
+	static double attackReach(String entityTypeId) {
+		return "minecraft:ghast".equals(entityTypeId) ? GHAST_REACH : 0.0D;
+	}
+
+	/** A ghast floats out of sword reach: cover or a bow shot answers it, a weapon does not. */
+	static boolean beyondMelee(String entityTypeId) {
+		return "minecraft:ghast".equals(entityTypeId);
+	}
+
+	private boolean observes(String entityTypeId, double distance) {
+		return policy().observesMob(distance) || policy().combatEnabled() && distance <= attackReach(entityTypeId);
+	}
+
+	/**
+	 * Whether the reflex should act on this threat: inside the policy's engagement gate, or a long-range shooter (a
+	 * ghast) in sight within its reach that is after the body. A ghast that has not noticed the body is left alone so
+	 * a Nether walk is not stopped by every ghast on the horizon.
+	 */
+	private boolean engages(ResolvedThreat threat, long tick) {
+		var entity = threat.entity();
+		return engages(policy(), isRangedThreat(entity), threat.observed().entityTypeId(), threat.distance(),
+			threat.lineOfSight(), aggroTargets.contains(threat.observed().uuid())
+				|| entity instanceof net.minecraft.world.entity.monster.Ghast ghast && ghast.isCharging(),
+			recentlyDamagedByMob(tick, threat.observed().lastDamageTick(), config.threatCooldownTicks()));
+	}
+
+	static boolean engages(ReflexPolicy policy, boolean ranged, String entityTypeId, double distance, boolean lineOfSight,
+		boolean targetsBody, boolean recentlyHitBody) {
+		if (policy.acceptsMob(ranged, distance, lineOfSight)) return true;
+		return policy.combatEnabled() && lineOfSight && distance <= attackReach(entityTypeId) && (targetsBody || recentlyHitBody);
+	}
+
 	static boolean isRangedThreat(LivingEntity entity) {
 		return isRangedThreat(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
 			BuiltInRegistries.ITEM.getKey(entity.getMainHandItem().getItem()).toString(),
@@ -2350,7 +2429,7 @@ public final class SurvivalReflexRuntime {
 			}
 			double distance = player.distanceTo(entity);
 			boolean lineOfSight = player.hasLineOfSight(entity);
-			if (!policy().observesMob(distance)) {
+			if (!observes(observed.entityTypeId(), distance)) {
 				continue;
 			}
 			resolved.add(new ResolvedThreat(observed, living, distance, lineOfSight));

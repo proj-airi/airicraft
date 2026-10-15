@@ -15,6 +15,37 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SurvivalReflexRuntimeTest {
+	@Test
+	void aGhastAfterTheBodyIsEngagedFarPastThePolicyDistance() {
+		ReflexPolicy policy = ReflexPolicy.defaults();
+		// Death in a Nether fortress: the ghast drifted past 16 blocks and kept shooting at an idle body.
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, true, false, true));
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 60.0D, true, true, false));
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, true, false, false),
+			"a ghast that has not noticed the body does not stop a walk");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, false, true, true), "out of sight");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 70.0D, true, true, true), "past its reach");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:skeleton", 30.0D, true, true, true));
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 12.0D, true, false, false), "inside the usual gate");
+		assertFalse(SurvivalReflexRuntime.engages(new ReflexPolicy(false, true, 16, true), true, "minecraft:ghast", 30.0D, true, true, true));
+	}
+
+	@Test
+	void fireTurnsALavaEscapeOnlyWhenNoLavaWasInvolved() {
+		assertEquals(SurvivalReflexCause.FIRE, SurvivalReflexRuntime.hazardCause(false, SurvivalReflexCause.MOB_ATTACK));
+		assertEquals(SurvivalReflexCause.LAVA, SurvivalReflexRuntime.hazardCause(true, SurvivalReflexCause.FIRE));
+		assertEquals(SurvivalReflexCause.LAVA, SurvivalReflexRuntime.hazardCause(false, SurvivalReflexCause.LAVA),
+			"crossing fire on the bank stays a lava escape");
+	}
+
+	@Test
+	void waterIsNeverPouredWhereItEvaporates() {
+		assertEquals(SurvivalReflexRuntime.ExtinguishStep.DONE,
+			SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false, true));
+		assertEquals(SurvivalReflexRuntime.ExtinguishStep.POUR,
+			SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false, false));
+	}
+
 	@Test void lavaEscapeHeadsForTheNearestBankEvenAboveTheSunkenFeet() {
 		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
 		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
