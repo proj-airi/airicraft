@@ -104,13 +104,23 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	 * water bodies count only at the surface, where a walk can reach them.
 	 */
 	public static Optional<FoundFeature> nearest(Level level, BlockPos origin, String featureKind, int maxDistanceBlocks) {
-		return nearest(new MinecraftWorldFeatureAccess(level), origin, featureKind, maxDistanceBlocks);
+		return nearest(level, origin, featureKind, maxDistanceBlocks, DEFAULT_MIN_TREE_COUNT);
+	}
+
+	/** As {@link #nearest(Level, BlockPos, String, int)}, with a forest of as few as {@code minTreeCount} trees. */
+	public static Optional<FoundFeature> nearest(Level level, BlockPos origin, String featureKind, int maxDistanceBlocks, int minTreeCount) {
+		return nearest(new MinecraftWorldFeatureAccess(level), origin, featureKind, maxDistanceBlocks, minTreeCount);
 	}
 
 	static Optional<FoundFeature> nearest(WorldFeatureAccess access, BlockPos origin, String featureKind, int maxDistanceBlocks) {
+		return nearest(access, origin, featureKind, maxDistanceBlocks, DEFAULT_MIN_TREE_COUNT);
+	}
+
+	static Optional<FoundFeature> nearest(WorldFeatureAccess access, BlockPos origin, String featureKind, int maxDistanceBlocks,
+		int minTreeCount) {
 		FeatureKind kind = FeatureKind.from(featureKind);
 		SearchRequest request = new SearchRequest(kind, Optional.empty(), Math.max(1, Math.min(maxDistanceBlocks, MAX_DISTANCE_BLOCKS)), 1,
-			DEFAULT_MIN_CONNECTED_WATER_SOURCES, DEFAULT_MIN_TREE_COUNT, kind == FeatureKind.WATER_BODY || kind == FeatureKind.FOREST);
+			DEFAULT_MIN_CONNECTED_WATER_SOURCES, Math.max(1, minTreeCount), kind == FeatureKind.WATER_BODY || kind == FeatureKind.FOREST);
 		return candidates(access, origin, request).stream().findFirst()
 			.map(candidate -> new FoundFeature(candidate.targetPos(), candidate.standPos(), candidate.compact()));
 	}

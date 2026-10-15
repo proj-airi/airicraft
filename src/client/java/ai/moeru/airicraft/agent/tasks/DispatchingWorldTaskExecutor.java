@@ -110,6 +110,14 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	}
 
 	@Override
+	public List<TaskProgress> drainProgress() {
+		// Every executor, not only the active one: a milestone reported on the tick a task ended still counts.
+		List<TaskProgress> progress = new java.util.ArrayList<>();
+		for (WorldTaskExecutor executor : executors.all()) progress.addAll(executor.drainProgress());
+		return progress;
+	}
+
+	@Override
 	public TaskExecutionSnapshot snapshot() {
 		return activeExecutor == null ? transitionSnapshot : activeExecutor.snapshot();
 	}

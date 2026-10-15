@@ -105,8 +105,13 @@
         return owns(attention, event.fields.blockId) || owns(attention, event.fields.itemId)
           ? none('ownership.active_job_target', 'the running job is working on this') : debounce('LOW', 'percept.notice');
       case 'perception.environment_changed':
-        return event.fields.change === 'dusk' && idleForNotices(attention) ? debounce('LOW', 'percept.dusk_idle')
-          : none('percept.environment_evidence', 'environment changes are evidence; only dusk wakes, and only while idle');
+        return (event.fields.change === 'dusk' || event.fields.change === 'dawn') && idleForNotices(attention)
+          ? debounce('LOW', 'percept.' + event.fields.change + '_idle')
+          : none('percept.environment_evidence', 'environment changes are evidence; only dusk and dawn wake, and only while idle');
+      // A long task's milestone: a quiet wake so the planner can follow along and narrate; the work keeps running.
+      case 'task.progress':
+        return attention.reflexOwnsActuation ? none('ownership.reflex_actuation', 'the survival reflex owns actuation')
+          : wake('LOW', 'task.progress');
       default:
         return none('catalog.no_trigger', 'no trigger is defined for this type');
     }

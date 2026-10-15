@@ -158,6 +158,7 @@ public final class EventCatalog {
 			new EventTypeSpec("task.failed", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.failed")),
 			new EventTypeSpec("task.mining_opportunity", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("task.mining_opportunity", true, null, true)),
 			new EventTypeSpec("task.notice", false, EventFamily.EXECUTION, Set.of("DialogueRuntime", "EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.notice")),
+			new EventTypeSpec("task.progress", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("task.progress", true, PlannerTriggerType.SYSTEM, false)),
 			new EventTypeSpec("task.paused_by_reflex", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.paused_by_reflex")),
 			new EventTypeSpec("task.paused_by_session_gate", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.paused_by_session_gate")),
 			new EventTypeSpec("task.started", false, EventFamily.EXECUTION, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("task.started")),

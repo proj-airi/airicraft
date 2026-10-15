@@ -91,7 +91,10 @@ A module is one JavaScript expression: a factory that receives the bundled libra
   then delivers all held wakes as one batch. A wake delivered in the meantime takes the held ones with it. Critical,
   direct and high urgency are never held.
 - The bundled module debounces percepts (`perception.*`) at `LOW` urgency. A percept about a block or item the running
-  job targets is `NONE`. `perception.environment_changed` wakes only for dusk while idle; other changes are evidence.
+  job targets is `NONE`. `perception.environment_changed` wakes only for dusk and dawn while idle; other changes are
+  evidence.
+- `task.progress` (a milestone a long task reports while it runs, such as `explore_for` finding green land or digging
+  in at dusk) wakes at `LOW` urgency, inside the autonomous-wake budget, unless the survival reflex owns actuation.
 - Do not start rule ids with an event-id namespace such as `social.`. Use prefixes like `chat.`, `ownership.` or your
   own.
 
