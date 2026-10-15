@@ -7,3 +7,4 @@ strongholds
 exploring
 blaze-rods
 nether-trip
+beds
