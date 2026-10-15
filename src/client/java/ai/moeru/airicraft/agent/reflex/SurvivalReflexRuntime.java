@@ -50,6 +50,9 @@ public final class SurvivalReflexRuntime {
 	static final int BREATHABLE_STABLE_TICKS = 12;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 	private static final double MELEE_ATTACK_DISTANCE = 3.0D;
+	/** A melee mob this close can hit within the time a raised shield takes to start blocking. */
+	static final double MELEE_GUARD_DISTANCE = 3.5D;
+	static final double MELEE_CROWD_DISTANCE = 6.0D;
 	static final double MELEE_THREAT_DISTANCE = 6.0D;
 	static final double WET_FIGHT_DISTANCE = 4.0D;
 	static final long ESCAPE_RETRY_TICKS = 100L;
@@ -1302,6 +1305,12 @@ public final class SurvivalReflexRuntime {
 			if (aim == null && reloadingCrossbow && !otherRangedThreat) shieldGuard = null;
 		}
 		shieldGuard = nextShieldGuard(shieldGuard, aim, source, tick);
+		if (shieldGuard == null) {
+			ResolvedThreat melee = meleeGuardTarget(player, threats);
+			// Held only while the condition lasts, so the shield drops the tick the weapon is ready again.
+			if (melee != null) shieldGuard = new ShieldGuard(
+				shieldFacingPoint(player.getEyePosition(), melee.entity().position(), Vec3.ZERO), melee.observed().uuid(), tick);
+		}
 		if (shieldGuard == null) return false;
 		movementController.stop(minecraft);
 		ResolvedThreat approach = threats.isEmpty() ? null : closestVisibleThreat(threats);
@@ -1324,6 +1333,29 @@ public final class SurvivalReflexRuntime {
 		if (!player.isUsingItem() || player.getUsedItemHand() != InteractionHand.OFF_HAND)
 			actuator.useItem(minecraft, player, InteractionHand.OFF_HAND);
 		return true;
+	}
+
+	/**
+	 * The melee mob to raise the shield against while the weapon recharges, or null. In a random-seed playtest a body
+	 * at 16 health with a stone sword and a shield in the offhand fought two zombies and a spider at night without once
+	 * raising it, and died; a blocked zombie hit does no damage and knocks the zombie back. Only when outnumbered or
+	 * hurt, since a raised shield slows the body and the weapon is the way the fight ends.
+	 */
+	private static ResolvedThreat meleeGuardTarget(LocalPlayer player, List<ResolvedThreat> threats) {
+		ResolvedThreat nearest = null;
+		int close = 0;
+		for (ResolvedThreat threat : threats) {
+			if (isRangedThreat(threat.entity()) || threat.entity() instanceof net.minecraft.world.entity.monster.Creeper) continue;
+			if (threat.distance() <= MELEE_CROWD_DISTANCE) close++;
+			if (threat.lineOfSight() && (nearest == null || threat.distance() < nearest.distance())) nearest = threat;
+		}
+		return nearest != null && guardAgainstMelee(player.getAttackStrengthScale(0), close, nearest.distance(),
+			player.getHealth(), player.getMaxHealth()) ? nearest : null;
+	}
+
+	static boolean guardAgainstMelee(float attackStrength, int meleeNearby, double nearestMelee, float health, float maxHealth) {
+		return nearestMelee <= MELEE_GUARD_DISTANCE && attackStrength < .9F
+			&& (meleeNearby >= 2 || health <= maxHealth * .6F);
 	}
 
 	static boolean shouldGuardBow(boolean drawing, int useTicks) {

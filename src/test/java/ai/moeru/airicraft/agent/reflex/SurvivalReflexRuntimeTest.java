@@ -45,6 +45,14 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(SurvivalReflexRuntime.roomToDig(Double.POSITIVE_INFINITY));
 	}
 
+	@Test void raisesTheShieldAgainstCloseMeleeOnlyWhileTheWeaponRechargesAndWhenOutnumberedOrHurt() {
+		assertTrue(SurvivalReflexRuntime.guardAgainstMelee(.3F, 2, 2.0D, 16F, 20F), "two zombies close, sword recharging");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(1F, 2, 2.0D, 16F, 20F), "sword ready: swing instead");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(.3F, 1, 2.0D, 18F, 20F), "one mob and healthy: just fight");
+		assertTrue(SurvivalReflexRuntime.guardAgainstMelee(.3F, 1, 2.0D, 10F, 20F), "one mob but hurt");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(.3F, 3, 5.0D, 10F, 20F), "nothing in reach yet");
+	}
+
 	@Test void digsInEarlyOnlyWhenOutnumberedWithNoWayToHeal() {
 		assertTrue(SurvivalReflexRuntime.losingFight(9.18F, 2, false));
 		assertFalse(SurvivalReflexRuntime.losingFight(9.18F, 1, false));
