@@ -31,6 +31,17 @@ class SurvivalReflexRuntimeTest {
 	}
 
 	@Test
+	void aBlazeShootingFromAfarIsEngagedAndHiddenFrom() {
+		ReflexPolicy policy = ReflexPolicy.defaults();
+		// Death on a walk to a fortress spawner: a blaze 30 blocks off set the body alight three times.
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:blaze", 30.0D, true, false, true));
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:blaze", 50.0D, true, true, true), "past its reach");
+		assertTrue(SurvivalReflexRuntime.beyondMelee("minecraft:blaze", 20.0D));
+		assertFalse(SurvivalReflexRuntime.beyondMelee("minecraft:blaze", 3.0D), "a blaze in reach is fought");
+		assertTrue(SurvivalReflexRuntime.beyondMelee("minecraft:ghast", 3.0D));
+	}
+
+	@Test
 	void aThreatThatSlipsBehindCoverStaysEngagedBriefly() {
 		assertTrue(SurvivalReflexRuntime.inSightLately(true, null, 100L));
 		assertTrue(SurvivalReflexRuntime.inSightLately(false, 80L, 100L), "a skeleton bobbing behind soul sand");

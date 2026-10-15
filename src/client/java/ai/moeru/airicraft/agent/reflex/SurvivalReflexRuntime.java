@@ -76,6 +76,8 @@ public final class SurvivalReflexRuntime {
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 	/** A ghast shoots at a target it can see within 64 blocks, far past the policy's engagement distance. */
 	static final double GHAST_REACH = 64.0D;
+	/** A blaze shoots at a target it can see within its 48-block follow range. */
+	static final double BLAZE_REACH = 48.0D;
 	/**
 	 * Ticks a threat stays engaged after it drops out of sight. A skeleton bobbing behind soul sand started and
 	 * resolved the reflex four times in 50 ticks, restarting the interrupted walk each time.
@@ -1159,8 +1161,8 @@ public final class SurvivalReflexRuntime {
 			if (cover.active()) endCover("navigation_unavailable", false, player, threats, tick);
 			return false;
 		}
-		// A sword is no answer to a ghast floating out of reach: against those alone the body hides as if unarmed.
-		double damage = threats.stream().allMatch(threat -> beyondMelee(threat.observed().entityTypeId()))
+		// A sword is no answer to a ghast or a far blaze: against those alone the body hides as if unarmed.
+		double damage = threats.stream().allMatch(threat -> beyondMelee(threat.observed().entityTypeId(), threat.distance()))
 			? 0.0D : UnarmedFlight.attackDamage(combatWeapon(player));
 		List<UnarmedFlight.Threat> view = flightView(threats);
 		boolean bowShot = archeryTarget(player, threats) != null;
@@ -1192,7 +1194,7 @@ public final class SurvivalReflexRuntime {
 		}
 		RangedCover.Outcome outcome;
 		try {
-			// A ghast in sight is not clear at any distance its fireball carries.
+			// A ghast or blaze in sight is not clear at any distance its fireball carries.
 			boolean longShotInSight = threats.stream().anyMatch(threat -> threat.lineOfSight()
 				&& threat.distance() <= attackReach(threat.observed().entityTypeId()));
 			outcome = cover.tick(minecraft.level, player, view, shooterEyes, shootersInSight, coverStartReason, tick,
@@ -2285,6 +2287,10 @@ public final class SurvivalReflexRuntime {
 			player.getBoundingBox().inflate(GHAST_REACH), Entity::isAlive)) {
 			if (!nearby.contains(ghast)) nearby.add(ghast);
 		}
+		for (var blaze : minecraft.level.getEntitiesOfClass(net.minecraft.world.entity.monster.Blaze.class,
+			player.getBoundingBox().inflate(BLAZE_REACH), Entity::isAlive)) {
+			if (!nearby.contains(blaze)) nearby.add(blaze);
+		}
 		for (Mob mob : nearby) {
 			// Remote clients may not receive AI targets; damage observations remain authoritative there.
 			boolean targetsUs = targetingPlayer.contains(mob.getStringUUID())
@@ -2377,12 +2383,22 @@ public final class SurvivalReflexRuntime {
 
 	/** How far past the policy's engagement distance this mob's attack carries; 0 for mobs it does not. */
 	static double attackReach(String entityTypeId) {
-		return "minecraft:ghast".equals(entityTypeId) ? GHAST_REACH : 0.0D;
+		return switch (entityTypeId) {
+			case "minecraft:ghast" -> GHAST_REACH;
+			// A blaze 30 blocks off set the body alight three times on a walk to a fortress spawner and killed it
+			// while the reflex, gated at 16 blocks, never started.
+			case "minecraft:blaze" -> BLAZE_REACH;
+			default -> 0.0D;
+		};
 	}
 
-	/** A ghast floats out of sword reach: cover or a bow shot answers it, a weapon does not. */
-	static boolean beyondMelee(String entityTypeId) {
-		return "minecraft:ghast".equals(entityTypeId);
+	/**
+	 * A ghast floats out of sword reach, and so does a blaze hovering farther than a melee mob closes in: cover or a
+	 * bow shot answers them, a weapon does not. A blaze that comes within reach is fought.
+	 */
+	static boolean beyondMelee(String entityTypeId, double distance) {
+		return "minecraft:ghast".equals(entityTypeId)
+			|| "minecraft:blaze".equals(entityTypeId) && distance > MELEE_THREAT_DISTANCE;
 	}
 
 	private boolean observes(String entityTypeId, double distance) {
