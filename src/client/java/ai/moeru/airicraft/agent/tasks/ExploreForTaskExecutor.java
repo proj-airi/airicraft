@@ -50,6 +50,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final double ARRIVE_BLOCKS = 4.0D;
 	/** Feet this far above or below the feature's stand cell (or block) have not reached it. */
 	static final double REACHED_DY = 3.0D;
+	/** A stand cell is exact: feet this far from its height have not reached it (a climb once stopped 3 blocks under it). */
+	static final double STAND_DY = 1.0D;
 	/** A leg that ended this much closer to its end than it started was walked, even if it fell short. */
 	static final double PARTIAL_LEG_BLOCKS = 16.0D;
 	/** A heading whose legs failed this often is not tried again. */
@@ -87,6 +89,14 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final NavigationOptions CEILING_OPTIONS = NavigationOptions.DEFAULT.withWaterPenalty(WATER_PENALTY).withMaxSafeFall(3);
 	/** Swimming across: water at its usual price, still no digging or bridging. */
 	static final NavigationOptions CROSSING_OPTIONS = NavigationOptions.WALK_ONLY;
+	/**
+	 * Up to a find above that walking did not reach: blocks may be broken and placed, and water costs so much that a
+	 * staircase or pillar beats a long swim. A canyon's flooded end once looked like the way up, and the body ran out of
+	 * air 26 blocks up the column.
+	 */
+	static final NavigationOptions CLIMB_OPTIONS = NavigationOptions.DEFAULT.withWaterPenalty(400.0D).withMaxSafeFall(3);
+	/** A staircase dug by hand through sandstone rose about a block per 500 ticks; the stall watchdog still ends a stuck one. */
+	static final int CLIMB_TICKS_PER_BLOCK = 600;
 	/** Out of a shelter: the roof and walls may be broken and blocks placed to climb. */
 	static final NavigationOptions EXIT_OPTIONS = NavigationOptions.DEFAULT;
 	/**
@@ -149,6 +159,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	private Vec3 furthestAt;
 	private int legs, searches, crossings;
 	private Feature found;
+	/** Approaches to the find that gave out or were cut short by a reflex; the second climbs, a third hands back. */
+	private int approachFailures;
+	/** Ticks the climb may take, set from the height left when it starts. */
+	private long climbTicks;
 	private Animal prey;
 	private Vec3 preyLastSeen;
 	private int huntFailures, kills, eaten, eatBlockedUntil;
@@ -392,14 +406,28 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		int[] to = found.stand() != null ? found.stand() : new int[]{found.x(), found.y(), found.z()};
 		double remaining = horizontal(body.feet(), to[0] + 0.5D, to[2] + 0.5D);
 		// Level with it too: a column goal once ended 31 blocks under a forest, in a canyon below it.
-		boolean level = Math.abs(body.feet().y - to[1]) <= REACHED_DY;
+		double tolerance = found.stand() != null ? STAND_DY : REACHED_DY;
+		boolean level = Math.abs(body.feet().y - to[1]) <= tolerance;
 		boolean arrived = remaining <= 2.5D && level;
+		boolean above = found.stand() != null && to[1] - body.feet().y > tolerance;
+		// After one approach failed: climb to a find above, otherwise (or once the climb fails too) hand it back.
+		boolean climbing = approachFailures > 0;
+		boolean handBack = !arrived && (approachFailures >= 2 || climbing && !above);
 		// A stand cell is where the feet go; without one the feature's own block only says which column.
-		boolean moving = !arrived && navigate(new GoalPosition(to[0], to[1], to[2], found.stand() != null), 1,
-			environment.underCeiling() ? CEILING_OPTIONS : OPTIONS);
-		if (!arrived && !navigationArrived && moving && phaseTicks <= LEG_TIMEOUT_TICKS * 2) return Optional.empty();
+		boolean moving = !arrived && !handBack && navigate(new GoalPosition(to[0], to[1], to[2], found.stand() != null), 1,
+			climbing ? CLIMB_OPTIONS : environment.underCeiling() ? CEILING_OPTIONS : OPTIONS);
+		if (climbing && climbTicks == 0)
+			climbTicks = LEG_TIMEOUT_TICKS * 2L + CLIMB_TICKS_PER_BLOCK * (long) Math.max(0, Math.ceil(to[1] - body.feet().y));
+		if (!arrived && !navigationArrived && moving && phaseTicks <= (climbing ? climbTicks : LEG_TIMEOUT_TICKS * 2L)) return Optional.empty();
 		stopNavigation();
 		boolean reached = arrived || navigationArrived && level;
+		if (!reached && !handBack && !climbing && above) {
+			approachFailures++;
+			report("climbing", String.format(Locale.ROOT, "Can't walk up to the %s, %d blocks above me; digging and building my way up.",
+				args.featureKind().replace('_', ' '), (int) Math.round(to[1] - body.feet().y)));
+			enter(Phase.APPROACH);
+			return Optional.empty();
+		}
 		return finish(true, String.format(Locale.ROOT, "feature_found featureKind=%s pos=%d,%d,%d%s reached=%s distance=%.0f dy=%d %s;",
 			args.featureKind(), found.x(), found.y(), found.z(),
 			found.stand() == null ? "" : " standPos=" + found.stand()[0] + "," + found.stand()[1] + "," + found.stand()[2],
@@ -870,6 +898,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		walked = furthest = swum = 0;
 		legs = searches = crossings = 0;
 		found = null;
+		approachFailures = 0;
+		climbTicks = 0;
 		prey = null;
 		preyLastSeen = null;
 		huntFailures = kills = eaten = eatBlockedUntil = 0;
@@ -933,6 +963,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	/** The reflex hands the same task back: keep the walk so far and the counters; a leg under way starts its route again. */
 	@Override
 	public void pauseForReflex() {
+		// The way to the find led into danger (a drowning swim up a flooded column): not the same way again.
+		if (phase == Phase.APPROACH) approachFailures++;
 		if (request != null) release();
 		snapshot = TaskExecutionSnapshot.idle();
 	}

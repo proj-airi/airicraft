@@ -124,6 +124,23 @@ class QuietHoldAutoResumeTest {
 		assertEquals(1, other.autoResumes());
 	}
 
+	@Test void aDrowningHoldIsQuietOnceTheAirIsFull() {
+		// Standing in a flooded canyon's shallow floor: the hold keeps the body afloat, but it breathes.
+		assertTrue(QuietHoldAutoResume.breathingInWater(drowning(300)));
+		assertFalse(QuietHoldAutoResume.breathingInWater(drowning(240)), "still catching its breath");
+		var toLand = new SurvivalReflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, SurvivalReflexCause.DROWNING,
+			SurvivalReflexAction.REACH_SAFE_LAND, 1L, "hold-1", "job-1", null, java.util.List.of(), 20F, 20F, 300, 300, 0L, 0L, 0, null);
+		assertFalse(QuietHoldAutoResume.breathingInWater(toLand), "still walking to land");
+		var fight = new SurvivalReflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, SurvivalReflexCause.MOB_ATTACK,
+			SurvivalReflexAction.DEFEND, 1L, "hold-1", "job-1", null, java.util.List.of(), 20F, 20F, 300, 300, 0L, 0L, 0, null);
+		assertFalse(QuietHoldAutoResume.breathingInWater(fight));
+	}
+
+	private static SurvivalReflexSnapshot drowning(int air) {
+		return new SurvivalReflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, SurvivalReflexCause.DROWNING,
+			SurvivalReflexAction.SWIM_TO_AIR, 1L, "hold-1", "job-1", null, java.util.List.of(), 20F, 20F, air, 300, 0L, 0L, 0, null);
+	}
+
 	private static Hold hold(String holdId, boolean quiet, String world) {
 		return new Hold(holdId, quiet, world, 20F, "job-1", ActiveJobType.SHELTER_FOR_NIGHT, false, false);
 	}

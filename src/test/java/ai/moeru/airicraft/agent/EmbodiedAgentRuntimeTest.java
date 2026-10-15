@@ -744,6 +744,23 @@ class EmbodiedAgentRuntimeTest {
 	}
 
 	@Test
+	void drowningHoldOnAShallowFloorResumesOnceBreathing() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+			holdQuietly(runtime, ActiveJobProposal.shelterForNight(new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(14_000)));
+			var held = runtime.survivalReflexSnapshot();
+			// A flooded canyon floor: the hold keeps swimming up, the body breathes, and no land is in reach.
+			setReflexSnapshot(runtime, new SurvivalReflexSnapshot(held.state(), SurvivalReflexCause.DROWNING,
+				SurvivalReflexAction.SWIM_TO_AIR, held.safetyEpoch(), held.holdId(), held.interruptedJobId(), null, List.of(),
+				20.0F, 20.0F, 300, 300, 1L, 2L, 0, null));
+			for (long tick = 100L; tick <= 200L; tick += 20L) autoResumeAt(runtime, tick);
+			assertEquals(SurvivalReflexState.IDLE, runtime.survivalReflexSnapshot().state());
+			assertEquals(ActiveJobStatus.QUEUED, runtime.activeJob().status());
+		} finally { runtime.shutdown(); }
+	}
+
+	@Test
 	void quietHoldWithNoPausedWorkIsReleasedLikeContinue() throws Exception {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {

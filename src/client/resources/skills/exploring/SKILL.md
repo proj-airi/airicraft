@@ -15,7 +15,7 @@ At dusk it digs a 3-deep pit, roofs it and ends with sheltered_for_night: the tr
 - stay put: call explore_for again with the same featureKind; it waits in the pit and walks on at dawn;
 - or mine to pass the night: with a pickaxe, dig a tunnel from the pit floor (strip mining for coal and iron), placing a torch every few blocks so nothing spawns in it, and stay within 48 blocks of the pit. Without torches, stay in the pit. At dawn (perception.environment_changed dawn) call explore_for again: it climbs back out through the pit and walks on.
 
-On feature_found the body is already there (reached=true) or close; remember_place it if you will come back. On failure the reason carries the explored extent (start, furthest point, blocks walked):
+On feature_found the body is already there (reached=true) or close; reached=false with dy=n means the find is still n blocks above (negative: below) after one climb, so dig or pillar the rest yourself; remember_place it if you will come back. On failure the reason carries the explored extent (start, furthest point, blocks walked):
 - low_health: nothing to eat. Find food (an animal, or berries) before calling again.
 - max_distance: nothing within maxDistance of the start. Call again (it skips ground it has already walked) with a larger maxDistance, or settle for what is nearby (in a desert: dead bushes for sticks, cactus, villages for wood; sand and sandstone for building).
 - route_blocked: water or cliffs on every new heading and no shore in sight. Cross by boat, or bridge with navigate_to, then call again. Underground (far from the pit), go up with return_to_surface first.
