@@ -660,6 +660,24 @@
       "extraWake": null
     },
     {
+      "type": "reflex.auto_resume_capped",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.auto_resumed",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "reflex.bunker_failed",
       "producers": [
         "SurvivalReflexRuntime"

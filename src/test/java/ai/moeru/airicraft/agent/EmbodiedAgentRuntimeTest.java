@@ -657,6 +657,110 @@ class EmbodiedAgentRuntimeTest {
 	}
 
 	@Test
+	void quietHoldResumesAPausedShelterWithoutAPlannerTurn() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+			String jobId = holdQuietly(runtime, ActiveJobProposal.shelterForNight(
+				new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(14_000)));
+			assertEquals(ActiveJobType.SHELTER_FOR_NIGHT, runtime.activeJob().type());
+
+			autoResumeAt(runtime, 100L);
+			autoResumeAt(runtime, 139L);
+			assertEquals(SurvivalReflexState.AWAITING_PLANNER, runtime.survivalReflexSnapshot().state());
+			assertEquals(ActiveJobStatus.BLOCKED, runtime.activeJob().status());
+			autoResumeAt(runtime, 140L);
+
+			assertEquals(SurvivalReflexState.IDLE, runtime.survivalReflexSnapshot().state());
+			assertEquals(jobId, runtime.activeJob().jobId());
+			assertEquals(ActiveJobStatus.QUEUED, runtime.activeJob().status());
+			var events = runtime.recentEvents(null).events();
+			assertTrue(events.stream().anyMatch(e -> "reflex.task_resumed".equals(e.type())
+				&& "auto_quiet_hold".equals(e.payload().get("source"))), events.toString());
+			var auto = events.stream().filter(e -> "reflex.auto_resumed".equals(e.type())).findFirst().orElseThrow();
+			assertEquals("hold-quiet", auto.payload().get("holdId"));
+			assertEquals("SHELTER_FOR_NIGHT", auto.payload().get("jobType"));
+			assertEquals(1, ((Number) auto.payload().get("autoResumes")).intValue());
+		} finally { runtime.shutdown(); }
+	}
+
+	@Test
+	void quietHoldKeepsAPausedWalkForThePlanner() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+			String jobId = holdQuietly(runtime, ActiveJobProposal.navigateTo(new GoalPosition(1, 64, 1, true)));
+			for (long tick = 100L; tick <= 2_000L; tick += 20L) autoResumeAt(runtime, tick);
+
+			assertEquals(SurvivalReflexState.AWAITING_PLANNER, runtime.survivalReflexSnapshot().state());
+			assertEquals("hold-quiet", runtime.survivalReflexSnapshot().holdId());
+			assertEquals(jobId, runtime.activeJob().jobId());
+			assertEquals(ActiveJobStatus.BLOCKED, runtime.activeJob().status());
+			assertTrue(runtime.recentEvents(null).events().stream().noneMatch(e -> e.type().startsWith("reflex.auto_resum")));
+		} finally { runtime.shutdown(); }
+	}
+
+	@Test
+	void quietHoldWithThreatsOrDrowningStaysHeld() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+			holdQuietly(runtime, ActiveJobProposal.shelterForNight(new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(14_000)));
+			var held = runtime.survivalReflexSnapshot();
+			setReflexSnapshot(runtime, new SurvivalReflexSnapshot(held.state(), held.cause(), held.action(), held.safetyEpoch(),
+				held.holdId(), held.interruptedJobId(), null, List.of(new SurvivalReflexSnapshot.ThreatSnapshot(
+				"zombie-1", "Zombie", "minecraft:zombie", 5.0D, true, true)), 20.0F, 20.0F, 300, 300, 1L, 2L, 0, null));
+			for (long tick = 100L; tick <= 1_000L; tick += 20L) autoResumeAt(runtime, tick);
+			assertEquals(SurvivalReflexState.AWAITING_PLANNER, runtime.survivalReflexSnapshot().state());
+
+			setReflexSnapshot(runtime, new SurvivalReflexSnapshot(held.state(), SurvivalReflexCause.DROWNING,
+				SurvivalReflexAction.REACH_SAFE_LAND, held.safetyEpoch(), held.holdId(), held.interruptedJobId(), null, List.of(),
+				20.0F, 20.0F, 300, 300, 1L, 2L, 0, null));
+			for (long tick = 1_100L; tick <= 2_000L; tick += 20L) autoResumeAt(runtime, tick);
+			assertEquals(SurvivalReflexState.AWAITING_PLANNER, runtime.survivalReflexSnapshot().state());
+			assertEquals(ActiveJobStatus.BLOCKED, runtime.activeJob().status());
+		} finally { runtime.shutdown(); }
+	}
+
+	@Test
+	void quietHoldWithNoPausedWorkIsReleasedLikeContinue() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
+		try {
+			runtime.overrideSessionSnapshotForTests(loadedRemoteSession());
+			setReflexSnapshot(runtime, quietMobHold("hold-empty", null));
+			autoResumeAt(runtime, 100L);
+			autoResumeAt(runtime, 199L);
+			assertEquals(SurvivalReflexState.AWAITING_PLANNER, runtime.survivalReflexSnapshot().state());
+			autoResumeAt(runtime, 200L);
+			assertEquals(SurvivalReflexState.IDLE, runtime.survivalReflexSnapshot().state());
+			var events = runtime.recentEvents(null).events();
+			assertTrue(events.stream().anyMatch(e -> "reflex.hold_released".equals(e.type())), events.toString());
+			var auto = events.stream().filter(e -> "reflex.auto_resumed".equals(e.type())).findFirst().orElseThrow();
+			assertEquals("quiet_hold_no_work", auto.payload().get("reason"));
+		} finally { runtime.shutdown(); }
+	}
+
+	private static String holdQuietly(EmbodiedAgentRuntime runtime, ActiveJobProposal proposal) throws Exception {
+		runtime.injectDialogueResponseForTests(new DialogueResponse("", new DialogueIntent(DialogueIntentType.JOB_UPDATE, proposal), 1L));
+		String jobId = runtime.activeJob().jobId();
+		activeJobRuntime(runtime).pauseForReflex(2L);
+		setReflexSnapshot(runtime, quietMobHold("hold-quiet", jobId));
+		return jobId;
+	}
+
+	private static SurvivalReflexSnapshot quietMobHold(String holdId, String jobId) {
+		return new SurvivalReflexSnapshot(SurvivalReflexState.AWAITING_PLANNER, SurvivalReflexCause.MOB_ATTACK,
+			SurvivalReflexAction.DEFEND, 1L, holdId, jobId, null, List.of(), 20.0F, 20.0F, 300, 300, 1L, 2L, 0, null);
+	}
+
+	private static void autoResumeAt(EmbodiedAgentRuntime runtime, long tick) throws Exception {
+		Field field = EmbodiedAgentRuntime.class.getDeclaredField("tickCount");
+		field.setAccessible(true);
+		field.setLong(runtime, tick);
+		runtime.autoResumeQuietHold();
+	}
+
+	@Test
 	void foregroundGraphRemainsBusyAcrossSafetyHoldUntilExplicitCancellation() throws Exception {
 		EmbodiedAgentRuntime runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		ActionGraphExecutionSnapshot first = runtime.startActionGoal(ActionGoal.inventoryItem("minecraft:bread", 1), "test");

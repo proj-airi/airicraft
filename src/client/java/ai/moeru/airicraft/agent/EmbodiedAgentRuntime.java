@@ -285,6 +285,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final CurrentWorldQueryService guardedWorldQueryService = new CurrentWorldQueryService(Minecraft::getInstance);
 	private final ActionGraphCoordinator actionGraphCoordinator;
 	private final SurvivalReflexRuntime survivalReflexRuntime;
+	private final ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume quietHoldAutoResume = new ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume();
 	private final LightingRuntime lightingRuntime = new LightingRuntime();
 	private final MiningOpportunityPolicyState miningOpportunityPolicy;
 	private final MiningOpportunityJournal miningOpportunityJournal;
@@ -611,6 +612,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(Minecraft.getInstance());
+		quietHoldAutoResume.reset();
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();
@@ -1194,6 +1196,53 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (survivalReflexRuntime.takeNoContactResume(tickCount)) {
 			resumeSafetyHold(survivalReflexRuntime.snapshot().holdId(), "reflex_no_contact");
 		}
+		autoResumeQuietHold();
+	}
+
+	/**
+	 * Hands a quiet hold back without a planner turn (see {@link ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume}):
+	 * a paused self-contained task resumes as {@code continue} would resume it, and a hold with no paused work is
+	 * released. The {@code reflex.resolved} wake already told the planner about the fight; this only stops the body
+	 * standing idle when that wake goes unanswered.
+	 */
+	void autoResumeQuietHold() {
+		SurvivalReflexSnapshot reflex = survivalReflexRuntime.snapshot();
+		ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Hold hold = null;
+		if (reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.holdId() != null) {
+			ActiveJob job = activeJobRuntime.current();
+			boolean paused = job != null && job.status() == ActiveJobStatus.BLOCKED && "reflex".equals(job.blockedReason());
+			boolean quiet = reflex.threats().isEmpty() && !reflex.ownsActuation() && !survivalReflexRuntime.combatDeferredToPlanner()
+				&& sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn();
+			hold = new ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Hold(reflex.holdId(), quiet, sessionSnapshot.dimensionId(),
+				reflex.health(), paused ? job.jobId() : null, paused ? job.type() : null, actionGraphCoordinator.hasNonterminal(),
+				dialogueRuntime.plannerWorkRunning());
+		}
+		var decision = quietHoldAutoResume.observe(tickCount, hold);
+		switch (decision.action()) {
+			case RESUME_JOB, RELEASE_EMPTY_HOLD -> {
+				var payload = new LinkedHashMap<String, Object>();
+				payload.put("holdId", hold.holdId());
+				payload.put("reason", decision.reason());
+				payload.put("quietTicks", decision.quietTicks());
+				if (decision.action() == ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Action.RESUME_JOB) {
+					payload.put("jobId", hold.pausedJobId());
+					payload.put("jobType", hold.pausedJobType().name());
+					payload.put("autoResumes", decision.autoResumes());
+				}
+				resumeSafetyHold(hold.holdId(), "auto_quiet_hold");
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "reflex.auto_resumed", payload);
+			}
+			case CAPPED -> {
+				var payload = new LinkedHashMap<String, Object>();
+				payload.put("holdId", hold.holdId());
+				payload.put("jobId", hold.pausedJobId());
+				payload.put("jobType", hold.pausedJobType().name());
+				payload.put("reason", decision.reason());
+				payload.put("autoResumes", decision.autoResumes());
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "reflex.auto_resume_capped", payload);
+			}
+			default -> { }
+		}
 	}
 
 	private void tickArmor(Minecraft minecraft) {
@@ -1549,6 +1598,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(Minecraft.getInstance());
+		quietHoldAutoResume.reset();
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();

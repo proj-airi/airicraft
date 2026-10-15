@@ -95,6 +95,8 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.action_changed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.action_changed", true, null, true)),
 			new EventTypeSpec("reflex.actuator_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, new EventRoutingProfile("reflex.actuator_failed", true, null, true)),
 			new EventTypeSpec("reflex.arrow_shot", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.arrow_shot")),
+			new EventTypeSpec("reflex.auto_resume_capped", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.auto_resume_capped")),
+			new EventTypeSpec("reflex.auto_resumed", false, EventFamily.INTERNAL, Set.of("EmbodiedAgentRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.auto_resumed")),
 			new EventTypeSpec("reflex.bunker_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunker_failed")),
 			new EventTypeSpec("reflex.bunker_started", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunker_started")),
 			new EventTypeSpec("reflex.bunkered", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.bunkered")),

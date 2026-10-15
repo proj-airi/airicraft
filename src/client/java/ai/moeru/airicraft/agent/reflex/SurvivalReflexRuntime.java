@@ -380,6 +380,11 @@ public final class SurvivalReflexRuntime {
 		return snapshot;
 	}
 
+	/** A stalemate or tactical window left the fight to the planner: the hold waits for its tactic, not merely its nod. */
+	public boolean combatDeferredToPlanner() {
+		return combatDeferred();
+	}
+
 	public boolean awaitingTacticalPlan() {
 		return tacticalWindow != null && snapshot.state() == SurvivalReflexState.AWAITING_PLANNER;
 	}
