@@ -17,6 +17,8 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private NavigationStallWatchdog navigationStall;
 	private String navigationTaskId;
 	private String stalledTaskId;
+	/** Paused for the reflex: the next tick ends whatever route the reflex left before the task goes on. */
+	private boolean pausedForReflex;
 	private TaskExecutionSnapshot transitionSnapshot = TaskExecutionSnapshot.idle();
 
 	public DispatchingWorldTaskExecutor(ExecutorSet executors, NavigationFacade navigation) {
@@ -27,6 +29,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
 		if (activeTask.isEmpty()) {
+			pausedForReflex = false;
 			deactivate(sessionSnapshot);
 			if (navigationStall != null) navigationStall.clear();
 			transitionSnapshot = TaskExecutionSnapshot.idle();
@@ -42,6 +45,10 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			stalledTaskId = null;
 		}
 		WorldTaskExecutor requestedExecutor = executors.executorFor(request);
+		if (pausedForReflex) {
+			pausedForReflex = false;
+			if (activeType == request.type() && activeExecutor == requestedExecutor) NavigationRelease.release(navigation);
+		}
 		if (navigation != null && activeType != request.type()) {
 			deactivate(sessionSnapshot);
 			NavigationRelease.release(navigation);
@@ -58,16 +65,26 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			? Optional.<NavigationFacade.NavigationProgress>empty() : navigation.navigationProgress();
 		if (result.isPresent() || progress.isEmpty()) navigationStall.clear();
 		else if (navigationStall.observe(sessionSnapshot.tickCount(), progress.orElseThrow())) {
+			String detail = stuckDetail(progress.orElseThrow(), navigation.destination());
 			deactivate(sessionSnapshot);
 			navigation.cancel();
 			stalledTaskId = request.taskId();
 			transitionSnapshot = new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(),
-				"WorldTaskDispatcher", "PATH_STUCK", null, null);
+				"WorldTaskDispatcher", "PATH_STUCK " + detail, null, null);
 			return Optional.of(new TaskTerminalEvent(request.taskId(), request.goal(), TaskExecutionState.FAILED,
 				"navigation_stuck: no supported displacement or block-breaking progress for 100 active ticks; repeated jumping is not progress",
 				null, TaskFailureCode.TRANSIENT));
 		}
 		return result;
+	}
+
+	/** Where the body stood and where its route was headed, so a bare PATH_STUCK is not all the caller learns. */
+	static String stuckDetail(NavigationFacade.NavigationProgress progress, Optional<NavigationFacade.Destination> destination) {
+		var detail = new StringBuilder("at=").append((int) Math.floor(progress.x())).append(',').append((int) Math.floor(progress.y()))
+			.append(',').append((int) Math.floor(progress.z()));
+		destination.ifPresent(target -> detail.append(" toward=").append(target.key()));
+		if (progress.breakingTarget() != null) detail.append(" breaking=").append(progress.breakingTarget());
+		return detail.append(" no movement or block-breaking progress for 100 ticks").toString();
 	}
 
 	private void deactivate(SessionSnapshot sessionSnapshot) {
@@ -100,6 +117,14 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	}
 
 	@Override
+	public List<TaskProgress> drainProgress() {
+		// Every executor, not only the active one: a milestone reported on the tick a task ended still counts.
+		List<TaskProgress> progress = new java.util.ArrayList<>();
+		for (WorldTaskExecutor executor : executors.all()) progress.addAll(executor.drainProgress());
+		return progress;
+	}
+
+	@Override
 	public TaskExecutionSnapshot snapshot() {
 		return activeExecutor == null ? transitionSnapshot : activeExecutor.snapshot();
 	}
@@ -112,11 +137,25 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		activeExecutor = null;
 		activeType = null;
 		transitionSnapshot = TaskExecutionSnapshot.idle();
+		pausedForReflex = false;
 		executors.all().forEach(WorldTaskExecutor::onWorldLeave);
+	}
+
+	/**
+	 * Lets go of the body for the survival reflex without forgetting the task: the active executor and its task id stay, so
+	 * the same request after the reflex reaches the same executor without a deactivating tick, and each executor keeps
+	 * what it can resume. Another request, or none, still deactivates it as usual.
+	 */
+	@Override
+	public void pauseForReflex() {
+		if (navigationStall != null) navigationStall.clear();
+		pausedForReflex = true;
+		executors.all().forEach(WorldTaskExecutor::pauseForReflex);
 	}
 
 	@Override
 	public void shutdown() {
+		pausedForReflex = false;
 		activeExecutor = null;
 		activeType = null;
 		transitionSnapshot = TaskExecutionSnapshot.idle();
@@ -137,8 +176,118 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		WorldTaskExecutor cropTending,
 		WorldTaskExecutor lureEntities,
 		WorldTaskExecutor dragonFight,
-		WorldTaskExecutor collectObsidian
+		WorldTaskExecutor collectObsidian,
+		WorldTaskExecutor locateStronghold,
+		WorldTaskExecutor exploreFor,
+		WorldTaskExecutor collectBlazeRods,
+		WorldTaskExecutor collectFlint,
+		WorldTaskExecutor shelterForNight,
+		WorldTaskExecutor collectEnderPearls,
+		WorldTaskExecutor sleepInBed,
+		WorldTaskExecutor huntFood,
+		WorldTaskExecutor enterEndPortal
 	) {
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint,
+			WorldTaskExecutor shelterForNight, WorldTaskExecutor collectEnderPearls, WorldTaskExecutor sleepInBed,
+			WorldTaskExecutor huntFood) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, huntFood, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint,
+			WorldTaskExecutor shelterForNight, WorldTaskExecutor collectEnderPearls, WorldTaskExecutor sleepInBed) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint,
+			WorldTaskExecutor shelterForNight, WorldTaskExecutor collectEnderPearls) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint,
+			WorldTaskExecutor shelterForNight) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, shelterForNight, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				entityInteraction);
+		}
+
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, entityInteraction);
+		}
+
 		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
@@ -181,6 +330,15 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			Objects.requireNonNull(lureEntities, "lureEntities");
 			Objects.requireNonNull(dragonFight, "dragonFight");
 			Objects.requireNonNull(collectObsidian, "collectObsidian");
+			Objects.requireNonNull(locateStronghold, "locateStronghold");
+			Objects.requireNonNull(exploreFor, "exploreFor");
+			Objects.requireNonNull(collectBlazeRods, "collectBlazeRods");
+			Objects.requireNonNull(collectFlint, "collectFlint");
+			Objects.requireNonNull(shelterForNight, "shelterForNight");
+			Objects.requireNonNull(collectEnderPearls, "collectEnderPearls");
+			Objects.requireNonNull(sleepInBed, "sleepInBed");
+			Objects.requireNonNull(huntFood, "huntFood");
+			Objects.requireNonNull(enterEndPortal, "enterEndPortal");
 			Objects.requireNonNull(acquisition, "acquisition");
 			Objects.requireNonNull(underwaterHarvest, "underwaterHarvest");
 			Objects.requireNonNull(navigation, "navigation");
@@ -209,6 +367,15 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				case LURE_ENTITIES -> lureEntities;
 				case FIGHT_ENDER_DRAGON -> dragonFight;
 				case COLLECT_OBSIDIAN -> collectObsidian;
+				case LOCATE_STRONGHOLD -> locateStronghold;
+				case EXPLORE_FOR -> exploreFor;
+				case COLLECT_BLAZE_RODS -> collectBlazeRods;
+				case COLLECT_FLINT -> collectFlint;
+				case SHELTER_FOR_NIGHT -> shelterForNight;
+				case COLLECT_ENDER_PEARLS -> collectEnderPearls;
+				case SLEEP_IN_BED -> sleepInBed;
+				case HUNT_FOOD -> huntFood;
+				case ENTER_END_PORTAL -> enterEndPortal;
 			};
 		}
 
@@ -221,7 +388,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				smelting,
 				returnToSurface,
 				blockInteraction,
-				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, huntFood, enterEndPortal
 			)));
 		}
 	}

@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldFeatureSearchServiceTest {
@@ -29,6 +30,21 @@ class WorldFeatureSearchServiceTest {
 		var result = WorldFeatureSearchService.search(access, new BlockPos(0,40,0), args);
 		assertTrue(result.text().contains("targetPos=30,63,0"));
 		assertTrue(result.text().contains("standPos=29,64,0"));
+	}
+
+	@Test
+	void nearestForAWalkingSearchTakesOnlySurfaceWater() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.surfaceY = 63;
+		addWaterPool(access, 2, 40, 0, 4, 2);
+		addWaterPool(access, 30, 63, 0, 4, 2);
+		access.standable(new BlockPos(29, 64, 0));
+		var found = WorldFeatureSearchService.nearest(access, new BlockPos(0, 40, 0), "water_body", 128).orElseThrow();
+		assertEquals(new BlockPos(30, 63, 0), found.targetPos());
+		assertEquals(new BlockPos(29, 64, 0), found.standPos());
+		assertTrue(found.summary().contains("kind=water_body"), found.summary());
+		assertTrue(WorldFeatureSearchService.nearest(access, new BlockPos(0, 40, 0), "water_body", 16).isEmpty(),
+			"the surface pool is out of range and the cave pool does not count");
 	}
 
 	@Test
@@ -140,6 +156,96 @@ class WorldFeatureSearchServiceTest {
 		assertTrue(result.text().contains("returned=0"));
 	}
 
+	@Test
+	void fortressSearchFindsExposedBricksAtAnyDepthAndStandsOnTheBridge() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// A bridge deck three wide and forty long, far below the search origin.
+		for (int x = 30; x < 70; x++) for (int z = -1; z <= 1; z++) access.exposed.add(new BlockPos(x, 64, z));
+		access.standable(new BlockPos(31, 65, 0));
+		JsonObject args = args("nether_fortress");
+
+		var result = WorldFeatureSearchService.search(access, new BlockPos(0, 100, 0), args);
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=nether_fortress"), result.text());
+		assertTrue(result.text().contains("exposedBlocks=120"), result.text());
+		assertTrue(result.text().contains("standPos=31,65,0"), result.text());
+	}
+
+	@Test
+	void aFewStrayBricksAreNotAFortress() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		for (int x = 30; x < 40; x++) access.exposed.add(new BlockPos(x, 64, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("nether_fortress"));
+		assertTrue(result.text().contains("returned=0"), result.text());
+	}
+
+	@Test
+	void separateLavaPoolsAreSeparateFeatures() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		for (int x = 10; x < 13; x++) for (int z = 0; z < 2; z++) access.exposed.add(new BlockPos(x, 20, z));
+		for (int x = 60; x < 63; x++) for (int z = 0; z < 2; z++) access.exposed.add(new BlockPos(x, 20, z));
+		access.standable(new BlockPos(9, 21, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("lava_pool"));
+		assertTrue(result.text().contains("returned=2"), result.text());
+		assertTrue(result.text().contains("targetPos=10,20,0"), result.text());
+		assertTrue(result.text().contains("standPos=9,21,0"), result.text());
+	}
+
+	@Test
+	void endPortalFramesDeepUnderTheSurfaceAreOnePortal() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// The twelve frames of a portal room: three on each side of the 3x3 opening at x 10..12, z 10..12.
+		for (int i = 10; i <= 12; i++) {
+			access.exposed.add(new BlockPos(i, 30, 9));
+			access.exposed.add(new BlockPos(i, 30, 13));
+			access.exposed.add(new BlockPos(9, 30, i));
+			access.exposed.add(new BlockPos(13, 30, i));
+		}
+		access.standable(new BlockPos(10, 31, 8));
+
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("end_portal"));
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=end_portal"), result.text());
+		assertTrue(result.text().contains("exposedBlocks=12"), result.text());
+		assertTrue(result.text().contains("standPos=10,31,8"), result.text());
+	}
+
+	@Test
+	void aFewStrayFramesAreNotAPortal() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.exposed.add(new BlockPos(10, 30, 9));
+		access.exposed.add(new BlockPos(11, 30, 9));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("end_portal"));
+		assertTrue(result.text().contains("returned=0"), result.text());
+	}
+
+	@Test
+	void aSingleExposedBlazeSpawnerIsAFeature() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		// The fake hands out exposed spawners the Minecraft access has already checked to spin a blaze.
+		access.exposed.add(new BlockPos(20, 70, -6));
+		access.standable(new BlockPos(20, 71, -6));
+
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("blaze_spawner"));
+
+		assertTrue(result.text().contains("returned=1"), result.text());
+		assertTrue(result.text().contains("kind=blaze_spawner"), result.text());
+		assertTrue(result.text().contains("targetPos=20,70,-6"), result.text());
+		assertEquals(new BlockPos(20, 70, -6), WorldFeatureSearchService.nearest(access, ORIGIN, "blaze_spawner", 64).orElseThrow().targetPos());
+	}
+
+	@Test
+	void twoBlazeSpawnersFarApartAreTwoFeaturesNearestFirst() {
+		FakeWorldFeatureAccess access = new FakeWorldFeatureAccess();
+		access.exposed.add(new BlockPos(60, 70, 0));
+		access.exposed.add(new BlockPos(-20, 66, 0));
+		var result = WorldFeatureSearchService.search(access, ORIGIN, args("blaze_spawner"));
+		assertTrue(result.text().contains("returned=2"), result.text());
+		assertEquals(new BlockPos(-20, 66, 0), WorldFeatureSearchService.nearest(access, ORIGIN, "blaze_spawner", 128).orElseThrow().targetPos());
+	}
+
 	private static JsonObject args(String featureKind) {
 		JsonObject args = new JsonObject();
 		args.addProperty("featureKind", featureKind);
@@ -159,6 +265,14 @@ class WorldFeatureSearchServiceTest {
 		public boolean isSurface(BlockPos pos) { return pos.getY() >= surfaceY; }
 		private final HashMap<BlockPos, WorldFeatureSearchService.SampledBlock> samples = new HashMap<>();
 		private final HashSet<BlockPos> standable = new HashSet<>();
+		private final HashSet<BlockPos> exposed = new HashSet<>();
+
+		@Override
+		public void forEachExposedBlock(BlockPos origin, int maxDistanceBlocks, WorldFeatureSearchService.FeatureKind featureKind,
+			Consumer<BlockPos> consumer) {
+			exposed.stream().sorted(Comparator.<BlockPos>comparingInt(BlockPos::getX).thenComparingInt(BlockPos::getY)
+				.thenComparingInt(BlockPos::getZ)).forEach(consumer);
+		}
 
 		private void water(BlockPos pos) {
 			put(pos, new WorldFeatureSearchService.SampledBlock(true, false, false));

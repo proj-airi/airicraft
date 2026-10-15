@@ -285,11 +285,16 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	private final CurrentWorldQueryService guardedWorldQueryService = new CurrentWorldQueryService(Minecraft::getInstance);
 	private final ActionGraphCoordinator actionGraphCoordinator;
 	private final SurvivalReflexRuntime survivalReflexRuntime;
+	private final ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume quietHoldAutoResume = new ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume();
 	private final LightingRuntime lightingRuntime = new LightingRuntime();
 	private final MiningOpportunityPolicyState miningOpportunityPolicy;
 	private final MiningOpportunityJournal miningOpportunityJournal;
 	private final PlayerItemUseController playerItemUseController = new PlayerItemUseController();
 	private final ai.moeru.airicraft.agent.equipment.ArmorAutoEquip armorAutoEquip = new ai.moeru.airicraft.agent.equipment.ArmorAutoEquip();
+	private final ai.moeru.airicraft.agent.equipment.JunkDiscard junkDiscard = new ai.moeru.airicraft.agent.equipment.JunkDiscard();
+	private final ai.moeru.airicraft.agent.reflex.TreadWater treadWater = new ai.moeru.airicraft.agent.reflex.TreadWater();
+	private static final Set<String> BLAZE_TASK_THREATS = Set.of("minecraft:blaze");
+	private static final Set<String> ENDER_PEARL_TASK_THREATS = Set.of("minecraft:enderman");
 	private final FoodRuntime foodRuntime = new FoodRuntime();
 	private final SurvivalReflexRuntime.CombatEating combatEating = new SurvivalReflexRuntime.CombatEating() {
 		@Override public boolean needed(net.minecraft.client.player.LocalPlayer player) {
@@ -297,8 +302,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				player.getHealth(), player.getMaxHealth());
 		}
 		@Override public boolean hasEligibleFood(net.minecraft.client.player.LocalPlayer player) {
-			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(),
-				player.getFoodData().getFoodLevel()).isPresent();
+			int hunger = player.getFoodData().getFoodLevel();
+			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger)
+				.or(() -> FoodSelector.emergency(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger, player.getHealth(), player.getMaxHealth()))
+				.isPresent();
 		}
 		@Override public Optional<String> candidate(net.minecraft.client.player.LocalPlayer player) {
 			if (player.containerMenu != player.inventoryMenu
@@ -605,9 +612,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(Minecraft.getInstance());
+		quietHoldAutoResume.reset();
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();
+		junkDiscard.reset();
+		treadWater.reset(Minecraft.getInstance());
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		toolWearTracker.reset();
@@ -686,6 +696,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		tickSurvivalReflex(minecraft);
 		tickIdleEating(minecraft);
 		tickArmor(minecraft);
+		tickTreadWater(minecraft);
 		drainEventPipeline();
 
 		sampleSensor(ai.moeru.airicraft.agent.perception.SocialPresenceSensor.ID, minecraft);
@@ -775,6 +786,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		for (MiningOpportunityJournal.Notice notice : miningOpportunityJournal.drain()) {
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.mining_opportunity", notice.payload());
 		}
+		for (ai.moeru.airicraft.agent.tasks.TaskProgress progress : worldTaskExecutor.drainProgress()) publishTaskProgress(progress);
 		boolean semanticTaskContext = hasSemanticTaskContext(previousTaskSnapshot, taskSnapshot);
 		recordTaskStateTransition(previousTaskExecutionSnapshot, taskExecutionSnapshot, semanticTaskContext);
 		terminalTaskEvent.ifPresent(event -> {
@@ -980,6 +992,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (minecraft != null && minecraft.level != null && minecraft.player != null) {
 			worldSession = minecraft.level.dimension().location() + ":" + System.identityHashCode(minecraft.level);
 			facts.put("dimension", minecraft.level.dimension().location().toString());
+			if (minecraft.level.dimensionType().hasSkyLight() && !minecraft.level.dimensionType().hasFixedTime())
+				facts.put("time", ai.moeru.airicraft.agent.perception.EnvironmentWatcher.phase(minecraft.level.getDayTime()).name().toLowerCase(java.util.Locale.ROOT));
 			var inventory = new java.util.TreeMap<String, Integer>();
 			for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
 				var stack = minecraft.player.getInventory().getItem(i);
@@ -1058,6 +1072,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					+ "Use continue to grant another observation window; this notice does not cancel or fail work."), EventCause.work(notice.workId()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
+	}
+
+	/** A running task's milestone, as evidence the planner can follow and narrate; the work keeps running. */
+	private void publishTaskProgress(ai.moeru.airicraft.agent.tasks.TaskProgress progress) {
+		var job = activeJobRuntime.current();
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("milestone", progress.milestone());
+		payload.put("message", progress.message());
+		if (job != null && job.jobId() != null) payload.put("taskId", job.jobId());
+		var minecraft = Minecraft.getInstance();
+		if (minecraft != null && minecraft.player != null)
+			payload.put("position", Map.of("x", minecraft.player.getBlockX(), "y", minecraft.player.getBlockY(), "z", minecraft.player.getBlockZ()));
+		if (job == null || job.jobId() == null) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.progress", payload);
+		else eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.progress", payload,
+			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 	}
 
 	/** A stall that outlives several observation windows is cancelled, then the planner is woken with attention priority. */
@@ -1153,6 +1182,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			activeJob == null || activeJob.isIdle() || activeJob.status().terminal() ? null : activeJob.jobId(),
 			actionGraphCoordinator.hasForeground() ? graph.executionId() : null
 		);
+		// collect_blaze_rods fights blazes and collect_ender_pearls endermen itself, paused by a reflex hold or not; the reflex
+		// takes them back once the task ends.
+		survivalReflexRuntime.taskOwnsThreatTypes(taskOwnedThreatTypes(activeJob));
+		// shelter_for_night, sleep_in_bed and explore_for dig in or sleep themselves: no night bunker of the reflex's under them.
+		survivalReflexRuntime.taskHandlesNight(taskHandlesNight(activeJob));
 		survivalReflexRuntime.tick(
 			minecraft,
 			interruptedWork,
@@ -1161,6 +1195,56 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			combatEating
 		);
 		processSurvivalReflexEvents();
+		if (survivalReflexRuntime.takeNoContactResume(tickCount)) {
+			resumeSafetyHold(survivalReflexRuntime.snapshot().holdId(), "reflex_no_contact");
+		}
+		autoResumeQuietHold();
+	}
+
+	/**
+	 * Hands a quiet hold back without a planner turn (see {@link ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume}):
+	 * a paused self-contained task resumes as {@code continue} would resume it, and a hold with no paused work is
+	 * released. The {@code reflex.resolved} wake already told the planner about the fight; this only stops the body
+	 * standing idle when that wake goes unanswered.
+	 */
+	void autoResumeQuietHold() {
+		SurvivalReflexSnapshot reflex = survivalReflexRuntime.snapshot();
+		ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Hold hold = null;
+		if (reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.holdId() != null) {
+			ActiveJob job = activeJobRuntime.current();
+			boolean paused = job != null && job.status() == ActiveJobStatus.BLOCKED && "reflex".equals(job.blockedReason());
+			boolean quiet = reflex.threats().isEmpty() && !reflex.ownsActuation() && !survivalReflexRuntime.combatDeferredToPlanner()
+				&& sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn();
+			hold = new ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Hold(reflex.holdId(), quiet, sessionSnapshot.dimensionId(),
+				reflex.health(), paused ? job.jobId() : null, paused ? job.type() : null, actionGraphCoordinator.hasNonterminal(),
+				dialogueRuntime.plannerWorkRunning());
+		}
+		var decision = quietHoldAutoResume.observe(tickCount, hold);
+		switch (decision.action()) {
+			case RESUME_JOB, RELEASE_EMPTY_HOLD -> {
+				var payload = new LinkedHashMap<String, Object>();
+				payload.put("holdId", hold.holdId());
+				payload.put("reason", decision.reason());
+				payload.put("quietTicks", decision.quietTicks());
+				if (decision.action() == ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Action.RESUME_JOB) {
+					payload.put("jobId", hold.pausedJobId());
+					payload.put("jobType", hold.pausedJobType().name());
+					payload.put("autoResumes", decision.autoResumes());
+				}
+				resumeSafetyHold(hold.holdId(), "auto_quiet_hold");
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "reflex.auto_resumed", payload);
+			}
+			case CAPPED -> {
+				var payload = new LinkedHashMap<String, Object>();
+				payload.put("holdId", hold.holdId());
+				payload.put("jobId", hold.pausedJobId());
+				payload.put("jobType", hold.pausedJobType().name());
+				payload.put("reason", decision.reason());
+				payload.put("autoResumes", decision.autoResumes());
+				eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "reflex.auto_resume_capped", payload);
+			}
+			default -> { }
+		}
 	}
 
 	private void tickArmor(Minecraft minecraft) {
@@ -1172,20 +1256,49 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (swap.replacedItemId() != null) payload.put("replacedItemId", swap.replacedItemId());
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "equipment.armor_equipped", payload);
 		});
+		ActiveJob job = activeJobRuntime.current();
+		boolean travelling = job != null && !job.status().terminal() && navigationFacade != null && navigationFacade.processActive()
+			&& (job.type() == ActiveJobType.NAVIGATE_TO || job.type() == ActiveJobType.FOLLOW_PLAYER
+				|| job.type() == ActiveJobType.RETURN_TO_SURFACE);
+		junkDiscard.tick(minecraft, tickCount, travelling).ifPresent(discard -> {
+			var payload = new LinkedHashMap<String, Object>();
+			payload.put("itemId", discard.itemId());
+			payload.put("count", discard.count());
+			payload.put("kept", discard.kept());
+			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "inventory.junk_discarded", payload);
+		});
+	}
+
+	private void tickTreadWater(Minecraft minecraft) {
+		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
+			&& !survivalReflexRuntime.snapshot().holdsNormalTasks() && !policyActive()
+			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
+			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current())
+			&& (navigationFacade == null || !navigationFacade.processActive());
+		treadWater.tick(minecraft, idle);
 	}
 
 	private void tickIdleEating(Minecraft minecraft) {
 		if (minecraft == null || minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) return;
 		var player = minecraft.player;
-		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
-			&& !survivalReflexRuntime.snapshot().holdsNormalTasks() && !policyActive()
+		var reflex = survivalReflexRuntime.snapshot();
+		// A safety hold with nothing left to fight only waits for a decision, so the paused body eats meanwhile.
+		boolean quietHold = reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.threats().isEmpty()
+			&& !reflex.ownsActuation();
+		boolean free = !reflex.holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
-			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current())
+			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current());
+		// A plain walk (or a night-shelter wait) leaves the hands free; eating on the way beats arriving hungry. Other jobs switch tools.
+		boolean walking = !reflex.holdsNormalTasks() && !policyActive() && !actionGraphCoordinator.hasNonterminal()
+			&& handsFree(taskExecutionSnapshot);
+		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
+			&& (free || quietHold || walking)
 			&& !playerItemUseController.eating() && !player.isUsingItem()
 			&& !minecraft.gameMode.isDestroying()
 			&& player.containerMenu == player.inventoryMenu
 			&& player.containerMenu.getCarried().isEmpty();
-		var decision = foodRuntime.evaluateIdle(idle, player.getFoodData().getFoodLevel(),
+		boolean resting = quietHold || ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor.waitingInShelter(taskExecutionSnapshot);
+		var decision = foodRuntime.evaluateIdle(idle, resting, player.getFoodData().getFoodLevel(),
 			player.getHealth(), player.getMaxHealth(), foodCandidates(player), tickCount);
 		if (decision.missingFood()) {
 			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.unavailable", Map.of(
@@ -1206,6 +1319,35 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		});
 	}
 
+	/** Mob types the running job fights itself, which the survival reflex leaves alone; empty once the job is terminal. */
+	static Set<String> taskOwnedThreatTypes(ActiveJob activeJob) {
+		if (activeJob == null || activeJob.status().terminal()) return Set.of();
+		return switch (activeJob.type()) {
+			case COLLECT_BLAZE_RODS -> BLAZE_TASK_THREATS;
+			case COLLECT_ENDER_PEARLS -> ENDER_PEARL_TASK_THREATS;
+			default -> Set.of();
+		};
+	}
+
+	/** Whether the running job waits out the night itself, paused by a reflex hold or not; false once it is terminal. */
+	static boolean taskHandlesNight(ActiveJob activeJob) {
+		if (activeJob == null || activeJob.status().terminal()) return false;
+		return switch (activeJob.type()) {
+			case SHELTER_FOR_NIGHT, SLEEP_IN_BED, EXPLORE_FOR -> true;
+			default -> false;
+		};
+	}
+
+	/** A plain walk, or the wait in a closed night shelter: the hands are free to eat. */
+	static boolean handsFree(TaskExecutionSnapshot execution) {
+		return walkingOnly(execution) || ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor.waitingInShelter(execution);
+	}
+
+	static boolean walkingOnly(TaskExecutionSnapshot execution) {
+		return execution != null && execution.state() == TaskExecutionState.RUNNING && execution.activeGoal() != null
+			&& execution.activeGoal().type() == ai.moeru.airicraft.agent.goals.GoalType.NAVIGATE_TO;
+	}
+
 	private static List<FoodSelector.Candidate> foodCandidates(net.minecraft.client.player.LocalPlayer player) {
 		var candidates = new ArrayList<FoodSelector.Candidate>();
 		for (int slot = 0; slot < net.minecraft.world.entity.player.Inventory.INVENTORY_SIZE; slot++) {
@@ -1219,7 +1361,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void releaseNormalActuatorsForReflex(Minecraft minecraft) {
-		worldTaskExecutor.onWorldLeave();
+		// A pause, not a world leave: the job resumes the same task afterwards, and executors that can resume keep their state.
+		worldTaskExecutor.pauseForReflex();
 		behaviorTreeRuntime.stop(minecraft);
 		followCapability.clear();
 		followState = FollowState.idle();
@@ -1262,7 +1405,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			if (event.type().equals("reflex.started")) dialogueRuntime.queueTaskPreemption(tickCount, observed.seqNo());
 			else if (List.of("reflex.resolved", "reflex.threat_detected", "reflex.actuator_failed").contains(event.type()))
 				dialogueRuntime.queueTaskWakeup(null, tickCount, observed.seqNo());
-			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable"))
+			if (event.type().equals("reflex.food_retreat_failed") || event.type().equals("reflex.food_unavailable")
+				|| event.type().equals("reflex.flight_abandoned"))
 				dialogueRuntime.queueTaskAttention(tickCount, observed.seqNo());
 		}
 		SurvivalReflexSnapshot reflex = survivalReflexRuntime.snapshot();
@@ -1465,9 +1609,12 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		deathEventSequence = 0L;
 		lastRespawnRequestTick = -1L;
 		survivalReflexRuntime.reset(Minecraft.getInstance());
+		quietHoldAutoResume.reset();
 		playerItemUseController.reset(Minecraft.getInstance());
 		foodRuntime.reset();
 		armorAutoEquip.reset();
+		junkDiscard.reset();
+		treadWater.reset(Minecraft.getInstance());
 		lightingRuntime.reset();
 		miningOpportunityPolicy.reset();
 		seenPlayerNames.clear();
@@ -1526,6 +1673,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			}
 		}
 		return survivalReflexRuntime.snapshot();
+	}
+
+	/**
+	 * Tools that leave the held plan alone. Eating is one: a fight that ends in a hold often leaves the body at a few
+	 * hearts, and refusing eat_food until continue made the driver resume the plan hurt before it could heal.
+	 */
+	static boolean allowedDuringSafetyHold(String toolName) {
+		return List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting",
+			"configure_opportunistic_mining", "update_event_policy", "eat_food").contains(toolName);
 	}
 
 	private void releaseSafetyHoldForReplacement(String reason) {
@@ -3247,10 +3403,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (new ai.moeru.airicraft.agent.work.WorkToolProvider(this).handles(call.name())) return execute(call);
 		if (PlannerToolCatalog.isReadTool(call.name())) return execute(call);
 		if (survivalReflexRuntime.awaitingTacticalPlan() && workHistory.current().isEmpty()
-			&& !List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting", "configure_opportunistic_mining", "update_event_policy").contains(call.name())) {
+			&& !allowedDuringSafetyHold(call.name())) {
 			releaseSafetyHoldForReplacement("planner_tactical_replacement");
 		}
-		if (survivalReflexRuntime.snapshot().holdId() != null && !List.of("configure_reflex", "configure_food", "configure_armor", "configure_pathfind", "configure_lighting", "configure_opportunistic_mining", "update_event_policy").contains(call.name())) {
+		if (survivalReflexRuntime.snapshot().holdId() != null && !allowedDuringSafetyHold(call.name())) {
 			if (call.name().equals("run_policy")) return CompletableFuture.completedFuture("TOOL_ERROR: run_policy work_in_safety_hold");
 			return CompletableFuture.completedFuture("Tool result for " + call.name() + ": " + new com.google.gson.Gson().toJson(Map.of(
 				"accepted",false,"reason","work_in_safety_hold","holdId",survivalReflexRuntime.snapshot().holdId(),
@@ -3743,6 +3899,51 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				var obsidian = ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.collectObsidian(obsidian));
 				yield queuedActionToolResult("collect_obsidian", "count=" + obsidian.count());
+			}
+			case PlannerToolCatalog.COLLECT_BLAZE_RODS -> {
+				var blazeRods = ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.collectBlazeRods(blazeRods));
+				yield queuedActionToolResult("collect_blaze_rods", "count=" + blazeRods.count());
+			}
+			case PlannerToolCatalog.COLLECT_FLINT -> {
+				var flint = ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.collectFlint(flint));
+				yield queuedActionToolResult("collect_flint", "count=" + flint.count());
+			}
+			case PlannerToolCatalog.COLLECT_ENDER_PEARLS -> {
+				var pearls = ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.collectEnderPearls(pearls));
+				yield queuedActionToolResult("collect_ender_pearls", "count=" + pearls.count());
+			}
+			case PlannerToolCatalog.ENTER_END_PORTAL -> {
+				var portal = ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.enterEndPortal(portal));
+				yield queuedActionToolResult("enter_end_portal", portal.describe());
+			}
+			case PlannerToolCatalog.HUNT_FOOD -> {
+				var hunt = ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.huntFood(hunt));
+				yield queuedActionToolResult("hunt_food", hunt.describe());
+			}
+			case PlannerToolCatalog.SLEEP_IN_BED -> {
+				var sleep = ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.sleepInBed(sleep));
+				yield queuedActionToolResult("sleep_in_bed", sleep.describe());
+			}
+			case PlannerToolCatalog.SHELTER_FOR_NIGHT -> {
+				var shelter = ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.shelterForNight(shelter));
+				yield queuedActionToolResult("shelter_for_night", "maxWaitTicks=" + shelter.maxWaitTicks());
+			}
+			case PlannerToolCatalog.EXPLORE_FOR -> {
+				var explore = ai.moeru.airicraft.agent.tasks.ExploreForStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.exploreFor(explore));
+				yield queuedActionToolResult("explore_for", "featureKind=" + explore.featureKind() + " maxDistance=" + explore.maxDistance());
+			}
+			case PlannerToolCatalog.LOCATE_STRONGHOLD -> {
+				var stronghold = ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.locateStronghold(stronghold));
+				yield queuedActionToolResult("locate_stronghold", "maxEyes=" + stronghold.maxEyes());
 			}
 			case PlannerToolCatalog.FIGHT_ENDER_DRAGON -> {
 				applyPlannerJobTool(ActiveJobProposal.fightEnderDragon());
@@ -5368,7 +5569,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, SLEEP_IN_BED, HUNT_FOOD, ENTER_END_PORTAL, ASK_USER -> false;
 		};
 	}
 
@@ -5383,7 +5584,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return true;
 		}
 		if (Objects.equals(snapshot.activeStepId(), ActiveJobType.LURE_ENTITIES.name().toLowerCase())
-			|| Objects.equals(snapshot.activeStepId(), ActiveJobType.RETURN_TO_SURFACE.name().toLowerCase())) {
+			|| Objects.equals(snapshot.activeStepId(), ActiveJobType.RETURN_TO_SURFACE.name().toLowerCase())
+			|| Objects.equals(snapshot.activeStepId(), ActiveJobType.LOCATE_STRONGHOLD.name().toLowerCase())
+			|| Objects.equals(snapshot.activeStepId(), ActiveJobType.EXPLORE_FOR.name().toLowerCase())) {
 			return true;
 		}
 		return snapshot.activeStepKind() == ai.moeru.airicraft.agent.tasks.LedgerStepKind.COLLECT_RESOURCE
@@ -5611,8 +5814,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 		return switch (type) {
-			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN -> true;
-			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON -> false;
+			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS, HUNT_FOOD, ENTER_END_PORTAL -> true;
+			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON, EXPLORE_FOR, SLEEP_IN_BED -> false;
 		};
 	}
 

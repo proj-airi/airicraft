@@ -33,6 +33,15 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case LureEntities ignored -> WorldTaskType.LURE_ENTITIES;
 			case FightEnderDragon ignored -> WorldTaskType.FIGHT_ENDER_DRAGON;
 			case CollectObsidian ignored -> WorldTaskType.COLLECT_OBSIDIAN;
+			case LocateStronghold ignored -> WorldTaskType.LOCATE_STRONGHOLD;
+			case ExploreFor ignored -> WorldTaskType.EXPLORE_FOR;
+			case CollectBlazeRods ignored -> WorldTaskType.COLLECT_BLAZE_RODS;
+			case CollectFlint ignored -> WorldTaskType.COLLECT_FLINT;
+			case ShelterForNight ignored -> WorldTaskType.SHELTER_FOR_NIGHT;
+			case CollectEnderPearls ignored -> WorldTaskType.COLLECT_ENDER_PEARLS;
+			case SleepInBed ignored -> WorldTaskType.SLEEP_IN_BED;
+			case HuntFood ignored -> WorldTaskType.HUNT_FOOD;
+			case EnterEndPortal ignored -> WorldTaskType.ENTER_END_PORTAL;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -144,6 +153,51 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new CollectObsidian(args));
 	}
 	public record CollectObsidian(CollectObsidianStepArgs args) implements Task { public CollectObsidian { Objects.requireNonNull(args, "collectObsidian"); } }
+
+	public static WorldTaskRequest locateStronghold(String taskId, String sourceJobId, LocateStrongholdStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new LocateStronghold(args));
+	}
+	public record LocateStronghold(LocateStrongholdStepArgs args) implements Task { public LocateStronghold { Objects.requireNonNull(args, "locateStronghold"); } }
+
+	public static WorldTaskRequest exploreFor(String taskId, String sourceJobId, ExploreForStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new ExploreFor(args));
+	}
+	public record ExploreFor(ExploreForStepArgs args) implements Task { public ExploreFor { Objects.requireNonNull(args, "exploreFor"); } }
+
+	public static WorldTaskRequest collectBlazeRods(String taskId, String sourceJobId, CollectBlazeRodsStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectBlazeRods(args));
+	}
+	public record CollectBlazeRods(CollectBlazeRodsStepArgs args) implements Task { public CollectBlazeRods { Objects.requireNonNull(args, "collectBlazeRods"); } }
+
+	public static WorldTaskRequest collectFlint(String taskId, String sourceJobId, CollectFlintStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectFlint(args));
+	}
+	public record CollectFlint(CollectFlintStepArgs args) implements Task { public CollectFlint { Objects.requireNonNull(args, "collectFlint"); } }
+
+	public static WorldTaskRequest shelterForNight(String taskId, String sourceJobId, ShelterForNightStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new ShelterForNight(args));
+	}
+	public record ShelterForNight(ShelterForNightStepArgs args) implements Task { public ShelterForNight { Objects.requireNonNull(args, "shelterForNight"); } }
+
+	public static WorldTaskRequest collectEnderPearls(String taskId, String sourceJobId, CollectEnderPearlsStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectEnderPearls(args));
+	}
+	public record CollectEnderPearls(CollectEnderPearlsStepArgs args) implements Task { public CollectEnderPearls { Objects.requireNonNull(args, "collectEnderPearls"); } }
+
+	public static WorldTaskRequest sleepInBed(String taskId, String sourceJobId, SleepInBedStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new SleepInBed(args));
+	}
+	public record SleepInBed(SleepInBedStepArgs args) implements Task { public SleepInBed { Objects.requireNonNull(args, "sleepInBed"); } }
+
+	public static WorldTaskRequest huntFood(String taskId, String sourceJobId, HuntFoodStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new HuntFood(args));
+	}
+	public record HuntFood(HuntFoodStepArgs args) implements Task { public HuntFood { Objects.requireNonNull(args, "huntFood"); } }
+
+	public static WorldTaskRequest enterEndPortal(String taskId, String sourceJobId, EnterEndPortalStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new EnterEndPortal(args));
+	}
+	public record EnterEndPortal(EnterEndPortalStepArgs args) implements Task { public EnterEndPortal { Objects.requireNonNull(args, "enterEndPortal"); } }
 
 	public sealed interface Task {
 	}

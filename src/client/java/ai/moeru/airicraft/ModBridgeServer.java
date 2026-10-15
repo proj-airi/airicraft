@@ -179,6 +179,7 @@ public final class ModBridgeServer {
 			httpServer.createContext("/v1/reload", this::handleReload);
 			httpServer.createContext("/v1/worlds", this::handleWorlds);
 			httpServer.createContext("/v1/worlds/join", this::handleJoinWorld);
+			httpServer.createContext("/v1/worlds/leave", this::handleLeaveWorld);
 			httpServer.createContext("/v1/worlds/create", this::handleCreateWorld);
 			httpServer.createContext("/v1/worlds/rename", this::handleRenameWorld);
 			httpServer.createContext("/v1/worlds/delete", this::handleDeleteWorld);
@@ -342,6 +343,17 @@ public final class ModBridgeServer {
 
 			try {
 				return singleplayerWorldService.joinWorld(request.worldId());
+			}
+			catch (SingleplayerWorldService.SingleplayerWorldException exception) {
+				throw new BridgeUnavailableException(exception.code(), exception.getMessage());
+			}
+		});
+	}
+
+	private void handleLeaveWorld(HttpExchange exchange) throws IOException {
+		handleJsonBody(exchange, "POST", Map.class, request -> {
+			try {
+				return singleplayerWorldService.leaveWorld();
 			}
 			catch (SingleplayerWorldService.SingleplayerWorldException exception) {
 				throw new BridgeUnavailableException(exception.code(), exception.getMessage());

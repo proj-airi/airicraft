@@ -740,6 +740,185 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void strongholdSearchPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs(6);
+		runtime.applyPlannerResponse(new DialogueResponse("Finding the stronghold.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.locateStronghold(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.LOCATE_STRONGHOLD, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.LocateStronghold(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().locateStronghold());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.LocateStronghold(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().locateStronghold());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void blazeRodsPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs(9);
+		runtime.applyPlannerResponse(new DialogueResponse("Getting blaze rods.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectBlazeRods(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_BLAZE_RODS, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectBlazeRods(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectBlazeRods());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectBlazeRods(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectBlazeRods());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void enderPearlPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs(14);
+		runtime.applyPlannerResponse(new DialogueResponse("Hunting endermen.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectEnderPearls(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_ENDER_PEARLS, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectEnderPearls(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectEnderPearls());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectEnderPearls(args), runtime.activeTaskRequest().orElseThrow().task());
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same hunt");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectEnderPearls());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void flintPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs(3);
+		runtime.applyPlannerResponse(new DialogueResponse("Making flint.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectFlint(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_FLINT, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectFlint(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectFlint());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectFlint(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectFlint());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void shelterPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(6_000);
+		runtime.applyPlannerResponse(new DialogueResponse("Digging in for the night.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.shelterForNight(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.SHELTER_FOR_NIGHT, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().shelterForNight());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same shelter");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().shelterForNight());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void sleepPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs(new ai.moeru.airicraft.agent.goals.GoalPosition(4, 70, -2, true));
+		runtime.applyPlannerResponse(new DialogueResponse("Sleeping.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.sleepInBed(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.SLEEP_IN_BED, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.SleepInBed(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().sleepInBed());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same sleep");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().sleepInBed());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void huntPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs(4, true, 24);
+		runtime.applyPlannerResponse(new DialogueResponse("Hunting.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.huntFood(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.HUNT_FOOD, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.HuntFood(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().huntFood());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same hunt");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().huntFood());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void endPortalPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs(new ai.moeru.airicraft.agent.goals.GoalPosition(10, 30, -4, true), true);
+		runtime.applyPlannerResponse(new DialogueResponse("Lighting the portal.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.enterEndPortal(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.ENTER_END_PORTAL, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.EnterEndPortal(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().enterEndPortal());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same task");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().enterEndPortal());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void explorePayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);
+		runtime.applyPlannerResponse(new DialogueResponse("Looking for trees.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.exploreFor(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.EXPLORE_FOR, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.ExploreFor(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().exploreFor());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.ExploreFor(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().exploreFor());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void lurePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs(java.util.List.of("aaaaaaaa"), "minecraft:wheat_seeds", 1, 63, 2, 3, 64, 4);

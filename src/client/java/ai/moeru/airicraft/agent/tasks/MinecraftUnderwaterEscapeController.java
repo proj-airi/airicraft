@@ -26,7 +26,10 @@ public final class MinecraftUnderwaterEscapeController {
 	private final CameraController camera;
 	private final NavigationFacade navigationFacade;
 	private final UnderwaterEscapeNavigator navigator;
+	private static final long RESEARCH_INTERVAL_TICKS = 20L;
+
 	private Minecraft activeClient;
+	private long searchStartedTick;
 
 	private UnderwaterEscapeSearch.SearchMode mode;
 	private UnderwaterEscapeSearch.SearchSession searchSession;
@@ -51,11 +54,13 @@ public final class MinecraftUnderwaterEscapeController {
 					return;
 				}
 				Vec3 target = new Vec3(waypoint.x() + 0.5D, waypoint.y() + 1.0D, waypoint.z() + 0.5D);
-				MinecraftUnderwaterEscapeController.this.camera.lookAt(minecraft, target);
 				boolean ascend = waypoint.y() > player.getBlockY();
+				// Straight up only needs jump: pressing forward while looking up pushes the body off the open column.
+				boolean across = !centredUnder(player.getX(), player.getZ(), waypoint);
+				if (across) MinecraftUnderwaterEscapeController.this.camera.lookAt(minecraft, target);
 				MinecraftUnderwaterEscapeController.this.movement.moveDirectional(
 					minecraft,
-					true,
+					across,
 					false,
 					false,
 					false,
@@ -92,7 +97,7 @@ public final class MinecraftUnderwaterEscapeController {
 			activeClient = minecraft;
 		}
 		if (searchSession == null || mode != requestedMode) {
-			begin(minecraft, requestedMode, remainingAirTicks);
+			begin(minecraft, requestedMode, remainingAirTicks, tick);
 		}
 		if (searchSession != null && searchStatus == UnderwaterEscapeSearch.SearchStatus.SEARCHING) {
 			UnderwaterEscapeSearch.SearchUpdate update = searchSession.advance(
@@ -111,11 +116,19 @@ public final class MinecraftUnderwaterEscapeController {
 				targetSatisfied
 			)
 		);
+		if (navigation.phase() == UnderwaterEscapeNavigator.Phase.EXHAUSTED
+			&& requestedMode == UnderwaterEscapeSearch.SearchMode.BREATHABLE) {
+			// No verified route fits. Rising is never worse than sitting on the bottom: a player holds jump. Search
+			// again from wherever that leaves the body.
+			if (player.isUnderWater()) movement.swimUp(minecraft, false, false, tick);
+			if (tick - searchStartedTick >= RESEARCH_INTERVAL_TICKS) begin(minecraft, requestedMode, remainingAirTicks, tick);
+			return snapshot();
+		}
 		if (navigation.phase() == UnderwaterEscapeNavigator.Phase.RESEARCH_REQUIRED) {
 			// Navigation left the player in a connected cell outside every route
 			// computed from the old origin. Re-anchor the bounded search here;
 			// navigator.restartSearch() deliberately retains attempted/failed targets.
-			begin(minecraft, requestedMode, remainingAirTicks);
+			begin(minecraft, requestedMode, remainingAirTicks, tick);
 			movement.stop(minecraft);
 			return snapshot();
 		}
@@ -139,9 +152,12 @@ public final class MinecraftUnderwaterEscapeController {
 	private void begin(
 		Minecraft minecraft,
 		UnderwaterEscapeSearch.SearchMode requestedMode,
-		int remainingAirTicks
+		int remainingAirTicks,
+		long tick
 	) {
 		navigator.restartSearch();
+		navigator.swimDirectly(requestedMode == UnderwaterEscapeSearch.SearchMode.BREATHABLE);
+		searchStartedTick = tick;
 		NavigationRelease.release(navigationFacade);
 		mode = Objects.requireNonNull(requestedMode, "requestedMode");
 		LocalPlayer player = minecraft.player;
@@ -196,6 +212,11 @@ public final class MinecraftUnderwaterEscapeController {
 			breathable,
 			safeStanding
 		);
+	}
+
+	static boolean centredUnder(double x, double z, UnderwaterEscapeSearch.Position waypoint) {
+		double dx = waypoint.x() + 0.5D - x, dz = waypoint.z() + 0.5D - z;
+		return dx * dx + dz * dz <= 0.3D * 0.3D;
 	}
 
 	/** Predicate shared with idle-drowning resolution; unlike surface memory it rejects water. */

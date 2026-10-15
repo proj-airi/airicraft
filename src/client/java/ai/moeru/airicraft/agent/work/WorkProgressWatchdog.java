@@ -71,7 +71,27 @@ public final class WorkProgressWatchdog {
 				// Waiting for the dragon to perch is the fight; the task has its own no-progress deadline.
 				|| w.label().equals("FIGHT_ENDER_DRAGON")
 				// Mining one obsidian stands still for 188 ticks; the task has its own no-progress deadline.
-				|| w.label().equals("COLLECT_OBSIDIAN")) continue;
+				|| w.label().equals("COLLECT_OBSIDIAN")
+				// An eye of ender flies for 80 ticks while the body stands still; the task has its own deadlines.
+				|| w.label().equals("LOCATE_STRONGHOLD")
+				// Waiting at the spawner for blazes stands still; the task has its own no-blaze and overall deadlines.
+				|| w.label().equals("COLLECT_BLAZE_RODS")
+				// Placing and breaking gravel in place stands still; the task has its own step and overall deadlines.
+				|| w.label().equals("COLLECT_FLINT")
+				// A night in a dug shelter stands still for 10,000 ticks; the task has its own leg, shelter and overall deadlines.
+				|| w.label().equals("EXPLORE_FOR")
+				// A night in a shelter changes nothing for minutes; the task has its own wait cap and exit deadline.
+				|| w.label().equals("SHELTER_FOR_NIGHT")
+				// Waiting in a safe spot for endermen to come stands still; the task has its own no-enderman and overall deadlines.
+				|| w.label().equals("COLLECT_ENDER_PEARLS")
+				// Waiting for monsters to clear and lying in bed stand still; the task has its own monster wait and overall deadline.
+				|| w.label().equals("SLEEP_IN_BED")
+				// Waiting for animals to wander into sight and for the furnace to cook stand still; the task has its own
+				// no-animal, per-animal and overall deadlines.
+				|| w.label().equals("HUNT_FOOD")
+				// Aiming eyes at frames, waiting for the portal to light and for the End to load stand still; the task has its own
+				// per-frame, lighting and overall deadlines.
+				|| w.label().equals("ENTER_END_PORTAL")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			// Cells are recorded while navigating too, so a restart between attempts finds nothing new.

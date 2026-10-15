@@ -33,6 +33,35 @@ public final class SegmentPlanning {
 	 */
 	public static SearchResult plan(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal, GridPos target,
 		SearchBudget budget, BooleanSupplier cancelled) {
+		if (!deepGoal(start, target)) return planLevel(terrain, policy, start, goal, target, budget, cancelled);
+		// Through open caves the search finds a deep goal quickly; through rock it would only spend the budget.
+		SearchBudget searchBudget = new SearchBudget(Math.max(1, budget.maxExpanded() / 3),
+			Math.max(1, budget.timeoutNanos() / 3), budget.minPartialBlocks(), budget.heuristicWeight());
+		SearchResult result = planLevel(terrain, policy, start, goal, target, searchBudget, cancelled);
+		return descendWhenStuck(terrain, policy, start, target, result);
+	}
+
+	static boolean deepGoal(GridPos start, GridPos target) {
+		return target != null && start.y() - target.y() >= Staircase.MIN_DROP;
+	}
+
+	/**
+	 * A goal far below solid ground is out of the search's reach: every broken block costs, so the
+	 * budget runs out near the surface. When the search did not get the body most of the way down,
+	 * a dug {@link Staircase} toward the target comes back as the next segment instead.
+	 */
+	static SearchResult descendWhenStuck(TerrainView terrain, MovementPolicy policy, GridPos start, GridPos target,
+		SearchResult result) {
+		if (result instanceof SearchResult.Found || result instanceof SearchResult.Cancelled) return result;
+		int searchedDescent = result instanceof SearchResult.Partial partial ? start.y() - partial.path().end().y() : 0;
+		if (searchedDescent >= (start.y() - target.y()) / 2) return result;
+		Path stairs = Staircase.build(terrain, policy, start, target, Staircase.MAX_STEPS);
+		if (stairs == null || start.y() - stairs.end().y() <= searchedDescent) return result;
+		return new SearchResult.Partial(stairs, SearchResult.Reason.SEGMENT, result.stats());
+	}
+
+	private static SearchResult planLevel(TerrainView terrain, MovementPolicy policy, GridPos start, Goal goal, GridPos target,
+		SearchBudget budget, BooleanSupplier cancelled) {
 		Goal waypoint = target == null ? null : waypoint(start, target.x(), target.z());
 		if (waypoint == null) return PathSearch.search(terrain, policy, start, goal, budget, cancelled);
 		SearchBudget segmentBudget = new SearchBudget(Math.min(budget.maxExpanded(), WAYPOINT_MAX_EXPANDED),

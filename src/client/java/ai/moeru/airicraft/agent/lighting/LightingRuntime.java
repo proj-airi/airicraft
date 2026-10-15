@@ -77,6 +77,8 @@ public final class LightingRuntime {
 			|| player.isUsingItem() || minecraft.gameMode.isDestroying()
 			|| player.containerMenu != player.inventoryMenu
 			|| !player.containerMenu.getCarried().isEmpty()) return Optional.empty();
+		// Only overworld mobs need darkness to spawn; Nether and End spawns ignore light, so torches there are waste.
+		if (!minecraft.level.dimensionType().hasSkyLight()) return Optional.empty();
 		BlockPos origin = player.blockPosition();
 		// Do not interpret an unloaded edge of the sampling area as darkness.
 		for (BlockPos sample : BlockPos.betweenClosed(origin.offset(-2, 0, -2), origin.offset(2, 0, 2))) {
@@ -190,6 +192,9 @@ public final class LightingRuntime {
 			: Blocks.TORCH.defaultBlockState();
 		if (!(targetState.isAir() || targetState.canBeReplaced()) || !minecraft.level.getFluidState(target).isEmpty()
 			|| !torchState.canSurvive(minecraft.level, target)) {
+			return false;
+		}
+		if (opensOnUse(minecraft.level, candidate.support())) {
 			return false;
 		}
 		Vec3 hit = Vec3.atCenterOf(candidate.support()).add(
@@ -313,6 +318,16 @@ public final class LightingRuntime {
 	}
 
 	public record PlacementEvent(Map<String, Object> payload) {
+	}
+
+	/**
+	 * Whether using an item on this block opens or works it instead of placing against it. In a playtest a torch
+	 * placed against a carried furnace opened the furnace instead, every few seconds, and the open screen blocked
+	 * all digging until the session ended.
+	 */
+	private static boolean opensOnUse(net.minecraft.world.level.Level level, BlockPos support) {
+		BlockState state = level.getBlockState(support);
+		return state.hasBlockEntity() || state.getMenuProvider(level, support) != null;
 	}
 
 	record PlacementCandidate(BlockPos target, BlockPos support, Direction face, String side, PlacementSurface surface) {

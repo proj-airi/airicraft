@@ -14,6 +14,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,6 +35,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private int targetIndex;
 	private int brokenTargets;
 	private int skippedTargets;
+	private final List<BlockPos> brokenPositions = new ArrayList<>();
 	private boolean breakingActive;
 	private long targetStartTick = -1L;
 	private int aimWaitTicks;
@@ -46,7 +48,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, new CameraController());
 	}
 
-	private BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
+	BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
 		this.cameraController = Objects.requireNonNull(cameraController);
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
@@ -70,6 +72,10 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		LocalPlayer player = minecraft == null ? null : minecraft.player;
 		if (minecraft == null || minecraft.gameMode == null || minecraft.level == null || player == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.UNKNOWN, "world_unavailable"));
+		}
+		if (ScreenCloseSafety.closeLeftoverContainer(player, "break_blocks_open_screen_close")) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "closing_open_screen");
+			return Optional.empty();
 		}
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "interaction_busy"));
@@ -111,6 +117,13 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		if (!target.expectedBlockIds().contains(currentBlockId)) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_block_mismatch targetPos=" + compactPos(pos) + " beforeBlockId=" + currentBlockId));
 		}
+		if (!breakingActive && supportsBody(player, pos)) {
+			String unsafe = unsafeDropUnder(pos, below -> minecraft.level.hasChunkAt(below)
+				&& !minecraft.level.getBlockState(below).getCollisionShape(minecraft.level, below).isEmpty(),
+				below -> !minecraft.level.getFluidState(below).isEmpty() || minecraft.level.getBlockState(below).is(net.minecraft.tags.BlockTags.FIRE));
+			if (unsafe != null) return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, unsafe + " targetPos=" + compactPos(pos)
+				+ "; the body stands on it: dig a staircase with navigate_to instead"));
+		}
 		if (!withinInteractionRange(player, Vec3.atCenterOf(pos))) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_out_of_range targetPos=" + compactPos(pos)));
 		}
@@ -149,6 +162,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		BlockState after = minecraft.level.hasChunkAt(pos) ? minecraft.level.getBlockState(pos) : state;
 		if (satisfied(after)) {
 			brokenTargets++;
+			brokenPositions.add(pos.immutable());
 			targetIndex++;
 			breakingActive = false;
 			targetStartTick = -1L;
@@ -188,6 +202,29 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.FAILED, failure.detail(), null, failure.code()));
 	}
 
+	/** Highest fall the body takes without damage. */
+	static final int SAFE_DROP = 3;
+
+	private static boolean supportsBody(LocalPlayer player, BlockPos pos) {
+		var box = player.getBoundingBox();
+		return pos.getY() == (int) Math.floor(player.getY() - 0.01D) && box.maxX > pos.getX() && box.minX < pos.getX() + 1
+			&& box.maxZ > pos.getZ() && box.minZ < pos.getZ() + 1;
+	}
+
+	/**
+	 * Why breaking the block under the body is unsafe, or null: a fall of more than {@link #SAFE_DROP} blocks, or a
+	 * landing in lava, water or fire. A session lost its whole kit by breaking soul soil over a blaze spawner room.
+	 */
+	static String unsafeDropUnder(BlockPos target, java.util.function.Predicate<BlockPos> solid,
+		java.util.function.Predicate<BlockPos> hazard) {
+		for (int depth = 1; depth <= SAFE_DROP; depth++) {
+			BlockPos below = target.below(depth);
+			if (hazard.test(below)) return "unsafe_drop_into_hazard depth=" + depth;
+			if (solid.test(below)) return null;
+		}
+		return "unsafe_drop_below_target minDrop=" + (SAFE_DROP + 1);
+	}
+
 	private static boolean satisfied(BlockState state) {
 		return state.isAir() || state.getBlock() instanceof LiquidBlock;
 	}
@@ -224,6 +261,11 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		return new TaskExecutionSnapshot(state, request.taskId(), null, "BlockBreak", event, null, null);
 	}
 
+	/** The cells this task has broken so far, in order (targets found already empty are not among them). */
+	List<BlockPos> brokenPositions() {
+		return List.copyOf(brokenPositions);
+	}
+
 	@Override
 	public TaskExecutionSnapshot snapshot() {
 		return snapshot;
@@ -252,6 +294,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		targetIndex = 0;
 		brokenTargets = 0;
 		skippedTargets = 0;
+		brokenPositions.clear();
 		breakingActive = false;
 		targetStartTick = -1L;
 		aimWaitTicks = 0;

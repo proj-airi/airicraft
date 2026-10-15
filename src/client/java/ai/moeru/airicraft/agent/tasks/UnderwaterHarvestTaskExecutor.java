@@ -113,6 +113,9 @@ public final class UnderwaterHarvestTaskExecutor implements WorldTaskExecutor {
 		if (run == null) {
 			return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "missing_underwater_harvest_origin"));
 		}
+		if (ScreenCloseSafety.closeLeftoverContainer(player, "underwater_harvest_open_screen_close")) {
+			return Optional.empty();
+		}
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
 			return fail(request, TaskFailure.of(TaskFailureCode.BUSY, "interaction_busy"));
 		}

@@ -25,7 +25,12 @@ public final class ArmorSelector {
 	 * @param remaining     remaining durability; Integer.MAX_VALUE for unbreakable pieces
 	 * @param locked        worn piece that cannot come off (curse of binding), or a cursed carried piece
 	 */
-	public record Piece(String slot, int inventorySlot, String itemId, double armor, double toughness, int remaining, boolean locked) {
+	public record Piece(String slot, int inventorySlot, String itemId, double armor, double toughness, int remaining, boolean locked,
+		boolean piglinSafe) {
+		public Piece(String slot, int inventorySlot, String itemId, double armor, double toughness, int remaining, boolean locked) {
+			this(slot, inventorySlot, itemId, armor, toughness, remaining, locked, false);
+		}
+
 		boolean worn() {
 			return inventorySlot < 0;
 		}
@@ -36,8 +41,39 @@ public final class ArmorSelector {
 
 	/** Swaps the policy allows: none when disabled, and never a carried piece it reserves. */
 	public static List<Swap> choose(List<Piece> pieces, ArmorPolicy policy) {
+		return choose(pieces, policy, false);
+	}
+
+	/**
+	 * As {@link #choose(List, ArmorPolicy)}; in the Nether one golden piece stays on, since piglins attack a player
+	 * wearing none. A playtest body in iron and leather was killed by a piglin in two hits on its way to a fortress.
+	 */
+	public static List<Swap> choose(List<Piece> pieces, ArmorPolicy policy, boolean nether) {
 		if (!policy.enabled()) return List.of();
-		return choose(pieces.stream().filter(piece -> piece.worn() || !policy.reserves(piece.itemId())).toList());
+		List<Piece> allowed = pieces.stream().filter(piece -> piece.worn() || !policy.reserves(piece.itemId())).toList();
+		return nether ? chooseInNether(allowed) : choose(allowed);
+	}
+
+	static List<Swap> chooseInNether(List<Piece> pieces) {
+		List<Piece> wornSafe = pieces.stream().filter(piece -> piece.worn() && piece.piglinSafe()).toList();
+		if (wornSafe.isEmpty()) {
+			Map<String, Piece> worn = new LinkedHashMap<>();
+			for (Piece piece : pieces) if (piece.worn()) worn.put(piece.slot(), piece);
+			// Put on the golden piece that gives up the least protection where it goes.
+			return pieces.stream()
+				.filter(piece -> !piece.worn() && piece.piglinSafe() && !piece.locked() && piece.remaining() >= MIN_REMAINING_DURABILITY)
+				.filter(piece -> worn.get(piece.slot()) == null || !worn.get(piece.slot()).locked())
+				.max(Comparator.comparingDouble((Piece piece) -> protection(piece)
+					- (worn.get(piece.slot()) == null ? 0.0D : protection(worn.get(piece.slot())))))
+				.map(piece -> List.of(new Swap(piece.slot(), piece.inventorySlot(), piece.itemId(),
+					worn.get(piece.slot()) == null ? null : worn.get(piece.slot()).itemId())))
+				.orElseGet(() -> choose(pieces));
+		}
+		// Never trade the only golden piece for better armor while here.
+		boolean onlyOne = wornSafe.size() == 1;
+		return choose(pieces).stream()
+			.filter(swap -> !onlyOne || !swap.slot().equals(wornSafe.getFirst().slot()))
+			.toList();
 	}
 
 	/** One swap per slot whose best carried piece protects more than what is worn there. */

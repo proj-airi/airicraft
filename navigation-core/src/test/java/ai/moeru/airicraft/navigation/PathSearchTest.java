@@ -183,6 +183,41 @@ class PathSearchTest {
 	}
 
 	@Test
+	void keepsAMarginFromLavaAtBodyHeight() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			#######
+			#######
+			#######
+			#######
+			y1
+			...l...
+			S.....G
+			.......
+			.......
+			""");
+
+		Path path = found(world.search(WALK_ONLY));
+
+		assertTrue(path.positions().stream().noneMatch(pos -> pos.z() <= 1 && pos.x() >= 2 && pos.x() <= 4),
+			"never beside lava when a detour exists: " + path.positions());
+	}
+
+	@Test
+	void neverStepsWhereLavaTouchesTheBody() {
+		AsciiTerrain world = AsciiTerrain.parse("""
+			y0
+			#######
+			#######
+			y1
+			lllllll
+			S.....G
+			""");
+
+		assertFalse(world.search(WALK_ONLY) instanceof SearchResult.Found, "a corridor along lava at body height is no route");
+	}
+
+	@Test
 	void avoidsStandingOnMagma() {
 		AsciiTerrain world = AsciiTerrain.parse("""
 			y0

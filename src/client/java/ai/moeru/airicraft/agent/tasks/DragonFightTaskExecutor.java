@@ -663,6 +663,18 @@ public final class DragonFightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	@Override public TaskExecutionSnapshot snapshot() { return snapshot; }
+	/** The reflex hands the same task back: keep the crystals, cages and counters; let go of the bow, breaking and route. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		navigationStall.clear();
+		navigationRestTick = -1;
+		// The body may have been moved off its waiting spot.
+		waitingSpotReached = false;
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override public void onWorldLeave() {
 		release();
 		request = null;

@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -111,6 +112,13 @@ public final class Actuator {
 	public InteractionResult interact(Minecraft minecraft, LocalPlayer player, Entity target, InteractionHand hand) {
 		if (minecraft == null || minecraft.gameMode == null || !holding()) return InteractionResult.FAIL;
 		return minecraft.gameMode.interact(player, target, hand);
+	}
+
+	/** Gets out of bed, as the in-bed screen's Leave Bed button does; false when not asleep or a stronger holder keeps the hands. */
+	public boolean leaveBed(Minecraft minecraft, LocalPlayer player) {
+		if (minecraft == null || player == null || !player.isSleeping() || minecraft.getConnection() == null || !holding()) return false;
+		minecraft.getConnection().send(new ServerboundPlayerCommandPacket(player, ServerboundPlayerCommandPacket.Action.STOP_SLEEPING));
+		return true;
 	}
 
 	/** Holds the use key until {@link #releaseUse}; false when a stronger holder keeps the channel. */

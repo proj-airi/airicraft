@@ -15,6 +15,56 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SurvivalReflexRuntimeTest {
+	@Test
+	void aGhastAfterTheBodyIsEngagedFarPastThePolicyDistance() {
+		ReflexPolicy policy = ReflexPolicy.defaults();
+		// Death in a Nether fortress: the ghast drifted past 16 blocks and kept shooting at an idle body.
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, true, false, true));
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 60.0D, true, true, false));
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, true, false, false),
+			"a ghast that has not noticed the body does not stop a walk");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 30.0D, false, true, true), "out of sight");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 70.0D, true, true, true), "past its reach");
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:skeleton", 30.0D, true, true, true));
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:ghast", 12.0D, true, false, false), "inside the usual gate");
+		assertFalse(SurvivalReflexRuntime.engages(new ReflexPolicy(false, true, 16, true), true, "minecraft:ghast", 30.0D, true, true, true));
+	}
+
+	@Test
+	void aBlazeShootingFromAfarIsEngagedAndHiddenFrom() {
+		ReflexPolicy policy = ReflexPolicy.defaults();
+		// Death on a walk to a fortress spawner: a blaze 30 blocks off set the body alight three times.
+		assertTrue(SurvivalReflexRuntime.engages(policy, true, "minecraft:blaze", 30.0D, true, false, true));
+		assertFalse(SurvivalReflexRuntime.engages(policy, true, "minecraft:blaze", 50.0D, true, true, true), "past its reach");
+		assertTrue(SurvivalReflexRuntime.beyondMelee("minecraft:blaze", 20.0D));
+		assertFalse(SurvivalReflexRuntime.beyondMelee("minecraft:blaze", 3.0D), "a blaze in reach is fought");
+		assertTrue(SurvivalReflexRuntime.beyondMelee("minecraft:ghast", 3.0D));
+	}
+
+	@Test
+	void aThreatThatSlipsBehindCoverStaysEngagedBriefly() {
+		assertTrue(SurvivalReflexRuntime.inSightLately(true, null, 100L));
+		assertTrue(SurvivalReflexRuntime.inSightLately(false, 80L, 100L), "a skeleton bobbing behind soul sand");
+		assertFalse(SurvivalReflexRuntime.inSightLately(false, 50L, 100L));
+		assertFalse(SurvivalReflexRuntime.inSightLately(false, null, 100L));
+	}
+
+	@Test
+	void fireTurnsALavaEscapeOnlyWhenNoLavaWasInvolved() {
+		assertEquals(SurvivalReflexCause.FIRE, SurvivalReflexRuntime.hazardCause(false, SurvivalReflexCause.MOB_ATTACK));
+		assertEquals(SurvivalReflexCause.LAVA, SurvivalReflexRuntime.hazardCause(true, SurvivalReflexCause.FIRE));
+		assertEquals(SurvivalReflexCause.LAVA, SurvivalReflexRuntime.hazardCause(false, SurvivalReflexCause.LAVA),
+			"crossing fire on the bank stays a lava escape");
+	}
+
+	@Test
+	void waterIsNeverPouredWhereItEvaporates() {
+		assertEquals(SurvivalReflexRuntime.ExtinguishStep.DONE,
+			SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false, true));
+		assertEquals(SurvivalReflexRuntime.ExtinguishStep.POUR,
+			SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false, false));
+	}
+
 	@Test void lavaEscapeHeadsForTheNearestBankEvenAboveTheSunkenFeet() {
 		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
 		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
@@ -37,6 +87,57 @@ class SurvivalReflexRuntimeTest {
 		java.util.function.Predicate<net.minecraft.core.BlockPos> wall = cell -> cell.getX() == 1 && cell.getY() >= 28;
 		assertEquals(new net.minecraft.core.BlockPos(-4, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, wall));
 		assertEquals(new net.minecraft.core.BlockPos(2, 28, 0), SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
+	}
+
+	@Test void lavaEscapePrefersABankThatLavaDoesNotTouch() {
+		var feet = new net.minecraft.core.BlockPos(0, 26, 0);
+		var position = new net.minecraft.world.phys.Vec3(0.5, 26.2, 0.5);
+		java.util.function.Predicate<net.minecraft.core.BlockPos> bank = cell -> cell.getY() == 26 && cell.getZ() == 0
+			&& (cell.getX() == 1 || cell.getX() == -2);
+		// Lava falls beside the nearer bank: the farther one wins by less than the penalty but not by more.
+		java.util.function.Predicate<net.minecraft.core.BlockPos> besideLava = cell -> cell.getX() == 1;
+		assertEquals(new net.minecraft.core.BlockPos(-2, 26, 0),
+			SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false, besideLava));
+		assertEquals(new net.minecraft.core.BlockPos(1, 26, 0),
+			SurvivalReflexRuntime.lavaEscapeTarget(feet, position, 5, bank, cell -> false));
+	}
+
+	@Test void digsInOnlyWithRoomBeforeTheNearestMeleeMobArrives() {
+		assertFalse(SurvivalReflexRuntime.roomToDig(1.5D));
+		assertTrue(SurvivalReflexRuntime.roomToDig(9.0D));
+		assertTrue(SurvivalReflexRuntime.roomToDig(Double.POSITIVE_INFINITY));
+	}
+
+	@Test void raisesTheShieldAgainstCloseMeleeOnlyWhileTheWeaponRechargesAndWhenOutnumberedOrHurt() {
+		assertTrue(SurvivalReflexRuntime.guardAgainstMelee(.3F, 2, 2.0D, 16F, 20F), "two zombies close, sword recharging");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(1F, 2, 2.0D, 16F, 20F), "sword ready: swing instead");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(.3F, 1, 2.0D, 18F, 20F), "one mob and healthy: just fight");
+		assertTrue(SurvivalReflexRuntime.guardAgainstMelee(.3F, 1, 2.0D, 10F, 20F), "one mob but hurt");
+		assertFalse(SurvivalReflexRuntime.guardAgainstMelee(.3F, 3, 5.0D, 10F, 20F), "nothing in reach yet");
+	}
+
+	@Test void digsInEarlyOnlyWhenOutnumberedWithNoWayToHeal() {
+		assertTrue(SurvivalReflexRuntime.losingFight(9.18F, 2, false));
+		assertFalse(SurvivalReflexRuntime.losingFight(9.18F, 1, false));
+		assertFalse(SurvivalReflexRuntime.losingFight(9.18F, 2, true));
+		assertFalse(SurvivalReflexRuntime.losingFight(16.0F, 3, false));
+	}
+
+	@Test void drowningEscapeIsSizedByAirAndHealthLeft() {
+		assertEquals(160, SurvivalReflexRuntime.survivableTicks(20, 16.0F));
+		assertEquals(0, SurvivalReflexRuntime.survivableTicks(-5, 2.0F));
+		// The lake-bed death: 20 air and 16 health still reach open water seven cells away.
+		assertTrue(ai.moeru.airicraft.agent.tasks.UnderwaterEscapeSearch.maxPathStepsForAir(
+			SurvivalReflexRuntime.survivableTicks(20, 16.0F)) >= 7);
+	}
+
+	@Test void noContactHoldsResumeByThemselvesOnlyAFewTimesAWindow() {
+		var history = new java.util.ArrayDeque<Long>();
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 100));
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 200));
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 300));
+		assertFalse(SurvivalReflexRuntime.admitNoContactResume(history, 400), "a fourth within the window goes to the planner");
+		assertTrue(SurvivalReflexRuntime.admitNoContactResume(history, 100 + SurvivalReflexRuntime.NO_CONTACT_RESUME_WINDOW + 1));
 	}
 
 	@Test void combatMealNeedsShelterAndAFullUseWindow() {
@@ -101,13 +202,44 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(((java.util.Map<?, ?>) threatsField.get(runtime)).isEmpty());
 	}
 
-	@Test void blocksAnApproachingCreeperBlastBeforeShieldStartupDelay() {
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.35F, false));
-		assertTrue(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.7F, false));
-		assertTrue(SurvivalReflexRuntime.shouldBlockCreeper(8, 1, 0.8F, true));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(8, 1, 0.8F, false));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3, -1, 0.35F, false));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3, 1, 0.1F, false));
+	@Test void aTaskThatFightsBlazesKeepsThemFromTheReflexUntilItEnds() throws Exception {
+		var runtime = new SurvivalReflexRuntime(null);
+		var threatsField = SurvivalReflexRuntime.class.getDeclaredField("observedThreats");
+		threatsField.setAccessible(true);
+		var threats = (java.util.Map<?, ?>) threatsField.get(runtime);
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(1, "fireball", "early-blaze", "Blaze", "minecraft:blaze", true, false));
+		assertTrue(threats.containsKey("early-blaze"));
+
+		runtime.taskOwnsThreatTypes(java.util.Set.of("minecraft:blaze"));
+		assertFalse(threats.containsKey("early-blaze"), "a blaze seen before the task started is the task's now");
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(2, "fireball", "blaze", "Blaze", "minecraft:blaze", true, false));
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(2, "mob_attack", "skeleton", "Wither Skeleton",
+			"minecraft:wither_skeleton", true, false));
+		assertFalse(threats.containsKey("blaze"), "the task shields, strafes and hides from blazes itself");
+		assertTrue(threats.containsKey("skeleton"), "other mobs stay the reflex's");
+		assertEquals(java.util.Set.of("minecraft:blaze"), runtime.decisionEvidence().get("taskOwnedThreatTypes"));
+
+		runtime.taskOwnsThreatTypes(java.util.Set.of());
+		runtime.observeDamage(new SurvivalReflexRuntime.DamageObservation(3, "fireball", "blaze", "Blaze", "minecraft:blaze", true, false));
+		assertTrue(threats.containsKey("blaze"), "once the task ends a burning blaze is a reflex threat again");
+	}
+
+	@Test void theNightBunkerStateShowsInTheEvidenceAndIsForgottenOnReset() throws Exception {
+		var runtime = new SurvivalReflexRuntime(null);
+		var field = SurvivalReflexRuntime.class.getDeclaredField("nightBunker");
+		field.setAccessible(true);
+		var night = (NightBunker) field.get(runtime);
+		for (long tick : new long[]{1, 2, 3}) night.flightStarted(tick);
+		assertEquals(NightBunker.REPEATED_FLIGHT, night.update(4, true, 18_000, false, false));
+		runtime.taskHandlesNight(true);
+		var evidence = (java.util.Map<?, ?>) runtime.decisionEvidence().get("nightBunker");
+		assertEquals(NightBunker.REPEATED_FLIGHT, evidence.get("due"));
+		assertEquals(3, evidence.get("flights"));
+		assertEquals(true, evidence.get("taskHandlesNight"));
+		assertNull(evidence.get("stay"), "nothing dug yet");
+		runtime.reset(null);
+		assertNull(night.due(), "a death or world leave forgets the night");
+		assertEquals(0, night.flightsInWindow());
 	}
 
 	@Test void combatRoutingStartsOnceAndReplansOnlyWhenTheTargetMoves() {
@@ -383,11 +515,6 @@ class SurvivalReflexRuntimeTest {
 			"job-1", "action-1", List.of(), 10.0F, 20.0F, 100, 300, 10L, 20L, 0, null
 		);
 	}
-	@Test void creeperRetreatsDuringCooldownOrFuseButReengagesAfterReset() {
-		assertTrue(SurvivalReflexRuntime.creeperShouldKite(.2F, 0));
-		assertTrue(SurvivalReflexRuntime.creeperShouldKite(1, .3F));
-		assertFalse(SurvivalReflexRuntime.creeperShouldKite(1, 0));
-	}
 	@Test void creeperEscapePersistsAfterFuseReversesUntilPursuerIsWellClear() {
 		boolean fleeing = SurvivalReflexRuntime.creeperEscapeActive(false, 2.5, 1, .1F, false);
 		assertTrue(fleeing, "Start escaping at ignition, before a late fuse");
@@ -416,5 +543,29 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(window.active(599, 20));
 		assertFalse(window.active(600, 20));
 		assertFalse(window.active(100, 4));
+	}
+
+	@Test void burningOutOfLavaPoursWaterAtTheFeetThenScoopsItBack() {
+		var POUR = SurvivalReflexRuntime.ExtinguishStep.POUR;
+		var SCOOP = SurvivalReflexRuntime.ExtinguishStep.SCOOP;
+		var DONE = SurvivalReflexRuntime.ExtinguishStep.DONE;
+		assertEquals(POUR, SurvivalReflexRuntime.extinguishStep(true, false, false, 0, true, false));
+		// No water bucket, or not burning: nothing to do.
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(true, false, false, 0, false, true));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(false, false, false, 0, true, false));
+		// Poured and the fire is out: scoop the water back into the empty bucket.
+		assertEquals(SCOOP, SurvivalReflexRuntime.extinguishStep(false, true, true, 0, false, true));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(false, false, true, 0, true, false));
+		// A pour that did not land is retried, but not forever.
+		assertEquals(POUR, SurvivalReflexRuntime.extinguishStep(true, false, true, 3, true, false));
+		assertEquals(DONE, SurvivalReflexRuntime.extinguishStep(true, false, true,
+			SurvivalReflexRuntime.EXTINGUISH_MAX_ATTEMPTS, true, false));
+	}
+
+	@Test void mobDamageAfterTheTacticalWindowOpensEndsIt() {
+		var window = new SurvivalReflexRuntime.TacticalWindow(1300, 100);
+		assertTrue(window.active(200, 14, 100));
+		assertTrue(window.active(200, 14, 40));
+		assertFalse(window.active(200, 11, 150));
 	}
 }

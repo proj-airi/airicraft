@@ -83,6 +83,15 @@ public final class WorkProjection {
 			case LURE_ENTITIES -> job.lureEntities();
 			case FIGHT_ENDER_DRAGON -> Map.of("target", "minecraft:ender_dragon");
 			case COLLECT_OBSIDIAN -> job.collectObsidian();
+			case LOCATE_STRONGHOLD -> job.locateStronghold();
+			case EXPLORE_FOR -> job.exploreFor();
+			case COLLECT_BLAZE_RODS -> job.collectBlazeRods();
+			case COLLECT_FLINT -> job.collectFlint();
+			case SHELTER_FOR_NIGHT -> job.shelterForNight();
+			case COLLECT_ENDER_PEARLS -> job.collectEnderPearls();
+			case SLEEP_IN_BED -> job.sleepInBed();
+			case HUNT_FOOD -> job.huntFood();
+			case ENTER_END_PORTAL -> job.enterEndPortal();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;

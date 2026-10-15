@@ -48,11 +48,12 @@ class EntityInteractionTaskExecutorTest {
 	void refreshesNavigationChaseGoalWhenTargetMovedEnoughOrRefreshIntervalElapsed() {
 		GoalPosition current = new GoalPosition(10, 64, 20, false);
 
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(null, current, 0));
-		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 0));
-		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(11, 64, 20, false), 0));
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(12, 64, 20, false), 0));
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(null, current, 0, true));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 0, false));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(11, 64, 20, false), 0, false));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(12, 64, 20, false), 0, true));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10, false));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10, true), "a running route to a target that stayed put is kept");
 	}
 
 	@Test
@@ -62,6 +63,23 @@ class EntityInteractionTaskExecutorTest {
 		assertFalse(EntityInteractionTaskExecutor.shouldUseDirectChase(10.1D, true, false));
 		assertFalse(EntityInteractionTaskExecutor.shouldUseDirectChase(9.9D, false, false));
 		assertFalse(EntityInteractionTaskExecutor.shouldUseDirectChase(9.9D, true, true));
+	}
+
+	@Test
+	void directChaseStopsAtADropDeeperThanASafeFall() {
+		var from = new net.minecraft.world.phys.Vec3(0.5D, 64.0D, 0.5D);
+		var east = new net.minecraft.world.phys.Vec3(8.5D, 64.0D, 0.5D);
+		// Flat ground: the floor under the next step is at y=63.
+		assertFalse(EntityInteractionTaskExecutor.directStepDropsDeeperThan(from, east, 3, cell -> cell.getY() <= 63));
+		// A three-block step down is still a safe fall.
+		assertFalse(EntityInteractionTaskExecutor.directStepDropsDeeperThan(from, east, 3,
+			cell -> cell.getX() == 0 ? cell.getY() <= 63 : cell.getY() <= 60));
+		// A ravine edge: nothing under the next step for ten blocks.
+		assertTrue(EntityInteractionTaskExecutor.directStepDropsDeeperThan(from, east, 3,
+			cell -> cell.getX() == 0 ? cell.getY() <= 63 : cell.getY() <= 50));
+		// A wall ahead is not a drop.
+		assertFalse(EntityInteractionTaskExecutor.directStepDropsDeeperThan(from, east, 3,
+			cell -> cell.getX() == 0 ? cell.getY() <= 63 : cell.getY() <= 64));
 	}
 
 	@Test

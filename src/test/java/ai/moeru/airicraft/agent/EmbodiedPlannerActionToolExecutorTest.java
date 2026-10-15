@@ -3,10 +3,13 @@ package ai.moeru.airicraft.agent;
 import ai.moeru.airicraft.agent.actions.ActionGraphExecutionSnapshot;
 import ai.moeru.airicraft.agent.actions.ActionGraphExecutionState;
 import ai.moeru.airicraft.agent.actions.ActionRoute;
+import ai.moeru.airicraft.agent.goals.GoalSnapshot;
+import ai.moeru.airicraft.agent.goals.GoalType;
 import ai.moeru.airicraft.agent.job.ActiveJobType;
 import ai.moeru.airicraft.agent.llm.PlannerToolCall;
 import ai.moeru.airicraft.agent.reflex.SurvivalReflexState;
 import ai.moeru.airicraft.agent.tasks.TaskExecutionSnapshot;
+import ai.moeru.airicraft.agent.tasks.TaskExecutionState;
 import ai.moeru.airicraft.agent.tasks.TaskSnapshot;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
@@ -39,6 +42,26 @@ class EmbodiedPlannerActionToolExecutorTest {
 		assertTrue(execute("eat_food", ActionGraphExecutionState.REPLANNING, false, true, SurvivalReflexState.IDLE, false).contains("item_use_active"));
 		assertTrue(execute("start_action_goal", ActionGraphExecutionState.REPLANNING, false, true, SurvivalReflexState.IDLE, false).contains("item_use_active"));
 		assertEquals("executed:inspect_inventory", execute("inspect_inventory", ActionGraphExecutionState.REPLANNING, false, true, SurvivalReflexState.IDLE, false));
+	}
+
+	@Test void eatingIsAllowedDuringAPlainWalkButNotOtherJobs() {
+		var walk = new TaskExecutionSnapshot(TaskExecutionState.RUNNING, "task-1",
+			new GoalSnapshot(GoalType.NAVIGATE_TO, null, 5L, "test"), "navigate", null, null, null);
+		var mine = new TaskExecutionSnapshot(TaskExecutionState.RUNNING, "task-2",
+			new GoalSnapshot(GoalType.MINE_BLOCKS, null, 5L, "test"), "mine", null, null, null);
+		assertEquals("executed:eat_food", executeWithoutGraph("eat_food", walk));
+		assertTrue(executeWithoutGraph("navigate_to", walk).contains("active_task_in_progress"));
+		assertTrue(executeWithoutGraph("eat_food", mine).contains("active_task_in_progress"));
+	}
+
+	private static String executeWithoutGraph(String name, TaskExecutionSnapshot execution) {
+		var executor = new EmbodiedPlannerActionToolExecutor(
+			() -> new EmbodiedPlannerActionToolExecutor.ExecutionState(SurvivalReflexState.IDLE, false, false, true,
+				ActiveJobType.NAVIGATE_TO, false, null, TaskSnapshot.idle(), execution),
+			args -> { throw new AssertionError("unexpected craft"); },
+			call -> { throw new AssertionError("unexpected block edit"); },
+			call -> "executed:" + call.name());
+		return executor.execute(new PlannerToolCall("food-test", name, new JsonObject(), null)).join();
 	}
 
 	private static String execute(String name, ActionGraphExecutionState phase, boolean taskBusy, boolean eating,

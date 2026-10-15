@@ -6,6 +6,15 @@ import ai.moeru.airicraft.agent.tasks.BlockBreakStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs;
 import ai.moeru.airicraft.agent.tasks.CropTendingStepArgs;
 import ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs;
+import ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs;
+import ai.moeru.airicraft.agent.tasks.ExploreForStepArgs;
+import ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs;
+import ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs;
+import ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs;
+import ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs;
+import ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs;
+import ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs;
+import ai.moeru.airicraft.agent.tasks.EnterEndPortalStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockPlacementStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockUseStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
@@ -36,8 +45,260 @@ public record ActiveJobProposal(
 	String askPrompt,
 	CropTendingStepArgs cropTending,
 	LureEntitiesStepArgs lureEntities,
-	CollectObsidianStepArgs collectObsidian
+	CollectObsidianStepArgs collectObsidian,
+	LocateStrongholdStepArgs locateStronghold,
+	ExploreForStepArgs exploreFor,
+	CollectBlazeRodsStepArgs collectBlazeRods,
+	CollectFlintStepArgs collectFlint,
+	ShelterForNightStepArgs shelterForNight,
+	CollectEnderPearlsStepArgs collectEnderPearls,
+	SleepInBedStepArgs sleepInBed,
+	HuntFoodStepArgs huntFood,
+	EnterEndPortalStepArgs enterEndPortal
 ) {
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls,
+		SleepInBedStepArgs sleepInBed,
+		HuntFoodStepArgs huntFood
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, huntFood, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls,
+		SleepInBedStepArgs sleepInBed
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, null);
+	}
+
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, null);
+	}
+
 	public ActiveJobProposal(
 		ActiveJobType type,
 		String targetPlayer,
@@ -204,6 +465,42 @@ public record ActiveJobProposal(
 
 	public static ActiveJobProposal fightEnderDragon() {
 		return new ActiveJobProposal(ActiveJobType.FIGHT_ENDER_DRAGON, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+	}
+
+	public static ActiveJobProposal locateStronghold(LocateStrongholdStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.LOCATE_STRONGHOLD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal collectBlazeRods(CollectBlazeRodsStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.COLLECT_BLAZE_RODS, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal collectFlint(CollectFlintStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.COLLECT_FLINT, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal collectEnderPearls(CollectEnderPearlsStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.COLLECT_ENDER_PEARLS, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal sleepInBed(SleepInBedStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.SLEEP_IN_BED, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal huntFood(HuntFoodStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.HUNT_FOOD, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal enterEndPortal(EnterEndPortalStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.ENTER_END_PORTAL, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal shelterForNight(ShelterForNightStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.SHELTER_FOR_NIGHT, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal exploreFor(ExploreForStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.EXPLORE_FOR, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
 	}
 
 	public static ActiveJobProposal collectObsidian(CollectObsidianStepArgs args) {

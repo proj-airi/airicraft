@@ -22,6 +22,11 @@ public final class Costs {
 	public static final double SUBMERGED_PER_DEPTH = 2;
 	/** Blocks of water above the head beyond which depth costs no more. */
 	public static final int MAX_COSTED_DEPTH = 16;
+	/**
+	 * Extra cost per move that ends beside lava at body height, or under lava. A body a little off the
+	 * cell centre, or lava that flows on, touches it: a Nether walk died this way at full health.
+	 */
+	public static final double LAVA_MARGIN = 40;
 	/** Per-block lower bound used by the heuristics; slightly below the sprint cost. */
 	public static final double HEURISTIC_PER_BLOCK = 3.563;
 

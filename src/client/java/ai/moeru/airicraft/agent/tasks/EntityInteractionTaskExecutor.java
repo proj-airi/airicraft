@@ -23,11 +23,14 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.core.BlockPos;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
@@ -38,6 +41,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 	private static final int NAVIGATION_CHASE_RADIUS_BLOCKS = 3;
 	private static final double CHASE_GOAL_REFRESH_DISTANCE_BLOCKS = 2.0D;
 	private static final double DIRECT_CHASE_DISTANCE_BLOCKS = 10.0D;
+	private static final int SAFE_CHASE_DROP_BLOCKS = 3;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 
 	private final Supplier<Minecraft> clientSupplier;
@@ -114,6 +118,10 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		if (dismissCurrentScreenIfSafe(minecraft, player)) {
 			busyStateTicks = 0;
 			snapshot = snapshot(TaskExecutionState.RUNNING, request, "screen_dismissed");
+			return Optional.empty();
+		}
+		if (ScreenCloseSafety.closeLeftoverContainer(player, "entity_interaction_open_screen_close")) {
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "closing_open_screen");
 			return Optional.empty();
 		}
 		if (player.containerMenu != player.inventoryMenu || !player.containerMenu.getCarried().isEmpty()) {
@@ -201,10 +209,41 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return busyStateTicks < BUSY_STATE_TIMEOUT_TICKS;
 	}
 
-	static boolean shouldRefreshChaseGoal(GoalPosition currentChaseGoal, GoalPosition nextChaseGoal, int ticksSinceRefresh) {
+	/**
+	 * Starting a route drops the one being walked, and the new search takes a few ticks before the body moves. Restarting
+	 * every {@link #CHASE_GOAL_REFRESH_TICKS} ticks while a route was still running kept the body standing until the
+	 * dispatcher failed a sheep chase with PATH_STUCK, so a running route is only replaced when the target has moved.
+	 */
+	static boolean shouldRefreshChaseGoal(GoalPosition currentChaseGoal, GoalPosition nextChaseGoal, int ticksSinceRefresh, boolean navigating) {
 		return currentChaseGoal == null
 			|| squaredBlockDistance(currentChaseGoal, nextChaseGoal) >= CHASE_GOAL_REFRESH_DISTANCE_BLOCKS * CHASE_GOAL_REFRESH_DISTANCE_BLOCKS
-			|| ticksSinceRefresh >= CHASE_GOAL_REFRESH_TICKS;
+			|| !navigating && ticksSinceRefresh >= CHASE_GOAL_REFRESH_TICKS;
+	}
+
+	/**
+	 * Whether walking straight at the target for the next block would step into lava, fire or magma, or off a drop
+	 * deeper than a safe fall. The blind chase once walked the body into a lava pool beside a cow; path navigation
+	 * avoids both, so the chase gives way to it.
+	 */
+	static boolean directChaseStepUnsafe(Level level, Vec3 position, Vec3 targetPosition) {
+		if (level == null) return false;
+		return BlockInteractionTaskExecutor.directStepEntersHazard(position, targetPosition,
+			cell -> BlockInteractionTaskExecutor.burnsOnContact(level, cell))
+			|| directStepDropsDeeperThan(position, targetPosition, SAFE_CHASE_DROP_BLOCKS,
+				cell -> !level.hasChunkAt(cell) || !level.getBlockState(cell).getCollisionShape(level, cell).isEmpty());
+	}
+
+	/** Whether no floor sits within {@code maxDrop} blocks under the next step's feet cell. */
+	static boolean directStepDropsDeeperThan(Vec3 position, Vec3 targetPosition, int maxDrop, Predicate<BlockPos> solidAt) {
+		Vec3 heading = new Vec3(targetPosition.x - position.x, 0.0D, targetPosition.z - position.z);
+		if (heading.lengthSqr() < 1.0E-6D) return false;
+		heading = heading.normalize();
+		BlockPos feet = BlockPos.containing(position.x + heading.x, position.y, position.z + heading.z);
+		if (solidAt.test(feet)) return false;
+		for (int depth = 1; depth <= maxDrop + 1; depth++) {
+			if (solidAt.test(feet.below(depth))) return false;
+		}
+		return true;
 	}
 
 	static boolean shouldUseDirectChase(double distance, boolean hasLineOfSight, boolean directMovementStuck) {
@@ -296,7 +335,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			if (isUnreachablePathEvent(navigationFacade.pollPathEvent()))
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_died_drops_unreachable"));
 			GoalPosition next = new GoalPosition(target.getBlockX(), (int) Math.floor(target.getY() + 0.125D), target.getBlockZ(), true);
-			if (shouldRefreshChaseGoal(chaseGoal, next, chaseGoalRefreshTicks++)) {
+			if (shouldRefreshChaseGoal(chaseGoal, next, chaseGoalRefreshTicks++, navigationFacade.processActive())) {
 				navigationFacade.startNavigate(next);
 				chaseGoal = next;
 				chaseGoalRefreshTicks = 0;
@@ -345,7 +384,8 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		long tick
 	) {
 		outOfRangeTicks++;
-		if (shouldUseDirectChase(distance, hasLineOfSight, movementController.snapshot().stuck())) {
+		if (shouldUseDirectChase(distance, hasLineOfSight, movementController.snapshot().stuck())
+			&& !directChaseStepUnsafe(minecraft.level, minecraft.player.position(), target.position())) {
 			cancelNavigationChase();
 			lookAtTarget(minecraft, target);
 			movementController.moveForward(minecraft, true, false, tick);
@@ -359,7 +399,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_unreachable"));
 			}
 			GoalPosition nextChaseGoal = chaseGoalFor(target);
-			if (shouldRefreshChaseGoal(chaseGoal, nextChaseGoal, chaseGoalRefreshTicks)) {
+			if (shouldRefreshChaseGoal(chaseGoal, nextChaseGoal, chaseGoalRefreshTicks, navigationFacade.processActive())) {
 				if (hasLineOfSight) {
 					navigationFacade.startNavigateNear(nextChaseGoal, NAVIGATION_CHASE_RADIUS_BLOCKS);
 				}

@@ -90,6 +90,14 @@ class NoticersTest {
 		assertEquals(EnvironmentWatcher.Phase.DAY, EnvironmentWatcher.phase(24_100));
 	}
 
+	@Test void sleepingThroughTheNightIsADawn() {
+		var watcher = new EnvironmentWatcher();
+		watcher.sample(1, new EnvironmentWatcher.Sample("o", 13_118, false, false, "minecraft:plains", 4));
+		var morning = watcher.sample(2, new EnvironmentWatcher.Sample("o", 24_000, false, false, "minecraft:plains", 4));
+		assertEquals(List.of("dawn"), morning.stream().map(candidate -> candidate.fields().get("change")).toList());
+		assertEquals(0L, morning.getFirst().fields().get("timeOfDay"));
+	}
+
 	@Test void compassUsesMinecraftDirections() {
 		assertEquals("north", Compass.direction(0, -5));
 		assertEquals("south", Compass.direction(0, 5));

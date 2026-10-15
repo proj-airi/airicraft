@@ -58,6 +58,16 @@ class MiningToolSelectionTest {
 	}
 
 	@Test
+	void clearingNetherrackWearsTheStonePickaxeNotTheDiamondOne() {
+		var slots = inventory(false, 1);
+		slots[0] = new MiningToolSelection.Score(true, 8, true); // diamond
+		slots[1] = new MiningToolSelection.Score(true, 4, true); // stone
+		slots[3] = new MiningToolSelection.Score(true, 2, true); // wood: too slow
+		assertEquals(1, MiningToolSelection.preferredClearanceSlot(0, slot -> slots[slot]));
+		assertEquals(0, MiningToolSelection.preferredSlot(0, slot -> slots[slot]), "harvesting still takes the fastest");
+	}
+
+	@Test
 	void doesNotWearAToolThatBreaksNoFasterThanAHand() {
 		var slots = inventory(true, 1);
 		slots[2] = new MiningToolSelection.Score(true, 1, true);

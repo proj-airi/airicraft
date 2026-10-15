@@ -68,4 +68,14 @@ class BlockBreakTaskExecutorTest {
 			)))
 		);
 	}
+
+	@Test
+	void breakingTheFloorRefusesDropsDeeperThanASafeFall() {
+		net.minecraft.core.BlockPos floor = new net.minecraft.core.BlockPos(0, 63, 0);
+		org.junit.jupiter.api.Assertions.assertNull(BlockBreakTaskExecutor.unsafeDropUnder(floor, pos -> pos.getY() == 60, pos -> false),
+			"a three block fall is safe");
+		org.junit.jupiter.api.Assertions.assertNotNull(BlockBreakTaskExecutor.unsafeDropUnder(floor, pos -> pos.getY() == 59, pos -> false));
+		org.junit.jupiter.api.Assertions.assertNotNull(BlockBreakTaskExecutor.unsafeDropUnder(floor, pos -> pos.getY() == 60, pos -> pos.getY() == 61),
+			"lava or fire on the way down");
+	}
 }

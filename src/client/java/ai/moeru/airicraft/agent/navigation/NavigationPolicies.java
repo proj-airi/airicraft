@@ -57,6 +57,8 @@ public final class NavigationPolicies {
 		}
 		// Doors stay usable when walking only.
 		if (options.walkOnly()) policy = policy.withBreaking(false).withPlaceableBlocks(0).withSprint(false);
+		if (options.noEdits()) policy = policy.withBreaking(false).withPlaceableBlocks(0);
+		if (options.maxSafeFall() != null) policy = policy.withMaxSafeFall(Math.min(options.maxSafeFall(), settings.maxFallHeight()));
 		return policy.withAvoidances(settings.avoidMobs() ? mobAvoidances(minecraft) : List.of());
 	}
 

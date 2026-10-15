@@ -96,6 +96,10 @@ class ReferenceAttentionPolicyTest {
 			new Row("dusk while idle", "perception.environment_changed", Map.of("change", "dusk"), IDLE, NEAR,
 				Delivery.DEBOUNCE, Urgency.LOW, AttentionStage.RULES, "percept.dusk_idle"),
 			new Row("dusk while working", "perception.environment_changed", Map.of("change", "dusk"), state(false, false, false, "MINE_BLOCKS", false), NEAR, Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "percept.environment_evidence"),
+			new Row("dawn while idle", "perception.environment_changed", Map.of("change", "dawn"), IDLE, NEAR,
+				Delivery.DEBOUNCE, Urgency.LOW, AttentionStage.RULES, "percept.dawn_idle"),
+			new Row("a task milestone", "task.progress", Map.of("milestone", "dusk", "message", "Dusk"),
+				state(false, false, false, "EXPLORE_FOR", false), NEAR, Delivery.IMMEDIATE, Urgency.LOW, AttentionStage.RULES, "task.progress"),
 			new Row("rain is evidence only", "perception.environment_changed", Map.of("change", "rain_started"), IDLE, NEAR,
 				Delivery.NONE, Urgency.LOW, AttentionStage.RULES, "percept.environment_evidence"),
 		};

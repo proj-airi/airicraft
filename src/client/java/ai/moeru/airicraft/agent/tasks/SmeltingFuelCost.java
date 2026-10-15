@@ -6,11 +6,11 @@ public final class SmeltingFuelCost {
 
 	public static int compare(String leftId, int leftQuantity, int leftTicks,
 		String rightId, int rightQuantity, int rightTicks) {
-		int burn = Long.compare((long) leftQuantity * leftTicks, (long) rightQuantity * rightTicks);
-		if (burn != 0) return burn;
-		// A whole log can instead become four planks with the same per-item burn time.
+		// A whole log is the run's tool and table material; in a random-seed playtest one ingot burned the last
+		// logs while eleven coal sat in the inventory. Logs burn only when no other fuel covers the batch.
 		int logs = Boolean.compare(wholeLog(leftId), wholeLog(rightId));
-		return logs;
+		if (logs != 0) return logs;
+		return Long.compare((long) leftQuantity * leftTicks, (long) rightQuantity * rightTicks);
 	}
 
 	private static boolean wholeLog(String id) {

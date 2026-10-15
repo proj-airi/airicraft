@@ -3,3 +3,10 @@ furnaces
 positions-and-placement
 attention-rules
 slow-mining
+strongholds
+exploring
+blaze-rods
+nether-trip
+beds
+ender-pearls
+food

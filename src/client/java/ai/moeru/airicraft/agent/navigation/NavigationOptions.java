@@ -7,8 +7,15 @@ package ai.moeru.airicraft.agent.navigation;
  * @param walkOnly     no breaking, placing or sprinting, for owners that must not edit terrain, such as leading animals
  * @param requireCompletePath reject partial routes before moving, for local interaction stances
  * @param waterPenalty cost per move ending in water, or null for the configured value
+ * @param noEdits      no breaking or placing, but sprinting stays, for owners that must keep moving, such as a flight
+ * @param maxSafeFall  highest fall onto solid ground, or null for the configured value; never raises it
  */
-public record NavigationOptions(boolean walkOnly, Double waterPenalty, boolean requireCompletePath) {
+public record NavigationOptions(boolean walkOnly, Double waterPenalty, boolean requireCompletePath, boolean noEdits,
+	Integer maxSafeFall) {
+	public NavigationOptions(boolean walkOnly, Double waterPenalty, boolean requireCompletePath) {
+		this(walkOnly, waterPenalty, requireCompletePath, false, null);
+	}
+
 	public NavigationOptions(boolean walkOnly, Double waterPenalty) {
         this(walkOnly, waterPenalty, false);
     }
@@ -24,6 +31,15 @@ public record NavigationOptions(boolean walkOnly, Double waterPenalty, boolean r
 	public static final NavigationOptions WALK_ONLY = new NavigationOptions(true, null);
 
 	public NavigationOptions withWaterPenalty(double penalty) {
-		return new NavigationOptions(walkOnly, penalty, requireCompletePath);
+		return new NavigationOptions(walkOnly, penalty, requireCompletePath, noEdits, maxSafeFall);
+	}
+
+	/** Keeps terrain as it is while still sprinting. */
+	public NavigationOptions withNoEdits() {
+		return new NavigationOptions(walkOnly, waterPenalty, requireCompletePath, true, maxSafeFall);
+	}
+
+	public NavigationOptions withMaxSafeFall(int blocks) {
+		return new NavigationOptions(walkOnly, waterPenalty, requireCompletePath, noEdits, blocks);
 	}
 }

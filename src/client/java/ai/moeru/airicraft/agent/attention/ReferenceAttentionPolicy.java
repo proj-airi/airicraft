@@ -24,7 +24,7 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 	public static final Set<String> EVALUATION_SUPPRESSED = Set.of(
 		"social.player_spoke", "social.system_message", "pickup.item_picked_up", "social.item_offered",
 		"crafting.item_crafted", "combat.damage_taken", "player.physical", "smelting.output_ready",
-		"task.blocked", "action_graph.goal_suspended", "action_graph.goal_terminal", "tool.broken", "tool.durability_low");
+		"task.blocked", "action_graph.goal_suspended", "action_graph.goal_terminal", "tool.broken", "tool.durability_low", "task.progress");
 
 	private final Supplier<AttentionState> state;
 	private final Function<SemanticEvent, AttentionEvidence> evidence;
@@ -130,10 +130,17 @@ public final class ReferenceAttentionPolicy implements AttentionPolicy {
 				state.activeJobOwns(event.payload().get("blockId")) || state.activeJobOwns(event.payload().get("itemId"))
 					? WakeDecision.none(AttentionStage.RULES, "ownership.active_job_target", "the running job is working on this")
 					: WakeDecision.debounce(Urgency.LOW, AttentionStage.RULES, "percept.notice", "");
-			case "perception.environment_changed" -> "dusk".equals(stringValue(event.payload().get("change"))) && state.idleForNotices()
-				? WakeDecision.debounce(Urgency.LOW, AttentionStage.RULES, "percept.dusk_idle", "")
-				: WakeDecision.none(AttentionStage.RULES, "percept.environment_evidence",
-					"environment changes are evidence; only dusk wakes, and only while idle");
+			case "perception.environment_changed" -> {
+				String change = stringValue(event.payload().get("change"));
+				if (("dusk".equals(change) || "dawn".equals(change)) && state.idleForNotices())
+					yield WakeDecision.debounce(Urgency.LOW, AttentionStage.RULES, "percept." + change + "_idle", "");
+				yield WakeDecision.none(AttentionStage.RULES, "percept.environment_evidence",
+					"environment changes are evidence; only dusk and dawn wake, and only while idle");
+			}
+			// A long task's milestone: a quiet wake so the planner can follow along and narrate; the work keeps running.
+			case "task.progress" -> state.reflexOwnsActuation()
+				? WakeDecision.none(AttentionStage.RULES, "ownership.reflex_actuation", "the survival reflex owns actuation")
+				: WakeDecision.immediate(Urgency.LOW, AttentionStage.RULES, "task.progress", "");
 			default -> WakeDecision.none(AttentionStage.RULES, "catalog.no_trigger", "no trigger is defined for this type");
 		};
 	}

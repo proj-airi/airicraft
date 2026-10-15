@@ -73,6 +73,21 @@ class ExecutorFailureCodeContractTest {
 		}
 	}
 
+	@Test
+	void systemOneTasksNameATypedCodeForEveryFailure() throws Exception {
+		for (String executorName : List.of("ShelterForNightTaskExecutor", "SleepInBedTaskExecutor", "HuntFoodTaskExecutor",
+			"EnterEndPortalTaskExecutor")) {
+			String text = Files.readString(Path.of("src/client/java/ai/moeru/airicraft/agent/tasks", executorName + ".java"));
+			assertFalse(text.contains("fromLegacyDetail"), executorName);
+			String[] failures = text.split("finish\\(false,");
+			assertTrue(failures.length > 1, executorName);
+			for (int i = 1; i < failures.length; i++) {
+				String call = failures[i].substring(0, failures[i].indexOf(");\n"));
+				assertTrue(call.contains("TaskFailureCode."), executorName + " fails without a typed code:" + call);
+			}
+		}
+	}
+
 	private static TaskTerminalEvent terminal(TaskFailure failure) {
 		return new TaskTerminalEvent("task", null, TaskExecutionState.FAILED, failure.detail(), null, failure.code());
 	}

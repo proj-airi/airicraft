@@ -372,6 +372,17 @@ public final class CollectObsidianTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the target, rejected targets and the counters; let go of breaking and route. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		// The body may have been moved off its stance: walk back to it before breaking or pouring, instead of rejecting a good target.
+		if (phase == Phase.MINE_BREAK) enter(Phase.MINE_APPROACH);
+		else if (phase == Phase.POUR) enter(Phase.CAST_APPROACH);
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();

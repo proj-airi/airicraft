@@ -78,6 +78,43 @@ class CraftingTaskExecutorTest {
 	}
 
 	@Test
+	void onlyTablesTheTaskPlacedAreTakenBack() {
+		assertFalse(CraftingTaskExecutor.shouldReclaimTables(0));
+		assertTrue(CraftingTaskExecutor.shouldReclaimTables(1));
+		assertTrue(CraftingTaskExecutor.shouldReclaimTables(2));
+	}
+
+	@Test
+	void reclaimOutcomeIsAppendedWithoutChangingTheResult() {
+		assertEquals("crafted tableReclaimed=2,59,-5", CraftingTaskExecutor.withReclaimOutcome("crafted", "tableReclaimed=2,59,-5"));
+		assertEquals(
+			"ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick*2 tableLeftAt=2,59,-5 reason=drop_not_picked_up",
+			CraftingTaskExecutor.withReclaimOutcome(
+				"ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick*2",
+				"tableLeftAt=2,59,-5 reason=drop_not_picked_up"
+			)
+		);
+		assertEquals("crafted", CraftingTaskExecutor.withReclaimOutcome("crafted", ""));
+	}
+
+	@Test
+	void craftingShutdownAlsoShutsDownTheTableBreaker() {
+		RecordingPlacementExecutor placementExecutor = new RecordingPlacementExecutor();
+		RecordingPlacementExecutor breakExecutor = new RecordingPlacementExecutor();
+		CraftingTaskExecutor executor = new CraftingTaskExecutor(
+			() -> null,
+			null,
+			new CameraController(),
+			placementExecutor,
+			breakExecutor
+		);
+
+		executor.shutdown();
+		assertEquals(1, breakExecutor.shutdownCount);
+		assertEquals(1, placementExecutor.shutdownCount);
+	}
+
+	@Test
 	void nearbyTableReuseWinsOverPortableTableSetup() {
 		assertEquals(
 			CraftingTaskExecutor.WorkbenchSetupAction.REUSE_NEARBY_TABLE,
@@ -199,6 +236,33 @@ class CraftingTaskExecutorTest {
 
 		assertEquals(recipeDisplayId, plan.networkRecipeId());
 		assertEquals(8, plan.targetOutputCount());
+	}
+
+	@Test
+	void craftsThatRunOutMidwayReportWhatWasCraftedAndWhatIsMissing() {
+		java.util.List<String> torch = java.util.List.of("minecraft:coal", "minecraft:stick");
+
+		Optional<TaskFailure> shortfall = CraftingTaskExecutor.ingredientShortfall(torch, 4, 2, 4, java.util.Map.of("minecraft:coal", 2));
+
+		assertEquals(TaskFailureCode.MISSING_ITEM, shortfall.orElseThrow().code());
+		assertEquals("ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick x1", shortfall.orElseThrow().detail());
+		assertEquals(TaskFailureCode.MISSING_ITEM, TaskFailureCode.fromLegacyDetail(shortfall.orElseThrow().detail()));
+		assertEquals(Optional.empty(), CraftingTaskExecutor.ingredientShortfall(torch, 4, 2, 4, java.util.Map.of("minecraft:coal", 2, "minecraft:stick", 1)));
+	}
+
+	@Test
+	void knownButUncraftableRecipeFailsAsMissingItem() {
+		CraftingTaskExecutor.CraftingPlan plan = CraftingTaskExecutor.toCraftingPlanForTests(new CraftingOpportunityResolver.CraftingRecipeResolution(
+			null, null, 0, 0, null, java.util.List.of(),
+			"missing_ingredients recipe=coal_and_stick_to_torch missing=minecraft:stick x1"
+		));
+		CraftingTaskExecutor.CraftingPlan unknown = CraftingTaskExecutor.toCraftingPlanForTests(new CraftingOpportunityResolver.CraftingRecipeResolution(
+			null, null, 0, 0, null, java.util.List.of(), "recipe_not_found"
+		));
+
+		assertEquals(TaskFailureCode.MISSING_ITEM, plan.failure().code());
+		assertEquals("missing_ingredients recipe=coal_and_stick_to_torch missing=minecraft:stick x1", plan.failure().detail());
+		assertEquals(TaskFailureCode.MISSING_FACT, unknown.failure().code());
 	}
 
 	@Test

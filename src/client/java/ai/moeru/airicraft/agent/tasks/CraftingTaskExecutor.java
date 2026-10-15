@@ -28,9 +28,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -47,6 +50,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private final NavigationFacade navigationFacade;
 	private final CameraController cameraController;
 	private final WorldTaskExecutor portableTablePlacementExecutor;
+	private final WorldTaskExecutor tableBreakExecutor;
 
 	private WorldTaskRequest appliedTask;
 	private CraftingPlan plan;
@@ -62,6 +66,12 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	private boolean openedWorkbenchForTask;
 	private PortableTablePlacementPolicy.AttemptState portableTablePlacementState;
 	private WorldTaskRequest portableTablePlacementTask;
+	/** Tables this task placed from the inventory; each is broken and picked back up before the task ends. */
+	private final List<BlockPos> placedTables = new ArrayList<>();
+	private PendingFinish pendingFinish;
+	private final ArrayDeque<BlockPos> tableReclaimQueue = new ArrayDeque<>();
+	private final List<String> tableReclaimOutcomes = new ArrayList<>();
+	private PlacedStationReclaim tableReclaim;
 	private TaskExecutionSnapshot snapshot = TaskExecutionSnapshot.idle();
 
 	public CraftingTaskExecutor() {
@@ -99,10 +109,22 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		CameraController cameraController,
 		WorldTaskExecutor portableTablePlacementExecutor
 	) {
+		this(clientSupplier, navigationFacade, cameraController, portableTablePlacementExecutor,
+			new BlockBreakTaskExecutor(clientSupplier, cameraController));
+	}
+
+	CraftingTaskExecutor(
+		Supplier<Minecraft> clientSupplier,
+		NavigationFacade navigationFacade,
+		CameraController cameraController,
+		WorldTaskExecutor portableTablePlacementExecutor,
+		WorldTaskExecutor tableBreakExecutor
+	) {
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 		this.navigationFacade = navigationFacade;
 		this.cameraController = Objects.requireNonNull(cameraController, "cameraController");
 		this.portableTablePlacementExecutor = Objects.requireNonNull(portableTablePlacementExecutor, "portableTablePlacementExecutor");
+		this.tableBreakExecutor = Objects.requireNonNull(tableBreakExecutor, "tableBreakExecutor");
 	}
 
 	@Override
@@ -119,8 +141,14 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		}
 
 		if (!sessionSnapshot.companionActuationAllowed()) {
+			if (tableReclaim != null) {
+				tableReclaim.pause();
+			}
 			snapshot = snapshot(TaskExecutionState.PAUSED_BY_SESSION_GATE, request, "session_gate");
 			return Optional.empty();
+		}
+		if (pendingFinish != null) {
+			return tickTableReclaim(request, sessionSnapshot);
 		}
 
 		Minecraft minecraft = clientSupplier.get();
@@ -193,7 +221,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 	private static CraftingPlan toCraftingPlan(CraftingOpportunityResolver.CraftingRecipeResolution resolved) {
 		if (resolved.failureReason() != null) {
-			return CraftingPlan.failure(resolved.failureReason(), TaskFailureCode.MISSING_FACT);
+			return CraftingPlan.failure(resolved.failureReason(), TaskFailureCode.fromLegacyCode(resolved.failureReason().split(" ", 2)[0]));
 		}
 		return new CraftingPlan(
 			resolved.networkRecipeId(),
@@ -451,8 +479,13 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 		AbstractContainerMenu menu = player.containerMenu;
 		if (phase == CraftPhase.IDLE || phase == placingPhase) {
+			// Manual placement takes the exact planned items; check them first so a short craft never half-fills the grid.
+			Optional<TaskFailure> shortfall = plan.networkRecipeId() == null ? ingredientShortfall(plan, tracker, player) : Optional.empty();
+			if (shortfall.isPresent()) {
+				return CraftAdvanceResult.failed(shortfall.get());
+			}
 			if (!placeRecipeInputs(minecraft, menu, gridSpec, plan)) {
-				return CraftAdvanceResult.failed(TaskFailure.of(TaskFailureCode.MISSING_FACT, "recipe_not_found"));
+				return CraftAdvanceResult.failed(TaskFailure.of(TaskFailureCode.UNKNOWN, "crafting_inputs_not_placed"));
 			}
 			phase = waitingForResultPhase;
 			waitTicks = 0;
@@ -470,7 +503,8 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_result_taken");
 				return CraftAdvanceResult.running();
 			}
-			return waitCraftAdvance(request, TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
+			// A recipe-book fill leaves the grid empty when the inventory no longer holds a full set.
+			return waitCraftAdvance(request, () -> ingredientShortfall(plan, tracker, player).orElse(TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy")));
 		}
 
 		if (phase == waitingForTakePhase) {
@@ -483,19 +517,41 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_next_batch");
 				return CraftAdvanceResult.running();
 			}
-			return waitCraftAdvance(request, TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
+			return waitCraftAdvance(request, () -> TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
 		}
 
 		return CraftAdvanceResult.running();
 	}
 
-	private CraftAdvanceResult waitCraftAdvance(WorldTaskRequest request, TaskFailure failure) {
+	private CraftAdvanceResult waitCraftAdvance(WorldTaskRequest request, Supplier<TaskFailure> failure) {
 		waitTicks++;
 		if (waitTicks > WAIT_TIMEOUT_TICKS) {
-			return CraftAdvanceResult.failed(failure);
+			return CraftAdvanceResult.failed(failure.get());
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_wait");
 		return CraftAdvanceResult.running();
+	}
+
+	private static Optional<TaskFailure> ingredientShortfall(CraftingPlan plan, CraftingProgressTracker tracker, LocalPlayer player) {
+		return ingredientShortfall(
+			plan.placements().stream().map(CraftingOpportunityResolver.CraftingIngredientPlacement::itemId).toList(),
+			plan.outputCount(),
+			plan.requestedTimes(),
+			tracker.craftedOutputCount(),
+			CraftingOpportunityResolver.inventoryItemIdCounts(player)
+		);
+	}
+
+	/** The next craft's inputs the inventory lacks, reported with how many of the requested crafts are done. */
+	static Optional<TaskFailure> ingredientShortfall(List<String> inputItemIds, int outputCount, int requestedTimes, int craftedOutputCount, Map<String, Integer> inventory) {
+		Map<String, Integer> missing = CraftingOpportunityResolver.missingIngredients(inputItemIds, inventory);
+		if (inputItemIds.isEmpty() || missing.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(TaskFailure.of(TaskFailureCode.MISSING_ITEM, "ingredients_ran_out"
+			+ " crafted=" + (outputCount <= 0 ? 0 : craftedOutputCount / outputCount)
+			+ " requested=" + requestedTimes
+			+ " missing=" + CraftingOpportunityResolver.formatItemCounts(missing)));
 	}
 
 	private static boolean requestRecipeFill(Minecraft minecraft, AbstractContainerMenu menu, CraftingPlan plan) {
@@ -784,6 +840,9 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 		resetPortableTablePlacementAttempt(sessionSnapshot);
 		if (exactTablePlaced) {
 			placedTablePos = targetPos;
+			if (!placedTables.contains(targetPos)) {
+				placedTables.add(targetPos);
+			}
 			tableTarget = new TableTarget(targetPos, standPositionForTable(minecraft, player, targetPos).orElse(null));
 			clearPortableTablePlacementState();
 			phase = CraftPhase.OPENING_TABLE;
@@ -962,15 +1021,81 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> complete(WorldTaskRequest request) {
+		return finish(request, new PendingFinish(TaskExecutionState.COMPLETED, "crafted", null));
+	}
+
+	/**
+	 * Ends the task, first taking back every table it placed from the inventory, so the next craft does not cost four more
+	 * planks. A table the task did not place is never touched, and a failed reclaim never fails the craft: the result says
+	 * where the table was left instead.
+	 */
+	private Optional<TaskTerminalEvent> finish(WorldTaskRequest request, PendingFinish finish) {
 		cancelNavigationIfStarted();
 		cancelPortableTablePlacement();
 		closeOwnedWorkbenchIfSafe();
-		snapshot = snapshot(TaskExecutionState.COMPLETED, request, "crafted");
+		if (terminalEventEmitted) {
+			return Optional.empty();
+		}
+		if (pendingFinish == null && shouldReclaimTables(placedTables.size())) {
+			pendingFinish = finish;
+			tableReclaimQueue.clear();
+			tableReclaimQueue.addAll(placedTables);
+			placedTables.clear();
+			tableReclaimOutcomes.clear();
+			snapshot = snapshot(TaskExecutionState.RUNNING, request, "reclaiming_crafting_table then=" + firstWord(finish.message()));
+			return Optional.empty();
+		}
+		return emit(request, finish);
+	}
+
+	private Optional<TaskTerminalEvent> tickTableReclaim(WorldTaskRequest request, SessionSnapshot sessionSnapshot) {
+		if (terminalEventEmitted) {
+			return Optional.empty();
+		}
+		while (true) {
+			if (tableReclaim == null) {
+				BlockPos next = tableReclaimQueue.pollFirst();
+				if (next == null) {
+					break;
+				}
+				tableReclaim = new PlacedStationReclaim("table", next, Blocks.CRAFTING_TABLE, Items.CRAFTING_TABLE, request,
+					tableBreakExecutor, clientSupplier, navigationFacade);
+			}
+			Optional<String> outcome = tableReclaim.tick(sessionSnapshot);
+			if (outcome.isEmpty()) {
+				snapshot = snapshot(TaskExecutionState.RUNNING, request,
+					"reclaiming_crafting_table pos=" + compactPos(tableReclaim.pos()) + " then=" + firstWord(pendingFinish.message()));
+				return Optional.empty();
+			}
+			tableReclaimOutcomes.add(outcome.get());
+			tableReclaim = null;
+		}
+		return emit(request, pendingFinish.withSuffix(String.join(" ", tableReclaimOutcomes)));
+	}
+
+	private Optional<TaskTerminalEvent> emit(WorldTaskRequest request, PendingFinish finish) {
+		snapshot = snapshot(finish.state(), request, finish.message());
 		if (terminalEventEmitted) {
 			return Optional.empty();
 		}
 		terminalEventEmitted = true;
-		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.COMPLETED, "crafted", null));
+		if (finish.state() == TaskExecutionState.COMPLETED) {
+			return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.COMPLETED, finish.message(), null));
+		}
+		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.FAILED, finish.message(), null, finish.failureCode()));
+	}
+
+	/** Whether the task ends by taking back tables: only ones it placed itself, never a table that stood in the world. */
+	static boolean shouldReclaimTables(int tablesPlacedByTask) {
+		return tablesPlacedByTask > 0;
+	}
+
+	static String withReclaimOutcome(String message, String outcome) {
+		return outcome == null || outcome.isBlank() ? message : message + " " + outcome;
+	}
+
+	private static String firstWord(String message) {
+		return PlacedStationReclaim.firstToken(message);
 	}
 
 	private void closeOwnedWorkbenchIfSafe() {
@@ -988,15 +1113,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> fail(WorldTaskRequest request, TaskFailure failure) {
-		cancelNavigationIfStarted();
-		cancelPortableTablePlacement();
-		closeOwnedWorkbenchIfSafe();
-		snapshot = snapshot(TaskExecutionState.FAILED, request, failure.detail());
-		if (terminalEventEmitted) {
-			return Optional.empty();
-		}
-		terminalEventEmitted = true;
-		return Optional.of(new TaskTerminalEvent(request.taskId(), null, TaskExecutionState.FAILED, failure.detail(), null, failure.code()));
+		return finish(request, new PendingFinish(TaskExecutionState.FAILED, failure.detail(), failure.code()));
 	}
 
 	private static TaskExecutionSnapshot snapshot(TaskExecutionState state, WorldTaskRequest request, String event) {
@@ -1028,12 +1145,21 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	public void shutdown() {
 		reset();
 		portableTablePlacementExecutor.shutdown();
+		tableBreakExecutor.shutdown();
 	}
 
 	private void reset() {
 		cancelNavigationIfStarted();
 		cancelPortableTablePlacement();
 		closeOwnedWorkbenchIfSafe();
+		if (tableReclaim != null) {
+			tableReclaim.cancel();
+			tableReclaim = null;
+		}
+		pendingFinish = null;
+		placedTables.clear();
+		tableReclaimQueue.clear();
+		tableReclaimOutcomes.clear();
 		appliedTask = null;
 		plan = null;
 		craftingTablePlan = null;
@@ -1129,6 +1255,12 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 	}
 
 	static record RecipeFillRequest(int syncId, RecipeDisplayId networkRecipeId, boolean craftAll) {
+	}
+
+	private record PendingFinish(TaskExecutionState state, String message, TaskFailureCode failureCode) {
+		private PendingFinish withSuffix(String outcome) {
+			return new PendingFinish(state, withReclaimOutcome(message, outcome), failureCode);
+		}
 	}
 
 	private record WorkbenchReadiness(boolean ready, Optional<TaskFailure> failure) {

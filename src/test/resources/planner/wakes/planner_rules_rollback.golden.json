@@ -93,7 +93,7 @@
         "previousVersion": 1,
         "reason": "I need pickups again",
         "replayed": 5,
-        "sha": "f142702f68b8797d",
+        "sha": "645017ea365ee48a",
         "version": 0,
         "wakesGained": 0,
         "wakesLost": 0
@@ -282,7 +282,7 @@
         {
           "kind": "TOOL_RESULT",
           "role": "tool",
-          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":2}},\"changed\":3,\"examples\":[{\"now\":\"no wake (catalog.semantic)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"f142702f68b8797d\"}"
+          "text": "Tool result for update_rules: {\"accepted\":true,\"activeVersion\":0,\"hook\":\"attention\",\"kind\":\"rollback\",\"note\":\"Rules run with fresh state from the next event. roll back with update_rules revert_to.\",\"previousVersion\":1,\"replay\":{\"byType\":{\"social.player_joined_nearby\":{\"changed\":1},\"social.player_spoke\":{\"changed\":2}},\"changed\":3,\"examples\":[{\"now\":\"no wake (catalog.semantic)\",\"seqNo\":1,\"tick\":1,\"type\":\"social.player_joined_nearby\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":2,\"tick\":1,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"},{\"now\":\"no wake, not shown (chat.addressed_routed_separately)\",\"seqNo\":6,\"tick\":4,\"type\":\"social.player_spoke\",\"was\":\"no wake (mine.default)\"}],\"hook\":\"attention\",\"newFailures\":0,\"replayed\":5,\"skipped\":3,\"wakesGained\":0,\"wakesLost\":0},\"sha\":\"645017ea365ee48a\"}"
         }
       ],
       "observe": {
@@ -298,7 +298,7 @@
               "previousVersion": 1,
               "reason": "I need pickups again",
               "replayed": 5,
-              "sha": "f142702f68b8797d",
+              "sha": "645017ea365ee48a",
               "version": 0,
               "wakesGained": 0,
               "wakesLost": 0

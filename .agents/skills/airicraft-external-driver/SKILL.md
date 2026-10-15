@@ -90,6 +90,8 @@ The external call path uses the same schemas, providers, safety reflex ownership
 5. Poll `agent tasks --verbose`, `agent goals --verbose`, and matching task events until the same task ID reaches a terminal state. Preserve exact task IDs when interpreting cancellation or supersession.
 6. Use `agent event-policy --verbose`, `agent debug timeline --since <entry> --verbose`, world snapshots, screenshots, and action traces to ground a bug before editing.
 
+A survival reflex fight ends in a safety hold (`pendingDecision` in observe, `reflex.resolved` in events) that `continue` resumes or `clear_queue` drops. Routine holds during the self-contained tasks (`shelter_for_night`, `sleep_in_bed`, `explore_for`, `hunt_food`, `collect_ender_pearls`, `collect_blaze_rods`, `collect_obsidian`, `collect_flint`, `locate_stronghold`, `enter_end_portal`, `fight_ender_dragon`) no longer need `continue`: once nothing hostile has been in the reflex's range for 40 ticks the task resumes by itself (`reflex.auto_resumed` with the job type, hold id and count), and a hold with no paused work is released after 100 quiet ticks. Call `continue` or `clear_queue` when the hold persists: another job type, threats still listed, low health for a task that does not handle it, or `reflex.auto_resume_capped` (12 resumes for one job, or 3 within 600 ticks).
+
 Polling is intentionally local to this debug task. Do not add production coalescing, supersession, or app-server session management to this workflow.
 
 ## Patch and retry

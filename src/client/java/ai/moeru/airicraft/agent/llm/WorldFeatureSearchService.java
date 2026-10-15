@@ -4,6 +4,9 @@ import ai.moeru.airicraft.agent.spatial.SurfaceTerrain;
 import com.google.gson.JsonObject;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.SpawnerBlockEntity;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.tags.BlockTags;
@@ -12,6 +15,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.core.SectionPos;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -27,6 +33,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -41,6 +48,8 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	private static final int WATER_SURFACE_SCAN_DEPTH = 5;
 	private static final int FOREST_SURFACE_SCAN_DEPTH = 24;
 	private static final int FOREST_CLUSTER_DISTANCE = 8;
+	/** Side of the cubes exposed structure and fluid blocks are bucketed into; touching cubes form one feature. */
+	private static final int CLUSTER_CUBE_SHIFT = 3;
 
 	private final Supplier<Minecraft> clientSupplier;
 
@@ -71,19 +80,53 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	}
 
 	static WorldFeatureSearchResult search(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
+		List<FeatureCandidate> limited = candidates(access, origin, request);
+		return new WorldFeatureSearchResult(resultText(request, limited), observedPositions(limited));
+	}
+
+	private static List<FeatureCandidate> candidates(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
 		Objects.requireNonNull(access, "access");
 		Objects.requireNonNull(origin, "origin");
 		Objects.requireNonNull(request, "request");
 		List<FeatureCandidate> candidates = switch (request.featureKind()) {
 			case WATER_BODY -> findWaterBodies(access, origin, request);
 			case FOREST -> findForests(access, origin, request);
+			case LAVA_POOL, NETHER_FORTRESS, END_PORTAL, BLAZE_SPAWNER -> findExposedClusters(access, origin, request);
 		};
-		List<FeatureCandidate> limited = candidates.stream()
+		return candidates.stream()
 			.sorted(FeatureCandidate.ORDERING)
 			.limit(request.limit())
 			.toList();
-		return new WorldFeatureSearchResult(resultText(request, limited), observedPositions(limited));
 	}
+
+	/**
+	 * The nearest feature of a kind in loaded chunks, for a task that searches as it walks (explore_for). Forests and
+	 * water bodies count only at the surface, where a walk can reach them.
+	 */
+	public static Optional<FoundFeature> nearest(Level level, BlockPos origin, String featureKind, int maxDistanceBlocks) {
+		return nearest(level, origin, featureKind, maxDistanceBlocks, DEFAULT_MIN_TREE_COUNT);
+	}
+
+	/** As {@link #nearest(Level, BlockPos, String, int)}, with a forest of as few as {@code minTreeCount} trees. */
+	public static Optional<FoundFeature> nearest(Level level, BlockPos origin, String featureKind, int maxDistanceBlocks, int minTreeCount) {
+		return nearest(new MinecraftWorldFeatureAccess(level), origin, featureKind, maxDistanceBlocks, minTreeCount);
+	}
+
+	static Optional<FoundFeature> nearest(WorldFeatureAccess access, BlockPos origin, String featureKind, int maxDistanceBlocks) {
+		return nearest(access, origin, featureKind, maxDistanceBlocks, DEFAULT_MIN_TREE_COUNT);
+	}
+
+	static Optional<FoundFeature> nearest(WorldFeatureAccess access, BlockPos origin, String featureKind, int maxDistanceBlocks,
+		int minTreeCount) {
+		FeatureKind kind = FeatureKind.from(featureKind);
+		SearchRequest request = new SearchRequest(kind, Optional.empty(), Math.max(1, Math.min(maxDistanceBlocks, MAX_DISTANCE_BLOCKS)), 1,
+			DEFAULT_MIN_CONNECTED_WATER_SOURCES, Math.max(1, minTreeCount), kind == FeatureKind.WATER_BODY || kind == FeatureKind.FOREST);
+		return candidates(access, origin, request).stream().findFirst()
+			.map(candidate -> new FoundFeature(candidate.targetPos(), candidate.standPos(), candidate.compact()));
+	}
+
+	/** One found feature: the block to go to, where to stand by it (null when none was found), and its description. */
+	public record FoundFeature(BlockPos targetPos, BlockPos standPos, String summary) { }
 
 	private static List<FeatureCandidate> findWaterBodies(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
 		ArrayList<FeatureCandidate> candidates = new ArrayList<>();
@@ -255,6 +298,60 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 		);
 	}
 
+	/**
+	 * Lava pools and fortress walls anywhere in loaded chunks, not only near the surface, but only blocks
+	 * with a face open to air: what a player looking around a cave or across the Nether could see.
+	 */
+	private static List<FeatureCandidate> findExposedClusters(WorldFeatureAccess access, BlockPos origin, SearchRequest request) {
+		FeatureKind kind = request.featureKind();
+		HashMap<Long, List<BlockPos>> cubes = new HashMap<>();
+		access.forEachExposedBlock(origin, request.maxDistanceBlocks(), kind, pos -> {
+			BlockPos immutable = pos.immutable();
+			if (!request.accepts(origin, immutable)) return;
+			cubes.computeIfAbsent(cubeKey(immutable.getX() >> CLUSTER_CUBE_SHIFT, immutable.getY() >> CLUSTER_CUBE_SHIFT,
+				immutable.getZ() >> CLUSTER_CUBE_SHIFT), key -> new ArrayList<>()).add(immutable);
+		});
+		ArrayList<FeatureCandidate> candidates = new ArrayList<>();
+		HashSet<Long> visited = new HashSet<>();
+		for (Long start : cubes.keySet().stream().sorted().toList()) {
+			if (!visited.add(start)) continue;
+			ArrayList<BlockPos> cluster = new ArrayList<>();
+			ArrayDeque<Long> queue = new ArrayDeque<>();
+			queue.add(start);
+			while (!queue.isEmpty()) {
+				long key = queue.removeFirst();
+				cluster.addAll(cubes.get(key));
+				BlockPos cube = BlockPos.of(key);
+				for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++) {
+					long neighbour = cubeKey(cube.getX() + dx, cube.getY() + dy, cube.getZ() + dz);
+					if (cubes.containsKey(neighbour) && visited.add(neighbour)) queue.add(neighbour);
+				}
+			}
+			if (cluster.size() < kind.minExposedBlocks()) continue;
+			BlockPos center = center(cluster);
+			TargetSelection target = targetWithStand(access, cluster, origin, false);
+			LinkedHashMap<String, Object> evidence = new LinkedHashMap<>();
+			evidence.put("exposedBlocks", cluster.size());
+			evidence.put("requiredExposedBlocks", kind.minExposedBlocks());
+			candidates.add(new FeatureCandidate(
+				kind.wireValue() + "-" + (candidates.size() + 1),
+				kind,
+				center,
+				target.targetPos(),
+				target.standPos().orElse(null),
+				distance(origin, target.targetPos()),
+				directionFrom(origin, target.targetPos()),
+				evidence,
+				Math.min(1.0D, cluster.size() / (double) (kind.minExposedBlocks() * 2))
+			));
+		}
+		return candidates;
+	}
+
+	private static long cubeKey(int x, int y, int z) {
+		return BlockPos.asLong(x, y, z);
+	}
+
 	private static boolean hasNearbyLeaves(WorldFeatureAccess access, BlockPos logPos) {
 		for (int dx = -4; dx <= 4; dx++) {
 			for (int dy = -2; dy <= 8; dy++) {
@@ -423,17 +520,31 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 	}
 
 	enum FeatureKind {
-		WATER_BODY("water_body"),
-		FOREST("forest");
+		WATER_BODY("water_body", 0),
+		FOREST("forest", 0),
+		/** Lava sources, for casting obsidian. */
+		LAVA_POOL("lava_pool", 4),
+		/** Nether bricks, fences and stairs: only fortresses generate them. */
+		NETHER_FORTRESS("nether_fortress", 24),
+		/** End portal frames: only a stronghold's portal room has them. */
+		END_PORTAL("end_portal", 4),
+		/** A spawner whose spinning mob, which the client renders from the block entity, is a blaze. */
+		BLAZE_SPAWNER("blaze_spawner", 1);
 
 		private final String wireValue;
+		private final int minExposedBlocks;
 
-		FeatureKind(String wireValue) {
+		FeatureKind(String wireValue, int minExposedBlocks) {
 			this.wireValue = wireValue;
+			this.minExposedBlocks = minExposedBlocks;
 		}
 
 		String wireValue() {
 			return wireValue;
+		}
+
+		int minExposedBlocks() {
+			return minExposedBlocks;
 		}
 
 		static FeatureKind from(String value) {
@@ -484,6 +595,9 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 			FeatureKind featureKind,
 			Consumer<BlockPos> consumer
 		);
+
+		/** Blocks of a {@link FeatureKind#minExposedBlocks() clustered} kind with a face open to air, at any height. */
+		void forEachExposedBlock(BlockPos origin, int maxDistanceBlocks, FeatureKind featureKind, Consumer<BlockPos> consumer);
 
 		boolean isLoaded(BlockPos pos);
 
@@ -594,6 +708,58 @@ public final class WorldFeatureSearchService implements WorldFeatureSearchTool {
 					}
 				}
 			}
+		}
+
+		@Override
+		public void forEachExposedBlock(BlockPos origin, int maxDistanceBlocks, FeatureKind featureKind, Consumer<BlockPos> consumer) {
+			Predicate<BlockState> matches = switch (featureKind) {
+				case LAVA_POOL -> state -> state.is(Blocks.LAVA) && state.getFluidState().isSource();
+				case NETHER_FORTRESS -> state -> state.is(Blocks.NETHER_BRICKS) || state.is(Blocks.NETHER_BRICK_FENCE)
+					|| state.is(Blocks.NETHER_BRICK_STAIRS);
+				case END_PORTAL -> state -> state.is(Blocks.END_PORTAL_FRAME);
+				case BLAZE_SPAWNER -> state -> state.is(Blocks.SPAWNER);
+				default -> state -> false;
+			};
+			int minChunkX = (origin.getX() - maxDistanceBlocks) >> 4, maxChunkX = (origin.getX() + maxDistanceBlocks) >> 4;
+			int minChunkZ = (origin.getZ() - maxDistanceBlocks) >> 4, maxChunkZ = (origin.getZ() + maxDistanceBlocks) >> 4;
+			BlockPos.MutableBlockPos neighbour = new BlockPos.MutableBlockPos();
+			for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+				for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+					if (!level.hasChunk(chunkX, chunkZ)) continue;
+					LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+					LevelChunkSection[] sections = chunk.getSections();
+					for (int index = 0; index < sections.length; index++) {
+						LevelChunkSection section = sections[index];
+						// The palette rules out most sections without reading a block.
+						if (section.hasOnlyAir() || !section.maybeHas(matches)) continue;
+						int baseY = SectionPos.sectionToBlockCoord(chunk.getSectionYFromSectionIndex(index));
+						for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+							if (!matches.test(section.getBlockState(x, y, z))) continue;
+							BlockPos pos = new BlockPos((chunkX << 4) + x, baseY + y, (chunkZ << 4) + z);
+							if (exposed(pos, neighbour) && (featureKind != FeatureKind.BLAZE_SPAWNER || spawns(pos, EntityType.BLAZE)))
+								consumer.accept(pos);
+						}
+					}
+				}
+			}
+		}
+
+		/**
+		 * Whether a spawner spawns this mob. The server sends a spawner's next spawn data with the chunk so the client can
+		 * render the mob spinning inside it; that display entity is what a player sees through the cage.
+		 */
+		private boolean spawns(BlockPos pos, EntityType<?> type) {
+			if (!(level.getBlockEntity(pos) instanceof SpawnerBlockEntity spawner)) return false;
+			Entity display = spawner.getSpawner().getOrCreateDisplayEntity(level, pos);
+			return display != null && display.getType() == type;
+		}
+
+		private boolean exposed(BlockPos pos, BlockPos.MutableBlockPos neighbour) {
+			for (Direction direction : Direction.values()) {
+				neighbour.setWithOffset(pos, direction);
+				if (level.hasChunkAt(neighbour) && level.getBlockState(neighbour).isAir()) return true;
+			}
+			return false;
 		}
 
 		@Override
