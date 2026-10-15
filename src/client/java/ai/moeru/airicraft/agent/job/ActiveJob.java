@@ -11,6 +11,8 @@ import ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs;
 import ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs;
+import ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs;
+import ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectSmeltedItemsStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockPlacementStepArgs;
@@ -54,8 +56,83 @@ public record ActiveJob(
 	CollectBlazeRodsStepArgs collectBlazeRods,
 	CollectFlintStepArgs collectFlint,
 	ShelterForNightStepArgs shelterForNight,
-	CollectEnderPearlsStepArgs collectEnderPearls
+	CollectEnderPearlsStepArgs collectEnderPearls,
+	SleepInBedStepArgs sleepInBed,
+	HuntFoodStepArgs huntFood
 ) {
+	public ActiveJob(
+		String jobId,
+		ActiveJobType type,
+		ActiveJobStatus status,
+		GoalSnapshot directGoal,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		long waitUntilTick,
+		int baselineResourceCount,
+		int collectedCount,
+		String source,
+		String blockedReason,
+		String lastError,
+		long updatedTick,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls,
+		SleepInBedStepArgs sleepInBed
+	) {
+		this(jobId, type, status, directGoal, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, waitUntilTick, baselineResourceCount, collectedCount, source, blockedReason, lastError, updatedTick, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, sleepInBed, null);
+	}
+
+	public ActiveJob(
+		String jobId,
+		ActiveJobType type,
+		ActiveJobStatus status,
+		GoalSnapshot directGoal,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		long waitUntilTick,
+		int baselineResourceCount,
+		int collectedCount,
+		String source,
+		String blockedReason,
+		String lastError,
+		long updatedTick,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods,
+		CollectFlintStepArgs collectFlint,
+		ShelterForNightStepArgs shelterForNight,
+		CollectEnderPearlsStepArgs collectEnderPearls
+	) {
+		this(jobId, type, status, directGoal, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, waitUntilTick, baselineResourceCount, collectedCount, source, blockedReason, lastError, updatedTick, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight, collectEnderPearls, null);
+	}
+
 	public ActiveJob(
 		String jobId,
 		ActiveJobType type,

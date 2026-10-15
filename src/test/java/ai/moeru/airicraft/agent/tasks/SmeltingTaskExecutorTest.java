@@ -24,6 +24,36 @@ class SmeltingTaskExecutorTest {
 	}
 
 	@Test
+	void onlyAnEmptyFurnaceTheAgentPlacedIsPickedUpWithAPickaxe() {
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.RECLAIM,
+			SmeltingTaskExecutor.furnaceReclaimDecision(true, true, false, true, true));
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.NOT_PLACED_BY_AGENT,
+			SmeltingTaskExecutor.furnaceReclaimDecision(false, true, false, true, true));
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.NOT_PLACED_BY_AGENT,
+			SmeltingTaskExecutor.furnaceReclaimDecision(true, false, false, true, true));
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.STATION_IN_USE,
+			SmeltingTaskExecutor.furnaceReclaimDecision(true, true, true, true, true));
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.LEAVE_NOT_EMPTY,
+			SmeltingTaskExecutor.furnaceReclaimDecision(true, true, false, false, true));
+		assertEquals(SmeltingTaskExecutor.FurnaceReclaim.LEAVE_NO_PICKAXE,
+			SmeltingTaskExecutor.furnaceReclaimDecision(true, true, false, true, false));
+		assertEquals("no_pickaxe", SmeltingTaskExecutor.FurnaceReclaim.LEAVE_NO_PICKAXE.reason());
+		assertEquals("furnace_not_empty", SmeltingTaskExecutor.FurnaceReclaim.LEAVE_NOT_EMPTY.reason());
+	}
+
+	@Test
+	void furnaceCountsAsEmptyOnlyWithInputFuelAndOutputEmpty() {
+		assertEquals(true, SmeltingTaskExecutor.furnaceSlotsEmpty(
+			new SmeltingSlotSnapshot(null, 0, null, 0, null, 0, 0, 200, true)));
+		assertEquals(false, SmeltingTaskExecutor.furnaceSlotsEmpty(
+			new SmeltingSlotSnapshot(null, 0, "minecraft:coal", 1, null, 0, 0, 200, false)));
+		assertEquals(false, SmeltingTaskExecutor.furnaceSlotsEmpty(
+			new SmeltingSlotSnapshot("minecraft:raw_iron", 2, null, 0, null, 0, 0, 200, false)));
+		assertEquals(false, SmeltingTaskExecutor.furnaceSlotsEmpty(
+			new SmeltingSlotSnapshot(null, 0, null, 0, "minecraft:iron_ingot", 1, 0, 200, false)));
+	}
+
+	@Test
 	void fuelItemsNeededRoundsUpCookTime() {
 		assertEquals(0, SmeltingTaskExecutor.fuelItemsNeeded(0, 1600));
 		assertEquals(1, SmeltingTaskExecutor.fuelItemsNeeded(200, 1600));

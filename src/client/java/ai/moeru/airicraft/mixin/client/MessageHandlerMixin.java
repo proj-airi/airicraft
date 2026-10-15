@@ -1,6 +1,8 @@
 package ai.moeru.airicraft.mixin.client;
 
 import ai.moeru.airicraft.AiricraftClient;
+import ai.moeru.airicraft.agent.social.GameMessageLog;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.client.multiplayer.chat.ChatListener;
 import net.minecraft.network.chat.ChatType;
@@ -45,6 +47,13 @@ public class MessageHandlerMixin {
 		}
 
 		AiricraftClient.runtimeController().onSystemChatReceived(message);
+	}
+
+	@Inject(method = "handleSystemMessage", at = @At("HEAD"))
+	private void airicraft$recordGameMessage(Component content, boolean overlay, CallbackInfo ci) {
+		if (content == null) return;
+		String key = content.getContents() instanceof TranslatableContents translatable ? translatable.getKey() : "";
+		GameMessageLog.record(key, content.getString(), overlay);
 	}
 
 	@Inject(method = "handleSystemMessage", at = @At("TAIL"))

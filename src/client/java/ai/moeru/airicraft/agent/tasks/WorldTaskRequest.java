@@ -39,6 +39,8 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case CollectFlint ignored -> WorldTaskType.COLLECT_FLINT;
 			case ShelterForNight ignored -> WorldTaskType.SHELTER_FOR_NIGHT;
 			case CollectEnderPearls ignored -> WorldTaskType.COLLECT_ENDER_PEARLS;
+			case SleepInBed ignored -> WorldTaskType.SLEEP_IN_BED;
+			case HuntFood ignored -> WorldTaskType.HUNT_FOOD;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -180,6 +182,16 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new CollectEnderPearls(args));
 	}
 	public record CollectEnderPearls(CollectEnderPearlsStepArgs args) implements Task { public CollectEnderPearls { Objects.requireNonNull(args, "collectEnderPearls"); } }
+
+	public static WorldTaskRequest sleepInBed(String taskId, String sourceJobId, SleepInBedStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new SleepInBed(args));
+	}
+	public record SleepInBed(SleepInBedStepArgs args) implements Task { public SleepInBed { Objects.requireNonNull(args, "sleepInBed"); } }
+
+	public static WorldTaskRequest huntFood(String taskId, String sourceJobId, HuntFoodStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new HuntFood(args));
+	}
+	public record HuntFood(HuntFoodStepArgs args) implements Task { public HuntFood { Objects.requireNonNull(args, "huntFood"); } }
 
 	public sealed interface Task {
 	}

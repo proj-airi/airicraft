@@ -9,7 +9,7 @@ While it runs it sends task.progress milestones (land in sight, distance walked,
 
 Before a long walk, carry a few blocks of dirt, cobblestone or sandstone if you can: they roof the night shelter (sand and gravel cannot, they fall). With none it walks on through the night.
 
-It shelters by itself, so do not call shelter_for_night while it runs or after it hands the night back: that would dig a second hole.
+It shelters by itself, so do not call shelter_for_night while it runs or after it hands the night back: that would dig a second hole. If you carry a bed, sleeping is safer: at the dusk milestone cancel it, place the bed and call sleep_in_bed, then call explore_for again in the morning; it starts from wherever you are.
 
 At dusk it digs a 3-deep pit, roofs it and ends with sheltered_for_night: the trip is paused, not done, and the night is yours. Either:
 - stay put: call explore_for again with the same featureKind; it waits in the pit and walks on at dawn;

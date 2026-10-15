@@ -14,6 +14,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,6 +35,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 	private int targetIndex;
 	private int brokenTargets;
 	private int skippedTargets;
+	private final List<BlockPos> brokenPositions = new ArrayList<>();
 	private boolean breakingActive;
 	private long targetStartTick = -1L;
 	private int aimWaitTicks;
@@ -46,7 +48,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		this(clientSupplier, new CameraController());
 	}
 
-	private BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
+	BlockBreakTaskExecutor(Supplier<Minecraft> clientSupplier, CameraController cameraController) {
 		this.cameraController = Objects.requireNonNull(cameraController);
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
 	}
@@ -160,6 +162,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		BlockState after = minecraft.level.hasChunkAt(pos) ? minecraft.level.getBlockState(pos) : state;
 		if (satisfied(after)) {
 			brokenTargets++;
+			brokenPositions.add(pos.immutable());
 			targetIndex++;
 			breakingActive = false;
 			targetStartTick = -1L;
@@ -258,6 +261,11 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		return new TaskExecutionSnapshot(state, request.taskId(), null, "BlockBreak", event, null, null);
 	}
 
+	/** The cells this task has broken so far, in order (targets found already empty are not among them). */
+	List<BlockPos> brokenPositions() {
+		return List.copyOf(brokenPositions);
+	}
+
 	@Override
 	public TaskExecutionSnapshot snapshot() {
 		return snapshot;
@@ -286,6 +294,7 @@ public final class BlockBreakTaskExecutor implements WorldTaskExecutor {
 		targetIndex = 0;
 		brokenTargets = 0;
 		skippedTargets = 0;
+		brokenPositions.clear();
 		breakingActive = false;
 		targetStartTick = -1L;
 		aimWaitTicks = 0;

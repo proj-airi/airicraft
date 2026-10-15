@@ -16,7 +16,7 @@ import ai.moeru.airicraft.agent.idle.IdleIdeasConfig;
 import ai.moeru.airicraft.agent.idle.IdleIdeasLoader;
 import ai.moeru.airicraft.agent.observability.AgentObservability;
 import ai.moeru.airicraft.agent.tasks.NavigationTaskExecutor;
-import ai.moeru.airicraft.agent.tasks.BlockBreakTaskExecutor;
+import ai.moeru.airicraft.agent.tasks.BlockBreakJobExecutor;
 import ai.moeru.airicraft.agent.tasks.BlockInteractionTaskExecutor;
 import ai.moeru.airicraft.agent.tasks.UnderwaterHarvestTaskExecutor;
 import ai.moeru.airicraft.agent.tasks.CraftingTaskExecutor;
@@ -507,10 +507,10 @@ public final class ClientRuntimeController {
 			new CraftingTaskExecutor(navigationFacade, cameraController),
 			new DropItemsTaskExecutor(navigationFacade, cameraController),
 			new EntityInteractionTaskExecutor(navigationFacade, cameraController),
-			new SmeltingTaskExecutor(smeltingProcessManager, navigationFacade),
+			new SmeltingTaskExecutor(smeltingProcessManager, navigationFacade, cameraController),
 			new ReturnToSurfaceTaskExecutor(navigationFacade, cameraController),
 			new BlockInteractionTaskExecutor(airicraftConfig.blockInteractionDelayTicks(), cameraController, navigationFacade),
-			new BlockBreakTaskExecutor(cameraController),
+			new BlockBreakJobExecutor(cameraController, navigationFacade),
 			new TargetAcquisitionTaskExecutor(navigationFacade, cameraController, miningOpportunityPolicy, miningOpportunityJournal),
 			underwaterHarvestTaskExecutor,
 			new ai.moeru.airicraft.agent.tasks.CropTendingTaskExecutor(navigationFacade, cameraController,
@@ -523,7 +523,9 @@ public final class ClientRuntimeController {
 			new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.CollectFlintTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor(navigationFacade, cameraController),
-			new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsTaskExecutor(navigationFacade, cameraController)
+			new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.SleepInBedTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.HuntFoodTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);
