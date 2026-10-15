@@ -1218,9 +1218,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean free = !reflex.holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
 			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current());
-		// A plain walk leaves the hands free; eating on the way beats arriving hungry. Other jobs switch tools.
+		// A plain walk (or a night-shelter wait) leaves the hands free; eating on the way beats arriving hungry. Other jobs switch tools.
 		boolean walking = !reflex.holdsNormalTasks() && !policyActive() && !actionGraphCoordinator.hasNonterminal()
-			&& walkingOnly(taskExecutionSnapshot);
+			&& handsFree(taskExecutionSnapshot);
 		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
 			&& (free || quietHold || walking)
 			&& !playerItemUseController.eating() && !player.isUsingItem()
@@ -1246,6 +1246,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					"reason", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()));
 			}
 		});
+	}
+
+	/** A plain walk, or the wait in a closed night shelter: the hands are free to eat. */
+	static boolean handsFree(TaskExecutionSnapshot execution) {
+		return walkingOnly(execution) || ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor.waitingInShelter(execution);
 	}
 
 	static boolean walkingOnly(TaskExecutionSnapshot execution) {
@@ -3804,6 +3809,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				applyPlannerJobTool(ActiveJobProposal.collectFlint(flint));
 				yield queuedActionToolResult("collect_flint", "count=" + flint.count());
 			}
+			case PlannerToolCatalog.SHELTER_FOR_NIGHT -> {
+				var shelter = ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.shelterForNight(shelter));
+				yield queuedActionToolResult("shelter_for_night", "maxWaitTicks=" + shelter.maxWaitTicks());
+			}
 			case PlannerToolCatalog.EXPLORE_FOR -> {
 				var explore = ai.moeru.airicraft.agent.tasks.ExploreForStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.exploreFor(explore));
@@ -5438,7 +5448,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, ASK_USER -> false;
 		};
 	}
 
@@ -5683,7 +5693,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 		return switch (type) {
-			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT -> true;
+			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT -> true;
 			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON, EXPLORE_FOR -> false;
 		};
 	}

@@ -30,18 +30,21 @@ import java.util.function.Predicate;
  * taking at three or four health, since retreating to eat found no safe window. The hole is only dug where every
  * wall around the body is solid, nothing liquid touches it, there is floor under it, and each block breaks fast
  * with a carried tool; the body then eats and heals inside until the threat leaves. Client thread only.
+ *
+ * <p>The plan, step, shaft and intruder checks are public and pure so the {@code shelter_for_night} task digs the same
+ * shelter; only {@link #tick} drives the reflex's own bunker.
  */
-final class EmergencyBunker {
+public final class EmergencyBunker {
 	/** Health at or below which a fight turns into digging in. */
 	static final float HEALTH_THRESHOLD = 8.0F;
-	static final int DEPTH = 3;
+	public static final int DEPTH = 3;
 	/** Slowest block the dig accepts, in ticks with the best carried tool. */
-	static final int MAX_BREAK_TICKS = 30;
+	public static final int MAX_BREAK_TICKS = 30;
 	/** Give up on a bunker that is not closed within this many ticks of starting. */
 	static final int MAX_TICKS = 200;
 
 	/** What the bunker needs to know about the cells around a column. */
-	interface Cells {
+	public interface Cells {
 		boolean solid(BlockPos pos);
 		/** Ticks to break with the best carried tool; negative when it cannot be broken. */
 		int breakTicks(BlockPos pos);
@@ -50,8 +53,8 @@ final class EmergencyBunker {
 	}
 
 	/** Where to dig and where the roof goes, for a body standing with its feet in {@code feet}. */
-	record Plan(BlockPos top, List<BlockPos> dig, BlockPos roof, BlockPos roofSupport) {
-		BlockPos bottom() {
+	public record Plan(BlockPos top, List<BlockPos> dig, BlockPos roof, BlockPos roofSupport) {
+		public BlockPos bottom() {
 			return dig.getLast();
 		}
 	}
@@ -81,7 +84,7 @@ final class EmergencyBunker {
 		return plan == null ? null : shaft(plan);
 	}
 
-	static AABB shaft(Plan plan) {
+	public static AABB shaft(Plan plan) {
 		BlockPos bottom = plan.bottom();
 		return new AABB(bottom.getX(), bottom.getY(), bottom.getZ(), bottom.getX() + 1, plan.roof().getY() + 1, bottom.getZ() + 1);
 	}
@@ -91,7 +94,7 @@ final class EmergencyBunker {
 	 * the roof went on; the roof then closed over both of them and the body stood still while it was hit to death.
 	 * A mob standing on the roof does not count: it cannot reach or see the body.
 	 */
-	static boolean intruded(AABB shaft, List<AABB> mobs) {
+	public static boolean intruded(AABB shaft, List<AABB> mobs) {
 		for (AABB mob : mobs) if (mob.intersects(shaft)) return true;
 		return false;
 	}
@@ -101,14 +104,19 @@ final class EmergencyBunker {
 	 * body's feet and head cells and the roof cell above them, so the walls around the lower two must be solid,
 	 * the roof needs one solid side to be placed against, and nothing next to any of them may be liquid.
 	 */
-	static Plan plan(Cells cells, BlockPos feet) {
+	public static Plan plan(Cells cells, BlockPos feet) {
+		return plan(cells, feet, MAX_BREAK_TICKS);
+	}
+
+	/** As {@link #plan(Cells, BlockPos)}, accepting blocks up to {@code maxBreakTicks}: a shelter dug before a fight may be slower. */
+	public static Plan plan(Cells cells, BlockPos feet, int maxBreakTicks) {
 		if (cells.falling(feet.above()) || cells.falling(feet)) return null;
 		List<BlockPos> dig = new java.util.ArrayList<>();
 		for (int depth = 1; depth <= DEPTH; depth++) dig.add(feet.below(depth));
 		if (!cells.solid(feet.below(DEPTH + 1)) || cells.fluid(feet.below(DEPTH + 1))) return null;
 		for (BlockPos cell : dig) {
 			int ticks = cells.breakTicks(cell);
-			if (ticks < 0 || ticks > MAX_BREAK_TICKS || cells.fluid(cell)) return null;
+			if (ticks < 0 || ticks > maxBreakTicks || cells.fluid(cell)) return null;
 			for (Direction side : Direction.Plane.HORIZONTAL) {
 				BlockPos wall = cell.relative(side);
 				if (cells.fluid(wall)) return null;
@@ -124,10 +132,10 @@ final class EmergencyBunker {
 		return null;
 	}
 
-	enum Step { DIG, WAIT, ROOF, CLOSED }
+	public enum Step { DIG, WAIT, ROOF, CLOSED }
 
 	/** The next thing to do, from the body's feet height and whether the roof is in place. */
-	static Step step(Plan plan, int feetY, boolean onGround, boolean roofSolid) {
+	public static Step step(Plan plan, int feetY, boolean onGround, boolean roofSolid) {
 		if (feetY <= plan.bottom().getY() && roofSolid) return Step.CLOSED;
 		if (feetY > plan.bottom().getY()) return onGround ? Step.DIG : Step.WAIT;
 		return onGround ? Step.ROOF : Step.WAIT;
@@ -209,7 +217,8 @@ final class EmergencyBunker {
 		events.add(new SurvivalReflexEvent("reflex.bunker_failed", java.util.Map.of("tick", tick, "reason", reason)));
 	}
 
-	private static Cells cells(Level level, LocalPlayer player) {
+	/** The world's cells as the plan reads them, with break times for the best tool {@code player} carries. */
+	public static Cells cells(Level level, LocalPlayer player) {
 		return new Cells() {
 			@Override public boolean solid(BlockPos pos) {
 				return level.hasChunkAt(pos) && level.getBlockState(pos).isCollisionShapeFullBlock(level, pos);
@@ -245,7 +254,7 @@ final class EmergencyBunker {
 	 * Whether the first dug block drops dirt, which the body picks up on the way down and roofs with. A body that
 	 * respawned with nothing can still dig in where the ground is soil.
 	 */
-	static boolean dropsDirt(BlockState state) {
+	public static boolean dropsDirt(BlockState state) {
 		return state.is(BlockTags.DIRT) && !state.is(Blocks.MOSS_BLOCK) && !state.is(Blocks.MUD)
 			&& NavigationPolicies.isThrowaway(new ItemStack(Items.DIRT));
 	}

@@ -800,6 +800,27 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void shelterPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(6_000);
+		runtime.applyPlannerResponse(new DialogueResponse("Digging in for the night.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.shelterForNight(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.SHELTER_FOR_NIGHT, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().shelterForNight());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same shelter");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().shelterForNight());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);

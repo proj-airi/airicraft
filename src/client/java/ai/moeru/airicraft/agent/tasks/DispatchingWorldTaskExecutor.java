@@ -141,8 +141,20 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		WorldTaskExecutor locateStronghold,
 		WorldTaskExecutor exploreFor,
 		WorldTaskExecutor collectBlazeRods,
-		WorldTaskExecutor collectFlint
+		WorldTaskExecutor collectFlint,
+		WorldTaskExecutor shelterForNight
 	) {
+		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
+			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
+			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
+			WorldTaskExecutor underwaterHarvest, WorldTaskExecutor cropTending, WorldTaskExecutor lureEntities,
+			WorldTaskExecutor dragonFight, WorldTaskExecutor collectObsidian, WorldTaskExecutor locateStronghold,
+			WorldTaskExecutor exploreFor, WorldTaskExecutor collectBlazeRods, WorldTaskExecutor collectFlint) {
+			this(navigation, crafting, dropItems, entityInteraction, smelting, returnToSurface, blockInteraction,
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold,
+				exploreFor, collectBlazeRods, collectFlint, entityInteraction);
+		}
+
 		public ExecutorSet(WorldTaskExecutor navigation, WorldTaskExecutor crafting, WorldTaskExecutor dropItems,
 			WorldTaskExecutor entityInteraction, WorldTaskExecutor smelting, WorldTaskExecutor returnToSurface,
 			WorldTaskExecutor blockInteraction, WorldTaskExecutor blockBreak, WorldTaskExecutor acquisition,
@@ -230,6 +242,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			Objects.requireNonNull(exploreFor, "exploreFor");
 			Objects.requireNonNull(collectBlazeRods, "collectBlazeRods");
 			Objects.requireNonNull(collectFlint, "collectFlint");
+			Objects.requireNonNull(shelterForNight, "shelterForNight");
 			Objects.requireNonNull(acquisition, "acquisition");
 			Objects.requireNonNull(underwaterHarvest, "underwaterHarvest");
 			Objects.requireNonNull(navigation, "navigation");
@@ -262,6 +275,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				case EXPLORE_FOR -> exploreFor;
 				case COLLECT_BLAZE_RODS -> collectBlazeRods;
 				case COLLECT_FLINT -> collectFlint;
+				case SHELTER_FOR_NIGHT -> shelterForNight;
 			};
 		}
 
@@ -274,7 +288,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 				smelting,
 				returnToSurface,
 				blockInteraction,
-				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint
+				blockBreak, acquisition, underwaterHarvest, cropTending, lureEntities, dragonFight, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, collectFlint, shelterForNight
 			)));
 		}
 	}
