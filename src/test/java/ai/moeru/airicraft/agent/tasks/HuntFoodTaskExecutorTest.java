@@ -45,6 +45,14 @@ class HuntFoodTaskExecutorTest {
 			Set.of(), 32), "beyond maxDistance");
 	}
 
+	@Test void keepHerdFalseTakesTheLastAdultsToo() {
+		var pair = build(List.of(animal(1, "cow", 3.0), animal(2, "cow", 4.0), animal(3, "cow", 1.0).baby()));
+		assertNull(HuntFoodTaskExecutor.chooseTarget(pair, Set.of(), 32, HuntFoodTaskExecutor.KEEP_PER_KIND));
+		assertEquals(1, HuntFoodTaskExecutor.chooseTarget(pair, Set.of(), 32, 0).id(), "the nearest adult; the baby still lives");
+		assertEquals(new HuntFoodStepArgs(6, true, 32, false), HuntFoodStepArgs.parse(json("{\"keepHerd\":false}")));
+		assertThrows(IllegalArgumentException.class, () -> HuntFoodStepArgs.parse(json("{\"keepHerd\":\"no\"}")));
+	}
+
 	@Test void leavesTheLastTwoAdultsOfAKindAlive() {
 		assertNull(HuntFoodTaskExecutor.chooseTarget(build(List.of(animal(1, "cow", 3.0), animal(2, "cow", 4.0))), Set.of(), 32));
 		assertNull(HuntFoodTaskExecutor.chooseTarget(build(List.of(animal(1, "cow", 3.0), animal(2, "cow", 4.0),
