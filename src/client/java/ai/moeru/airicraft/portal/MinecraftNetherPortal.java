@@ -55,7 +55,7 @@ public final class MinecraftNetherPortal {
 			site = "chosen";
 			frame = NetherPortalFrame.findSite(new ConstructionEscape.Position(feet.getX(), feet.getY(), feet.getZ()), SITE_RADIUS, terrain)
 				.orElseThrow(() -> new IllegalStateException("portal_site_not_found: no flat clear 4x5 spot with solid ground within "
-					+ SITE_RADIUS + " blocks; move to open flat ground or pass x, y, z and axis"));
+					+ SITE_RADIUS + " blocks that the body can walk to; move to open flat ground or pass x, y, z and axis"));
 		}
 		for (var slot : frame.slots()) {
 			var pos = block(slot.position());
