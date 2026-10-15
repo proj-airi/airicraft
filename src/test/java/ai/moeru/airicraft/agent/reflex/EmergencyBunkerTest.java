@@ -1,16 +1,20 @@
 package ai.moeru.airicraft.agent.reflex;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.AABB;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EmergencyBunkerTest {
 	private static final BlockPos FEET = new BlockPos(0, 64, 0);
@@ -33,6 +37,17 @@ class EmergencyBunkerTest {
 		assertEquals(new BlockPos(0, 61, 0), plan.bottom());
 		assertEquals(new BlockPos(0, 63, 0), plan.roof());
 		assertEquals(63, plan.roofSupport().getY());
+	}
+
+	@Test
+	void aMobInTheShaftIsAnIntruderButOneOnTheRoofIsNot() {
+		AABB shaft = EmergencyBunker.shaft(EmergencyBunker.plan(new Ground(), FEET));
+		assertEquals(new AABB(0, 61, 0, 1, 64, 1), shaft);
+		AABB zombieInside = new AABB(0.3, 61, 0.1, 0.9, 62.95, 0.7);
+		AABB zombieOnRoof = new AABB(0.2, 64, 0.2, 0.8, 65.95, 0.8);
+		AABB zombieBeside = new AABB(1.2, 64, 0.2, 1.8, 65.95, 0.8);
+		assertTrue(EmergencyBunker.intruded(shaft, List.of(zombieOnRoof, zombieInside)));
+		assertFalse(EmergencyBunker.intruded(shaft, List.of(zombieOnRoof, zombieBeside)));
 	}
 
 	@Test

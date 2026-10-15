@@ -687,6 +687,15 @@
       "extraWake": null
     },
     {
+      "type": "reflex.bunker_intruder",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "reflex.close_quarter_attack",
       "producers": [
         "SurvivalReflexRuntime"
@@ -742,6 +751,33 @@
     },
     {
       "type": "reflex.flight_abandoned",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": "W3"
+    },
+    {
+      "type": "reflex.took_cover",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.cover_abandoned",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.creeper_run",
       "producers": [
         "SurvivalReflexRuntime"
       ],

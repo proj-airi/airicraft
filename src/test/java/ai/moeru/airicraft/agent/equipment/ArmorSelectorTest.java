@@ -112,4 +112,21 @@ class ArmorSelectorTest {
 		assertEquals(7, ArmorAutoEquip.armorMenuSlot(EquipmentSlot.LEGS));
 		assertEquals(8, ArmorAutoEquip.armorMenuSlot(EquipmentSlot.FEET));
 	}
+
+	@Test
+	void keepsOneGoldenPieceOnInTheNether() {
+		var gold = new ArmorSelector.Piece("head", 5, "minecraft:golden_helmet", 2, 0, 77, false, true);
+		var pieces = List.of(worn("head", "minecraft:iron_helmet", 2), worn("chest", "minecraft:iron_chestplate", 6), gold);
+		assertEquals(List.of(), ArmorSelector.choose(pieces, ArmorPolicy.defaults()));
+		var swaps = ArmorSelector.choose(pieces, ArmorPolicy.defaults(), true);
+		assertEquals(1, swaps.size());
+		assertEquals("minecraft:golden_helmet", swaps.getFirst().itemId());
+		assertEquals("minecraft:iron_helmet", swaps.getFirst().replacedItemId());
+
+		var wornGold = new ArmorSelector.Piece("head", -1, "minecraft:golden_helmet", 2, 0, 77, false, true);
+		var better = carried("head", 7, "minecraft:diamond_helmet", 3, 2, 363);
+		assertEquals(List.of(), ArmorSelector.choose(List.of(wornGold, better), ArmorPolicy.defaults(), true));
+		assertEquals("minecraft:diamond_helmet",
+			ArmorSelector.choose(List.of(wornGold, better), ArmorPolicy.defaults(), false).getFirst().itemId());
+	}
 }

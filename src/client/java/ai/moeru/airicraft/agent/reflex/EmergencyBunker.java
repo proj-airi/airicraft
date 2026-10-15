@@ -17,6 +17,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -76,6 +77,26 @@ final class EmergencyBunker {
 
 	boolean active() {
 		return plan != null;
+	}
+
+	/** The cells the body digs out, roof cell included, or null with no bunker under way. */
+	AABB shaft() {
+		return plan == null ? null : shaft(plan);
+	}
+
+	static AABB shaft(Plan plan) {
+		BlockPos bottom = plan.bottom();
+		return new AABB(bottom.getX(), bottom.getY(), bottom.getZ(), bottom.getX() + 1, plan.roof().getY() + 1, bottom.getZ() + 1);
+	}
+
+	/**
+	 * Whether a mob is inside the shaft with the body. In a random-seed playtest a zombie dropped into the hole before
+	 * the roof went on; the roof then closed over both of them and the body stood still while it was hit to death.
+	 * A mob standing on the roof does not count: it cannot reach or see the body.
+	 */
+	static boolean intruded(AABB shaft, List<AABB> mobs) {
+		for (AABB mob : mobs) if (mob.intersects(shaft)) return true;
+		return false;
 	}
 
 	/**

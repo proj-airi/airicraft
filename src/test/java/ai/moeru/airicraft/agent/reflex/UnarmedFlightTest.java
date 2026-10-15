@@ -42,7 +42,11 @@ class UnarmedFlightTest {
 		assertEquals("strong_mob", UnarmedFlight.fleeReason(1.0D, 20F, 20F, zombie), "a fist against twenty health");
 		assertEquals("strong_mob", UnarmedFlight.fleeReason(3.0D, 20F, 20F, zombie), "a stone pickaxe is no sword");
 		assertNull(UnarmedFlight.fleeReason(4.0D, 20F, 20F, zombie), "a wooden sword fights");
-		assertNull(UnarmedFlight.fleeReason(7.0D, 6F, 20F, List.of(zombie(3, 0), zombie(-3, 0))), "an axe fights a pack");
+		assertNull(UnarmedFlight.fleeReason(7.0D, 20F, 20F, List.of(zombie(3, 0), zombie(-3, 0))), "an axe fights a pack");
+		assertEquals("outmatched", UnarmedFlight.fleeReason(7.0D, 6F, 20F, List.of(zombie(3, 0), zombie(-3, 0))),
+			"but not at six health");
+		assertEquals("outmatched", UnarmedFlight.fleeReason(4.0D, 9F, 20F, zombie), "a wooden sword at nine health");
+		assertNull(UnarmedFlight.fleeReason(6.0D, 10F, 20F, zombie), "an iron sword wins in four swings");
 		assertEquals("outnumbered", UnarmedFlight.fleeReason(1.0D, 20F, 20F, List.of(zombie(3, 0), zombie(-3, 0))));
 		var silverfish = List.of(new UnarmedFlight.Threat(2, 0, 8F, false, false, 2, true));
 		assertNull(UnarmedFlight.fleeReason(1.0D, 20F, 20F, silverfish), "trivially beatable near full health");
@@ -133,6 +137,33 @@ class UnarmedFlightTest {
 		var end = new GridPos(-20, 64, 0);
 		assertFalse(UnarmedFlight.threatNearer(end, 0.5, 0.5, List.of(zombie(3, 0))));
 		assertTrue(UnarmedFlight.threatNearer(end, 0.5, 0.5, List.of(zombie(-10, 2))));
+	}
+
+	@Test
+	void triesAgainAfterNoEscapeRouteButKeepsOtherVerdicts() {
+		assertFalse(UnarmedFlight.retryable("no_escape_route", 100, 159, 0), "too soon: the body has hardly moved");
+		assertTrue(UnarmedFlight.retryable("no_escape_route", 100, 160, 0));
+		assertFalse(UnarmedFlight.retryable("no_escape_route", 100, 400, UnarmedFlight.MAX_RETRIES), "a few retries an episode");
+		for (String reason : List.of("armed", "outrun", "timeout", "navigation_unavailable"))
+			assertFalse(UnarmedFlight.retryable(reason, 100, 10_000, 0), reason);
+	}
+
+	@Test
+	void aRetriedFlightCountsItsRetriesUntilTheEpisodeEnds() {
+		UnarmedFlight flight = new UnarmedFlight();
+		flight.start(0, Long.MIN_VALUE);
+		flight.abandon("no_escape_route", 49, null);
+		assertTrue(flight.abandoned());
+		assertFalse(flight.mayRetry(60));
+		assertTrue(flight.mayRetry(109));
+		flight.start(109, Long.MIN_VALUE);
+		assertFalse(flight.abandoned());
+		assertEquals(1, flight.retries());
+		flight.abandon("outrun", 200, null);
+		assertFalse(flight.mayRetry(10_000), "outrun stands for the episode");
+		flight.reset(null);
+		assertFalse(flight.abandoned());
+		assertEquals(0, flight.retries());
 	}
 
 	@Test

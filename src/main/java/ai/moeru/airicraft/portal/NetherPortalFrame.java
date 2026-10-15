@@ -140,6 +140,9 @@ public record NetherPortalFrame(int x, int y, int z, Axis axis) {
 	 * level first, then one and two blocks up and down.
 	 */
 	public static Optional<NetherPortalFrame> findSite(ConstructionEscape.Position feet, int radius, Terrain terrain) {
+		// A site the body cannot walk to is no site: from a one-cell pit a playtest builder picked a trench two
+		// blocks up and failed construction_no_feasible_target three times over 2000 ticks.
+		Set<ConstructionEscape.Position> walkable = walkable(feet, radius + 4, terrain);
 		for (int dy : new int[]{0, -1, 1, -2, 2})
 			for (int ring = 2; ring <= radius; ring++) {
 				NetherPortalFrame best = null;
@@ -150,6 +153,7 @@ public record NetherPortalFrame(int x, int y, int z, Axis axis) {
 						for (var axis : Axis.values()) {
 							var frame = new NetherPortalFrame(feet.x() + dx, feet.y() + dy, feet.z() + dz, axis);
 							if (!frame.siteFits(feet, terrain)) continue;
+							if (frame.stanceCandidates().stream().noneMatch(walkable::contains)) continue;
 							var c = frame.at(1, 0);
 							double distance = Math.pow(c.x() + .5 - feet.x(), 2) + Math.pow(c.z() + .5 - feet.z(), 2);
 							if (distance < bestDistance) { best = frame; bestDistance = distance; }
@@ -158,6 +162,33 @@ public record NetherPortalFrame(int x, int y, int z, Axis axis) {
 				if (best != null) return Optional.of(best);
 			}
 		return Optional.empty();
+	}
+
+	/**
+	 * Standing cells reachable on foot from {@code feet} without edits, stepping at most one block up (with head
+	 * room to jump) or down, within {@code radius} blocks horizontally.
+	 */
+	static Set<ConstructionEscape.Position> walkable(ConstructionEscape.Position feet, int radius, Terrain terrain) {
+		Set<ConstructionEscape.Position> seen = new HashSet<>();
+		ArrayDeque<ConstructionEscape.Position> queue = new ArrayDeque<>();
+		seen.add(feet);
+		queue.add(feet);
+		int[][] steps = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+		while (!queue.isEmpty() && seen.size() < 4096) {
+			var at = queue.poll();
+			for (int[] step : steps)
+				for (int dy : new int[]{0, 1, -1}) {
+					var next = new ConstructionEscape.Position(at.x() + step[0], at.y() + dy, at.z() + step[1]);
+					if (Math.abs(next.x() - feet.x()) > radius || Math.abs(next.z() - feet.z()) > radius
+						|| Math.abs(next.y() - feet.y()) > 4 || seen.contains(next) || !standable(terrain, next)) continue;
+					// Jumping up needs the cell over the head clear; stepping down needs it over the lower cell's head.
+					if (dy == 1 && !terrain.clear(new ConstructionEscape.Position(at.x(), at.y() + 2, at.z()))) continue;
+					if (dy == -1 && !terrain.clear(new ConstructionEscape.Position(next.x(), next.y() + 2, next.z()))) continue;
+					seen.add(next);
+					queue.add(next);
+				}
+		}
+		return seen;
 	}
 
 	boolean siteFits(ConstructionEscape.Position feet, Terrain terrain) {

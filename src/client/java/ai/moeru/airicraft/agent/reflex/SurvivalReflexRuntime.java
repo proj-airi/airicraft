@@ -50,6 +50,9 @@ public final class SurvivalReflexRuntime {
 	static final int BREATHABLE_STABLE_TICKS = 12;
 	private static final float ATTACK_READY_THRESHOLD = 0.92F;
 	private static final double MELEE_ATTACK_DISTANCE = 3.0D;
+	/** A melee mob this close can hit within the time a raised shield takes to start blocking. */
+	static final double MELEE_GUARD_DISTANCE = 3.5D;
+	static final double MELEE_CROWD_DISTANCE = 6.0D;
 	static final double MELEE_THREAT_DISTANCE = 6.0D;
 	static final double WET_FIGHT_DISTANCE = 4.0D;
 	static final long ESCAPE_RETRY_TICKS = 100L;
@@ -57,10 +60,19 @@ public final class SurvivalReflexRuntime {
 	private static final int MOB_ROUTE_REFRESH_TICKS = 10;
 	private static final long FOOD_RETREAT_LIMIT_TICKS = 100L;
 	static final int LAVA_CLEAR_TICKS = 5;
+	static final double LAVA_BESIDE_PENALTY = 2.0D;
 	static final int EXTINGUISH_MAX_ATTEMPTS = 20;
 	static final int LAVA_ESCAPE_RADIUS = 5;
 	/** Ticks without closing in on the chosen bank before trying another. */
 	static final int LAVA_STALL_TICKS = 30;
+	/** Ticks of escaping a lit creeper with no distance gained before running straight away. */
+	static final int CREEPER_STALL_TICKS = 8;
+	static final int CREEPER_RUN_TICKS = 60;
+	static final int CREEPER_RUN_BLOCKS = 12;
+	static final float LOSING_FIGHT_HEALTH = 12.0F;
+	static final double BUNKER_MELEE_CLEARANCE = 6.0D;
+	static final int NO_CONTACT_RESUME_LIMIT = 3;
+	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -73,6 +85,9 @@ public final class SurvivalReflexRuntime {
 	private SurvivalReflexSnapshot snapshot = SurvivalReflexSnapshot.idle();
 	private boolean drowningDamageObserved;
 	private long lastMobDamageTick = Long.MIN_VALUE;
+	/** Set when a hold came from a mob episode with no contact; see {@link #takeNoContactResume}. */
+	private boolean noContactHold;
+	private final java.util.ArrayDeque<Long> noContactResumes = new java.util.ArrayDeque<>();
 	private boolean safetyHoldActuating;
 	private int secureEscapeTicks;
 	private long mobRoutesTick = Long.MIN_VALUE;
@@ -98,6 +113,12 @@ public final class SurvivalReflexRuntime {
 	private List<ResolvedThreat> progressThreats;
 	private MinecraftCombatPositioning combatPositioning;
 	private String escapingCreeper;
+	/** A straight run from a lit creeper, taken when stepping about gains no distance (see {@link #tickCreeperRun}). */
+	private ai.moeru.airicraft.navigation.GridPos creeperRunTarget;
+	private long creeperRunTick;
+	private double creeperBestDistance = -1;
+	private long creeperGainTick;
+	private ai.moeru.airicraft.agent.navigation.MinecraftCellClassifier creeperClassifier;
 	private String reportedCombatFocus;
 	private CombatRecovery combatRecovery;
 	private boolean wetFighting;
@@ -116,8 +137,11 @@ public final class SurvivalReflexRuntime {
 	private boolean foodRetreatAbandoned;
 	private boolean foodUnavailableReported;
 	private final EmergencyBunker bunker = new EmergencyBunker();
+	private boolean bunkerIntruderReported;
 	private final ReflexArchery archery = new ReflexArchery();
 	private final UnarmedFlight flight = new UnarmedFlight();
+	private final RangedCover cover = new RangedCover();
+	private String coverStartReason;
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -396,6 +420,7 @@ public final class SurvivalReflexRuntime {
 	public void reset(Minecraft minecraft) {
 		bunker.reset();
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
 		extinguishPour = null;
 		extinguishAttempts = 0;
 		foodRetreatStartedTick = -1L;
@@ -451,6 +476,8 @@ public final class SurvivalReflexRuntime {
 	) {
 		bunker.allowRetry();
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
+		noContactHold = false;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
@@ -555,7 +582,7 @@ public final class SurvivalReflexRuntime {
 				underwaterEscape.tick(
 					minecraft,
 					mode,
-					player.getAirSupply(),
+					survivableTicks(player.getAirSupply(), player.getHealth()),
 					tick,
 					mode == UnderwaterEscapeSearch.SearchMode.BREATHABLE
 						? !player.isUnderWater()
@@ -605,7 +632,8 @@ public final class SurvivalReflexRuntime {
 			else {
 				BlockPos target = lavaEscapeTarget(player.blockPosition(), player.position(), LAVA_ESCAPE_RADIUS,
 					cell -> !lavaBlockedTargets.contains(cell) && lavaSafeStand(minecraft.level, cell),
-					cell -> !minecraft.level.getBlockState(cell).getCollisionShape(minecraft.level, cell).isEmpty());
+					cell -> !minecraft.level.getBlockState(cell).getCollisionShape(minecraft.level, cell).isEmpty(),
+					cell -> besideLava(minecraft.level, cell));
 				target = trackLavaTarget(target, player.position(), tick);
 				if (target == null) {
 					movementController.hold(minecraft, true, false);
@@ -726,6 +754,15 @@ public final class SurvivalReflexRuntime {
 	 * the straight way there is open at the height the body arrives at, so a bank behind a wall loses to an open one.
 	 */
 	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand, Predicate<BlockPos> solid) {
+		return lavaEscapeTarget(feet, position, radius, safeStand, solid, cell -> false);
+	}
+
+	/**
+	 * Like the above, but a bank whose body cells share a face with lava counts {@link #LAVA_BESIDE_PENALTY} blocks
+	 * farther: the body stops a little past the cell centre and a Nether lava fall set it alight again from such a bank.
+	 */
+	static BlockPos lavaEscapeTarget(BlockPos feet, Vec3 position, int radius, Predicate<BlockPos> safeStand,
+		Predicate<BlockPos> solid, Predicate<BlockPos> besideLava) {
 		BlockPos best = null;
 		double bestCost = Double.MAX_VALUE;
 		for (int dy = -1; dy <= 2; dy++) {
@@ -735,6 +772,10 @@ public final class SurvivalReflexRuntime {
 					double horizontal = Math.hypot(cell.getX() + 0.5D - position.x, cell.getZ() + 0.5D - position.z);
 					double cost = horizontal + 0.5D * Math.max(0, cell.getY() - feet.getY());
 					if (cost >= bestCost || !safeStand.test(cell) || !openWay(position, cell, solid)) continue;
+					if (besideLava.test(cell)) {
+						cost += LAVA_BESIDE_PENALTY;
+						if (cost >= bestCost) continue;
+					}
 					bestCost = cost;
 					best = cell;
 				}
@@ -753,6 +794,15 @@ public final class SurvivalReflexRuntime {
 			if (solid.test(column) || solid.test(column.above())) return false;
 		}
 		return true;
+	}
+
+	private static boolean besideLava(Level level, BlockPos cell) {
+		for (BlockPos body : List.of(cell, cell.above())) {
+			for (Direction side : Direction.Plane.HORIZONTAL) {
+				if (level.getFluidState(body.relative(side)).is(FluidTags.LAVA)) return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean lavaSafeStand(Level level, BlockPos cell) {
@@ -898,10 +948,12 @@ public final class SurvivalReflexRuntime {
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
 		if (tickBunker(minecraft, player, threats, tick, combatEating)) {
-			// Digging in outranks running; a failed bunker lets the flight start again.
+			// Digging in outranks running and hiding; a failed bunker lets the flight start again.
 			flight.reset(navigationFacade);
+			cover.reset(navigationFacade);
 			return;
 		}
+		if (tickCover(minecraft, player, threats, tick, combatEating)) return;
 		if (tickFlight(minecraft, player, threats, tick)) return;
 		if (combatProgress != null && combatProgress.stalled()) {
 			tacticalWindow = new TacticalWindow(tick + 1200, tick);
@@ -917,6 +969,10 @@ public final class SurvivalReflexRuntime {
 		}
 		boolean usePositioning = shouldReposition(threats.size()) && navigationFacade != null && navigationFacade.isLoaded();
 		updateCreeperEscape(threats);
+		if (tickCreeperRun(minecraft, player, threats, tick)) {
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+			return;
+		}
 		if (tickCombatEating(minecraft, player, threats, tick, combatEating, usePositioning)) return;
 		if (threats.stream().noneMatch(threat ->
 			policy().acceptsMob(isRangedThreat(threat.entity()), threat.distance(), threat.lineOfSight())
@@ -984,19 +1040,17 @@ public final class SurvivalReflexRuntime {
 	 */
 	private boolean tickFlight(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
 		if (navigationFacade == null || !navigationFacade.isLoaded()) {
-			if (flight.active()) flight.abandon("navigation_unavailable", navigationFacade);
+			if (flight.active()) flight.abandon("navigation_unavailable", tick, navigationFacade);
 			return false;
 		}
 		ItemStack weapon = combatWeapon(player);
 		double damage = UnarmedFlight.attackDamage(weapon);
-		List<UnarmedFlight.Threat> view = threats.stream().map(threat -> new UnarmedFlight.Threat(
-			threat.entity().getX(), threat.entity().getZ(), threat.entity().getHealth(), isRangedThreat(threat.entity()),
-			threat.entity() instanceof net.minecraft.world.entity.monster.Creeper, threat.distance(), threat.lineOfSight())).toList();
+		List<UnarmedFlight.Threat> view = flightView(threats);
 		if (!flight.active()) {
-			if (flight.abandoned() || archeryTarget(player, threats) != null) return false;
+			if (flight.abandoned() && !flight.mayRetry(tick) || archeryTarget(player, threats) != null) return false;
 			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view);
 			if (reason == null) return false;
-			flight.start(tick, lastMobDamageTick);
+			flight.start(tick, lastMobDamageTick, UnarmedFlight.OUTMATCHED.equals(reason));
 			archery.cancel(minecraft, actuator);
 			releaseShield(minecraft);
 			stopCombatNavigation();
@@ -1011,9 +1065,10 @@ public final class SurvivalReflexRuntime {
 				"threatCount", threats.size(),
 				"entityTypeIds", threats.stream().map(threat -> threat.observed().entityTypeId()).distinct().toList(),
 				"nearestDistance", threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(-1D),
+				"retry", flight.retries(),
 				"tick", tick)));
 		}
-		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE) flight.abandon("armed", navigationFacade);
+		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE && !flight.armedFlight()) flight.abandon("armed", tick, navigationFacade);
 		UnarmedFlight.Outcome outcome = flight.active()
 			? flight.tick(minecraft, player, view, tick, lastMobDamageTick, config.threatCooldownTicks(), navigationFacade)
 			: UnarmedFlight.Outcome.ABANDONED;
@@ -1040,6 +1095,117 @@ public final class SurvivalReflexRuntime {
 				return false;
 			}
 		}
+	}
+
+	private static List<UnarmedFlight.Threat> flightView(List<ResolvedThreat> threats) {
+		return threats.stream().map(threat -> new UnarmedFlight.Threat(
+			threat.entity().getX(), threat.entity().getZ(), threat.entity().getHealth(), isRangedThreat(threat.entity()),
+			threat.entity() instanceof net.minecraft.world.entity.monster.Creeper, threat.distance(), threat.lineOfSight())).toList();
+	}
+
+	/**
+	 * Hides from shooters instead of punching at them (see {@link RangedCover}): first against shooters alone, and
+	 * after a flight from a mixed group was given up. The low-health bunker runs before this; a melee mob within reach,
+	 * a creeper, a weapon or a bow shot hand the tick back to fighting. Returns whether cover handled this tick.
+	 */
+	private boolean tickCover(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
+			if (cover.active()) endCover("navigation_unavailable", false, player, threats, tick);
+			return false;
+		}
+		double damage = UnarmedFlight.attackDamage(combatWeapon(player));
+		List<UnarmedFlight.Threat> view = flightView(threats);
+		boolean bowShot = archeryTarget(player, threats) != null;
+		if (!cover.active()) {
+			if (flight.active() || escapingCreeper != null || !cover.mayStart(tick)) return false;
+			String reason = RangedCover.startReason(damage, bowShot, view, flight.abandoned());
+			if (reason == null) return false;
+			cover.start(tick);
+			coverStartReason = reason;
+			archery.cancel(minecraft, actuator);
+			releaseShield(minecraft);
+			stopCombatNavigation();
+			combatPositioning = null;
+			movementController.stop(minecraft);
+		}
+		else {
+			String blocker = RangedCover.blocker(damage, bowShot, view);
+			if (blocker != null) {
+				endCover(blocker, false, player, threats, tick);
+				return false;
+			}
+		}
+		List<Vec3> shooterEyes = new ArrayList<>();
+		int shootersInSight = 0;
+		for (ResolvedThreat threat : threats) {
+			if (!isRangedThreat(threat.entity())) continue;
+			shooterEyes.add(threat.entity().getEyePosition());
+			if (threat.lineOfSight()) shootersInSight++;
+		}
+		RangedCover.Outcome outcome;
+		try {
+			outcome = cover.tick(minecraft.level, player, view, shooterEyes, shootersInSight, coverStartReason, tick,
+				recentlyDamagedByMob(tick, lastMobDamageTick, config.threatCooldownTicks()), navigationFacade, pendingEvents);
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("take_cover", exception, tick);
+			endCover("failed", true, player, threats, tick);
+			return false;
+		}
+		// Hiding is neither progress against a target nor a stalled approach.
+		combatProgress = null;
+		progressThreats = null;
+		combatStalemate = null;
+		if ((outcome == RangedCover.Outcome.MOVING || outcome == RangedCover.Outcome.HIDDEN)
+			&& snapshot.action() != SurvivalReflexAction.TAKE_COVER) changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.TAKE_COVER, tick);
+		switch (outcome) {
+			case CLEAR -> {
+				resolve(minecraft, player, threats, tick, "hidden_from_ranged", false);
+				return true;
+			}
+			case ABANDONED -> {
+				reportCoverAbandoned(cover.abandonReason(), player, threats, tick);
+				return false;
+			}
+			case HIDDEN -> {
+				if (!(coverEatingSafe(minecraft, player, threats, tick, combatEating)
+					&& tickCombatEating(minecraft, player, threats, tick, combatEating, true))) movementController.stop(minecraft);
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			default -> {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+		}
+	}
+
+	/**
+	 * Eating in cover follows the combat-eating rule (no shooter in sight, none within ten blocks, no recent hit or
+	 * incoming arrow), checked here so the eating path never walks the body out of its cell to find a safer place.
+	 */
+	private boolean coverEatingSafe(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		if (combatEating == null) return false;
+		if (combatEating.eating()) return true;
+		double nearest = threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
+		return safeToEatDuringCombat(player.onGround(), player.isInWater(), immediateCombatDanger(minecraft, player, threats, tick),
+			false, threats.stream().anyMatch(ResolvedThreat::lineOfSight), nearest);
+	}
+
+	private void endCover(String reason, boolean gaveUp, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		cover.abandon(reason, tick, gaveUp, navigationFacade);
+		reportCoverAbandoned(reason, player, threats, tick);
+	}
+
+	private void reportCoverAbandoned(String reason, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		var payload = new LinkedHashMap<String, Object>(cover.summary(tick));
+		payload.put("reason", reason);
+		payload.put("health", player.getHealth());
+		payload.put("threatCount", threats.size());
+		payload.put("tick", tick);
+		pendingEvents.add(new SurvivalReflexEvent("reflex.cover_abandoned", payload));
 	}
 
 	/** What the reflex fights with: the weapon it would equip, or whatever is in hand when it carries none. */
@@ -1079,7 +1245,21 @@ public final class SurvivalReflexRuntime {
 		CombatEating combatEating) {
 		// An unarmed body that could not outrun its attackers digs in at once rather than fight bare-handed.
 		boolean cornered = flight.abandoned() && !"armed".equals(flight.abandonReason());
-		if (!bunker.active() && (threats.isEmpty() || player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered)) return false;
+		boolean canHeal = player.getFoodData().getFoodLevel() >= 18
+			|| combatEating != null && combatEating.hasEligibleFood(player);
+		boolean losing = losingFight(player.getHealth(), threats.size(), canHeal);
+		if (!bunker.active() && (threats.isEmpty()
+			|| player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered && !losing)) return false;
+		if (!bunker.active() && !cornered && !roomToDig(nearestMeleeDistance(threats))) return false;
+		var shaft = bunker.shaft();
+		if (shaft != null && EmergencyBunker.intruded(shaft, threats.stream().map(t -> t.entity().getBoundingBox()).toList())) {
+			// Shut in with a mob, standing still only lets it hit; fight it where it stands.
+			if (!bunkerIntruderReported) pendingEvents.add(new SurvivalReflexEvent("reflex.bunker_intruder", Map.of(
+				"tick", tick, "health", player.getHealth())));
+			bunkerIntruderReported = true;
+			return false;
+		}
+		bunkerIntruderReported = false;
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
@@ -1095,6 +1275,28 @@ public final class SurvivalReflexRuntime {
 		if (bunker.closed(minecraft.level, player)) tickCombatEating(minecraft, player, threats, tick, combatEating, true);
 		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
 		return true;
+	}
+
+	/**
+	 * Outnumbered with health that cannot come back. A playtest body at 9 health and 14 food, with nothing it would eat,
+	 * fought a skeleton and a zombie until an arrow took it to 6; it only started digging in then and died in the hole.
+	 */
+	/**
+	 * Digging three blocks down and roofing over takes about three seconds by hand, in which a zombie walks seven
+	 * blocks. A playtest body at 5 health started digging with one beside it, was knocked out of its column by the
+	 * first hit and died; running (or fighting, when armed) is the answer to a mob that close.
+	 */
+	static boolean roomToDig(double nearestMeleeDistance) {
+		return nearestMeleeDistance >= BUNKER_MELEE_CLEARANCE;
+	}
+
+	private static double nearestMeleeDistance(List<ResolvedThreat> threats) {
+		return threats.stream().filter(threat -> !isRangedThreat(threat.entity()))
+			.mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
+	}
+
+	static boolean losingFight(float health, int threatCount, boolean canHeal) {
+		return !canHeal && threatCount >= 2 && health <= LOSING_FIGHT_HEALTH;
 	}
 
 	private boolean tickCombatEating(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
@@ -1243,6 +1445,12 @@ public final class SurvivalReflexRuntime {
 			if (aim == null && reloadingCrossbow && !otherRangedThreat) shieldGuard = null;
 		}
 		shieldGuard = nextShieldGuard(shieldGuard, aim, source, tick);
+		if (shieldGuard == null) {
+			ResolvedThreat melee = meleeGuardTarget(player, threats);
+			// Held only while the condition lasts, so the shield drops the tick the weapon is ready again.
+			if (melee != null) shieldGuard = new ShieldGuard(
+				shieldFacingPoint(player.getEyePosition(), melee.entity().position(), Vec3.ZERO), melee.observed().uuid(), tick);
+		}
 		if (shieldGuard == null) return false;
 		movementController.stop(minecraft);
 		ResolvedThreat approach = threats.isEmpty() ? null : closestVisibleThreat(threats);
@@ -1265,6 +1473,29 @@ public final class SurvivalReflexRuntime {
 		if (!player.isUsingItem() || player.getUsedItemHand() != InteractionHand.OFF_HAND)
 			actuator.useItem(minecraft, player, InteractionHand.OFF_HAND);
 		return true;
+	}
+
+	/**
+	 * The melee mob to raise the shield against while the weapon recharges, or null. In a random-seed playtest a body
+	 * at 16 health with a stone sword and a shield in the offhand fought two zombies and a spider at night without once
+	 * raising it, and died; a blocked zombie hit does no damage and knocks the zombie back. Only when outnumbered or
+	 * hurt, since a raised shield slows the body and the weapon is the way the fight ends.
+	 */
+	private static ResolvedThreat meleeGuardTarget(LocalPlayer player, List<ResolvedThreat> threats) {
+		ResolvedThreat nearest = null;
+		int close = 0;
+		for (ResolvedThreat threat : threats) {
+			if (isRangedThreat(threat.entity()) || threat.entity() instanceof net.minecraft.world.entity.monster.Creeper) continue;
+			if (threat.distance() <= MELEE_CROWD_DISTANCE) close++;
+			if (threat.lineOfSight() && (nearest == null || threat.distance() < nearest.distance())) nearest = threat;
+		}
+		return nearest != null && guardAgainstMelee(player.getAttackStrengthScale(0), close, nearest.distance(),
+			player.getHealth(), player.getMaxHealth()) ? nearest : null;
+	}
+
+	static boolean guardAgainstMelee(float attackStrength, int meleeNearby, double nearestMelee, float health, float maxHealth) {
+		return nearestMelee <= MELEE_GUARD_DISTANCE && attackStrength < .9F
+			&& (meleeNearby >= 2 || health <= maxHealth * .6F);
 	}
 
 	static boolean shouldGuardBow(boolean drawing, int useTicks) {
@@ -1346,6 +1577,59 @@ public final class SurvivalReflexRuntime {
 	}
 
 	static boolean shouldReposition(int threatCount) { return threatCount >= 1; }
+
+	/**
+	 * Runs straight away from a lit creeper once stepping about has stopped gaining distance. A playtest body at
+	 * twelve health on a hillside flipped between three nearby cells for sixty ticks with a creeper at its side,
+	 * never climbing the slope, and was blown up. A creeper's fuse stops beyond seven blocks and its blast barely
+	 * hurts at six, so a sprint along the ground, routed by the navigator, is the way out.
+	 */
+	private boolean tickCreeperRun(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		ResolvedThreat creeper = escapingCreeper == null ? null : threats.stream()
+			.filter(t -> t.observed().uuid().equals(escapingCreeper)).findFirst().orElse(null);
+		if (creeper == null || navigationFacade == null || !navigationFacade.isLoaded()) {
+			endCreeperRun();
+			return false;
+		}
+		if (creeperRunTarget != null) {
+			if (navigationFacade.processActive() && tick - creeperRunTick < CREEPER_RUN_TICKS) return true;
+			creeperRunTarget = null;
+			creeperGainTick = tick;
+			creeperBestDistance = creeper.distance();
+		}
+		if (creeperBestDistance < 0 || creeper.distance() > creeperBestDistance + 0.3D) {
+			creeperBestDistance = Math.max(creeperBestDistance, creeper.distance());
+			creeperGainTick = tick;
+			return false;
+		}
+		if (tick - creeperGainTick < CREEPER_STALL_TICKS) return false;
+		var feet = player.blockPosition();
+		if (creeperClassifier == null) creeperClassifier = ai.moeru.airicraft.agent.navigation.MinecraftCellClassifier.forPlayer(null);
+		var entity = creeper.entity();
+		UnarmedFlight.Leg leg = UnarmedFlight.fleeTarget(
+			new ai.moeru.airicraft.agent.navigation.LiveWorldTerrain(minecraft.level, creeperClassifier),
+			new ai.moeru.airicraft.navigation.GridPos(feet.getX(), feet.getY(), feet.getZ()),
+			List.of(new UnarmedFlight.Threat(entity.getX(), entity.getZ(), entity.getHealth(), false, true, creeper.distance(), creeper.lineOfSight())),
+			CREEPER_RUN_BLOCKS);
+		creeperGainTick = tick;
+		if (leg == null) return false;
+		stopCombatNavigation();
+		combatPositioning = null;
+		movementController.stop(minecraft);
+		navigationFacade.startNavigateNear(new GoalPosition(leg.stand().x(), leg.stand().y(), leg.stand().z(), false), 1, UnarmedFlight.OPTIONS);
+		creeperRunTarget = leg.stand();
+		creeperRunTick = tick;
+		pendingEvents.add(new SurvivalReflexEvent("reflex.creeper_run", Map.of(
+			"tick", tick, "distance", creeper.distance(), "health", player.getHealth(),
+			"target", new GoalPosition(leg.stand().x(), leg.stand().y(), leg.stand().z(), true))));
+		return true;
+	}
+
+	private void endCreeperRun() {
+		if (creeperRunTarget != null && navigationFacade != null) navigationFacade.cancel();
+		creeperRunTarget = null;
+		creeperBestDistance = -1;
+	}
 
 	private void updateCreeperEscape(List<ResolvedThreat> threats) {
 		// Keep tracking the live pursuer, not the position where it first ignited.
@@ -1471,12 +1755,15 @@ public final class SurvivalReflexRuntime {
 		String reason,
 		boolean keepSafetyHold
 	) {
+		boolean noContact = "no_eligible_threats".equals(reason) && snapshot.cause() == SurvivalReflexCause.MOB_ATTACK
+			&& lastMobDamageTick == Long.MIN_VALUE && player.getHealth() >= player.getMaxHealth() * 0.5F;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
 		foodUnavailableReported = false;
 		wetFighting = false;
 		archery.cancel(minecraft, actuator);
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();
@@ -1511,6 +1798,27 @@ public final class SurvivalReflexRuntime {
 		}
 		lastMobDamageTick = Long.MIN_VALUE;
 		resetSecurityProgress();
+		noContactHold = noContact && nextState == SurvivalReflexState.AWAITING_PLANNER && !keepSafetyHold;
+	}
+
+	/**
+	 * Whether to hand the held work straight back. A mob that came within reach and then stayed out of it, without
+	 * ever hurting the body, held a playtest's walk, and even its attack on that same spider, for planner turn after
+	 * planner turn. Such a hold resumes by itself, at most {@value #NO_CONTACT_RESUME_LIMIT} times per
+	 * {@value #NO_CONTACT_RESUME_WINDOW} ticks; past that the planner decides as before.
+	 */
+	public boolean takeNoContactResume(long tick) {
+		if (!noContactHold || snapshot.state() != SurvivalReflexState.AWAITING_PLANNER) return false;
+		noContactHold = false;
+		return admitNoContactResume(noContactResumes, tick);
+	}
+
+	/** Records a resume at {@code tick} unless the window already holds the limit. */
+	static boolean admitNoContactResume(java.util.ArrayDeque<Long> history, long tick) {
+		while (!history.isEmpty() && tick - history.peekFirst() > NO_CONTACT_RESUME_WINDOW) history.removeFirst();
+		if (history.size() >= NO_CONTACT_RESUME_LIMIT) return false;
+		history.addLast(tick);
+		return true;
 	}
 
 	static Long noProgressTicks(CombatProgress progress, CombatStalemate approach, long tick) {
@@ -1674,6 +1982,16 @@ public final class SurvivalReflexRuntime {
 
 	static boolean shouldStartDrowning(boolean submerged, int air, int lowAirTicks, boolean drowningDamageObserved) {
 		return drowningDamageObserved || (submerged && air <= Math.max(0, lowAirTicks));
+	}
+
+	/**
+	 * How long the body can stay under before it dies: the air left and then one drowning hit of 2 every 20 ticks,
+	 * keeping the last heart. Sizing the escape route by air alone left a body with 20 air and 16 health a one-step
+	 * search, so it found nothing, sat on the lake bed and drowned with seven blocks of open water above it.
+	 */
+	static int survivableTicks(int air, float health) {
+		int hits = Math.max(0, (int) Math.ceil(health / 2.0F) - 1);
+		return Math.max(0, air) + hits * 20;
 	}
 
 	static boolean airRecoveryMarginReached(boolean submerged, int air, int maxAir) {
@@ -1862,6 +2180,7 @@ public final class SurvivalReflexRuntime {
 	}
 
 	private void resetSecurityProgress() {
+		endCreeperRun();
 		escapingCreeper = null;
 		reportedCombatFocus = null;
 		combatPositioning = null;

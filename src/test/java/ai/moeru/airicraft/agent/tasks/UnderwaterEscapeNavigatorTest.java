@@ -32,6 +32,30 @@ class UnderwaterEscapeNavigatorTest {
 	}
 
 	@Test
+	void directSwimFollowsTheVerifiedRouteWithoutThePathfinder() {
+		RecordingNavigation navigationFacade = new RecordingNavigation();
+		RecordingWaypointDriver driver = new RecordingWaypointDriver();
+		UnderwaterEscapeNavigator navigator = new UnderwaterEscapeNavigator(navigationFacade, driver);
+		navigator.swimDirectly(true);
+		List<UnderwaterEscapeSearch.Candidate> candidates = List.of(candidate(0, 2));
+
+		navigator.tick(candidates, observation(0, 0, false));
+		UnderwaterEscapeNavigator.Snapshot swimming = navigator.tick(candidates, observation(0, 1, false));
+
+		assertEquals(List.of(), navigationFacade.navigateCalls);
+		assertEquals(UnderwaterEscapeNavigator.Phase.WAYPOINT_FALLBACK, swimming.phase());
+		assertEquals(List.of(position(1)), driver.moveCalls);
+		assertFalse(swimming.ownsNavigation());
+	}
+
+	@Test
+	void swimsStraightUpOnlyWhenCentredUnderTheNextCell() {
+		UnderwaterEscapeSearch.Position above = new UnderwaterEscapeSearch.Position(-148, 57, -207);
+		assertTrue(MinecraftUnderwaterEscapeController.centredUnder(-147.4D, -206.6D, above));
+		assertFalse(MinecraftUnderwaterEscapeController.centredUnder(-146.9D, -206.9D, above));
+	}
+
+	@Test
 	void fallsBackToStoredWaterWaypointsAfterCalculationFailure() {
 		RecordingNavigation navigationFacade = new RecordingNavigation();
 		RecordingWaypointDriver driver = new RecordingWaypointDriver();

@@ -77,7 +77,10 @@ public final class MinecraftCellClassifier {
 			builder.openable(openable, withToggle ? build(state.cycle(BlockStateProperties.OPEN), false) : null);
 		}
 		if (state.is(BlockTags.FIRE) || BODY_HAZARDS.contains(block)) builder.hazards(CellInfo.HAZARD_BODY);
-		if (block == Blocks.MAGMA_BLOCK || state.is(BlockTags.CAMPFIRES)) builder.hazards(CellInfo.HAZARD_FLOOR);
+		// A dripstone tip is 11/16 tall, so it passed as a floor: a walk perched the body on one in a cave and stuck there.
+		if (block == Blocks.MAGMA_BLOCK || state.is(BlockTags.CAMPFIRES) || block == Blocks.POINTED_DRIPSTONE) {
+			builder.hazards(CellInfo.HAZARD_FLOOR);
+		}
 		float velocity = block.getSpeedFactor();
 		if (velocity > 0 && velocity < 1) builder.speedFactor(velocity);
 		// Storage, beds and doors are never dug through: doors are opened instead.

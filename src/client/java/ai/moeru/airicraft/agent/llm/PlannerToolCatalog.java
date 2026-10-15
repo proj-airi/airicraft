@@ -67,6 +67,7 @@ public final class PlannerToolCatalog {
 	public static final String LOCATE_STRONGHOLD = "locate_stronghold";
 	public static final String EXPLORE_FOR = "explore_for";
 	public static final String COLLECT_BLAZE_RODS = "collect_blaze_rods";
+	public static final String COLLECT_FLINT = "collect_flint";
 	public static final String CANCEL_TASK = "cancel_task";
 	public static final String RESUME_TASK = "resume_task";
 	public static final String CLEAR_GOAL = "clear_goal";
@@ -260,7 +261,7 @@ public final class PlannerToolCatalog {
 		builtInTool(EQUIP_ITEM, false, tool(EQUIP_ITEM, "Equip an exact inventory item. Weapons and tools become the selected main-hand item. Carried armor that protects better than what is worn is put on automatically; configure_armor turns that off or reserves pieces. Use this for a specific wearable such as a carved pumpkin.", properties(
 				prop("itemId", string("Exact namespaced item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
-		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out.", properties(
+		builtInTool(EAT_FOOD, false, tool(EAT_FOOD, "Eat one exact food item from inventory. The action holds item use until consumption is confirmed or times out. Allowed during a plain navigate_to walk; other running work must finish or be cleared first.", properties(
 				prop("itemId", string("Exact namespaced food item id from inspect_inventory itemCounts."))
 			), List.of("itemId")), PlannerToolCatalog::validateInventoryItemArguments),
 		builtInTool(DROP_ITEMS, false, tool(DROP_ITEMS, "Drop exact items from current inventory at the current position.", properties(
@@ -327,6 +328,9 @@ public final class PlannerToolCatalog {
 		builtInTool(COLLECT_OBSIDIAN, false, tool(COLLECT_OBSIDIAN, "Make and mine obsidian at lava within 12 blocks of you. Needs a water bucket and a diamond or netherite pickaxe. System 1 works only from solid ground with no lava beside it and never steps into the pool: it pours the water bucket where it turns the most lava into obsidian and scoops the water straight back, mines obsidian that no lava touches, and walks over each drop. Where obsidian only covers deeper lava it breaks one block (its drop is lost) to cast the lava under it. Lava is mostly underground: cave pools, and lava lakes near y=-55; get within about 8 blocks of it first. Ends once you carry count obsidian. Fails with a reason: no_lava_nearby, no_more_safe_lava, no_water_bucket, needs_diamond_pickaxe, low_health (eat, then call again), no_progress or timeout; the reason counts what was mined and cast.", properties(
 			prop("count", integer("Obsidian to hold when done, 1..64. Default 10, enough for a Nether portal frame."))
 		), List.of()), args -> ai.moeru.airicraft.agent.tasks.CollectObsidianStepArgs.parse(args)),
+		builtInTool(COLLECT_FLINT, false, tool(COLLECT_FLINT, "Turn carried gravel into flint (for flint and steel: flint plus an iron ingot) without a tool call per block. System 1 stays where it stands: it places one gravel on solid ground right beside your feet, breaks it with a shovel if you carry one (never a silk touch tool, which always drops gravel), picks up the drop and repeats. Each break drops flint about one time in ten, otherwise the gravel comes back, so expect roughly ten cycles per flint; a fortune shovel raises the chance. Needs gravel in the inventory and open, solid ground next to you with no water or lava. Ends once you carry count flint: flint_collected flint=n made=m gravelLeft=g cycles=c. Fails with a reason: no_gravel, gravel_used_up (it reports flint=n), no_place_spot (step onto flat open ground and call again), placement_failed, drop_lost or timeout.", properties(
+			prop("count", integer("Flint to hold when done, 1..8. Default 1: one flint makes a flint and steel."))
+		), List.of()), args -> ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs.parse(args)),
 		builtInTool(LOCATE_STRONGHOLD, false, tool(LOCATE_STRONGHOLD, "Find the stronghold with eyes of ender, in the overworld. System 1 throws an eye, reads the bearing of its flight, picks the dropped eye back up, walks about 200 blocks sideways, throws again and intersects the bearings, then walks toward the estimate and throws near it to confirm. It does not dig. Succeeds with stronghold_located estimate=x,z once within about 24 blocks of the estimate or when an eye flies down. Fails with a reason that carries the best estimate so far: no_eyes_of_ender, wrong_dimension, out_of_eyes, bearing_inconclusive, no_eye_flight, route_blocked, low_health or timeout.", properties(
 			prop("maxEyes", integer("Most eyes to throw, 1..12. Default 4; about one in five breaks."))
 		), List.of()), args -> ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs.parse(args)),
@@ -367,7 +371,7 @@ public final class PlannerToolCatalog {
 			prop("maxThreatDistance", integer("Maximum eligible mob distance in blocks, 1..32; default 16.")),
 			prop("requireLineOfSight", bool("Ignore mobs out of line of sight when true; default true."))
 		), List.of()), PlannerToolCatalog::validateConfigureReflexArguments),
-		builtInTool(CONFIGURE_FOOD, false, tool(CONFIGURE_FOOD, "Read or replace automatic inventory eating policy. Call with {} to read; provide goal and foodChoice together to replace. Defaults: movement and any. movement eats only when hunger prevents sprinting; heal eats while injured to sustain natural regeneration; off disables idle eating. Combat reflex may eat below half health after a safe retreat, even when idle eating is off. cooked_only limits automatic choices to ordinary cooked food; any allows known ordinary safe vanilla food. Special and modded food remains available through eat_food. Policy lasts until agent session reset.", properties(
+		builtInTool(CONFIGURE_FOOD, false, tool(CONFIGURE_FOOD, "Read or replace automatic inventory eating policy. Call with {} to read; provide goal and foodChoice together to replace. Defaults: movement and any. movement eats when hunger prevents sprinting or when health is at 70% or less; heal eats while injured at all to sustain natural regeneration; off disables idle eating. Combat reflex may eat below half health after a safe retreat, even when idle eating is off. cooked_only limits automatic choices to ordinary cooked food; any allows known ordinary safe vanilla food. Special and modded food remains available through eat_food. Idle eating also runs during a plain navigate_to walk. Policy lasts until agent session reset.", properties(
 			prop("goal", enumString("Automatic idle eating goal.", List.of("off", "movement", "heal"))),
 			prop("foodChoice", enumString("Automatic food selection.", List.of("any", "cooked_only")))
 		), List.of()), PlannerToolCatalog::validateConfigureFoodArguments),

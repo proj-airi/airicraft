@@ -1,7 +1,9 @@
 package ai.moeru.airicraft;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.level.WorldDataConfiguration;
@@ -226,6 +228,26 @@ public final class SingleplayerWorldService {
 
 		LevelSummary summary = findSummaryByWorldId(worldId);
 		return joinSummary(minecraft, summary, worldId);
+	}
+
+	/**
+	 * Saves and quits to the title screen, as the pause menu does. Killing the client instead loses everything since
+	 * the last autosave: an operator restart in a playtest rolled back five minutes and the gear won in them.
+	 */
+	public Map<String, Object> leaveWorld() {
+		Minecraft minecraft = requireClient();
+		if (!isInWorld(minecraft)) {
+			throw new SingleplayerWorldException("world_not_loaded", "No world is loaded");
+		}
+		boolean singleplayer = minecraft.isLocalServer();
+		runOnClientThread(minecraft, () -> {
+			PauseScreen.disconnectFromWorld(minecraft, ClientLevel.DEFAULT_QUIT_MESSAGE);
+			return null;
+		}, Duration.ofSeconds(120));
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("left", true);
+		payload.put("saved", singleplayer);
+		return payload;
 	}
 
 	public Map<String, Object> joinWorldDirectory(String directoryName) {

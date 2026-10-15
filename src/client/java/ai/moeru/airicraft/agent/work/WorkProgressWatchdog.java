@@ -76,6 +76,8 @@ public final class WorkProgressWatchdog {
 				|| w.label().equals("LOCATE_STRONGHOLD")
 				// Waiting at the spawner for blazes stands still; the task has its own no-blaze and overall deadlines.
 				|| w.label().equals("COLLECT_BLAZE_RODS")
+				// Placing and breaking gravel in place stands still; the task has its own step and overall deadlines.
+				|| w.label().equals("COLLECT_FLINT")
 				// A night in a dug shelter stands still for 10,000 ticks; the task has its own leg, shelter and overall deadlines.
 				|| w.label().equals("EXPLORE_FOR")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());

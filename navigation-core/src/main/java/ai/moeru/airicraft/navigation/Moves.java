@@ -117,6 +117,10 @@ public final class Moves {
 			out.reset();
 			return false;
 		}
+		if (touchesLava(out.x, out.y, out.z)) {
+			out.reset();
+			return false;
+		}
 		out.cost += lavaMargin(out.x, out.y, out.z);
 		out.cost *= policy.avoidanceFactor(out.x, out.y, out.z);
 		return out.cost < Double.POSITIVE_INFINITY;
@@ -460,7 +464,21 @@ public final class Moves {
 		return true;
 	}
 
-	/** {@link Costs#LAVA_MARGIN} when lava is beside the body's feet or head, or just above the head. */
+	/**
+	 * Whether lava shares a face with the body's feet or head cell. A body that lands a step down or stops a little
+	 * past the cell centre reaches into that neighbour: a Nether walk stepped down beside a lava fall twice in a row,
+	 * caught fire both times and burned to death the second time, so such a cell is never a destination.
+	 */
+	private boolean touchesLava(int x, int y, int z) {
+		for (int dy = 0; dy <= 1; dy++) {
+			for (int side = 0; side < 4; side++) {
+				if (nearbyLava(x + CARDINAL_DX[side], y + dy, z + CARDINAL_DZ[side])) return true;
+			}
+		}
+		return false;
+	}
+
+	/** {@link Costs#LAVA_MARGIN} when lava is diagonally beside the body's feet or head, or just above the head. */
 	private double lavaMargin(int x, int y, int z) {
 		if (nearbyLava(x, y + 2, z)) return Costs.LAVA_MARGIN;
 		for (int dy = 0; dy <= 1; dy++) {

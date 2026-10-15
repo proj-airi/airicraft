@@ -35,8 +35,9 @@ public final class FoodRuntime {
 
 	public Optional<String> combatCandidate(int hunger, float health, float maxHealth,
 		List<FoodSelector.Candidate> inventory) {
-		return policy.shouldSeekCombatHeal(hunger, health, maxHealth)
-			? FoodSelector.choose(inventory, policy.foodChoice(), hunger) : Optional.empty();
+		if (!policy.shouldSeekCombatHeal(hunger, health, maxHealth)) return Optional.empty();
+		return FoodSelector.choose(inventory, policy.foodChoice(), hunger)
+			.or(() -> FoodSelector.emergency(inventory, policy.foodChoice(), hunger, health, maxHealth));
 	}
 
 	public boolean readyToEat(long tick) { return tick >= nextAttemptTick; }

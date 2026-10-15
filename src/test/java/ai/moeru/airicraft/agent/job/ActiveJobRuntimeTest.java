@@ -780,6 +780,26 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void flintPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs(3);
+		runtime.applyPlannerResponse(new DialogueResponse("Making flint.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectFlint(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_FLINT, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectFlint(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectFlint());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectFlint(args), runtime.activeTaskRequest().orElseThrow().task());
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectFlint());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);

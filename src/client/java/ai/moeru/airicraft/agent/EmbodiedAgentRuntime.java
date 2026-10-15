@@ -300,8 +300,10 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				player.getHealth(), player.getMaxHealth());
 		}
 		@Override public boolean hasEligibleFood(net.minecraft.client.player.LocalPlayer player) {
-			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(),
-				player.getFoodData().getFoodLevel()).isPresent();
+			int hunger = player.getFoodData().getFoodLevel();
+			return FoodSelector.choose(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger)
+				.or(() -> FoodSelector.emergency(foodCandidates(player), foodRuntime.policy().foodChoice(), hunger, player.getHealth(), player.getMaxHealth()))
+				.isPresent();
 		}
 		@Override public Optional<String> candidate(net.minecraft.client.player.LocalPlayer player) {
 			if (player.containerMenu != player.inventoryMenu
@@ -1170,6 +1172,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			combatEating
 		);
 		processSurvivalReflexEvents();
+		if (survivalReflexRuntime.takeNoContactResume(tickCount)) {
+			resumeSafetyHold(survivalReflexRuntime.snapshot().holdId(), "reflex_no_contact");
+		}
 	}
 
 	private void tickArmor(Minecraft minecraft) {
@@ -1213,8 +1218,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		boolean free = !reflex.holdsNormalTasks() && !policyActive()
 			&& !activeTaskInProgress() && !actionGraphCoordinator.hasNonterminal()
 			&& isIdleForIdleIdeaScheduling(activeJobRuntime.current());
+		// A plain walk leaves the hands free; eating on the way beats arriving hungry. Other jobs switch tools.
+		boolean walking = !reflex.holdsNormalTasks() && !policyActive() && !actionGraphCoordinator.hasNonterminal()
+			&& walkingOnly(taskExecutionSnapshot);
 		boolean idle = sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn()
-			&& (free || quietHold)
+			&& (free || quietHold || walking)
 			&& !playerItemUseController.eating() && !player.isUsingItem()
 			&& !minecraft.gameMode.isDestroying()
 			&& player.containerMenu == player.inventoryMenu
@@ -1238,6 +1246,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					"reason", exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage()));
 			}
 		});
+	}
+
+	static boolean walkingOnly(TaskExecutionSnapshot execution) {
+		return execution != null && execution.state() == TaskExecutionState.RUNNING && execution.activeGoal() != null
+			&& execution.activeGoal().type() == ai.moeru.airicraft.agent.goals.GoalType.NAVIGATE_TO;
 	}
 
 	private static List<FoodSelector.Candidate> foodCandidates(net.minecraft.client.player.LocalPlayer player) {
@@ -3786,6 +3799,11 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 				applyPlannerJobTool(ActiveJobProposal.collectBlazeRods(blazeRods));
 				yield queuedActionToolResult("collect_blaze_rods", "count=" + blazeRods.count());
 			}
+			case PlannerToolCatalog.COLLECT_FLINT -> {
+				var flint = ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs.parse(args);
+				applyPlannerJobTool(ActiveJobProposal.collectFlint(flint));
+				yield queuedActionToolResult("collect_flint", "count=" + flint.count());
+			}
 			case PlannerToolCatalog.EXPLORE_FOR -> {
 				var explore = ai.moeru.airicraft.agent.tasks.ExploreForStepArgs.parse(args);
 				applyPlannerJobTool(ActiveJobProposal.exploreFor(explore));
@@ -5420,7 +5438,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		}
 		return switch (intent.activeJob().type()) {
 			case FOLLOW_PLAYER, NAVIGATE_TO, MINE_BLOCKS, ENSURE_BLOCKS_IN_INVENTORY, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES -> true;
-			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, ASK_USER -> false;
+			case IDLE, COLLECT_RESOURCE, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, ATTACK_ENTITY, USE_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, ASK_USER -> false;
 		};
 	}
 
@@ -5665,7 +5683,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			return false;
 		}
 		return switch (type) {
-			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS -> true;
+			case MINE, UNDERWATER_HARVEST, CRAFT_RECIPE, DROP_ITEMS, SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, COLLECT_BLAZE_RODS, COLLECT_FLINT -> true;
 			case FOLLOW, NAVIGATE, ATTACK_ENTITY, USE_ENTITY, LURE_ENTITIES, FIGHT_ENDER_DRAGON, EXPLORE_FOR -> false;
 		};
 	}

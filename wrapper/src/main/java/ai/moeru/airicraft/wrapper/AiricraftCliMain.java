@@ -149,6 +149,7 @@ public final class AiricraftCliMain {
 		CommandLine worlds = root.getSubcommands().get("worlds");
 		worlds.addSubcommand(new WorldsListCommand(context));
 		worlds.addSubcommand(new WorldsJoinCommand(context));
+		worlds.addSubcommand(new WorldsLeaveCommand(context));
 		worlds.addSubcommand(new WorldsCreateCommand(context));
 		worlds.addSubcommand(new WorldsRenameCommand(context));
 		worlds.addSubcommand(new WorldsDeleteCommand(context));
@@ -1579,6 +1580,18 @@ public final class AiricraftCliMain {
 		@Override
 		Map<String, Object> runCommand() {
 			return transport().post("/v1/worlds/join", Map.of("worldId", worldId));
+		}
+	}
+
+	@Command(name = "leave", mixinStandardHelpOptions = true, description = "Save and quit the loaded world to the title screen.")
+	private static final class WorldsLeaveCommand extends BaseCommand {
+		private WorldsLeaveCommand(CliContext context) {
+			super(context, "worlds leave");
+		}
+
+		@Override
+		Map<String, Object> runCommand() {
+			return transport().post("/v1/worlds/leave", Map.of());
 		}
 	}
 

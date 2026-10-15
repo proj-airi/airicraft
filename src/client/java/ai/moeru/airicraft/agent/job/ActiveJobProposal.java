@@ -9,6 +9,7 @@ import ai.moeru.airicraft.agent.tasks.LureEntitiesStepArgs;
 import ai.moeru.airicraft.agent.tasks.LocateStrongholdStepArgs;
 import ai.moeru.airicraft.agent.tasks.ExploreForStepArgs;
 import ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs;
+import ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockPlacementStepArgs;
 import ai.moeru.airicraft.agent.tasks.BlockUseStepArgs;
 import ai.moeru.airicraft.agent.tasks.CraftRecipeStepArgs;
@@ -42,8 +43,35 @@ public record ActiveJobProposal(
 	CollectObsidianStepArgs collectObsidian,
 	LocateStrongholdStepArgs locateStronghold,
 	ExploreForStepArgs exploreFor,
-	CollectBlazeRodsStepArgs collectBlazeRods
+	CollectBlazeRodsStepArgs collectBlazeRods,
+	CollectFlintStepArgs collectFlint
 ) {
+	public ActiveJobProposal(
+		ActiveJobType type,
+		String targetPlayer,
+		GoalPosition position,
+		GoalMineSpec mineSpec,
+		TaskSpec taskSpec,
+		CraftRecipeStepArgs craftRecipe,
+		DropItemsStepArgs dropItems,
+		EntityInteractionStepArgs entityInteraction,
+		SmeltItemsStepArgs smeltItems,
+		CollectSmeltedItemsStepArgs collectSmeltedItems,
+		ReturnToSurfaceStepArgs returnToSurface,
+		BlockPlacementStepArgs blockPlacement,
+		BlockUseStepArgs blockUse,
+		BlockBreakStepArgs blockBreak,
+		String askPrompt,
+		CropTendingStepArgs cropTending,
+		LureEntitiesStepArgs lureEntities,
+		CollectObsidianStepArgs collectObsidian,
+		LocateStrongholdStepArgs locateStronghold,
+		ExploreForStepArgs exploreFor,
+		CollectBlazeRodsStepArgs collectBlazeRods
+	) {
+		this(type, targetPlayer, position, mineSpec, taskSpec, craftRecipe, dropItems, entityInteraction, smeltItems, collectSmeltedItems, returnToSurface, blockPlacement, blockUse, blockBreak, askPrompt, cropTending, lureEntities, collectObsidian, locateStronghold, exploreFor, collectBlazeRods, null);
+	}
+
 	public ActiveJobProposal(
 		ActiveJobType type,
 		String targetPlayer,
@@ -290,6 +318,10 @@ public record ActiveJobProposal(
 
 	public static ActiveJobProposal collectBlazeRods(CollectBlazeRodsStepArgs args) {
 		return new ActiveJobProposal(ActiveJobType.COLLECT_BLAZE_RODS, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
+	}
+
+	public static ActiveJobProposal collectFlint(CollectFlintStepArgs args) {
+		return new ActiveJobProposal(ActiveJobType.COLLECT_FLINT, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, Objects.requireNonNull(args));
 	}
 
 	public static ActiveJobProposal exploreFor(ExploreForStepArgs args) {

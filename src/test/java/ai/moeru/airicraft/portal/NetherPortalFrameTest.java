@@ -69,4 +69,19 @@ class NetherPortalFrameTest {
 		};
 		assertTrue(NetherPortalFrame.findSite(p(0, 64, 0), 8, terrain).isEmpty());
 	}
+
+	@Test void skipsSitesTheBodyCannotWalkTo() {
+		// The body stands in a one-cell pit whose walls rise three blocks; the open ground above is out of reach.
+		var feet = p(0, 61, 0);
+		var terrain = new NetherPortalFrame.Terrain() {
+			@Override public boolean solidGround(ConstructionEscape.Position position) {
+				return position.y() < 64 && !(position.x() == 0 && position.z() == 0 && position.y() >= 61);
+			}
+			@Override public boolean clear(ConstructionEscape.Position position) {
+				return position.y() >= 64 || position.x() == 0 && position.z() == 0 && position.y() >= 61;
+			}
+		};
+		assertTrue(NetherPortalFrame.findSite(feet, 8, terrain).isEmpty());
+		assertTrue(NetherPortalFrame.findSite(p(0, 64, 0), 8, flat(Set.of(), Set.of())).isPresent());
+	}
 }
