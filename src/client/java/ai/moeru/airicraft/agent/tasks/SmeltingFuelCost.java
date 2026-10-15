@@ -6,16 +6,11 @@ public final class SmeltingFuelCost {
 
 	public static int compare(String leftId, int leftQuantity, int leftTicks,
 		String rightId, int rightQuantity, int rightTicks) {
-		// Wood is building and tool material; in a random-seed playtest one ingot burned the last logs while
-		// eleven coal sat in the inventory. Coal and other spare fuels go first, planks next, whole logs last.
-		int material = Integer.compare(woodTier(leftId), woodTier(rightId));
-		if (material != 0) return material;
+		// A whole log is the run's tool and table material; in a random-seed playtest one ingot burned the last
+		// logs while eleven coal sat in the inventory. Logs burn only when no other fuel covers the batch.
+		int logs = Boolean.compare(wholeLog(leftId), wholeLog(rightId));
+		if (logs != 0) return logs;
 		return Long.compare((long) leftQuantity * leftTicks, (long) rightQuantity * rightTicks);
-	}
-
-	static int woodTier(String id) {
-		if (wholeLog(id)) return 2;
-		return id.endsWith("_planks") ? 1 : 0;
 	}
 
 	private static boolean wholeLog(String id) {

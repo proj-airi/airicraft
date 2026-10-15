@@ -14,7 +14,7 @@ class SmeltingFuelCostTest {
 		assertEquals(1, choice.quantity());
 	}
 
-	@Test void planksBurnBeforeLogsAndLogsOnlyWhenNothingElseCovers() {
+	@Test void logsBurnOnlyWhenNothingElseCovers() {
 		var planks = SmeltingTaskExecutor.selectFuel(Map.of("minecraft:oak_planks", 4, "minecraft:oak_log", 4),
 			Map.of("minecraft:oak_planks", 300, "minecraft:oak_log", 300), "minecraft:raw_iron", 1, 200).orElseThrow();
 		assertEquals("minecraft:oak_planks", planks.itemId());
