@@ -100,7 +100,17 @@ final class UnarmedFlight {
 	 * is near full health.
 	 */
 	static String fleeReason(double weaponDamage, float health, float maxHealth, List<Threat> threats) {
+		return fleeReason(weaponDamage, health, maxHealth, threats, true);
+	}
+
+	/**
+	 * Like the above, for a body that may not be able to sprint (food 6 or less). Walking, it cannot outpace a zombie:
+	 * a playtest body at food 6 ran from three zombies at nine health and took four more hits in the back. It only
+	 * walks away from a creeper then, which needs distance rather than speed.
+	 */
+	static String fleeReason(double weaponDamage, float health, float maxHealth, List<Threat> threats, boolean canSprint) {
 		if (threats.isEmpty()) return null;
+		if (!canSprint) return threats.stream().allMatch(Threat::creeper) ? "creeper" : null;
 		if (weaponDamage >= MIN_WEAPON_DAMAGE) {
 			return health <= maxHealth / 2.0F && outmatched(weaponDamage, health, threats) ? OUTMATCHED : null;
 		}

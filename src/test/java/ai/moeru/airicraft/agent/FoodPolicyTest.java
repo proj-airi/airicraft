@@ -7,13 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FoodPolicyTest {
-	@Test void movementGoalWaitsUntilSprintingIsLost() {
+	@Test void movementGoalTopsUpWellBeforeSprintingIsLost() {
 		var policy = FoodPolicy.defaults();
-		assertFalse(policy.shouldEatIdle(7, 20F, 20F));
+		assertFalse(policy.shouldEatIdle(13, 20F, 20F));
+		assertTrue(policy.shouldEatIdle(12, 20F, 20F));
 		assertTrue(policy.shouldEatIdle(6, 20F, 20F));
-		assertTrue(policy.shouldEatIdle(8, 13.5F, 20F));
+		assertTrue(policy.shouldEatIdle(16, 13.5F, 20F));
 		assertFalse(policy.shouldEatIdle(18, 10F, 20F));
-		assertFalse(policy.shouldEatIdle(8, 16F, 20F));
+		assertFalse(policy.shouldEatIdle(16, 16F, 20F));
 		assertEquals(FoodPolicy.FoodChoice.ANY, policy.foodChoice());
 	}
 

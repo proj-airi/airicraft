@@ -1048,7 +1048,7 @@ public final class SurvivalReflexRuntime {
 		List<UnarmedFlight.Threat> view = flightView(threats);
 		if (!flight.active()) {
 			if (flight.abandoned() && !flight.mayRetry(tick) || archeryTarget(player, threats) != null) return false;
-			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view);
+			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view, canSprint(player));
 			if (reason == null) return false;
 			flight.start(tick, lastMobDamageTick, UnarmedFlight.OUTMATCHED.equals(reason));
 			archery.cancel(minecraft, actuator);
@@ -1208,6 +1208,11 @@ public final class SurvivalReflexRuntime {
 		pendingEvents.add(new SurvivalReflexEvent("reflex.cover_abandoned", payload));
 	}
 
+	/** Vanilla lets a player sprint only above six food. */
+	private static boolean canSprint(LocalPlayer player) {
+		return player.getFoodData().getFoodLevel() > 6 || player.getAbilities().mayfly;
+	}
+
 	/** What the reflex fights with: the weapon it would equip, or whatever is in hand when it carries none. */
 	private static ItemStack combatWeapon(LocalPlayer player) {
 		int slot = bestCombatInventorySlot(inventoryItemIds(player));
@@ -1244,7 +1249,10 @@ public final class SurvivalReflexRuntime {
 	private boolean tickBunker(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
 		CombatEating combatEating) {
 		// An unarmed body that could not outrun its attackers digs in at once rather than fight bare-handed.
-		boolean cornered = flight.abandoned() && !"armed".equals(flight.abandonReason());
+		boolean cornered = flight.abandoned() && !"armed".equals(flight.abandonReason())
+			// Too hungry to sprint and without a weapon: running only takes hits in the back, so dig in.
+			|| !canSprint(player) && UnarmedFlight.attackDamage(combatWeapon(player)) < UnarmedFlight.MIN_WEAPON_DAMAGE
+				&& threats.stream().anyMatch(threat -> !isRangedThreat(threat.entity()));
 		boolean canHeal = player.getFoodData().getFoodLevel() >= 18
 			|| combatEating != null && combatEating.hasEligibleFood(player);
 		boolean losing = losingFight(player.getHealth(), threats.size(), canHeal);

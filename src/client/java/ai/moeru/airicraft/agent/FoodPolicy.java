@@ -10,6 +10,7 @@ public record FoodPolicy(Goal goal, FoodChoice foodChoice) {
 	}
 
 	static final float HURT_FRACTION = 0.7F;
+	static final int MOVEMENT_TOP_UP = 12;
 
 	public static FoodPolicy defaults() {
 		return new FoodPolicy(Goal.MOVEMENT, FoodChoice.ANY);
@@ -20,7 +21,9 @@ public record FoodPolicy(Goal goal, FoodChoice foodChoice) {
 			case OFF -> false;
 			// Also eat when hurt: health only comes back at 18 food, and playtest bodies walked into fights at
 			// 13 health and 8 food with food in the pack.
-			case MOVEMENT -> hunger <= 6 || hunger < 18 && health > 0 && health <= maxHealth * HURT_FRACTION;
+			// Top up at 12: at 6 the body can no longer sprint, and a playtest body walking at food 6 could not
+			// outrun three zombies.
+			case MOVEMENT -> hunger <= MOVEMENT_TOP_UP || hunger < 18 && health > 0 && health <= maxHealth * HURT_FRACTION;
 			case HEAL -> health > 0 && health < maxHealth && hunger < 18;
 		};
 	}

@@ -37,6 +37,16 @@ class UnarmedFlightTest {
 	}
 
 	@Test
+	void walksAwayOnlyFromCreepersWhenTooHungryToSprint() {
+		var pack = List.of(zombie(2, 0), zombie(-2, 0), zombie(0, 2));
+		assertEquals(UnarmedFlight.OUTMATCHED, UnarmedFlight.fleeReason(5.0D, 9F, 20F, pack, true));
+		assertNull(UnarmedFlight.fleeReason(5.0D, 9F, 20F, pack, false), "walking cannot outpace zombies");
+		assertNull(UnarmedFlight.fleeReason(1.0D, 20F, 20F, pack, false));
+		var creeper = List.of(new UnarmedFlight.Threat(3, 0, 20F, false, true, 3, true));
+		assertEquals("creeper", UnarmedFlight.fleeReason(1.0D, 20F, 20F, creeper, false));
+	}
+
+	@Test
 	void runsFromAnythingButOneWeakMeleeMobWithoutAWeapon() {
 		var zombie = List.of(zombie(3, 0));
 		assertEquals("strong_mob", UnarmedFlight.fleeReason(1.0D, 20F, 20F, zombie), "a fist against twenty health");
