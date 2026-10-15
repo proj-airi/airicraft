@@ -3,6 +3,7 @@ package ai.moeru.airicraft.agent.tasks;
 import ai.moeru.airicraft.agent.goals.GoalSnapshot;
 import ai.moeru.airicraft.agent.session.SessionSnapshot;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +22,11 @@ public interface WorldTaskExecutor {
 	}
 
 	TaskExecutionSnapshot snapshot();
+
+	/** Milestones reported since the last call, oldest first; most tasks report none. */
+	default List<TaskProgress> drainProgress() {
+		return List.of();
+	}
 
 	void onWorldLeave();
 

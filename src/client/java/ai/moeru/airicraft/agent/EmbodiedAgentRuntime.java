@@ -784,6 +784,7 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		for (MiningOpportunityJournal.Notice notice : miningOpportunityJournal.drain()) {
 			eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.mining_opportunity", notice.payload());
 		}
+		for (ai.moeru.airicraft.agent.tasks.TaskProgress progress : worldTaskExecutor.drainProgress()) publishTaskProgress(progress);
 		boolean semanticTaskContext = hasSemanticTaskContext(previousTaskSnapshot, taskSnapshot);
 		recordTaskStateTransition(previousTaskExecutionSnapshot, taskExecutionSnapshot, semanticTaskContext);
 		terminalTaskEvent.ifPresent(event -> {
@@ -1069,6 +1070,21 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 					+ "Use continue to grant another observation window; this notice does not cancel or fail work."), EventCause.work(notice.workId()));
 			dialogueRuntime.queueTaskAttention(tickCount, event.seqNo());
 		}
+	}
+
+	/** A running task's milestone, as evidence the planner can follow and narrate; the work keeps running. */
+	private void publishTaskProgress(ai.moeru.airicraft.agent.tasks.TaskProgress progress) {
+		var job = activeJobRuntime.current();
+		Map<String, Object> payload = new LinkedHashMap<>();
+		payload.put("milestone", progress.milestone());
+		payload.put("message", progress.message());
+		if (job != null && job.jobId() != null) payload.put("taskId", job.jobId());
+		var minecraft = Minecraft.getInstance();
+		if (minecraft != null && minecraft.player != null)
+			payload.put("position", Map.of("x", minecraft.player.getBlockX(), "y", minecraft.player.getBlockY(), "z", minecraft.player.getBlockZ()));
+		if (job == null || job.jobId() == null) eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.progress", payload);
+		else eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "task.progress", payload,
+			EventCause.work(ai.moeru.airicraft.agent.work.WorkHandle.of(ai.moeru.airicraft.agent.work.WorkHandle.Kind.JOB, job.jobId()).id()));
 	}
 
 	/** A stall that outlives several observation windows is cancelled, then the planner is woken with attention priority. */

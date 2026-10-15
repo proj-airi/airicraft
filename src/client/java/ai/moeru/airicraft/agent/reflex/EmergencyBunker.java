@@ -63,9 +63,12 @@ public final class EmergencyBunker {
 	private long startedTick;
 	private boolean failed;
 	private boolean reported;
+	/** The cell a break was started on; continue it rather than restart (the game drops isDestroying while the attack key is up). */
+	private BlockPos diggingAt;
 
 	void reset() {
 		plan = null;
+		diggingAt = null;
 		failed = false;
 		reported = false;
 	}
@@ -188,11 +191,12 @@ public final class EmergencyBunker {
 			if (state.isAir()) return true;
 			selectBestTool(player, state, select);
 			camera.lookAt(minecraft, Vec3.atCenterOf(below).add(0, 0.5, 0));
-			if (minecraft.gameMode != null && minecraft.gameMode.isDestroying()) actuator.continueDestroy(minecraft, below, Direction.UP);
-			else actuator.startDestroy(minecraft, below, Direction.UP);
+			if (below.equals(diggingAt)) actuator.continueDestroy(minecraft, below, Direction.UP);
+			else diggingAt = actuator.startDestroy(minecraft, below, Direction.UP) ? below : null;
 			return true;
 		}
 		actuator.stopDestroy(minecraft);
+		diggingAt = null;
 		if (!selectThrowaway(player, select)) {
 			fail(tick, "no_roof_block", events);
 			plan = null;

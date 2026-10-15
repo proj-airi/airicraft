@@ -1225,6 +1225,19 @@
       "extraWake": "W2/W3"
     },
     {
+      "type": "task.progress",
+      "producers": [
+        "EmbodiedAgentRuntime"
+      ],
+      "profile": {
+        "semantic": true,
+        "trigger": "SYSTEM",
+        "bypass": false
+      },
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "task.paused_by_reflex",
       "producers": [
         "EmbodiedAgentRuntime"
