@@ -97,7 +97,7 @@ record EmbodiedPlannerActionToolExecutor(
 				PlannerToolCatalog.FIGHT_ENDER_DRAGON, PlannerToolCatalog.COLLECT_OBSIDIAN,
 				PlannerToolCatalog.LOCATE_STRONGHOLD, PlannerToolCatalog.EXPLORE_FOR,
 				PlannerToolCatalog.COLLECT_BLAZE_RODS, PlannerToolCatalog.COLLECT_FLINT,
-				PlannerToolCatalog.SHELTER_FOR_NIGHT -> ToolPolicy.TASK_AND_GRAPH_MUTATION;
+				PlannerToolCatalog.SHELTER_FOR_NIGHT, PlannerToolCatalog.COLLECT_ENDER_PEARLS -> ToolPolicy.TASK_AND_GRAPH_MUTATION;
 			case PlannerToolCatalog.CRAFT_RECIPE -> ToolPolicy.CRAFT;
 			case PlannerToolCatalog.PLACE_BLOCK, PlannerToolCatalog.USE_BLOCK,
 				PlannerToolCatalog.BREAK_BLOCKS, PlannerToolCatalog.TEND_CROPS -> ToolPolicy.BLOCK_MODIFICATION;

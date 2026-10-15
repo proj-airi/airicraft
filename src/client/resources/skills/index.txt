@@ -8,3 +8,4 @@ exploring
 blaze-rods
 nether-trip
 beds
+ender-pearls
