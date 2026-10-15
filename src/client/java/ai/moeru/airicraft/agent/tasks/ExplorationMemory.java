@@ -32,6 +32,10 @@ final class ExplorationMemory {
 	private String worldKey;
 	private final List<Vec3> visited = new ArrayList<>();
 	private final Map<Long, Surface> surfaces = new HashMap<>();
+	/** The last roofed shelter pit, until the body climbs out of it; a later call at dawn starts by climbing out. */
+	private ExploreShelter.Plan shelter;
+	/** The day whose night was already handed back to the planner, so a call that night waits in the pit instead. */
+	private long handedBackDay = Long.MIN_VALUE;
 
 	/** Forgets everything when the body is in another world or dimension than before. */
 	void enter(String key) {
@@ -39,7 +43,17 @@ final class ExplorationMemory {
 		worldKey = key;
 		visited.clear();
 		surfaces.clear();
+		shelter = null;
+		handedBackDay = Long.MIN_VALUE;
 	}
+
+	ExploreShelter.Plan shelter() { return shelter; }
+
+	void shelter(ExploreShelter.Plan pit) { shelter = pit; }
+
+	boolean handedBack(long day) { return handedBackDay == day; }
+
+	void handBack(long day) { handedBackDay = day; }
 
 	void visit(Vec3 feet) {
 		visited.add(feet);

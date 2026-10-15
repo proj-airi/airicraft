@@ -44,6 +44,7 @@ public final class WakePresenter {
 			case "smelting.output_ready" -> createSmeltingOutputReadyTrigger(event);
 			case "task.blocked" -> createTaskBlockedTrigger(event);
 			case "tool.broken", "tool.durability_low" -> createToolWearTrigger(event);
+			case "task.progress" -> createTaskProgressTrigger(event);
 			case "action_graph.goal_suspended" -> createActionGraphSuspendedTrigger(event);
 			case "action_graph.goal_terminal" -> createActionGraphTerminalTrigger(event);
 			case "perception.block_noticed", "perception.item_noticed", "perception.entity_noticed", "perception.entity_lost",
@@ -345,6 +346,16 @@ public final class WakePresenter {
 			event.timestampMs(),
 			(broken ? "tool_broken:" : "tool_low:") + itemId
 		);
+	}
+
+	private PlannerTrigger createTaskProgressTrigger(SemanticEvent event) {
+		String milestone = stringPayloadValue(event.payload(), "milestone");
+		String message = stringPayloadValue(event.payload(), "message");
+		if (milestone == null || message == null) {
+			return null;
+		}
+		return PlannerTrigger.autonomous(PlannerTriggerType.SYSTEM, "self", message, event.tick(), event.timestampMs(),
+			"task_progress:" + milestone);
 	}
 
 	private PlannerTrigger createTaskBlockedTrigger(SemanticEvent event) {

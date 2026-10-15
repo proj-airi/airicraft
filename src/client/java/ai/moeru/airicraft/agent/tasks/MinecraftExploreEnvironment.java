@@ -87,7 +87,7 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 		ticks++;
 		boolean night = !level.dimensionType().hasFixedTime() && ExploreForTaskExecutor.night(level.getDayTime());
 		return new ExploreForTaskExecutor.Body(player.position(), player.getHealth(), player.getMaxHealth(),
-			player.getFoodData().getFoodLevel(), night, player.onGround(), player.isInWater());
+			player.getFoodData().getFoodLevel(), night, player.onGround(), player.isInWater(), Math.floorDiv(level.getDayTime(), 24_000L));
 	}
 
 	@Override

@@ -73,6 +73,8 @@ class ExploreForTaskExecutorTest {
 		world.feature = feet -> feet.x < -200 && feet.z < -200 ? new int[]{(int) feet.x - 20, 64, (int) feet.z - 20} : null;
 		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 640), 20_000);
 		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertTrue(world.milestones().containsAll(List.of("land_in_sight", "feature_seen", "walked")), world.progress.toString());
+		assertTrue(world.progress.getFirst().message().contains("northwest"), world.progress.toString());
 		GoalPosition first = world.legGoals.getFirst();
 		assertTrue(first.x() < 0 && first.z() < 0, "the first leg already heads north-west: " + first);
 		assertTrue(world.walked < 600, "walked nearly straight there: " + world.walked);
@@ -115,18 +117,56 @@ class ExploreForTaskExecutorTest {
 		assertTrue(world.legGoals.isEmpty());
 	}
 
-	@Test void digsInForTheNightAndWalksOnInTheMorning() {
+	@Test void withWaitAtNightItDigsInForTheNightAndWalksOnInTheMorning() {
 		World world = new World();
 		world.roofBlocks = true;
 		world.nightAt = 40;
 		world.dayAt = 400;
 		world.feature = World.ring(200);
-		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320), 5_000);
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320, 3, true), 5_000);
 		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
 		assertEquals(1, world.sheltersDug);
 		assertTrue(world.ticksInShelter >= 300, "stayed in until morning: " + world.ticksInShelter);
 		assertTrue(world.optionsSeen.contains(ExploreForTaskExecutor.EXIT_OPTIONS), "climbed out, digging if it had to");
 		assertTrue(end.message().contains("nightsSheltered=1"), end.message());
+	}
+
+	@Test void handsTheNightBackOnceThePitIsRoofedThenWaitsInItAndWalksOnAtDawn() {
+		World world = new World();
+		world.roofBlocks = true;
+		world.nightAt = 40;
+		world.dayAt = 400;
+		world.feature = World.ring(200);
+		TaskTerminalEvent night = world.run(new ExploreForStepArgs("forest", 320), 5_000);
+		assertEquals(TaskExecutionState.COMPLETED, night.terminalState(), night.message());
+		assertTrue(night.message().startsWith("sheltered_for_night"), night.message());
+		assertTrue(world.ticks < 400, "handed back while it was still night");
+		assertEquals(1, world.sheltersDug);
+		assertTrue(world.milestones().contains("dusk"), world.progress.toString());
+		// Called again that night: it waits in the same pit rather than handing back again, and walks on at dawn.
+		TaskTerminalEvent morning = world.run(new ExploreForStepArgs("forest", 320), 5_000, "explore-2");
+		assertEquals(TaskExecutionState.COMPLETED, morning.terminalState(), morning.message());
+		assertTrue(morning.message().startsWith("feature_found"), morning.message());
+		assertEquals(1, world.sheltersDug, "no second pit");
+		assertTrue(world.optionsSeen.contains(ExploreForTaskExecutor.EXIT_OPTIONS), "climbed out, digging if it had to");
+		assertTrue(world.milestones().contains("morning"), world.progress.toString());
+	}
+
+	@Test void aMorningCallFromAStripMineNearThePitClimbsOutThroughIt() {
+		World world = new World();
+		world.roofBlocks = true;
+		world.nightAt = 40;
+		world.dayAt = 400;
+		world.feature = World.ring(200);
+		TaskTerminalEvent night = world.run(new ExploreForStepArgs("forest", 320), 5_000);
+		assertTrue(night.message().startsWith("sheltered_for_night"), night.message());
+		// The planner mined a tunnel from the pit floor through the night.
+		world.feet = world.feet.add(12, -4, 0);
+		world.ticks = 500;
+		world.optionsSeen.clear();
+		TaskTerminalEvent morning = world.run(new ExploreForStepArgs("forest", 320), 5_000, "explore-2");
+		assertTrue(morning.message().startsWith("feature_found"), morning.message());
+		assertTrue(world.optionsSeen.contains(ExploreForTaskExecutor.EXIT_OPTIONS), "went up through the pit first");
 	}
 
 	@Test void withNothingToRoofWithItWalksOnThroughTheNight() {
@@ -262,6 +302,13 @@ class ExploreForTaskExecutorTest {
 		assertNull(ExploreShelter.plan(cells, top));
 	}
 
+	@Test void headingsAreNamedOnTheCompass() {
+		assertEquals("east", ExploreForTaskExecutor.compass(0));
+		assertEquals("south", ExploreForTaskExecutor.compass(4));
+		assertEquals("northwest", ExploreForTaskExecutor.compass(10));
+		assertEquals("north", ExploreForTaskExecutor.compass(12));
+	}
+
 	@Test void nightRunsFromDuskToDawn() {
 		assertFalse(ExploreForTaskExecutor.night(6_000));
 		assertTrue(ExploreForTaskExecutor.night(12_600));
@@ -286,6 +333,12 @@ class ExploreForTaskExecutorTest {
 		JsonObject noTrees = args.deepCopy();
 		noTrees.addProperty("minTrees", 0);
 		assertThrows(IllegalArgumentException.class, () -> ExploreForStepArgs.parse(noTrees));
+		JsonObject wait = args.deepCopy();
+		wait.addProperty("waitAtNight", true);
+		assertTrue(ExploreForStepArgs.parse(wait).waitAtNight());
+		JsonObject badWait = args.deepCopy();
+		badWait.addProperty("waitAtNight", "yes");
+		assertThrows(IllegalArgumentException.class, () -> ExploreForStepArgs.parse(badWait));
 		JsonObject extra = args.deepCopy();
 		extra.addProperty("direction", "north");
 		assertThrows(IllegalArgumentException.class, () -> ExploreForStepArgs.parse(extra));
@@ -312,6 +365,7 @@ class ExploreForTaskExecutorTest {
 		final List<GoalPosition> legGoals = new ArrayList<>();
 		final Set<String> searchedKinds = new HashSet<>();
 		final Set<NavigationOptions> optionsSeen = new HashSet<>();
+		final List<TaskProgress> progress = new ArrayList<>();
 		NavigationOptions lastOptions;
 		int wetTicks, sheltersDug, ticksInShelter, hits, eatTicks;
 		double furthest, walked;
@@ -321,7 +375,9 @@ class ExploreForTaskExecutorTest {
 		private boolean inShelter;
 		private final Queue<String> events = new ArrayDeque<>();
 		private final ExploreForTaskExecutor executor = new ExploreForTaskExecutor(this, this);
-		private long ticks;
+		long ticks;
+
+		List<String> milestones() { return progress.stream().map(TaskProgress::milestone).toList(); }
 
 		/** Trees everywhere beyond {@code radius} blocks of the start: the nearest is straight out from the feet. */
 		static java.util.function.Function<Vec3, int[]> ring(double radius) {
@@ -348,6 +404,7 @@ class ExploreForTaskExecutorTest {
 					continue;
 				}
 				var end = executor.tick(session, Optional.of(request));
+				progress.addAll(executor.drainProgress());
 				if (end.isPresent()) return end.get();
 			}
 			fail("no terminal after " + maxTicks + " ticks: " + executor.snapshot().lastPathEvent());

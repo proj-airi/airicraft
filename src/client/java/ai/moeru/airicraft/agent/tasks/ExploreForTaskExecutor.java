@@ -27,9 +27,13 @@ import java.util.function.IntToDoubleFunction;
  * water priced high; when only water is left on every new heading it swims across to the nearest dry shore it can see.
  * <p>
  * On the way it eats carried food when hungry or hurt, and hunts a passing cow, pig, sheep, chicken or rabbit when hungry
- * with nothing to eat. At dusk it digs three blocks down and roofs the hole with a block that does not fall, waits for
- * morning (eating if it must) and walks on; with no such block it walks on through the night and leaves the mobs to the
- * survival reflex. Once the feature is in loaded chunks it walks to it and succeeds with its position. It fails with
+ * with nothing to eat. At dusk it digs three blocks down and roofs the hole with a block that does not fall, then hands
+ * the night back to the planner ({@code sheltered_for_night}): waiting in a pit is dull, and the planner may rather mine
+ * from it. A call that night waits in the pit, and a call in the morning climbs out first and walks on; with
+ * {@code waitAtNight} the task waits for morning itself. With no roof block it walks on through the night and leaves the
+ * mobs to the survival reflex. Milestones (land in sight, a crossing, a hunt, dusk, morning, the find) are reported as
+ * {@link TaskProgress} so the planner can follow along. Once the feature is in loaded chunks it walks to it and
+ * succeeds with its position. It fails with
  * the explored extent on max_distance (no new ground left within maxDistance of the start, or twice maxDistance walked),
  * route_blocked (no new dry ground reachable even by swimming), low_health with no food, or timeout.
  */
@@ -95,7 +99,14 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final int EAT_RETRY_TICKS = 200;
 	static final int SHELTER_GO_TICKS = 300;
 	static final int SHELTER_DIG_TICKS = 600;
-	static final int SHELTER_EXIT_TICKS = 600;
+	/** Long enough to climb back from a strip mine near the pit, not only out of the pit. */
+	static final int SHELTER_EXIT_TICKS = 1_200;
+	/** A call this close to the remembered pit, below its top, climbs out through it first. */
+	static final double SHELTER_RETURN_BLOCKS = 48.0D;
+	/** How often a walked distance is reported. */
+	static final double PROGRESS_BLOCKS = 200.0D;
+	/** A heading's lure at least this strong means feature-like land is in sight that way. */
+	static final double LURE_SEEN = 0.2D;
 	static final int MAX_SHELTER_FAILURES = 3;
 	/** How often to look again for a shelter column at night when none fit. */
 	static final int SHELTER_RETRY_TICKS = 100;
@@ -131,6 +142,11 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	private int shelterFailures, failuresTonight, nightsSheltered, lastShelterLook = Integer.MIN_VALUE / 2;
 	private boolean walkingAtNight;
 	private String note = "";
+	private final List<TaskProgress> progress = new java.util.ArrayList<>();
+	private double nextProgressReport;
+	private boolean lureReported, startChecked;
+	/** The day whose night walk or wait was already reported. */
+	private long nightReportedDay = Long.MIN_VALUE;
 	private GoalPosition navigationGoal;
 	private NavigationOptions navigationOptions;
 	private boolean navigationOwned, navigationArrived;
@@ -176,6 +192,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		phaseTicks++;
 		track(body.feet());
 		if (activeTicks > TIMEOUT_TICKS) return finish(false, "timeout", TaskFailureCode.TRANSIENT);
+		if (!startChecked) {
+			startChecked = true;
+			returnToShelter(body);
+		}
 
 		Optional<TaskTerminalEvent> ended = needs(body);
 		if (ended.isEmpty()) ended = switch (phase) {
@@ -223,6 +243,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 				stopNavigation();
 				prey = animal.get();
 				preyLastSeen = prey.position();
+				report("hunting", "Hungry with nothing to eat: hunting a " + prey.type() + ".");
 				enter(Phase.HUNT);
 				return Optional.empty();
 			}
@@ -235,6 +256,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			if (!environment.hasRoofBlock()) {
 				walkingAtNight = true;
 				note = "walking_at_night: no block that does not fall to roof a shelter with";
+				reportNight(body, "night_walk", "Night fell and I carry no block to roof a shelter with (dirt, cobblestone, planks); "
+					+ "walking on through the dark.");
 				return Optional.empty();
 			}
 			ExploreShelter.Plan plan = environment.shelterNear(body.feet());
@@ -245,6 +268,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			}
 			stopNavigation();
 			shelter = plan;
+			if (failuresTonight == 0) report("dusk", "Dusk: digging a shelter for the night at " + pos(plan.top()) + ".");
 			enter(Phase.SHELTER_GO);
 		}
 		return Optional.empty();
@@ -279,8 +303,15 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			? environment.findFeature(args.featureKind(), body.feet(), SEARCH_RADIUS, args.minTrees()) : Optional.empty();
 		if (feature.isPresent()) {
 			found = feature.get();
+			report("feature_seen", String.format(Locale.ROOT, "Found a %s at %d,%d,%d, %.0f blocks away; walking there.",
+				args.featureKind().replace('_', ' '), found.x(), found.y(), found.z(), horizontal(body.feet(), found.x() + 0.5D, found.z() + 0.5D)));
 			enter(Phase.APPROACH);
 			return Optional.empty();
+		}
+		if (walked >= nextProgressReport) {
+			nextProgressReport = (Math.floor(walked / PROGRESS_BLOCKS) + 1) * PROGRESS_BLOCKS;
+			report("walked", String.format(Locale.ROOT, "Walked %.0f blocks so far, %.0f from where I started; no %s yet.",
+				walked, horizontal(body.feet(), origin.x, origin.z), args.featureKind().replace('_', ' ')));
 		}
 		if (walked >= (double) WALK_BUDGET_FACTOR * args.maxDistance())
 			return finish(false, "max_distance; walked " + WALK_BUDGET_FACTOR + "x maxDistance without finding " + args.featureKind(),
@@ -293,6 +324,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		if (choice.leg() == null && !choice.exhausted() && body.night()) {
 			// Water all round and no crossing in the dark: wait for morning here rather than give up.
 			note = "waiting_for_morning: only water ahead, crossed by day";
+			reportNight(body, "night_wait", "Only water ahead and it is dark; waiting here for morning to swim across.");
 			walkingAtNight = true;
 			enter(Phase.NIGHT_WAIT);
 			return Optional.empty();
@@ -305,7 +337,16 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 				: ", not even across water within " + MAX_CROSSING_BLOCKS + " blocks"), TaskFailureCode.TRANSIENT);
 		}
 		leg = choice.leg();
-		if (leg.crossing()) crossings++;
+		if (leg.crossing()) {
+			crossings++;
+			report("crossing", String.format(Locale.ROOT, "Every land route is blocked; swimming about %.0f blocks across the water to the %s.",
+				horizontal(body.feet(), leg.x() + 0.5D, leg.z() + 0.5D), compass(leg.heading())));
+		}
+		else if (!lureReported && ExplorationMemory.surfaceTells(args.featureKind()) && lure.applyAsDouble(leg.heading()) >= LURE_SEEN) {
+			lureReported = true;
+			report("land_in_sight", "I can see " + (args.featureKind().equals("forest") ? "tree tops and grass" : "water")
+				+ " in the distance to the " + compass(leg.heading()) + "; heading that way.");
+		}
 		legStartDistance = horizontal(body.feet(), leg.x() + 0.5D, leg.z() + 0.5D);
 		legs++;
 		enter(Phase.WALK);
@@ -349,6 +390,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			stopNavigation();
 			if (horizontal(body.feet(), preyLastSeen.x, preyLastSeen.z) <= KILL_DISTANCE) {
 				kills++;
+				report("hunted", "Killed the " + prey.type() + "; picking up what it dropped.");
 				enter(Phase.LOOT);
 			}
 			else {
@@ -423,6 +465,18 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			return shelterFailed(phaseTicks > SHELTER_DIG_TICKS ? "dig_too_slow " + environment.shelterState() : "dig_failed " + environment.shelterFailure());
 		nightsSheltered++;
 		note = "";
+		memory.shelter(shelter);
+		if (!args.waitAtNight() && !memory.handedBack(body.day())) {
+			memory.handBack(body.day());
+			return finish(true, "sheltered_for_night at " + pos(shelter.top().below(ExploreShelter.DEPTH))
+				+ ": the body is " + ExploreShelter.DEPTH + " blocks down a pit roofed at " + pos(shelter.roof())
+				+ ", out of reach of the night. The trip is paused, not done: no " + args.featureKind() + " found yet, and the ground "
+				+ "explored so far is remembered. Until morning either stay put (call explore_for again: it waits in the pit and "
+				+ "walks on at dawn), or mine from the pit floor with a pickaxe, lighting the tunnel with torches every few blocks "
+				+ "so nothing spawns in it, and stay within " + (int) SHELTER_RETURN_BLOCKS + " blocks; in the morning call "
+				+ "explore_for again and it climbs back out through the pit and walks on;", null);
+		}
+		report("sheltered", "Dug in for the night at " + pos(shelter.top()) + "; waiting for morning.");
 		enter(Phase.SHELTER_WAIT);
 		return Optional.empty();
 	}
@@ -446,6 +500,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		if (body.feet().y >= top.getY() - 0.2D && body.onGround()) {
 			stopNavigation();
 			shelter = null;
+			memory.shelter(null);
+			report("morning", "Morning: out of the shelter at " + top.getX() + "," + top.getZ() + " and walking on.");
 			enter(Phase.SEARCH);
 			return Optional.empty();
 		}
@@ -475,6 +531,57 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		shelter = null;
 		enter(Phase.SEARCH);
 		return Optional.empty();
+	}
+
+	/**
+	 * A call that starts below the remembered pit and near it: by night inside the pit it waits there; by day it climbs
+	 * out through the pit (from the pit or a strip mine dug from it) before walking on.
+	 */
+	private void returnToShelter(Body body) {
+		ExploreShelter.Plan pit = memory.shelter();
+		if (pit == null) return;
+		var top = pit.top();
+		if (body.feet().y >= top.getY() - 0.5D || horizontal(body.feet(), top.getX() + 0.5D, top.getZ() + 0.5D) > SHELTER_RETURN_BLOCKS) {
+			if (!body.night()) memory.shelter(null);
+			return;
+		}
+		boolean inPit = (int) Math.floor(body.feet().x) == top.getX() && (int) Math.floor(body.feet().z) == top.getZ();
+		if (body.night() && !inPit) return;
+		shelter = pit;
+		if (body.night()) {
+			note = "waiting_in_shelter";
+			enter(Phase.SHELTER_WAIT);
+		}
+		else enter(Phase.SHELTER_EXIT);
+	}
+
+	private void report(String milestone, String message) {
+		progress.add(new TaskProgress(milestone, message));
+	}
+
+	/** One night report per night: the walk or the wait goes on for many ticks. */
+	private void reportNight(Body body, String milestone, String message) {
+		if (nightReportedDay == body.day()) return;
+		nightReportedDay = body.day();
+		report(milestone, message);
+	}
+
+	@Override
+	public List<TaskProgress> drainProgress() {
+		if (progress.isEmpty()) return List.of();
+		List<TaskProgress> drained = List.copyOf(progress);
+		progress.clear();
+		return drained;
+	}
+
+	/** The eight-point compass name of a heading: x grows east and z grows south. */
+	static String compass(int heading) {
+		String[] names = {"east", "southeast", "south", "southwest", "west", "northwest", "north", "northeast"};
+		return names[Math.floorMod(Math.round(heading * 8.0F / HEADINGS), 8)];
+	}
+
+	private static String pos(net.minecraft.core.BlockPos pos) {
+		return pos.getX() + "," + pos.getY() + "," + pos.getZ();
 	}
 
 	/** Remembers where the body has been, how far it walked and how far it got from the start. */
@@ -714,6 +821,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		lastShelterLook = Integer.MIN_VALUE / 2;
 		walkingAtNight = false;
 		note = "";
+		nextProgressReport = PROGRESS_BLOCKS;
+		lureReported = startChecked = false;
 	}
 
 	/** Back after a pause: look again from wherever the body is now, keeping the counts, the start and the heading. */
@@ -726,6 +835,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		lastShelterLook = Integer.MIN_VALUE / 2;
 		// Distance tracking restarts at the new feet, so a knockback or a reflex's walk is not counted as explored.
 		lastFeet = null;
+		// Paused in the pit: back to waiting there.
+		startChecked = false;
 	}
 
 	private Optional<TaskTerminalEvent> finish(boolean success, String reason, TaskFailureCode failureCode) {
@@ -782,7 +893,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	 * What the task reads from the player each tick; {@code night} is false where the sky has no day cycle, and
 	 * {@code food} is the hunger bar, 0..20.
 	 */
-	record Body(Vec3 feet, float health, float maxHealth, int food, boolean night, boolean onGround, boolean inWater) {
+	record Body(Vec3 feet, float health, float maxHealth, int food, boolean night, boolean onGround, boolean inWater, long day) {
+		Body(Vec3 feet, float health, float maxHealth, int food, boolean night, boolean onGround, boolean inWater) {
+			this(feet, health, maxHealth, food, night, onGround, inWater, 0L);
+		}
 		Body(Vec3 feet, float health, boolean night) { this(feet, health, 20.0F, 20, night, true, false); }
 	}
 
