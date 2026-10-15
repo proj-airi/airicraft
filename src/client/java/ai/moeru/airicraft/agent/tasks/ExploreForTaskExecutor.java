@@ -63,6 +63,11 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final float SWIM_HEALTH = 12.0F;
 	/** Ends nearer than this to every point already walked show nothing new. */
 	static final double MIN_NOVELTY_BLOCKS = 16.0D;
+	/**
+	 * Ends this close to one a leg did not get to are skipped: the navigator walks part of the way to an end it cannot
+	 * reach (across lava, up a cliff), and without this the next leg turns back and the one after aims there again.
+	 */
+	static final double UNREACHED_BLOCKS = 16.0D;
 	static final double NOVELTY_CAP_BLOCKS = 96.0D;
 	static final double VISIT_SPACING_BLOCKS = 8.0D;
 	/** How much the look of the land toward a heading counts against novelty (4), outwardness (2) and the rest. */
@@ -73,6 +78,11 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	static final int TIMEOUT_TICKS = 48_000;
 	static final double WATER_PENALTY = 50.0D;
 	static final NavigationOptions OPTIONS = NavigationOptions.WALK_ONLY.withWaterPenalty(WATER_PENALTY);
+	/**
+	 * Under a ceiling (the Nether) walking alone gets cut off by pillars, ledges and lava within a few legs: legs may
+	 * break and place blocks there, falls kept short. The navigator keeps its lava margins either way.
+	 */
+	static final NavigationOptions CEILING_OPTIONS = NavigationOptions.DEFAULT.withWaterPenalty(WATER_PENALTY).withMaxSafeFall(3);
 	/** Swimming across: water at its usual price, still no digging or bridging. */
 	static final NavigationOptions CROSSING_OPTIONS = NavigationOptions.WALK_ONLY;
 	/** Out of a shelter: the roof and walls may be broken and blocks placed to climb. */
@@ -128,6 +138,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	private int activeTicks, phaseTicks;
 	private Vec3 origin, lastVisit, lastFeet;
 	private final int[] headingFailures = new int[HEADINGS];
+	/** Leg ends this call walked toward and did not get to. */
+	private final List<Vec3> unreached = new java.util.ArrayList<>();
 	private Integer lastHeading;
 	private Leg leg;
 	private double legStartDistance;
@@ -319,10 +331,10 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			return finish(false, "max_distance; walked " + WALK_BUDGET_FACTOR + "x maxDistance without finding " + args.featureKind(),
 				TaskFailureCode.MISSING_FACT);
 		IntToDoubleFunction lure = heading -> memory.lure(args.featureKind(), body.feet(), 2 * Math.PI * heading / HEADINGS);
-		Choice choice = chooseLeg(body.feet(), origin, args.maxDistance(), memory.visited(), headingFailures, lastHeading,
+		Choice choice = chooseLeg(body.feet(), origin, args.maxDistance(), memory.visited(), unreached, headingFailures, lastHeading,
 			environment::ground, lure);
 		if (choice.leg() == null && !choice.exhausted() && !body.night() && body.health() >= SWIM_HEALTH)
-			choice = chooseCrossing(body.feet(), origin, args.maxDistance(), memory.visited(), headingFailures, environment::ground, lure);
+			choice = chooseCrossing(body.feet(), origin, args.maxDistance(), memory.visited(), unreached, headingFailures, environment::ground, lure);
 		if (choice.leg() == null && !choice.exhausted() && body.night()) {
 			// Water all round and no crossing in the dark: wait for morning here rather than give up.
 			note = "waiting_for_morning: only water ahead, crossed by day";
@@ -360,13 +372,15 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		boolean arrived = remaining <= ARRIVE_BLOCKS;
 		int timeout = leg.crossing() ? CROSSING_TIMEOUT_TICKS : LEG_TIMEOUT_TICKS;
 		boolean moving = !arrived && navigate(new GoalPosition(leg.x(), leg.y(), leg.z(), false), 2,
-			leg.crossing() ? CROSSING_OPTIONS : OPTIONS);
+			leg.crossing() ? CROSSING_OPTIONS : environment.underCeiling() ? CEILING_OPTIONS : OPTIONS);
 		if (body.inWater()) swum++;
 		if (!arrived && !navigationArrived && moving && phaseTicks <= timeout) return Optional.empty();
 		stopNavigation();
 		boolean walkedEnough = arrived || navigationArrived || legStartDistance - remaining >= PARTIAL_LEG_BLOCKS;
 		if (walkedEnough) lastHeading = leg.heading();
 		else headingFailures[leg.heading()]++;
+		// A route that gave out short of the end (partway, then no route) says the end is cut off from here.
+		if (!arrived && !navigationArrived) unreached.add(new Vec3(leg.x() + 0.5D, leg.y(), leg.z() + 0.5D));
 		enter(Phase.SEARCH);
 		return Optional.empty();
 	}
@@ -376,7 +390,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		int[] to = found.stand() != null ? found.stand() : new int[]{found.x(), found.y(), found.z()};
 		double remaining = horizontal(body.feet(), to[0] + 0.5D, to[2] + 0.5D);
 		boolean arrived = remaining <= 2.5D;
-		boolean moving = !arrived && navigate(new GoalPosition(to[0], to[1], to[2], false), 1, OPTIONS);
+		boolean moving = !arrived && navigate(new GoalPosition(to[0], to[1], to[2], false), 1,
+			environment.underCeiling() ? CEILING_OPTIONS : OPTIONS);
 		if (!arrived && !navigationArrived && moving && phaseTicks <= LEG_TIMEOUT_TICKS * 2) return Optional.empty();
 		stopNavigation();
 		boolean reached = arrived || navigationArrived;
@@ -662,6 +677,12 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	 */
 	static Choice chooseLeg(Vec3 feet, Vec3 origin, int maxDistance, List<Vec3> visited, int[] headingFailures,
 		Integer lastHeading, GroundView ground, IntToDoubleFunction lure) {
+		return chooseLeg(feet, origin, maxDistance, visited, List.of(), headingFailures, lastHeading, ground, lure);
+	}
+
+	/** As above, skipping ends near one in {@code unreached} (still new ground, so not counted as exhausted). */
+	static Choice chooseLeg(Vec3 feet, Vec3 origin, int maxDistance, List<Vec3> visited, List<Vec3> unreached,
+		int[] headingFailures, Integer lastHeading, GroundView ground, IntToDoubleFunction lure) {
 		Leg best = null;
 		boolean novelInBounds = false;
 		int excluded = 0;
@@ -683,6 +704,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 					double novelty = novelty(visited, px, pz);
 					if (novelty < MIN_NOVELTY_BLOCKS) continue;
 					novelInBounds = true;
+					if (near(unreached, px, pz, UNREACHED_BLOCKS)) continue;
 					int x = (int) Math.floor(px), z = (int) Math.floor(pz);
 					Ground end = ground.ground(x, z, nearY);
 					if (end.kind() != Ground.Kind.DRY) continue;
@@ -716,8 +738,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	 * When no heading has new dry ground within a leg: the nearest dry shore seen across water, on a heading with new
 	 * ground behind it, at most {@link #MAX_CROSSING_BLOCKS} away. Least water first, then the look of the land.
 	 */
-	static Choice chooseCrossing(Vec3 feet, Vec3 origin, int maxDistance, List<Vec3> visited, int[] headingFailures,
-		GroundView ground, IntToDoubleFunction lure) {
+	static Choice chooseCrossing(Vec3 feet, Vec3 origin, int maxDistance, List<Vec3> visited, List<Vec3> unreached,
+		int[] headingFailures, GroundView ground, IntToDoubleFunction lure) {
 		Leg best = null;
 		int nearY = (int) Math.floor(feet.y);
 		for (int heading = 0; heading < HEADINGS; heading++) {
@@ -741,7 +763,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 				boolean useInland = inland.kind() == Ground.Kind.DRY;
 				double ex = useInland ? ix : px, ez = useInland ? iz : pz;
 				Ground end = useInland ? inland : on;
-				if (novelty(visited, ex, ez) < MIN_NOVELTY_BLOCKS) break;
+				if (novelty(visited, ex, ez) < MIN_NOVELTY_BLOCKS || near(unreached, ex, ez, UNREACHED_BLOCKS)) break;
 				double score = -water * 4.0D + lure.applyAsDouble(heading) * LURE_WEIGHT * 4.0D;
 				Leg candidate = new Leg(heading, (int) Math.floor(ex), end.y(), (int) Math.floor(ez), score, true);
 				if (best == null || candidate.score() > best.score()) best = candidate;
@@ -749,6 +771,11 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			}
 		}
 		return new Choice(best, false);
+	}
+
+	private static boolean near(List<Vec3> points, double x, double z, double blocks) {
+		for (Vec3 point : points) if (horizontal(point, x, z) < blocks) return true;
+		return false;
 	}
 
 	private static double novelty(List<Vec3> visited, double x, double z) {
@@ -831,6 +858,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		activeTicks = phaseTicks = 0;
 		origin = lastVisit = lastFeet = furthestAt = null;
 		Arrays.fill(headingFailures, 0);
+		unreached.clear();
 		lastHeading = null;
 		leg = null;
 		walked = furthest = swum = 0;
@@ -961,6 +989,9 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		boolean hasRoofBlock();
 		/** Whether rock is over the body: a tunnel or a cave, where no shelter pit is dug. */
 		default boolean underground(Vec3 feet) { return false; }
+
+		/** Whether the dimension has a ceiling (the Nether), where legs may dig and place. */
+		default boolean underCeiling() { return false; }
 		/** A shelter column near the feet, or null. */
 		ExploreShelter.Plan shelterNear(Vec3 feet);
 		/** Digs or roofs the shelter for one tick. */

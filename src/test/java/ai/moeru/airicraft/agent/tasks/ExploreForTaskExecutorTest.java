@@ -65,6 +65,32 @@ class ExploreForTaskExecutorTest {
 		assertTrue(eastward <= 2L * 7 + 1, "each blocked heading is tried at most twice: " + eastward);
 	}
 
+	@Test void legsCutShortByTheTerrainAreNotAimedAtAgain() {
+		World world = new World();
+		// A valley: dry ground all round, but routes give out 30 blocks from the start (lava, cliffs), partway along every leg.
+		world.pen = at -> Math.hypot(at.x - 0.5, at.z - 0.5) <= 30;
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("nether_fortress", 640), 60_000);
+		assertEquals(TaskExecutionState.FAILED, end.terminalState(), end.message());
+		assertTrue(end.message().startsWith("route_blocked"), end.message());
+		assertTrue(world.legGoals.size() <= 40, "gave up instead of walking back and forth: " + world.legGoals.size() + " legs");
+		for (int i = 0; i < world.legGoals.size(); i++) {
+			for (int j = 0; j < i; j++) {
+				GoalPosition a = world.legGoals.get(i), b = world.legGoals.get(j);
+				assertTrue(Math.hypot(a.x() - b.x(), a.z() - b.z()) >= ExploreForTaskExecutor.UNREACHED_BLOCKS,
+					"leg " + i + " " + a + " aims where leg " + j + " " + b + " could not get to");
+			}
+		}
+	}
+
+	@Test void underACeilingLegsMayDigAndPlace() {
+		World world = new World();
+		world.ceiling = true;
+		world.feature = World.ring(100);
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("nether_fortress", 320), 5_000);
+		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertEquals(Set.of(ExploreForTaskExecutor.CEILING_OPTIONS), world.optionsSeen);
+	}
+
 	@Test void headsWhereTheLandLooksGreenRatherThanStraightOut() {
 		World world = new World();
 		// Sand all round, but grass and a few tree tops show to the north-west, far out; trees only past 300 blocks there.
@@ -370,12 +396,14 @@ class ExploreForTaskExecutorTest {
 		Vec3 feet = new Vec3(0.5, 64, 0.5);
 		float health = 20;
 		int food = 20, foodItems;
-		boolean roofBlocks, underground;
+		boolean roofBlocks, underground, ceiling;
 		int nightAt = Integer.MAX_VALUE, dayAt = Integer.MAX_VALUE, pauseAt = -1;
 		/** Where the feature is once the body stands at the given feet, or null while it is not there. */
 		java.util.function.Function<Vec3, int[]> feature = feet -> null;
 		BiPredicate<Integer, Integer> water = (x, z) -> false;
 		Predicate<GoalPosition> blocked = goal -> false;
+		/** Where routes reach: a walk stops at the edge, then reports no route, as a partial path does. */
+		Predicate<Vec3> pen = at -> true;
 		java.util.function.BiFunction<Integer, Integer, ExplorationMemory.Surface> surface;
 		final List<ExploreForTaskExecutor.Animal> animals = new ArrayList<>();
 		final List<GoalPosition> legGoals = new ArrayList<>();
@@ -439,6 +467,9 @@ class ExploreForTaskExecutorTest {
 				feet = center;
 				goal = null;
 				events.add("AT_GOAL");
+			} else if (!pen.test(feet.add(delta.normalize().scale(4)))) {
+				goal = null;
+				events.add("CALC_FAILED");
 			} else feet = feet.add(delta.normalize().scale(4));
 			if (inShelter && !down) {
 				// Climbing out.
@@ -499,6 +530,7 @@ class ExploreForTaskExecutorTest {
 		}
 		public boolean hasRoofBlock() { return roofBlocks; }
 		public boolean underground(Vec3 at) { return underground && at.y < 64; }
+		public boolean underCeiling() { return ceiling; }
 		public ExploreShelter.Plan shelterNear(Vec3 at) {
 			BlockPos top = BlockPos.containing(at);
 			return new ExploreShelter.Plan(top, List.of(top.below(), top.below(2), top.below(3)), top.below(), top.below().east());

@@ -312,6 +312,12 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	}
 
 	@Override
+	public boolean underCeiling() {
+		ClientLevel level = client().level;
+		return level != null && level.dimensionType().hasCeiling();
+	}
+
+	@Override
 	public boolean underground(Vec3 feet) {
 		ClientLevel level = client().level;
 		if (level == null) return false;
