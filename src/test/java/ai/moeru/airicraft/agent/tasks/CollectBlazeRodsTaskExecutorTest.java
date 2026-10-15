@@ -396,6 +396,59 @@ class CollectBlazeRodsTaskExecutorTest {
 		assertTrue(world.visited.contains(SPOT));
 	}
 
+	@Test void pauseForReflexKeepsTheSpotAndCountersAndStartsTheRouteAgain() {
+		World world = new World();
+		world.blaze(new Vec3(0.5, 66, 0.5));
+		world.hasBow = true;
+		world.hideAtCover = false;
+		GoalPosition walled = new GoalPosition(0, 64, 8, true);
+		world.unreachable.add(walled);
+		world.fightingSpots.add(new Spot(walled, true, false, false, true, 1, 4, 8));
+		for (int i = 0; i < 20 && !world.navigated.contains(SPOT); i++) assertNull(world.runTicks(1, 1));
+		assertNull(world.runTicks(1, 3));
+		assertTrue(world.snapshot().contains("mode=APPROACH") && world.snapshot().contains("spot=8,64,0"), world.snapshot());
+		assertEquals(SPOT, world.goal, "walking to the spot");
+
+		int routes = world.navigated.size();
+		int releases = world.releases;
+		world.executor.pauseForReflex();
+		assertNull(world.goal, "the route is cancelled for the reflex");
+		assertTrue(world.releases > releases, "the body is let go");
+		world.feet = world.feet.add(0, 0, 3); // the reflex moved the body
+
+		assertNull(world.runTicks(1, 1));
+		assertEquals(routes + 1, world.navigated.size(), "the route is started again, not assumed to survive the reflex");
+		assertEquals(SPOT, world.navigated.getLast(), "to the same spot");
+		assertTrue(world.snapshot().contains("spot=8,64,0"), world.snapshot());
+
+		// At the spot: one arrow in, then another pause mid-fight.
+		for (int i = 0; i < 400 && world.arrowsShot < 1; i++) assertNull(world.runTicks(1, 1));
+		assertEquals(1, world.arrowsShot);
+		world.executor.pauseForReflex();
+		TaskExecutionSnapshot paused = world.executor.snapshot();
+		assertEquals(TaskExecutionState.IDLE, paused.state());
+
+		TaskTerminalEvent end = world.run(1, 2_000);
+		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertTrue(end.message().contains("arrowsShot=" + world.arrowsShot), "the shot before the pause still counts: " + end.message());
+		assertTrue(end.message().contains("spot=8,64,0"), end.message());
+		assertEquals(1, world.navigated.stream().filter(walled::equals).count(), "the rejected spot stays rejected: " + world.navigated);
+	}
+
+	@Test void leavingTheWorldStillForgetsTheRejectedSpots() {
+		World world = new World();
+		world.blaze(new Vec3(0.5, 66, 0.5));
+		world.hasBow = true;
+		world.hideAtCover = false;
+		GoalPosition walled = new GoalPosition(0, 64, 8, true);
+		world.unreachable.add(walled);
+		world.fightingSpots.add(new Spot(walled, true, false, false, true, 1, 4, 8));
+		for (int i = 0; i < 20 && !world.navigated.contains(SPOT); i++) assertNull(world.runTicks(1, 1));
+		world.executor.onWorldLeave();
+		assertNull(world.runTicks(1, 1));
+		assertEquals(2, world.navigated.stream().filter(walled::equals).count(), "a fresh task tries the walled spot again");
+	}
+
 	@Test void outsideTheNetherFailsWrongDimension() {
 		World world = new World();
 		world.nether = false;
@@ -641,7 +694,8 @@ class CollectBlazeRodsTaskExecutorTest {
 			return CollectBlazeRodsTaskExecutor.ConsumeResult.DONE;
 		}
 		public void stopConsuming() { eatTicks = 0; }
-		public void release() {}
+		int releases;
+		public void release() { releases++; }
 
 		// Navigation
 		public boolean isLoaded() { return true; }

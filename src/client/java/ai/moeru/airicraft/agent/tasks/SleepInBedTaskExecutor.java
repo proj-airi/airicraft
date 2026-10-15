@@ -584,6 +584,13 @@ public final class SleepInBedTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the bed, the phase and the counters (a body asleep stays in bed), only let go of the body. */
+	@Override
+	public void pauseForReflex() {
+		if (request != null) release();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();

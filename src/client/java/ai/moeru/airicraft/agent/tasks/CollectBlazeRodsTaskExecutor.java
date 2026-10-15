@@ -880,6 +880,20 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	}
 
 	@Override public TaskExecutionSnapshot snapshot() { return snapshot; }
+	/** The reflex hands the same task back: keep the spawner, the spot, rejected spots and the counters; let go of the bow,
+	 * shield, meal, strafe and route, which the next tick takes up again. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		navigationStall.clear();
+		navigationRestTick = -1;
+		// Hits taken and blazes lost from view while the reflex had the body are not this fight's evidence.
+		lastHealth = -1.0F;
+		knownBlazes.clear();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override public void onWorldLeave() {
 		release();
 		request = null;

@@ -16,6 +16,7 @@ final class FakeWorldTaskExecutor implements WorldTaskExecutor {
 	Optional<TaskTerminalEvent> nextTerminalEvent = Optional.empty();
 	Optional<WorldTaskRequest> lastActiveTask = Optional.empty();
 	int onWorldLeaveCalls;
+	int pauseForReflexCalls;
 
 	@Override
 	public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
@@ -72,6 +73,11 @@ final class FakeWorldTaskExecutor implements WorldTaskExecutor {
 	public void onWorldLeave() {
 		onWorldLeaveCalls++;
 		snapshot = TaskExecutionSnapshot.idle();
+	}
+
+	@Override
+	public void pauseForReflex() {
+		pauseForReflexCalls++;
 	}
 
 	@Override

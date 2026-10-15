@@ -255,6 +255,22 @@ class HuntFoodTaskExecutorTest {
 		assertTrue(f.snapshotText().contains("target=cow#" + first.id + " targetTicks=21"), f.snapshotText());
 	}
 
+	@Test void pauseForReflexResumesTheSameHunt() {
+		Fixture f = new Fixture(new HuntFoodStepArgs(4, false, 32));
+		f.nav.arrive = false;
+		FakeAnimal first = f.env.add("cow", new Vec3(15.5, 64, 0.5));
+		f.env.add("cow", new Vec3(25.5, 64, 0.5));
+		f.env.add("cow", new Vec3(26.5, 64, 0.5));
+		f.tick(20);
+		String before = f.snapshotText();
+		assertTrue(before.contains("target=cow#" + first.id), before);
+		f.executor.pauseForReflex();
+		assertEquals(TaskExecutionState.IDLE, f.executor.snapshot().state());
+		assertTrue(f.env.released > 0, "the body is let go during the pause");
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("target=cow#" + first.id + " targetTicks=21"), f.snapshotText());
+	}
+
 	// ---- Cooking ----
 
 	@Test void decidesWhetherAndHowToCook() {

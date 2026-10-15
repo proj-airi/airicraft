@@ -38,6 +38,28 @@ class CollectObsidianTaskExecutorTest {
 		assertTrue(f.events.getFirst().message().contains("mined=1"), f.events.getFirst().message());
 	}
 
+	@Test void pauseForReflexMidBreakWalksBackToTheStanceInsteadOfRejectingTheTarget() {
+		Fixture f = new Fixture(1);
+		f.env.mine = Optional.of(new CollectObsidianTaskExecutor.Mine(OBSIDIAN, MINE_STANCE, false));
+		f.tick(2);
+		f.env.feet = new Vec3(1.5, 28, 0.5);
+		f.tick(3);
+		assertTrue(f.env.breaking.contains(OBSIDIAN));
+		int routes = f.nav.goals.size();
+		f.executor.pauseForReflex();
+		assertFalse(f.nav.active);
+		f.env.feet = new Vec3(-3.5, 28, 0.5); // the reflex moved the body off its stance
+		f.env.breaking.clear();
+		f.tick(2);
+		assertEquals(routes + 1, f.nav.goals.size(), "walks back to the stance");
+		assertEquals(MINE_STANCE, f.nav.goals.getLast());
+		assertTrue(f.env.breaking.isEmpty(), "does not swing at the block from out of reach");
+		f.env.feet = new Vec3(1.5, 28, 0.5);
+		f.tick(2);
+		assertTrue(f.env.breaking.contains(OBSIDIAN), "breaks the same block again");
+		assertTrue(f.env.rejectedMines.isEmpty(), "the target is not rejected: " + f.env.rejectedMines);
+	}
+
 	@Test void castsWhenNothingIsSafeToMineAndScoopsTheWaterBack() {
 		Fixture f = new Fixture(10);
 		f.env.cast = Optional.of(new CollectObsidianTaskExecutor.Cast(LAVA, new GoalPosition(5, 26, 0, true), "up", CAST_STANCE, 3));

@@ -634,6 +634,13 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the shelter, the phase and the counters, only let go of the body. */
+	@Override
+	public void pauseForReflex() {
+		if (request != null) release();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();

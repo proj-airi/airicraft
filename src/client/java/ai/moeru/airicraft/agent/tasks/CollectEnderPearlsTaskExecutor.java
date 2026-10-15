@@ -929,6 +929,22 @@ public final class CollectEnderPearlsTaskExecutor implements WorldTaskExecutor {
 	}
 
 	@Override public TaskExecutionSnapshot snapshot() { return snapshot; }
+	/** The reflex hands the same task back: keep the pit, rejected spots and the counters; let go of digging, shield, meal and
+	 * route, which the next tick takes up again. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		navigationStall.clear();
+		navigationRestTick = -1;
+		// The body may have moved: the next build step and stare start their timers afresh.
+		actionKey = null;
+		actionTicks = 0;
+		stare(null);
+		knownEndermen.clear();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override public void onWorldLeave() {
 		release();
 		request = null;

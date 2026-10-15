@@ -828,6 +828,14 @@ public final class HuntFoodTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the target and the counters, only let go of the body. A smelting or crafting
+	 * child step lets go too and runs again from its start: loading tops the furnace up to the batch, so a second run adds nothing twice. */
+	@Override
+	public void pauseForReflex() {
+		if (request != null) release();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		stopNavigation();

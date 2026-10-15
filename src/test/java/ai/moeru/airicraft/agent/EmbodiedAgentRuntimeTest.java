@@ -243,6 +243,20 @@ class EmbodiedAgentRuntimeTest {
 	}
 
 	@Test
+	void theReflexPausesTheWorldTaskInsteadOfLeavingTheWorld() throws Exception {
+		FakeWorldTaskExecutor executor = new FakeWorldTaskExecutor();
+		var runtime = EmbodiedAgentRuntime.createForTests(executor);
+		try {
+			Method release = EmbodiedAgentRuntime.class.getDeclaredMethod("releaseNormalActuatorsForReflex", net.minecraft.client.Minecraft.class);
+			release.setAccessible(true);
+			release.invoke(runtime, new Object[]{null});
+			assertEquals(1, executor.pauseForReflexCalls, "the task comes back after the reflex and keeps its state");
+			assertEquals(0, executor.onWorldLeaveCalls, "a reflex is not a world leave");
+		}
+		finally { runtime.shutdown(); }
+	}
+
+	@Test
 	void reflexPauseKeepsFreshEvidenceInsteadOfTheInterruptedJobsOldSample() throws Exception {
 		var runtime = EmbodiedAgentRuntime.createForTests(new FakeWorldTaskExecutor());
 		try {

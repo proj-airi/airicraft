@@ -137,6 +137,64 @@ class DispatchingWorldTaskExecutorTest {
 	}
 
 	@Test
+	void aReflexPauseKeepsTheActiveTaskAndItsExecutorsState() {
+		Fixture fixture = new Fixture();
+		ResumableExecutor resumable = new ResumableExecutor();
+		RecordingNavigation navigation = new RecordingNavigation();
+		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(navigation, resumable);
+		WorldTaskRequest craft = WorldTaskRequest.craftRecipe("craft", "job", new CraftRecipeStepArgs("minecraft:stick", 1));
+		for (int i = 0; i < 3; i++) dispatcher.tick(snapshot(), Optional.of(craft));
+		assertEquals(3, resumable.progress);
+
+		dispatcher.pauseForReflex();
+		assertEquals(1, resumable.pauses, "the executor lets go of the body");
+		assertEquals(0, resumable.resets);
+		assertEquals(1, fixture.mining.worldLeaveCalls, "an executor that cannot resume still resets on the pause");
+		navigation.active = true; // the reflex's own route, still set when the hold ends
+
+		dispatcher.tick(snapshot(), Optional.of(craft));
+		assertEquals(4, resumable.progress, "the same request goes on where it left off");
+		assertEquals(0, resumable.resets, "no deactivating tick between the pause and the resume");
+		assertEquals(1, navigation.cancelCalls, "what the reflex left running is ended before the task goes on");
+		assertFalse(resumable.calls.contains(Optional.empty()));
+
+		dispatcher.tick(snapshot(), Optional.of(craft));
+		assertEquals(5, resumable.progress);
+		assertEquals(1, navigation.cancelCalls);
+	}
+
+	@Test
+	void aWorldLeaveStillResetsTheTask() {
+		Fixture fixture = new Fixture();
+		ResumableExecutor resumable = new ResumableExecutor();
+		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(null, resumable);
+		WorldTaskRequest craft = WorldTaskRequest.craftRecipe("craft", "job", new CraftRecipeStepArgs("minecraft:stick", 1));
+		for (int i = 0; i < 3; i++) dispatcher.tick(snapshot(), Optional.of(craft));
+
+		dispatcher.onWorldLeave();
+		dispatcher.tick(snapshot(), Optional.of(craft));
+		assertEquals(1, resumable.resets);
+		assertEquals(1, resumable.progress, "after leaving the world the same request starts over");
+	}
+
+	@Test
+	void anotherRequestAfterAReflexPauseStillDeactivatesThePausedExecutor() {
+		Fixture fixture = new Fixture();
+		ResumableExecutor resumable = new ResumableExecutor();
+		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(null, resumable);
+		WorldTaskRequest craft = WorldTaskRequest.craftRecipe("craft", "job", new CraftRecipeStepArgs("minecraft:stick", 1));
+		dispatcher.tick(snapshot(), Optional.of(craft));
+		dispatcher.tick(snapshot(), Optional.of(craft));
+
+		dispatcher.pauseForReflex();
+		dispatcher.tick(snapshot(), Optional.empty()); // the job was cancelled during the hold
+		assertEquals(Optional.empty(), resumable.calls.getLast());
+		assertEquals(1, resumable.resets);
+		dispatcher.tick(snapshot(), Optional.of(WorldTaskRequest.craftRecipe("craft2", "job2", new CraftRecipeStepArgs("minecraft:stick", 1))));
+		assertEquals(1, resumable.progress);
+	}
+
+	@Test
 	void onlyActiveExecutorReceivesOneInactiveTransition() {
 		Fixture fixture = new Fixture();
 		DispatchingWorldTaskExecutor dispatcher = fixture.dispatcher(null);
@@ -220,8 +278,12 @@ class DispatchingWorldTaskExecutorTest {
 		private final RecordingExecutor blockBreak = new RecordingExecutor();
 
 		private DispatchingWorldTaskExecutor dispatcher(NavigationFacade navigationFacade) {
+			return dispatcher(navigationFacade, crafting);
+		}
+
+		private DispatchingWorldTaskExecutor dispatcher(NavigationFacade navigationFacade, WorldTaskExecutor craftingExecutor) {
 			return new DispatchingWorldTaskExecutor(new DispatchingWorldTaskExecutor.ExecutorSet(
-				mining, crafting, dropItems, entity, smelting, surface, blockInteraction, blockBreak
+				mining, craftingExecutor, dropItems, entity, smelting, surface, blockInteraction, blockBreak
 			), navigationFacade);
 		}
 
@@ -279,6 +341,39 @@ class DispatchingWorldTaskExecutorTest {
 		@Override public TaskExecutionSnapshot snapshot() { return currentSnapshot; }
 		@Override public void onWorldLeave() { worldLeaveCalls++; }
 		@Override public void shutdown() { shutdownCalls++; }
+	}
+
+	/** Counts the ticks of one task; a new task id, an inactive tick or leaving the world starts it over. */
+	private static final class ResumableExecutor implements WorldTaskExecutor {
+		private final List<Optional<WorldTaskRequest>> calls = new ArrayList<>();
+		private String taskId;
+		private int progress, resets, pauses;
+
+		@Override
+		public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
+			calls.add(activeTask);
+			if (activeTask.isEmpty()) {
+				reset();
+				return Optional.empty();
+			}
+			if (!activeTask.get().taskId().equals(taskId)) {
+				if (taskId != null) reset();
+				taskId = activeTask.get().taskId();
+			}
+			progress++;
+			return Optional.empty();
+		}
+
+		private void reset() {
+			resets++;
+			taskId = null;
+			progress = 0;
+		}
+
+		@Override public TaskExecutionSnapshot snapshot() { return TaskExecutionSnapshot.idle(); }
+		@Override public void onWorldLeave() { reset(); }
+		@Override public void pauseForReflex() { pauses++; }
+		@Override public void shutdown() { }
 	}
 
 	private static final class RecordingNavigation implements NavigationFacade {

@@ -1285,7 +1285,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 	}
 
 	private void releaseNormalActuatorsForReflex(Minecraft minecraft) {
-		worldTaskExecutor.onWorldLeave();
+		// A pause, not a world leave: the job resumes the same task afterwards, and executors that can resume keep their state.
+		worldTaskExecutor.pauseForReflex();
 		behaviorTreeRuntime.stop(minecraft);
 		followCapability.clear();
 		followState = FollowState.idle();

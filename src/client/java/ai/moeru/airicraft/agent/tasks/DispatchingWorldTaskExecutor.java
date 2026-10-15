@@ -17,6 +17,8 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	private NavigationStallWatchdog navigationStall;
 	private String navigationTaskId;
 	private String stalledTaskId;
+	/** Paused for the reflex: the next tick ends whatever route the reflex left before the task goes on. */
+	private boolean pausedForReflex;
 	private TaskExecutionSnapshot transitionSnapshot = TaskExecutionSnapshot.idle();
 
 	public DispatchingWorldTaskExecutor(ExecutorSet executors, NavigationFacade navigation) {
@@ -27,6 +29,7 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public Optional<TaskTerminalEvent> tick(SessionSnapshot sessionSnapshot, Optional<WorldTaskRequest> activeTask) {
 		if (activeTask.isEmpty()) {
+			pausedForReflex = false;
 			deactivate(sessionSnapshot);
 			if (navigationStall != null) navigationStall.clear();
 			transitionSnapshot = TaskExecutionSnapshot.idle();
@@ -42,6 +45,10 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			stalledTaskId = null;
 		}
 		WorldTaskExecutor requestedExecutor = executors.executorFor(request);
+		if (pausedForReflex) {
+			pausedForReflex = false;
+			if (activeType == request.type() && activeExecutor == requestedExecutor) NavigationRelease.release(navigation);
+		}
 		if (navigation != null && activeType != request.type()) {
 			deactivate(sessionSnapshot);
 			NavigationRelease.release(navigation);
@@ -122,11 +129,25 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 		activeExecutor = null;
 		activeType = null;
 		transitionSnapshot = TaskExecutionSnapshot.idle();
+		pausedForReflex = false;
 		executors.all().forEach(WorldTaskExecutor::onWorldLeave);
+	}
+
+	/**
+	 * Lets go of the body for the survival reflex without forgetting the task: the active executor and its task id stay, so
+	 * the same request after the reflex reaches the same executor without a deactivating tick, and each executor keeps
+	 * what it can resume. Another request, or none, still deactivates it as usual.
+	 */
+	@Override
+	public void pauseForReflex() {
+		if (navigationStall != null) navigationStall.clear();
+		pausedForReflex = true;
+		executors.all().forEach(WorldTaskExecutor::pauseForReflex);
 	}
 
 	@Override
 	public void shutdown() {
+		pausedForReflex = false;
 		activeExecutor = null;
 		activeType = null;
 		transitionSnapshot = TaskExecutionSnapshot.idle();

@@ -403,6 +403,16 @@ public final class CollectFlintTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the cycles and counters; let go of breaking and route. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		// The spot was chosen beside the feet; the body may have moved, so choose again before placing.
+		if (phase == Phase.PLACE) enter(Phase.CHOOSE);
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();

@@ -348,6 +348,19 @@ class SleepInBedTaskExecutorTest {
 		assertTrue(f.snapshotText().startsWith("phase=SLEEP"), f.snapshotText());
 	}
 
+	@Test void pauseForReflexResumesTheSameSleep() {
+		Fixture f = new Fixture(null);
+		f.env.onUse = f.env::lieDown;
+		f.tick(10);
+		assertTrue(f.env.sleeping);
+		f.executor.pauseForReflex();
+		assertEquals(TaskExecutionState.IDLE, f.executor.snapshot().state());
+		assertTrue(f.env.sleeping, "a pause does not get the body out of bed");
+		f.tick(1);
+		assertEquals(1, f.env.useCalls, "the bed is not used again");
+		assertTrue(f.snapshotText().startsWith("phase=SLEEP"), f.snapshotText());
+	}
+
 	@Test void parsesAnOptionalBedPosition() {
 		assertNull(SleepInBedStepArgs.parse(new JsonObject()).bed());
 		assertEquals(new GoalPosition(1, 70, -3, true), SleepInBedStepArgs.parse(json("{\"x\":1,\"y\":70,\"z\":-3}")).bed());

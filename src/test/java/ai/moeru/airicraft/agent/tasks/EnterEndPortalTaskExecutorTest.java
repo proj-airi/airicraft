@@ -206,6 +206,21 @@ class EnterEndPortalTaskExecutorTest {
 		assertTrue(f.single().message().startsWith("entered_end eyesPlaced=12"), f.single().message());
 	}
 
+	@Test void pauseForReflexResumesTheSameTask() {
+		Fixture f = new Fixture(new EnterEndPortalStepArgs(null, true));
+		while (f.env.placed.size() < 3 && f.events.isEmpty()) f.tick(1);
+		int released = f.env.released;
+		f.executor.pauseForReflex();
+		assertEquals(TaskExecutionState.IDLE, f.executor.snapshot().state());
+		assertTrue(f.env.released > released, "the body is let go during the pause");
+		assertEquals(3, f.env.placed.size(), "no eye during the pause");
+		f.tick(1);
+		assertTrue(f.snapshotText().startsWith("phase=CONFIRM"), "still confirming the third eye: " + f.snapshotText());
+		assertTrue(f.snapshotText().contains("eyesPlaced=2 frame="), f.snapshotText());
+		f.run(400);
+		assertTrue(f.single().message().startsWith("entered_end eyesPlaced=12"), f.single().message());
+	}
+
 	@Test void refusesOutsideTheOverworld() {
 		Fixture f = new Fixture(new EnterEndPortalStepArgs(null, true));
 		f.env.dimension = "minecraft:the_nether";

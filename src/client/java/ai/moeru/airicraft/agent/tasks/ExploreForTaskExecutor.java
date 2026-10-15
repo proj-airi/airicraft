@@ -362,6 +362,13 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the walk so far and the counters; a leg under way starts its route again. */
+	@Override
+	public void pauseForReflex() {
+		if (request != null) release();
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();

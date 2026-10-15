@@ -327,6 +327,58 @@ class ShelterForNightTaskExecutorTest {
 		assertTrue(f.snapshotText().contains("waited="), before);
 	}
 
+	@Test void pauseForReflexInTheWaitKeepsTheShelterAndTheWait() {
+		Fixture f = new Fixture(ShelterForNightStepArgs.MAX_WAIT_TICKS);
+		f.tick(50);
+		assertTrue(f.snapshotText().startsWith("phase=WAIT "), f.snapshotText());
+		int digs = f.env.digCalls;
+		int waited = waited(f.snapshotText());
+		BlockPos shelter = f.env.block;
+		int releases = f.env.releases;
+		f.executor.pauseForReflex();
+		assertTrue(f.env.releases > releases, "the body is let go");
+		assertEquals(TaskExecutionState.IDLE, f.executor.snapshot().state());
+		f.tick(5);
+		assertEquals(digs, f.env.digCalls, "no new shaft from the bottom of the old one");
+		assertEquals(shelter, f.env.block);
+		assertTrue(f.snapshotText().startsWith("phase=WAIT "), f.snapshotText());
+		assertEquals(waited + 5, waited(f.snapshotText()), "the wait goes on counting from where it was");
+		assertTrue(f.events.isEmpty());
+	}
+
+	@Test void pauseForReflexInTheWalkStartsTheRouteAgain() {
+		Fixture f = new Fixture(ShelterForNightStepArgs.MAX_WAIT_TICKS);
+		f.nav.arrive = false;
+		// No shaft fits here or a step over: walk to a column two blocks away.
+		for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) f.env.ground.water.add(new BlockPos(x, 62, z));
+		f.tick(3);
+		assertTrue(f.snapshotText().contains("step=go:walk"), f.snapshotText());
+		int routes = f.nav.goals.size();
+		assertEquals(1, routes);
+		f.executor.pauseForReflex();
+		assertFalse(f.nav.active, "the route is cancelled for the reflex");
+		f.tick(1);
+		assertTrue(f.snapshotText().contains("step=go:walk"), f.snapshotText());
+		assertEquals(routes + 1, f.nav.goals.size(), "the route is started again, not assumed to survive the reflex");
+		assertEquals(f.nav.goals.getFirst(), f.nav.goals.getLast(), "to the same site");
+		assertTrue(f.nav.active);
+	}
+
+	@Test void leavingTheWorldStillForgetsTheShelter() {
+		Fixture f = new Fixture(ShelterForNightStepArgs.MAX_WAIT_TICKS);
+		f.tick(50);
+		int digs = f.env.digCalls;
+		f.executor.onWorldLeave();
+		f.tick(5);
+		assertTrue(f.env.digCalls > digs, "a fresh task plans a new shaft: " + f.snapshotText());
+	}
+
+	private static int waited(String text) {
+		var matcher = java.util.regex.Pattern.compile(" waited=(\\d+)").matcher(text);
+		assertTrue(matcher.find(), text);
+		return Integer.parseInt(matcher.group(1));
+	}
+
 	@Test void aLostRoofIsPutBack() {
 		Fixture f = new Fixture(ShelterForNightStepArgs.MAX_WAIT_TICKS);
 		f.tick(10);
@@ -434,14 +486,15 @@ class ShelterForNightTaskExecutorTest {
 			block = block.relative(direction).above();
 			return new ShelterForNightTaskExecutor.ClimbTick(ShelterForNightTaskExecutor.ClimbState.WORKING, ++progress, "climb");
 		}
+		int releases;
 		public void stop() {}
-		public void release() {}
+		public void release() { releases++; }
 	}
 
-	/** Arrives at once. */
+	/** Arrives at once, unless {@code arrive} is off. */
 	private static final class Navigation implements NavigationFacade {
 		final Environment env;
-		boolean active;
+		boolean active, arrive = true;
 		List<GoalPosition> goals = new ArrayList<>();
 		NavigationOptions options;
 		Navigation(Environment env) { this.env = env; }
@@ -450,7 +503,8 @@ class ShelterForNightTaskExecutorTest {
 		public void startNavigate(GoalPosition p, NavigationOptions o) {
 			goals.add(p);
 			options = o;
-			env.block = new BlockPos(p.x(), p.y(), p.z());
+			active = true;
+			if (arrive) env.block = new BlockPos(p.x(), p.y(), p.z());
 		}
 		public void startNavigateNear(GoalPosition p, int r, NavigationOptions o) { startNavigate(p, o); }
 		public boolean processActive() { return active; }

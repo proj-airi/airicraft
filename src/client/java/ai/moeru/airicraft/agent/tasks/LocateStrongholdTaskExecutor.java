@@ -521,6 +521,16 @@ public final class LocateStrongholdTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public TaskExecutionSnapshot snapshot() { return snapshot; }
 
+	/** The reflex hands the same task back: keep the throws, bearings and estimate; let go of the aim and route. */
+	@Override
+	public void pauseForReflex() {
+		if (request == null) return;
+		release();
+		// The next segment is chosen from where the body is now.
+		if (phase == Phase.TRAVEL && travel != null) travel.segment = null;
+		snapshot = TaskExecutionSnapshot.idle();
+	}
+
 	@Override
 	public void onWorldLeave() {
 		release();
