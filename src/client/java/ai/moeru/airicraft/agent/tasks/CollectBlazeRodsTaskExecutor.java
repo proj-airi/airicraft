@@ -25,10 +25,20 @@ import java.util.Set;
  * fireballs, and the whole kit was lost. This task never enters the room from above. It finds a blaze spawner the body
  * can see (or blazes in sight), walks with falls capped at three blocks to a fighting spot near it (solid floor, no lava
  * or fire within two blocks, no deeper drop beside it, a clear view of the spawner, preferring a wall or roof edge) and
- * fights from there. Every tick, in order: raise the shield against a fireball about to hit, else strafe off its line;
- * hit a blaze in reach; at low health, go out of sight to eat and heal; with more than three blazes in sight, go out of
- * sight so they come one at a time; pick up dropped rods from safe ground with no blaze close; shoot a blaze farther away
- * with a bow, or without one hide so it comes close. It ends once the inventory holds the requested rods.
+ * fights from there. Every tick, in order: with more than three blazes in sight, hurt with blazes in sight, or hit on the
+ * way in, walk to cover out of (most of) their sight first, with the shield down so the walk is not slowed; raise the
+ * shield against a fireball about to hit, else strafe off its line; hit a blaze in reach; at low health, eat and heal;
+ * pick up dropped rods from safe ground with no blaze close; shoot a blaze farther away with a bow, or without one hide
+ * so it comes close. It ends once the inventory holds the requested rods.
+ *
+ * <p>In live play a body with a sword, a shield and no bow walked toward a spawner room where eight blazes saw it. The
+ * shield answered every incoming fireball and stopped the walk, so with eight shooters there was always one incoming:
+ * the body stood in the open for 700 ticks, shielding one direction while the others hit it, and never ran the cover
+ * step. Its cover search also wanted a cell no blaze at all could see and gave up after one empty search, where the
+ * reflex's {@code RangedCover} found a cell seen by two of them 8.6 blocks away. It handed back at 6 health, too late
+ * to survive the walk there. Cover now comes before the shield, the search takes the cell seen by the fewest blazes
+ * (as {@code RangedCover} does), and with no cover the task hands back while health is still at least
+ * {@link #RETREAT_HEALTH}.
  */
 public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	/** Fifteen minutes; a spawner makes two to four blazes every 10 to 40 seconds while a player is within 16 blocks. */
@@ -37,7 +47,11 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	static final int NO_BLAZE_TICKS = 1_800;
 	/** Looking around before deciding there is nothing here; entities reach the client over a few ticks. */
 	static final int LOOK_TICKS = 40;
-	static final float RETREAT_HEALTH = 10.0F;
+	/**
+	 * Hurt this far, go out of sight to eat; with no cover to go to, hand back now, while the reflex still has the
+	 * health to walk to cover through a few more fireballs (a hit with its burning costs about five).
+	 */
+	static final float RETREAT_HEALTH = 12.0F;
 	static final float RESUME_HEALTH = 16.0F;
 	/** Out in the open this low, one more burst kills: hand back rather than keep looking for cover. */
 	static final float CRITICAL_HEALTH = 4.0F;
@@ -69,8 +83,23 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	static final int STRAFE_TICKS = 6;
 	/** Hiding so blazes come close: wait this long behind cover before choosing again. */
 	static final int COVER_HOLD_TICKS = 120;
+	/** The reflex's {@code RangedCover} radius. */
 	static final double COVER_RADIUS = 8.0D;
+	/** Cover cells this far below the feet, the safe fall. */
+	static final int COVER_MAX_DROP = 3;
+	static final int COVER_MAX_RISE = 2;
+	/** Cover cells whose walks failed before the task stops looking. */
 	static final int COVER_ATTEMPTS = 3;
+	/** A walk to a cover cell a few blocks away that has not arrived after this long has failed. */
+	static final int COVER_WALK_TICKS = 100;
+	/** After a search found no cover cell, search again only after this long (blazes move, so cells open up). */
+	static final int COVER_RETRY_TICKS = 20;
+	/** At a cover cell more blazes see than when it was picked, look for a better one this often. */
+	static final int COVER_REPICK_TICKS = 20;
+	/** A blaze this close to the body in cover came looking for it, as the ambush wants: it does not make the cell bad. */
+	static final double AMBUSH_DISTANCE = 5.0D;
+	/** Health lost with a blaze in sight within this many ticks: the body is under fire. */
+	static final int UNDER_FIRE_TICKS = 40;
 	/** A blaze with no clear arrow arc from here is left to come closer for this long. */
 	static final int NO_ARC_TICKS = 40;
 	static final int FULL_DRAW_TICKS = 22;
@@ -84,6 +113,8 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	/** Falls deeper than this are how the playtest body ended up in the spawner room. */
 	static final int MAX_SAFE_FALL = 3;
 	static final NavigationOptions OPTIONS = NavigationOptions.DEFAULT.withMaxSafeFall(MAX_SAFE_FALL);
+	/** Cover is a few blocks away and wanted now: walk there, never stop to dig or build under fire. */
+	static final NavigationOptions COVER_OPTIONS = OPTIONS.withNoEdits();
 
 	private final NavigationFacade navigation;
 	private final Environment environment;
@@ -103,8 +134,13 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	private final Set<GoalPosition> rejectedSpots = new HashSet<>();
 	private String spotRefusals = "";
 	private GoalPosition cover;
+	private int coverSeenBy, coverPickedTick, noCoverUntil;
 	private int coverFailures;
 	private String coverReason;
+	private final Set<GoalPosition> rejectedCovers = new HashSet<>();
+	private float lastHealth = -1.0F;
+	private int lastHitTick = -1;
+	private boolean overwhelmed;
 	private Vec3 pickupTarget;
 	private int pickupTicks;
 	private final List<Vec3> skippedRods = new ArrayList<>();
@@ -183,6 +219,37 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 				+ (spawner == null ? "the spot where blazes were" : "the spawner at " + compact(spawner))
 				+ "; a spawner spawns only in light 11 or darker with the body within 16 blocks", TaskFailureCode.ENVIRONMENT_CHANGED);
 		if (mode != Mode.HEAL && arena.health() <= RETREAT_HEALTH) enter(Mode.HEAL);
+		if (lastHealth >= 0.0F && arena.health() < lastHealth - 0.01F) lastHitTick = activeTicks;
+		lastHealth = arena.health();
+		boolean inSight = arena.blazes().stream().anyMatch(Blaze::visible);
+		overwhelmed = engaged(arena).size() > MAX_ENGAGED;
+
+		// Cover before the shield: shielding stops the walk, and with many blazes one fireball is always incoming.
+		String need = coverNeed(arena, inSight);
+		if (need != null) {
+			if (mode == Mode.HEAL && arena.health() <= CRITICAL_HEALTH)
+				return finish(false, "low_health", String.format(Locale.ROOT, "health=%.1f with blazes still in sight; back away out "
+					+ "of the fortress and eat, then call again", arena.health()), TaskFailureCode.ENVIRONMENT_CHANGED);
+			CoverStep step = takeCover(arena, need);
+			if (step == CoverStep.MOVING) {
+				// Using an item slows a walking body to a fifth of its speed: no shield, strafe or meal on the way.
+				lowerShield();
+				stopStrafe();
+				stopConsuming();
+				return running(arena);
+			}
+			if (step == CoverStep.NONE) {
+				if (mode == Mode.HEAL)
+					return finish(false, "low_health", String.format(Locale.ROOT, "health=%.1f and no cover out of the blazes' sight "
+						+ "could be reached; back away and eat, then call again", arena.health()), TaskFailureCode.ENVIRONMENT_CHANGED);
+				if (overwhelmed)
+					return finish(false, "overwhelmed", String.format(Locale.ROOT, "%d blazes in sight within %d blocks and no cell out "
+						+ "of most of their sight within %d blocks could be reached (health=%.1f); back out of their sight the way you "
+						+ "came, then call again from a corridor corner where they come one at a time, or with a bow and arrows",
+						engaged(arena).size(), (int) ENGAGE_RANGE, (int) COVER_RADIUS, arena.health()), TaskFailureCode.ENVIRONMENT_CHANGED);
+				// Hit on the way in with nowhere to hide: go on to the spot; low health hands back.
+			}
+		}
 
 		Blaze reach = nearest(arena, blaze -> blaze.visible() && blaze.inReach());
 		if (defend(arena, reach)) return running(arena);
@@ -197,6 +264,22 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		Optional<TaskTerminalEvent> end = mode == Mode.HEAL ? heal(arena) : fight(arena);
 		if (end.isPresent()) return end;
 		return running(arena);
+	}
+
+	/**
+	 * Why cover comes before anything else this tick, or null: hurt with blazes in sight, more than
+	 * {@value #MAX_ENGAGED} blazes in sight, hit by one on the way in, or a walk to cover under way.
+	 */
+	private String coverNeed(Arena arena, boolean inSight) {
+		if (mode == Mode.HEAL) return inSight ? "heal" : null;
+		if (overwhelmed) return "thin_out";
+		if (mode == Mode.APPROACH && inSight && lastHitTick >= 0 && activeTicks - lastHitTick <= UNDER_FIRE_TICKS) return "under_fire";
+		if (mode == Mode.COVER && cover != null && !atSpot(arena.feet(), cover)) return coverReason;
+		return null;
+	}
+
+	private static List<Blaze> engaged(Arena arena) {
+		return arena.blazes().stream().filter(b -> b.visible() && b.distance() <= ENGAGE_RANGE).toList();
 	}
 
 	private Optional<TaskTerminalEvent> running(Arena arena) {
@@ -256,7 +339,7 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	}
 
 	private Optional<TaskTerminalEvent> fight(Arena arena) {
-		List<Blaze> engaged = arena.blazes().stream().filter(b -> b.visible() && b.distance() <= ENGAGE_RANGE).toList();
+		List<Blaze> engaged = engaged(arena);
 		if (arena.onFire() && arena.hasFireResistancePotion() && !arena.fireResistant()) {
 			// Every blaze hit and fireball sets the body alight; a potion ends that for the rest of the fight.
 			stopNavigation();
@@ -265,13 +348,12 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		}
 		if (arena.blazes().stream().anyMatch(Blaze::visible) || !arena.droppedRods().isEmpty()) idleTicks = 0;
 		else if (mode == Mode.HOLD) idleTicks++;
-		// Out of their sight they come around the corner one or two at a time.
-		if (engaged.size() > MAX_ENGAGED && takeCover(arena, "thin_out")) return Optional.empty();
 		if (pickup(arena)) return Optional.empty();
 		if (mode == Mode.PICKUP) enter(Mode.APPROACH);
 		if (mode == Mode.COVER) {
-			// Blazes that lose sight of the body fly to where it was; give them time to come into reach.
-			if (modeTicks < COVER_HOLD_TICKS && takeCover(arena, coverReason)) return Optional.empty();
+			// Blazes that lose sight of the body fly to where it was; give them time to come into reach. Out of their sight
+			// they come around the corner one or two at a time, so while too many see the body it stays in cover.
+			if ((modeTicks < COVER_HOLD_TICKS || overwhelmed) && takeCover(arena, coverReason) != CoverStep.NONE) return Optional.empty();
 			enter(Mode.APPROACH);
 		}
 		if (spot == null) {
@@ -326,7 +408,7 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 			return Optional.empty();
 		}
 		// No bow, or no clear arc: out of sight a blaze flies in to look for the body, into reach.
-		if (!takeCover(arena, "ambush")) lastAction = "wait_in_the_open";
+		if (takeCover(arena, "ambush") == CoverStep.NONE) lastAction = "wait_in_the_open";
 		return Optional.empty();
 	}
 
@@ -339,21 +421,8 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		if (modeTicks > HEAL_TIMEOUT_TICKS)
 			return finish(false, "low_health", String.format(Locale.ROOT, "health=%.1f did not recover in %d ticks behind cover; eat, "
 				+ "then call again", arena.health(), HEAL_TIMEOUT_TICKS), TaskFailureCode.ENVIRONMENT_CHANGED);
-		boolean hidden = arena.blazes().stream().noneMatch(Blaze::visible);
-		if (!hidden) {
-			if (arena.health() <= CRITICAL_HEALTH)
-				return finish(false, "low_health", String.format(Locale.ROOT, "health=%.1f with blazes still in sight; back away out "
-					+ "of the fortress and eat, then call again", arena.health()), TaskFailureCode.ENVIRONMENT_CHANGED);
-			boolean moving = takeCover(arena, "heal") && cover != null && !atSpot(arena.feet(), cover);
-			if (moving) {
-				stopConsuming();
-				return Optional.empty();
-			}
-			if (coverFailures >= COVER_ATTEMPTS && arena.health() <= RETREAT_HEALTH - 2.0F)
-				return finish(false, "low_health", String.format(Locale.ROOT, "health=%.1f and no cover out of the blazes' sight "
-					+ "could be reached; back away and eat, then call again", arena.health()), TaskFailureCode.ENVIRONMENT_CHANGED);
-			// Nowhere to hide: eating in the open still beats starving the regeneration.
-		} else stopNavigation();
+		// The cover step ran first: here the body is out of sight, or in the cell the fewest blazes see.
+		stopNavigation();
 		if (arena.onFire() && arena.hasFireResistancePotion() && !arena.fireResistant()) {
 			consume(Consumable.FIRE_RESISTANCE);
 			return Optional.empty();
@@ -371,32 +440,52 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
-	/** Walks to or waits at a spot out of every blaze's sight; false when there is none. */
-	private boolean takeCover(Arena arena, String reason) {
-		if (mode != Mode.COVER && mode != Mode.HEAL) enter(Mode.COVER);
-		if (!Objects.equals(coverReason, reason)) cover = null;
-		coverReason = reason;
-		if (cover == null) {
-			if (coverFailures >= COVER_ATTEMPTS) return false;
-			cover = chooseCover(environment.coverSpots(arena), arena.feet()).map(Spot::position).orElse(null);
-			if (cover == null) {
-				coverFailures = COVER_ATTEMPTS;
-				return false;
+	/**
+	 * Walks to or waits at the cover cell the fewest blazes see. NONE when there is none: no cell found (searched again
+	 * after {@value #COVER_RETRY_TICKS} ticks), or {@value #COVER_ATTEMPTS} walks failed.
+	 */
+	private CoverStep takeCover(Arena arena, String reason) {
+		Vec3 feet = arena.feet();
+		int shooters = (int) arena.blazes().stream().filter(b -> b.visible() && b.distance() > AMBUSH_DISTANCE).count();
+		if (cover != null && atSpot(feet, cover) && shooters > coverSeenBy && activeTicks - coverPickedTick >= COVER_REPICK_TICKS) {
+			// More blazes see this cell than when it was picked: move on if another cell is seen by fewer, else stay.
+			coverPickedTick = activeTicks;
+			Spot better = chooseCover(environment.coverSpots(arena), feet, shooters, rejectedCovers)
+				.filter(next -> next.blazesInSight() < shooters && !next.position().equals(cover)).orElse(null);
+			if (better != null) {
+				cover = better.position();
+				coverSeenBy = better.blazesInSight();
 			}
 		}
+		if (cover == null) {
+			if (coverFailures >= COVER_ATTEMPTS || activeTicks < noCoverUntil) return CoverStep.NONE;
+			int inSight = (int) arena.blazes().stream().filter(Blaze::visible).count();
+			Spot next = chooseCover(environment.coverSpots(arena), feet, inSight, rejectedCovers).orElse(null);
+			if (next == null) {
+				noCoverUntil = activeTicks + COVER_RETRY_TICKS;
+				return CoverStep.NONE;
+			}
+			if (mode != Mode.COVER && mode != Mode.HEAL) enter(Mode.COVER);
+			cover = next.position();
+			coverSeenBy = next.blazesInSight();
+			coverPickedTick = activeTicks;
+		}
+		coverReason = reason;
 		stopBow();
 		lastAction = "cover_" + reason;
-		if (atSpot(arena.feet(), cover)) {
+		if (atSpot(feet, cover)) {
 			stopNavigation();
-			return true;
+			coverFailures = 0;
+			return CoverStep.HIDDEN;
 		}
-		if (!navigate(cover) || navigationTicks > NAVIGATION_TIMEOUT_TICKS / 4) {
+		if (!navigate(cover, COVER_OPTIONS) || navigationTicks > COVER_WALK_TICKS) {
 			stopNavigation();
+			rejectedCovers.add(cover);
 			cover = null;
 			coverFailures++;
-			return coverFailures < COVER_ATTEMPTS;
+			return coverFailures < COVER_ATTEMPTS ? CoverStep.MOVING : CoverStep.NONE;
 		}
-		return true;
+		return CoverStep.MOVING;
 	}
 
 	/** Walks over a dropped rod when that is safe; false when there is none to fetch. */
@@ -504,16 +593,15 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	private void enter(Mode next) {
 		if (mode != next) {
 			stopNavigation();
-			if (next != Mode.COVER && next != Mode.HEAL) {
-				cover = null;
-				coverReason = null;
-			}
-			if (next == Mode.HEAL) {
+			// A cover walk under way when health drops goes on as the heal cover; anything else starts the search afresh.
+			boolean keepCover = next == Mode.COVER || next == Mode.HEAL && mode == Mode.COVER;
+			if (!keepCover) {
 				cover = null;
 				coverReason = null;
 				coverFailures = 0;
+				noCoverUntil = 0;
+				rejectedCovers.clear();
 			}
-			if (next == Mode.COVER) coverFailures = 0;
 			if (mode == Mode.PICKUP) pickupTarget = null;
 		}
 		mode = next;
@@ -547,12 +635,26 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 			- Math.min(spot.cover(), 4) * 1.5D;
 	}
 
-	/** The nearest safe spot that no blaze can see. */
-	static Optional<Spot> chooseCover(List<Spot> spots, Vec3 feet) {
+	/**
+	 * The cover cell, by the reflex's {@code RangedCover} rule: safe, within reach and not a failed walk; seen by fewer
+	 * blazes than the {@code shooters} that see the body now (by none when one does) and by fewer than
+	 * {@value #MAX_ENGAGED}; then the fewest blazes, then walls and roof, then a short walk. Asking for a cell no blaze
+	 * at all sees found nothing in a fortress room where the reflex found one seen by two of eight.
+	 */
+	static Optional<Spot> chooseCover(List<Spot> spots, Vec3 feet, int shooters, Set<GoalPosition> rejected) {
+		int allowedSeenBy = Math.min(Math.max(1, shooters), MAX_ENGAGED);
 		return spots.stream()
-			.filter(spot -> spot.standable() && !spot.hazardNear() && !spot.edgeDrop() && spot.blazesInSight() == 0)
-			.filter(spot -> center(spot.position()).distanceTo(feet) <= COVER_RADIUS + 1.0D)
-			.min(Comparator.comparingDouble(spot -> center(spot.position()).distanceTo(feet)));
+			.filter(spot -> spot.standable() && !spot.hazardNear() && !spot.edgeDrop() && spot.blazesInSight() < allowedSeenBy)
+			.filter(spot -> center(spot.position()).distanceTo(feet) <= COVER_RADIUS + 1.0D && !rejected.contains(spot.position()))
+			.min(Comparator.comparingInt(Spot::blazesInSight)
+				.thenComparing(Comparator.comparingDouble((Spot spot) -> coverScore(spot, feet)).reversed())
+				.thenComparingInt(spot -> spot.position().x()).thenComparingInt(spot -> spot.position().z())
+				.thenComparingInt(spot -> spot.position().y()));
+	}
+
+	/** Higher is better: walls and roof, as {@code RangedCover} weighs them, then a short walk. */
+	static double coverScore(Spot spot, Vec3 feet) {
+		return Math.min(spot.cover(), 4) * 1.5D - center(spot.position()).distanceTo(feet) * 0.5D;
 	}
 
 	static Weapon weapon(Blaze target, boolean hasBow) {
@@ -612,12 +714,16 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	// ---- navigation and actuators ----
 
 	private boolean navigate(GoalPosition goal) {
+		return navigate(goal, OPTIONS);
+	}
+
+	private boolean navigate(GoalPosition goal, NavigationOptions options) {
 		if (navigationRestTick == activeTicks) return true;
 		if (!navigationOwned || !goal.equals(navigationGoal)) {
 			stopNavigation();
 			NavigationRelease.release(navigation);
 			navigation.pollPathEvent();
-			navigation.startNavigate(goal, OPTIONS);
+			navigation.startNavigate(goal, options);
 			navigationOwned = true;
 			navigationGoal = goal;
 			navigationTicks = 0;
@@ -689,8 +795,13 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		rejectedSpots.clear();
 		spotRefusals = "";
 		cover = null;
+		coverSeenBy = coverPickedTick = noCoverUntil = 0;
 		coverFailures = 0;
 		coverReason = null;
+		rejectedCovers.clear();
+		lastHealth = -1.0F;
+		lastHitTick = -1;
+		overwhelmed = false;
 		pickupTarget = null;
 		pickupTicks = 0;
 		skippedRods.clear();
@@ -777,6 +888,7 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 	@Override public void shutdown() { onWorldLeave(); }
 
 	enum Mode { APPROACH, HOLD, COVER, PICKUP, HEAL }
+	enum CoverStep { MOVING, HIDDEN, NONE }
 	enum Weapon { MELEE, BOW, NONE }
 	enum Side { LEFT, RIGHT, NONE }
 	enum AimResult { NO_SOLUTION, AIMING, ALIGNED }
@@ -814,7 +926,10 @@ public final class CollectBlazeRodsTaskExecutor implements WorldTaskExecutor {
 		Optional<GoalPosition> fortress(Vec3 feet);
 		/** Standing cells around the anchor, with their facts. */
 		List<Spot> fightingSpots(Arena arena, Anchor anchor);
-		/** Standing cells within {@link #COVER_RADIUS} of the body, with how many blazes see each. */
+		/**
+		 * Standing cells within {@link #COVER_RADIUS} of the body, {@link #COVER_MAX_RISE} up and {@link #COVER_MAX_DROP}
+		 * down, with how many blazes see each.
+		 */
 		List<Spot> coverSpots(Arena arena);
 		/** Whether the ground a step and a half to each side of {@code facing} is safe to strafe onto. */
 		StrafeOptions strafeOptions(Vec3 feet, Vec3 facing);

@@ -156,7 +156,8 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 		for (int dx = -radius; dx <= radius; dx++) {
 			for (int dz = -radius; dz <= radius; dz++) {
 				if (Math.hypot(dx, dz) > radius + 0.5D) continue;
-				for (int dy = -2; dy <= 2; dy++) {
+				// The reflex's RangedCover range: down as far as the safe fall, so a cell at the foot of a few steps counts.
+				for (int dy = -CollectBlazeRodsTaskExecutor.COVER_MAX_DROP; dy <= CollectBlazeRodsTaskExecutor.COVER_MAX_RISE; dy++) {
 					BlockPos cell = feet.offset(dx, dy, dz);
 					if (!level.hasChunkAt(cell) || !CoverCells.standable(level, cell)) continue;
 					spots.add(spot(level, player, cell, arena, false, 0.0D));
@@ -169,7 +170,8 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 	private Spot spot(ClientLevel level, LocalPlayer player, BlockPos cell, Arena arena, boolean sight, double anchorDistance) {
 		Vec3 eye = new Vec3(cell.getX() + 0.5D, cell.getY() + player.getEyeHeight(), cell.getZ() + 0.5D);
 		int seen = 0;
-		for (Blaze blaze : arena.blazes()) if (CoverCells.clear(level, player, eye, blaze.position(), null)) seen++;
+		// From the blaze to the cell's eye, as RangedCover traces a shooter's line; a blaze not in sight now still counts.
+		for (Blaze blaze : arena.blazes()) if (CoverCells.clear(level, player, blaze.position(), eye, null)) seen++;
 		int cover = CoverCells.cover(level, cell);
 		return new Spot(goal(cell), true, CoverCells.hazardNear(level, cell, 2), CoverCells.edgeDrop(level, cell, CollectBlazeRodsTaskExecutor.MAX_SAFE_FALL), sight, seen, cover, anchorDistance);
 	}
