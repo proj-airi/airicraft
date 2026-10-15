@@ -361,7 +361,7 @@ public final class PlannerToolCatalog {
 			prop("x1", integer("Minimum plot x.")), prop("y", integer("Crop block y; soil is one block below.")),
 			prop("z1", integer("Minimum plot z.")), prop("x2", integer("Maximum plot x.")), prop("z2", integer("Maximum plot z."))
 		), List.of("seedItemId", "x1", "y", "z1", "x2", "z2")), ai.moeru.airicraft.agent.tasks.CropTendingStepArgs::parse),
-		builtInTool(BREAK_BLOCKS, false, tool(BREAK_BLOCKS, "Break exact target blocks in order. Use this for precise terrain editing, not resource mining. Every target position must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls.", properties(
+		builtInTool(BREAK_BLOCKS, false, tool(BREAK_BLOCKS, "Break exact target blocks in order. Use this for precise terrain editing, not resource mining. Every target position must have been observed by a world read tool such as inspect_world or find_world_features within the last 10 planner tool calls. Afterwards it picks up what the broken blocks dropped (walk only, never toward lava, fire or a fall over 3 blocks): the result adds picked=<item xN,...> and, for drops it left, dropsLeft=<item@x,y,z,...> reason=....", properties(
 				prop("targets", array("Ordered target blocks to break. Maximum 16.", breakBlockTargetSchema()))
 			), List.of("targets")), PlannerToolCatalog::validateBreakBlocksArguments),
 		builtInTool(RESUME_TASK, false, tool(RESUME_TASK, "Resume the exact task paused by a resolved survival reflex. The holdId must match the current safety hold.", properties(

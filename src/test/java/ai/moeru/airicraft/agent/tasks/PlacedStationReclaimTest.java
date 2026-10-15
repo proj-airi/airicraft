@@ -30,23 +30,23 @@ class PlacedStationReclaimTest {
 	@Test
 	void pickedUpDropEndsTheReclaimAtOnce() {
 		assertEquals(DONE, PlacedStationReclaim.dropStep(1, true, null));
-		assertEquals(DONE, PlacedStationReclaim.dropStep(PlacedStationReclaim.DROP_TIMEOUT_TICKS + 5, true, 3.0D));
+		assertEquals(DONE, PlacedStationReclaim.dropStep(DropPickup.DROP_TIMEOUT_TICKS + 5, true, 3.0D));
 	}
 
 	@Test
 	void dropIsWaitedForBeforeWalkingOntoIt() {
-		assertEquals(WAIT, PlacedStationReclaim.dropStep(PlacedStationReclaim.PICKUP_WAIT_TICKS, false, 3.0D));
-		assertEquals(WALK, PlacedStationReclaim.dropStep(PlacedStationReclaim.PICKUP_WAIT_TICKS + 1, false, 3.0D));
-		assertEquals(WALK, PlacedStationReclaim.dropStep(PlacedStationReclaim.PICKUP_WAIT_TICKS + 1, false, 0.4D));
+		assertEquals(WAIT, PlacedStationReclaim.dropStep(DropPickup.PICKUP_WAIT_TICKS, false, 3.0D));
+		assertEquals(WALK, PlacedStationReclaim.dropStep(DropPickup.PICKUP_WAIT_TICKS + 1, false, 3.0D));
+		assertEquals(WALK, PlacedStationReclaim.dropStep(DropPickup.PICKUP_WAIT_TICKS + 1, false, 0.4D));
 	}
 
 	@Test
 	void farVanishedOrStuckDropsAreGivenUp() {
-		assertEquals(LOST, PlacedStationReclaim.dropStep(PlacedStationReclaim.PICKUP_WAIT_TICKS + 1, false,
-			PlacedStationReclaim.DROP_WALK_RADIUS + 0.5D));
-		assertEquals(WAIT, PlacedStationReclaim.dropStep(PlacedStationReclaim.DROP_VANISHED_TICKS, false, null));
-		assertEquals(LOST, PlacedStationReclaim.dropStep(PlacedStationReclaim.DROP_VANISHED_TICKS + 1, false, null));
-		assertEquals(LOST, PlacedStationReclaim.dropStep(PlacedStationReclaim.DROP_TIMEOUT_TICKS + 1, false, 1.0D));
+		assertEquals(LOST, PlacedStationReclaim.dropStep(DropPickup.PICKUP_WAIT_TICKS + 1, false,
+			DropPickup.DROP_WALK_RADIUS + 0.5D));
+		assertEquals(WAIT, PlacedStationReclaim.dropStep(DropPickup.DROP_VANISHED_TICKS, false, null));
+		assertEquals(LOST, PlacedStationReclaim.dropStep(DropPickup.DROP_VANISHED_TICKS + 1, false, null));
+		assertEquals(LOST, PlacedStationReclaim.dropStep(DropPickup.DROP_TIMEOUT_TICKS + 1, false, 1.0D));
 	}
 
 	@Test
@@ -70,7 +70,7 @@ class PlacedStationReclaimTest {
 		assertEquals("furnaceLeftAt=2,59,-5 reason=no_pickaxe", PlacedStationReclaim.leftAt("furnace", pos, "no_pickaxe"));
 		assertEquals("target_out_of_range", PlacedStationReclaim.firstToken("target_out_of_range targetPos=2,59,-5"));
 		assertEquals("unknown", PlacedStationReclaim.firstToken(" "));
-		assertEquals(5.0D, PlacedStationReclaim.horizontalDistance(new Vec3(0, 64, 0), new Vec3(3, 70, 4)), 1e-9);
+		assertEquals(5.0D, DropPickup.horizontalDistance(new Vec3(0, 64, 0), new Vec3(3, 70, 4)), 1e-9);
 	}
 
 	@Test

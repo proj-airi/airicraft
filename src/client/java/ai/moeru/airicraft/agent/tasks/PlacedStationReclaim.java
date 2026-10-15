@@ -11,7 +11,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -29,18 +28,6 @@ import java.util.function.Supplier;
  * The outcome is text for the task result: {@code tableReclaimed=x,y,z} or {@code tableLeftAt=x,y,z reason=...}.
  */
 final class PlacedStationReclaim {
-	/** A dropped item cannot be picked up for 10 ticks; one inside the pickup box is taken right after. */
-	static final int PICKUP_WAIT_TICKS = 15;
-	/** No drop in sight and nothing gained for this long after the break: it is gone. */
-	static final int DROP_VANISHED_TICKS = 30;
-	static final int DROP_TIMEOUT_TICKS = 200;
-	/** A drop farther than this, horizontally, is not walked to. Stations are used from at most 4.5 blocks away. */
-	static final double DROP_WALK_RADIUS = 8.0D;
-	static final double DROP_SEARCH_RADIUS = 4.0D;
-	/** Gives up on a walk before the dispatcher's 100-tick stall watchdog would end the parent task. */
-	static final long NAVIGATION_STALL_TICKS = 70;
-	static final double FEET_Y_SLACK = 0.2D;
-
 	private final String label;
 	private final BlockPos pos;
 	private final Block block;
@@ -48,15 +35,12 @@ final class PlacedStationReclaim {
 	private final WorldTaskRequest breakRequest;
 	private final WorldTaskExecutor breakExecutor;
 	private final Supplier<Minecraft> clientSupplier;
-	private final NavigationFacade navigation;
-	private final NavigationStallWatchdog navigationStall = new NavigationStallWatchdog(NAVIGATION_STALL_TICKS);
+	private final DropPickup pickup;
 
 	private Phase phase = Phase.START;
 	private int phaseTicks;
 	private long activeTicks;
 	private int itemsBefore;
-	private boolean navigationOwned;
-	private GoalPosition navigationGoal;
 	private String outcome;
 
 	PlacedStationReclaim(
@@ -76,7 +60,7 @@ final class PlacedStationReclaim {
 		this.breakRequest = breakRequest(parent, label, pos, BuiltInRegistries.BLOCK.getKey(block).toString());
 		this.breakExecutor = Objects.requireNonNull(breakExecutor, "breakExecutor");
 		this.clientSupplier = Objects.requireNonNull(clientSupplier, "clientSupplier");
-		this.navigation = navigation;
+		this.pickup = new DropPickup(navigation, NavigationOptions.WALK_ONLY);
 	}
 
 	BlockPos pos() {
@@ -101,7 +85,7 @@ final class PlacedStationReclaim {
 
 	private Optional<String> start(SessionSnapshot session, LocalPlayer player, ClientLevel level) {
 		if (!level.hasChunkAt(pos) || !level.getBlockState(pos).is(block)) return finish(leftAt(label, pos, "block_changed"));
-		itemsBefore = inventoryCount(player, item);
+		itemsBefore = DropPickup.inventoryCount(player, item);
 		enter(Phase.BREAK);
 		return breakStation(session);
 	}
@@ -117,21 +101,19 @@ final class PlacedStationReclaim {
 	}
 
 	private Optional<String> collect(LocalPlayer player, ClientLevel level) {
-		boolean pickedUp = inventoryCount(player, item) > itemsBefore;
+		boolean pickedUp = DropPickup.inventoryCount(player, item) > itemsBefore;
 		Optional<Vec3> drop = pickedUp ? Optional.empty() : nearestDrop(level);
-		Double distance = drop.map(position -> horizontalDistance(player.position(), position)).orElse(null);
+		Double distance = drop.map(position -> DropPickup.horizontalDistance(player.position(), position)).orElse(null);
 		switch (dropStep(phaseTicks, pickedUp, distance)) {
 			case DONE -> {
 				return finish(reclaimed(label, pos));
 			}
 			case WALK -> {
-				if (navigation == null || !navigation.isLoaded()) {
-					if (phaseTicks > DROP_TIMEOUT_TICKS) return finish(leftAt(label, pos, "drop_out_of_reach"));
+				if (!pickup.available()) {
+					if (phaseTicks > DropPickup.DROP_TIMEOUT_TICKS) return finish(leftAt(label, pos, "drop_out_of_reach"));
 					return Optional.empty();
 				}
-				GoalPosition goal = new GoalPosition((int) Math.floor(drop.get().x), (int) Math.floor(drop.get().y + FEET_Y_SLACK),
-					(int) Math.floor(drop.get().z), true);
-				if (!navigate(goal)) return finish(leftAt(label, pos, "drop_unreachable"));
+				if (!pickup.walkTo(drop.get(), activeTicks)) return finish(leftAt(label, pos, "drop_unreachable"));
 				return Optional.empty();
 			}
 			case WAIT -> {
@@ -146,50 +128,25 @@ final class PlacedStationReclaim {
 
 	private Optional<Vec3> nearestDrop(ClientLevel level) {
 		Vec3 center = Vec3.atCenterOf(pos);
-		return level.getEntitiesOfClass(ItemEntity.class, new AABB(center, center).inflate(DROP_SEARCH_RADIUS),
+		return level.getEntitiesOfClass(ItemEntity.class, new AABB(center, center).inflate(DropPickup.DROP_SEARCH_RADIUS),
 				entity -> entity.isAlive() && entity.getItem().is(item)).stream()
 			.min(Comparator.comparingDouble(entity -> entity.distanceToSqr(center)))
 			.map(ItemEntity::position);
 	}
 
-	/** False once the walk cannot go on. */
-	private boolean navigate(GoalPosition goal) {
-		if (!navigationOwned || !goal.equals(navigationGoal)) {
-			stopNavigation();
-			NavigationRelease.release(navigation);
-			navigation.pollPathEvent();
-			navigation.startNavigate(goal, NavigationOptions.WALK_ONLY);
-			navigationOwned = true;
-			navigationGoal = goal;
-			navigationStall.clear();
-		}
-		String event = navigation.pollPathEvent().orElse("");
-		var progress = navigation.navigationProgress();
-		if (progress.isEmpty()) navigationStall.clear();
-		else if (navigationStall.observe(activeTicks, progress.get())) return false;
-		return !event.contains("CALC_FAILED") && !event.equals("CANCELED");
-	}
-
-	private void stopNavigation() {
-		if (navigationOwned && navigation != null && navigation.isLoaded()) navigation.cancel();
-		navigationOwned = false;
-		navigationGoal = null;
-		navigationStall.clear();
-	}
-
 	/** While the parent is paused (a reflex holds the body): drop the walk, so it restarts from wherever the body ends up. */
 	void pause() {
-		stopNavigation();
+		pickup.stop();
 	}
 
 	/** Stops the child break and any walk; the station or its drop stays where it is. */
 	void cancel() {
-		stopNavigation();
+		pickup.stop();
 		breakExecutor.onWorldLeave();
 	}
 
 	private Optional<String> finish(String text) {
-		stopNavigation();
+		pickup.stop();
 		breakExecutor.onWorldLeave();
 		outcome = text;
 		return Optional.of(text);
@@ -200,15 +157,6 @@ final class PlacedStationReclaim {
 		phaseTicks = 0;
 	}
 
-	private static int inventoryCount(LocalPlayer player, Item item) {
-		int count = 0;
-		for (int index = 0; index < player.getInventory().getContainerSize(); index++) {
-			ItemStack stack = player.getInventory().getItem(index);
-			if (stack.is(item)) count += stack.getCount();
-		}
-		return count;
-	}
-
 	// ---- Pure decisions ----
 
 	/**
@@ -217,10 +165,10 @@ final class PlacedStationReclaim {
 	 */
 	static DropStep dropStep(int phaseTicks, boolean pickedUp, Double dropDistance) {
 		if (pickedUp) return DropStep.DONE;
-		if (phaseTicks > DROP_TIMEOUT_TICKS) return DropStep.LOST;
-		if (dropDistance == null) return phaseTicks > DROP_VANISHED_TICKS ? DropStep.LOST : DropStep.WAIT;
-		if (phaseTicks <= PICKUP_WAIT_TICKS) return DropStep.WAIT;
-		return dropDistance <= DROP_WALK_RADIUS ? DropStep.WALK : DropStep.LOST;
+		if (phaseTicks > DropPickup.DROP_TIMEOUT_TICKS) return DropStep.LOST;
+		if (dropDistance == null) return phaseTicks > DropPickup.DROP_VANISHED_TICKS ? DropStep.LOST : DropStep.WAIT;
+		if (phaseTicks <= DropPickup.PICKUP_WAIT_TICKS) return DropStep.WAIT;
+		return dropDistance <= DropPickup.DROP_WALK_RADIUS ? DropStep.WALK : DropStep.LOST;
 	}
 
 	static WorldTaskRequest breakRequest(WorldTaskRequest parent, String label, BlockPos pos, String blockId) {
@@ -243,11 +191,6 @@ final class PlacedStationReclaim {
 	static String firstToken(String message) {
 		if (message == null || message.isBlank()) return "unknown";
 		return message.trim().split("\\s+", 2)[0];
-	}
-
-	static double horizontalDistance(Vec3 feet, Vec3 position) {
-		double dx = position.x - feet.x, dz = position.z - feet.z;
-		return Math.sqrt(dx * dx + dz * dz);
 	}
 
 	private static String compactPos(BlockPos pos) {
