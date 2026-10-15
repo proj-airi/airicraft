@@ -31,6 +31,14 @@ class SurvivalReflexRuntimeTest {
 	}
 
 	@Test
+	void aThreatThatSlipsBehindCoverStaysEngagedBriefly() {
+		assertTrue(SurvivalReflexRuntime.inSightLately(true, null, 100L));
+		assertTrue(SurvivalReflexRuntime.inSightLately(false, 80L, 100L), "a skeleton bobbing behind soul sand");
+		assertFalse(SurvivalReflexRuntime.inSightLately(false, 50L, 100L));
+		assertFalse(SurvivalReflexRuntime.inSightLately(false, null, 100L));
+	}
+
+	@Test
 	void fireTurnsALavaEscapeOnlyWhenNoLavaWasInvolved() {
 		assertEquals(SurvivalReflexCause.FIRE, SurvivalReflexRuntime.hazardCause(false, SurvivalReflexCause.MOB_ATTACK));
 		assertEquals(SurvivalReflexCause.LAVA, SurvivalReflexRuntime.hazardCause(true, SurvivalReflexCause.FIRE));

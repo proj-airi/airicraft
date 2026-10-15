@@ -35,6 +35,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,6 +76,11 @@ public final class SurvivalReflexRuntime {
 	static final long NO_CONTACT_RESUME_WINDOW = 1200L;
 	/** A ghast shoots at a target it can see within 64 blocks, far past the policy's engagement distance. */
 	static final double GHAST_REACH = 64.0D;
+	/**
+	 * Ticks a threat stays engaged after it drops out of sight. A skeleton bobbing behind soul sand started and
+	 * resolved the reflex four times in 50 ticks, restarting the interrupted walk each time.
+	 */
+	static final long SIGHT_GRACE_TICKS = 40L;
 
 	private final AgentConfig.ReflexConfig config;
 	private final MovementController movementController;
@@ -97,6 +103,8 @@ public final class SurvivalReflexRuntime {
 	private CompletableFuture<Set<String>> aggroQuery;
 	/** Mobs the server last reported targeting the body (singleplayer only). */
 	private Set<String> aggroTargets = Set.of();
+	/** Last tick each threat was in the body's sight. */
+	private final Map<String, Long> lastSightTicks = new HashMap<>();
 	private GoalPosition combatTarget;
 	private long combatRouteTick;
 	private boolean shieldUseOwned;
@@ -296,6 +304,8 @@ public final class SurvivalReflexRuntime {
 		boolean drowningDanger = policy().drowningEnabled() && drowningDanger(player, config.lowAirTicks(), drowningDamageObserved);
 		detectProactiveThreats(minecraft, player, tick);
 		List<ResolvedThreat> threats = resolveThreats(minecraft, player);
+		for (ResolvedThreat threat : threats) if (threat.lineOfSight()) lastSightTicks.put(threat.observed().uuid(), tick);
+		lastSightTicks.keySet().retainAll(observedThreats.keySet());
 		if (snapshot.state() == SurvivalReflexState.ACTIVE && snapshot.cause() == SurvivalReflexCause.MOB_ATTACK) {
 			var targets = new LinkedHashMap<String, CombatProgress.Target>();
 			for (var threat : threats) targets.put(threat.observed().uuid(),
@@ -449,6 +459,7 @@ public final class SurvivalReflexRuntime {
 		stopCombatNavigation();
 		aggroQuery = null;
 		aggroTargets = Set.of();
+		lastSightTicks.clear();
 		resetSecurityProgress();
 		underwaterEscape.reset(minecraft);
 		long epoch = snapshot.safetyEpoch();
@@ -2386,9 +2397,14 @@ public final class SurvivalReflexRuntime {
 	private boolean engages(ResolvedThreat threat, long tick) {
 		var entity = threat.entity();
 		return engages(policy(), isRangedThreat(entity), threat.observed().entityTypeId(), threat.distance(),
-			threat.lineOfSight(), aggroTargets.contains(threat.observed().uuid())
+			inSightLately(threat.lineOfSight(), lastSightTicks.get(threat.observed().uuid()), tick), aggroTargets.contains(threat.observed().uuid())
 				|| entity instanceof net.minecraft.world.entity.monster.Ghast ghast && ghast.isCharging(),
 			recentlyDamagedByMob(tick, threat.observed().lastDamageTick(), config.threatCooldownTicks()));
+	}
+
+	/** In sight now, or within {@link #SIGHT_GRACE_TICKS} of having been. */
+	static boolean inSightLately(boolean lineOfSight, Long lastSightTick, long tick) {
+		return lineOfSight || lastSightTick != null && tick - lastSightTick <= SIGHT_GRACE_TICKS;
 	}
 
 	static boolean engages(ReflexPolicy policy, boolean ranged, String entityTypeId, double distance, boolean lineOfSight,
