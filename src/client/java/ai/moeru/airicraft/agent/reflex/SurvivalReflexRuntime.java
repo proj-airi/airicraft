@@ -1018,7 +1018,7 @@ public final class SurvivalReflexRuntime {
 			if (flight.abandoned() || archeryTarget(player, threats) != null) return false;
 			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view);
 			if (reason == null) return false;
-			flight.start(tick, lastMobDamageTick);
+			flight.start(tick, lastMobDamageTick, UnarmedFlight.OUTMATCHED.equals(reason));
 			archery.cancel(minecraft, actuator);
 			releaseShield(minecraft);
 			stopCombatNavigation();
@@ -1035,7 +1035,7 @@ public final class SurvivalReflexRuntime {
 				"nearestDistance", threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(-1D),
 				"tick", tick)));
 		}
-		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE) flight.abandon("armed", navigationFacade);
+		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE && !flight.armedFlight()) flight.abandon("armed", navigationFacade);
 		UnarmedFlight.Outcome outcome = flight.active()
 			? flight.tick(minecraft, player, view, tick, lastMobDamageTick, config.threatCooldownTicks(), navigationFacade)
 			: UnarmedFlight.Outcome.ABANDONED;

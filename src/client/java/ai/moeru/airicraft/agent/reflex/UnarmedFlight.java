@@ -82,13 +82,17 @@ final class UnarmedFlight {
 	private double legStartDistance;
 	private int failedLegs;
 	private int legs;
+	private boolean armedFlight;
 
 	/**
 	 * Why the body should run rather than fight, or null to fight: a real weapon, or one weak melee mob while the body
 	 * is near full health.
 	 */
 	static String fleeReason(double weaponDamage, float health, float maxHealth, List<Threat> threats) {
-		if (weaponDamage >= MIN_WEAPON_DAMAGE || threats.isEmpty()) return null;
+		if (threats.isEmpty()) return null;
+		if (weaponDamage >= MIN_WEAPON_DAMAGE) {
+			return health <= maxHealth / 2.0F && outmatched(weaponDamage, health, threats) ? OUTMATCHED : null;
+		}
 		if (threats.size() > 1) return "outnumbered";
 		Threat only = threats.getFirst();
 		if (only.ranged()) return "ranged_mob";
@@ -97,6 +101,35 @@ final class UnarmedFlight {
 		if (health < maxHealth * NEAR_FULL_HEALTH) return "hurt";
 		return null;
 	}
+
+	/**
+	 * Armed and at half health or less, but the melee mobs would deal what health is left before the weapon kills them
+	 * all (armor ignored, so this errs toward running). A wooden sword
+	 * needs five swings for a zombie, about sixty ticks, in which the zombie lands three hits for nine: a playtest body
+	 * at nine health fought exactly that and died, as did one at nine with a stone sword against a zombie and a
+	 * skeleton. Zombies walk slower than a sprinting player. Shooters and creepers are left to archery, the bunker
+	 * and the creeper run.
+	 */
+	static boolean outmatched(double weaponDamage, float health, List<Threat> threats) {
+		int swings = 0;
+		int melee = 0;
+		for (Threat threat : threats) {
+			if (threat.ranged() || threat.creeper()) continue;
+			melee++;
+			swings += (int) Math.ceil(threat.health() / weaponDamage);
+		}
+		if (melee == 0) return false;
+		int mobHits = swings * SWING_TICKS / MOB_ATTACK_TICKS;
+		return melee * mobHits * MOB_HIT_DAMAGE >= health - OUTMATCHED_MARGIN;
+	}
+
+	static final String OUTMATCHED = "outmatched";
+	/** A sword's full-strength swing interval, a little rounded up for aiming. */
+	static final int SWING_TICKS = 12;
+	static final int MOB_ATTACK_TICKS = 20;
+	/** A zombie's hit on normal difficulty. */
+	static final float MOB_HIT_DAMAGE = 3.0F;
+	static final float OUTMATCHED_MARGIN = 2.0F;
 
 	/** Every threat is far, or out of sight and not close. */
 	static boolean clear(List<Threat> threats) {
@@ -245,7 +278,17 @@ final class UnarmedFlight {
 		return abandonReason;
 	}
 
+	/** Whether this flight runs from a fight the weapon in hand would lose, so picking one up does not end it. */
+	boolean armedFlight() {
+		return armedFlight;
+	}
+
 	void start(long tick, long lastMobDamageTick) {
+		start(tick, lastMobDamageTick, false);
+	}
+
+	void start(long tick, long lastMobDamageTick, boolean armedFlight) {
+		this.armedFlight = armedFlight;
 		active = true;
 		abandonReason = null;
 		startedTick = tick;

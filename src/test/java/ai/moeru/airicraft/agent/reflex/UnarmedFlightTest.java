@@ -42,7 +42,11 @@ class UnarmedFlightTest {
 		assertEquals("strong_mob", UnarmedFlight.fleeReason(1.0D, 20F, 20F, zombie), "a fist against twenty health");
 		assertEquals("strong_mob", UnarmedFlight.fleeReason(3.0D, 20F, 20F, zombie), "a stone pickaxe is no sword");
 		assertNull(UnarmedFlight.fleeReason(4.0D, 20F, 20F, zombie), "a wooden sword fights");
-		assertNull(UnarmedFlight.fleeReason(7.0D, 6F, 20F, List.of(zombie(3, 0), zombie(-3, 0))), "an axe fights a pack");
+		assertNull(UnarmedFlight.fleeReason(7.0D, 20F, 20F, List.of(zombie(3, 0), zombie(-3, 0))), "an axe fights a pack");
+		assertEquals("outmatched", UnarmedFlight.fleeReason(7.0D, 6F, 20F, List.of(zombie(3, 0), zombie(-3, 0))),
+			"but not at six health");
+		assertEquals("outmatched", UnarmedFlight.fleeReason(4.0D, 9F, 20F, zombie), "a wooden sword at nine health");
+		assertNull(UnarmedFlight.fleeReason(6.0D, 10F, 20F, zombie), "an iron sword wins in four swings");
 		assertEquals("outnumbered", UnarmedFlight.fleeReason(1.0D, 20F, 20F, List.of(zombie(3, 0), zombie(-3, 0))));
 		var silverfish = List.of(new UnarmedFlight.Threat(2, 0, 8F, false, false, 2, true));
 		assertNull(UnarmedFlight.fleeReason(1.0D, 20F, 20F, silverfish), "trivially beatable near full health");
