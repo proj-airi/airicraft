@@ -48,6 +48,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	/** Surface is read off every loaded chunk this close to the body that has not been read before. */
 	static final int SURFACE_RADIUS = 256;
 	static final double ARRIVE_BLOCKS = 4.0D;
+	/** Feet this far above or below the feature's stand cell (or block) have not reached it. */
+	static final double REACHED_DY = 3.0D;
 	/** A leg that ended this much closer to its end than it started was walked, even if it fell short. */
 	static final double PARTIAL_LEG_BLOCKS = 16.0D;
 	/** A heading whose legs failed this often is not tried again. */
@@ -389,16 +391,20 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	private Optional<TaskTerminalEvent> approach(Body body) {
 		int[] to = found.stand() != null ? found.stand() : new int[]{found.x(), found.y(), found.z()};
 		double remaining = horizontal(body.feet(), to[0] + 0.5D, to[2] + 0.5D);
-		boolean arrived = remaining <= 2.5D;
-		boolean moving = !arrived && navigate(new GoalPosition(to[0], to[1], to[2], false), 1,
+		// Level with it too: a column goal once ended 31 blocks under a forest, in a canyon below it.
+		boolean level = Math.abs(body.feet().y - to[1]) <= REACHED_DY;
+		boolean arrived = remaining <= 2.5D && level;
+		// A stand cell is where the feet go; without one the feature's own block only says which column.
+		boolean moving = !arrived && navigate(new GoalPosition(to[0], to[1], to[2], found.stand() != null), 1,
 			environment.underCeiling() ? CEILING_OPTIONS : OPTIONS);
 		if (!arrived && !navigationArrived && moving && phaseTicks <= LEG_TIMEOUT_TICKS * 2) return Optional.empty();
 		stopNavigation();
-		boolean reached = arrived || navigationArrived;
-		return finish(true, String.format(Locale.ROOT, "feature_found featureKind=%s pos=%d,%d,%d%s reached=%s distance=%.0f %s;",
+		boolean reached = arrived || navigationArrived && level;
+		return finish(true, String.format(Locale.ROOT, "feature_found featureKind=%s pos=%d,%d,%d%s reached=%s distance=%.0f dy=%d %s;",
 			args.featureKind(), found.x(), found.y(), found.z(),
 			found.stand() == null ? "" : " standPos=" + found.stand()[0] + "," + found.stand()[1] + "," + found.stand()[2],
-			reached, Math.hypot(found.x() + 0.5D - body.feet().x, found.z() + 0.5D - body.feet().z), found.summary()), null);
+			reached, Math.hypot(found.x() + 0.5D - body.feet().x, found.z() + 0.5D - body.feet().z),
+			(int) Math.round(to[1] - body.feet().y), found.summary()), null);
 	}
 
 	private Optional<TaskTerminalEvent> hunt(Body body) {

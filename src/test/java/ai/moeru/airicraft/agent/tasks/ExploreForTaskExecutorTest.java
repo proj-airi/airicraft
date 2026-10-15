@@ -44,6 +44,18 @@ class ExploreForTaskExecutorTest {
 		assertEquals(List.of(new GoalPosition(40, 70, -20, false)), world.legGoals, "straight to it, no exploring leg");
 	}
 
+	@Test void aFindWellAboveTheFeetIsNotReached() {
+		World world = new World();
+		// The forest stands on a cliff 24 blocks above the ground the walk can reach.
+		world.withStand = true;
+		world.feature = feet -> new int[]{40, 88, -20};
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320), 100);
+		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertTrue(end.message().contains("reached=false"), end.message());
+		assertTrue(end.message().contains("dy=24"), end.message());
+		assertEquals(List.of(new GoalPosition(40, 88, -20, true)), world.legGoals, "walks to the stand cell itself");
+	}
+
 	@Test void goesAroundALakeOnDryLand() {
 		World world = new World();
 		// A lake east of the start.
@@ -396,7 +408,7 @@ class ExploreForTaskExecutorTest {
 		Vec3 feet = new Vec3(0.5, 64, 0.5);
 		float health = 20;
 		int food = 20, foodItems;
-		boolean roofBlocks, underground, ceiling;
+		boolean roofBlocks, underground, ceiling, withStand;
 		int nightAt = Integer.MAX_VALUE, dayAt = Integer.MAX_VALUE, pauseAt = -1;
 		/** Where the feature is once the body stands at the given feet, or null while it is not there. */
 		java.util.function.Function<Vec3, int[]> feature = feet -> null;
@@ -493,7 +505,9 @@ class ExploreForTaskExecutorTest {
 			int[] found = feature.apply(at);
 			if (found == null || Math.hypot(found[0] + 0.5 - at.x, found[2] + 0.5 - at.z) > Math.min(radius, LOADED))
 				return Optional.empty();
-			return Optional.of(new ExploreForTaskExecutor.Feature(found[0], found[1], found[2], "{kind=" + kind + "}"));
+			return Optional.of(withStand
+				? new ExploreForTaskExecutor.Feature(found[0], found[1], found[2], new int[]{found[0], found[1], found[2]}, "{kind=" + kind + "}")
+				: new ExploreForTaskExecutor.Feature(found[0], found[1], found[2], "{kind=" + kind + "}"));
 		}
 		public ExploreForTaskExecutor.Ground ground(int x, int z, int nearY) {
 			if (Math.hypot(x + 0.5 - feet.x, z + 0.5 - feet.z) > LOADED) return ExploreForTaskExecutor.Ground.UNLOADED;
