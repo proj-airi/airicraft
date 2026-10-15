@@ -861,6 +861,25 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void huntPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.HuntFoodStepArgs(4, true, 24);
+		runtime.applyPlannerResponse(new DialogueResponse("Hunting.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.huntFood(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.HUNT_FOOD, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.HuntFood(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().huntFood());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same hunt");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().huntFood());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void explorePayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 400);

@@ -83,7 +83,10 @@ public final class WorkProgressWatchdog {
 				// Waiting in a safe spot for endermen to come stands still; the task has its own no-enderman and overall deadlines.
 				|| w.label().equals("COLLECT_ENDER_PEARLS")
 				// Waiting for monsters to clear and lying in bed stand still; the task has its own monster wait and overall deadline.
-				|| w.label().equals("SLEEP_IN_BED")) continue;
+				|| w.label().equals("SLEEP_IN_BED")
+				// Waiting for animals to wander into sight and for the furnace to cook stand still; the task has its own
+				// no-animal, per-animal and overall deadlines.
+				|| w.label().equals("HUNT_FOOD")) continue;
 			var episode = episodes.computeIfAbsent(w.handle().id(), ignored -> new Episode());
 			// Spatial novelty catches bounded back-and-forth motion rather than resetting on every step.
 			// Cells are recorded while navigating too, so a restart between attempts finds nothing new.

@@ -9,3 +9,4 @@ blaze-rods
 nether-trip
 beds
 ender-pearls
+food

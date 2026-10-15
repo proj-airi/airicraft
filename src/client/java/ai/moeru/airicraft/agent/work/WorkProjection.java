@@ -90,6 +90,7 @@ public final class WorkProjection {
 			case SHELTER_FOR_NIGHT -> job.shelterForNight();
 			case COLLECT_ENDER_PEARLS -> job.collectEnderPearls();
 			case SLEEP_IN_BED -> job.sleepInBed();
+			case HUNT_FOOD -> job.huntFood();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;

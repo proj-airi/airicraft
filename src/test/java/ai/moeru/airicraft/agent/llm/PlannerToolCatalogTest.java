@@ -26,6 +26,15 @@ class PlannerToolCatalogTest {
 			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("sleep_in_bed", bad)));
 	}
 
+	@Test void huntFoodTakesOptionalCountCookAndDistance() {
+		assertEquals(0, PlannerToolCatalog.parseToolCall(toolCall("hunt_food", "{}")).arguments().size());
+		var args = PlannerToolCatalog.parseToolCall(toolCall("hunt_food", "{\"count\":4,\"cook\":false,\"maxDistance\":16}")).arguments();
+		assertEquals(4, args.get("count").getAsInt());
+		assertEquals(false, args.get("cook").getAsBoolean());
+		for (String bad : java.util.List.of("{\"count\":0}", "{\"count\":17}", "{\"maxDistance\":4}", "{\"cook\":\"yes\"}", "{\"radius\":8}"))
+			assertThrows(RuntimeException.class, () -> PlannerToolCatalog.parseToolCall(toolCall("hunt_food", bad)));
+	}
+
 	@Test void armorPolicyCanBeReadAndChangedAtomically() {
 		assertEquals("configure_armor", PlannerToolCatalog.parseToolCall(toolCall("configure_armor", "{}")).name());
 		assertEquals(1, PlannerToolCatalog.parseToolCall(toolCall("configure_armor",

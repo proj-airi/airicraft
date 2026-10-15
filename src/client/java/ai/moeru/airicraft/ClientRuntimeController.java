@@ -524,7 +524,8 @@ public final class ClientRuntimeController {
 			new ai.moeru.airicraft.agent.tasks.CollectFlintTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsTaskExecutor(navigationFacade, cameraController),
-			new ai.moeru.airicraft.agent.tasks.SleepInBedTaskExecutor(navigationFacade, cameraController)
+			new ai.moeru.airicraft.agent.tasks.SleepInBedTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.HuntFoodTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);
