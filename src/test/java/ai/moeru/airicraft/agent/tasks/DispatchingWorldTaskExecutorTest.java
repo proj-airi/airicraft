@@ -40,6 +40,14 @@ class DispatchingWorldTaskExecutorTest {
 		}
 	}
 
+	@Test void pathStuckSaysWhereTheBodyStoodAndWhereItWasGoing() {
+		assertEquals("at=33,91,-8 toward=33,91,-7~3 breaking=33,90,-7 no movement or block-breaking progress for 100 ticks",
+			DispatchingWorldTaskExecutor.stuckDetail(new NavigationFacade.NavigationProgress(33.4, 91, -7.2, true, "33,90,-7", 0.4f),
+				Optional.of(new NavigationFacade.Destination(33, 91, -7, true, 3))));
+		assertEquals("at=0,64,0 no movement or block-breaking progress for 100 ticks",
+			DispatchingWorldTaskExecutor.stuckDetail(new NavigationFacade.NavigationProgress(0, 64, 0, true, null, 0), Optional.empty()));
+	}
+
 	@Test void miningHasItsOwnExecutorAndDoesNotReachTheNavigationMiningProcess() {
 		var navigation = new RecordingExecutor();
 		var acquisition = new RecordingExecutor();

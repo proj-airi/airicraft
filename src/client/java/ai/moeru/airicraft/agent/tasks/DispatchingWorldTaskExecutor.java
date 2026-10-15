@@ -58,16 +58,26 @@ public final class DispatchingWorldTaskExecutor implements WorldTaskExecutor {
 			? Optional.<NavigationFacade.NavigationProgress>empty() : navigation.navigationProgress();
 		if (result.isPresent() || progress.isEmpty()) navigationStall.clear();
 		else if (navigationStall.observe(sessionSnapshot.tickCount(), progress.orElseThrow())) {
+			String detail = stuckDetail(progress.orElseThrow(), navigation.destination());
 			deactivate(sessionSnapshot);
 			navigation.cancel();
 			stalledTaskId = request.taskId();
 			transitionSnapshot = new TaskExecutionSnapshot(TaskExecutionState.FAILED, request.taskId(), request.goal(),
-				"WorldTaskDispatcher", "PATH_STUCK", null, null);
+				"WorldTaskDispatcher", "PATH_STUCK " + detail, null, null);
 			return Optional.of(new TaskTerminalEvent(request.taskId(), request.goal(), TaskExecutionState.FAILED,
 				"navigation_stuck: no supported displacement or block-breaking progress for 100 active ticks; repeated jumping is not progress",
 				null, TaskFailureCode.TRANSIENT));
 		}
 		return result;
+	}
+
+	/** Where the body stood and where its route was headed, so a bare PATH_STUCK is not all the caller learns. */
+	static String stuckDetail(NavigationFacade.NavigationProgress progress, Optional<NavigationFacade.Destination> destination) {
+		var detail = new StringBuilder("at=").append((int) Math.floor(progress.x())).append(',').append((int) Math.floor(progress.y()))
+			.append(',').append((int) Math.floor(progress.z()));
+		destination.ifPresent(target -> detail.append(" toward=").append(target.key()));
+		if (progress.breakingTarget() != null) detail.append(" breaking=").append(progress.breakingTarget());
+		return detail.append(" no movement or block-breaking progress for 100 ticks").toString();
 	}
 
 	private void deactivate(SessionSnapshot sessionSnapshot) {

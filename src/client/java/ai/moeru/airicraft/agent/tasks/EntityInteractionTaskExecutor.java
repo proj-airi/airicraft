@@ -209,10 +209,15 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 		return busyStateTicks < BUSY_STATE_TIMEOUT_TICKS;
 	}
 
-	static boolean shouldRefreshChaseGoal(GoalPosition currentChaseGoal, GoalPosition nextChaseGoal, int ticksSinceRefresh) {
+	/**
+	 * Starting a route drops the one being walked, and the new search takes a few ticks before the body moves. Restarting
+	 * every {@link #CHASE_GOAL_REFRESH_TICKS} ticks while a route was still running kept the body standing until the
+	 * dispatcher failed a sheep chase with PATH_STUCK, so a running route is only replaced when the target has moved.
+	 */
+	static boolean shouldRefreshChaseGoal(GoalPosition currentChaseGoal, GoalPosition nextChaseGoal, int ticksSinceRefresh, boolean navigating) {
 		return currentChaseGoal == null
 			|| squaredBlockDistance(currentChaseGoal, nextChaseGoal) >= CHASE_GOAL_REFRESH_DISTANCE_BLOCKS * CHASE_GOAL_REFRESH_DISTANCE_BLOCKS
-			|| ticksSinceRefresh >= CHASE_GOAL_REFRESH_TICKS;
+			|| !navigating && ticksSinceRefresh >= CHASE_GOAL_REFRESH_TICKS;
 	}
 
 	/**
@@ -330,7 +335,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 			if (isUnreachablePathEvent(navigationFacade.pollPathEvent()))
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_died_drops_unreachable"));
 			GoalPosition next = new GoalPosition(target.getBlockX(), (int) Math.floor(target.getY() + 0.125D), target.getBlockZ(), true);
-			if (shouldRefreshChaseGoal(chaseGoal, next, chaseGoalRefreshTicks++)) {
+			if (shouldRefreshChaseGoal(chaseGoal, next, chaseGoalRefreshTicks++, navigationFacade.processActive())) {
 				navigationFacade.startNavigate(next);
 				chaseGoal = next;
 				chaseGoalRefreshTicks = 0;
@@ -394,7 +399,7 @@ public final class EntityInteractionTaskExecutor implements WorldTaskExecutor {
 				return fail(request, TaskFailure.of(TaskFailureCode.MISSING_FACT, "target_unreachable"));
 			}
 			GoalPosition nextChaseGoal = chaseGoalFor(target);
-			if (shouldRefreshChaseGoal(chaseGoal, nextChaseGoal, chaseGoalRefreshTicks)) {
+			if (shouldRefreshChaseGoal(chaseGoal, nextChaseGoal, chaseGoalRefreshTicks, navigationFacade.processActive())) {
 				if (hasLineOfSight) {
 					navigationFacade.startNavigateNear(nextChaseGoal, NAVIGATION_CHASE_RADIUS_BLOCKS);
 				}
