@@ -632,6 +632,19 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		return Optional.empty();
 	}
 
+	/** The top source of an unbroken column of the same fluid's sources over {@code pos}. */
+	static BlockPos surfaceSource(Level level, BlockPos pos) {
+		var fluid = level.getFluidState(pos);
+		if (!fluid.isSource()) return pos;
+		BlockPos top = pos;
+		for (int i = 0; i < 32; i++) {
+			var above = level.getFluidState(top.above());
+			if (!above.isSource() || !above.getType().isSame(fluid.getType())) break;
+			top = top.above();
+		}
+		return top;
+	}
+
 	private Optional<TaskTerminalEvent> useItemOnFluidTarget(
 		long tick,
 		Minecraft minecraft,
@@ -641,6 +654,11 @@ public final class BlockInteractionTaskExecutor implements WorldTaskExecutor {
 		BlockPos target,
 		BlockState before
 	) {
+		// An empty bucket's raycast stops at the first source on its way, so a source under others is filled from
+		// the top one. Aiming at the deep one walked a playtest body into a lake until the drowning reflex fired.
+		if ((hand == InteractionHand.OFF_HAND ? player.getOffhandItem() : player.getMainHandItem()).is(Items.BUCKET)) {
+			target = surfaceSource(minecraft.level, target);
+		}
 		if (!withinInteractionRange(player, Vec3.atCenterOf(target))) {
 			return navigateTowardTargetRange(
 				tick,
