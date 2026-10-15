@@ -37,6 +37,14 @@ class UnarmedFlightTest {
 	}
 
 	@Test
+	void anUntouchedFlightKeepsRunningPastItsTimeAFewTimes() {
+		assertTrue(UnarmedFlight.keepsRunning(0, 0));
+		assertTrue(UnarmedFlight.keepsRunning(0, UnarmedFlight.MAX_EXTENSIONS - 1));
+		assertFalse(UnarmedFlight.keepsRunning(0, UnarmedFlight.MAX_EXTENSIONS));
+		assertFalse(UnarmedFlight.keepsRunning(1, 0), "a pursuer that lands hits is not being outrun");
+	}
+
+	@Test
 	void walksAwayOnlyFromCreepersWhenTooHungryToSprint() {
 		var pack = List.of(zombie(2, 0), zombie(-2, 0), zombie(0, 2));
 		assertEquals(UnarmedFlight.OUTMATCHED, UnarmedFlight.fleeReason(5.0D, 9F, 20F, pack, true));

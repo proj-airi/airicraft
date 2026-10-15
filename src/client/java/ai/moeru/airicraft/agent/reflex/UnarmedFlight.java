@@ -54,6 +54,8 @@ final class UnarmedFlight {
 	/** Hits a lone pursuer lands during one flight before the body turns to fight it. */
 	static final int OUTRUN_HITS = 4;
 	static final int MAX_TICKS = 1200;
+	/** Times an untouched flight starts its clock again before it gives up. */
+	static final int MAX_EXTENSIONS = 3;
 	static final int HEADINGS = 16;
 	/** Headings back toward the threats are never taken; sideways ones are, when nothing better is open. */
 	static final double MIN_ALIGNMENT = -0.25D;
@@ -85,6 +87,7 @@ final class UnarmedFlight {
 	private long lastTick = Long.MIN_VALUE;
 	private long countedHitTick = Long.MIN_VALUE;
 	private int hitsTaken;
+	private int extensions;
 	private long clearSinceTick = -1L;
 	private GridPos legTarget;
 	private long legStartedTick;
@@ -335,10 +338,16 @@ final class UnarmedFlight {
 		lastTick = Long.MIN_VALUE;
 		countedHitTick = lastMobDamageTick;
 		hitsTaken = 0;
+		extensions = 0;
 		clearSinceTick = -1L;
 		legTarget = null;
 		failedLegs = 0;
 		legs = 0;
+	}
+
+	/** Whether a flight that ran out its time keeps going: nothing has hit it, and it has not been renewed too often. */
+	static boolean keepsRunning(int hitsTaken, int extensions) {
+		return hitsTaken == 0 && extensions < MAX_EXTENSIONS;
 	}
 
 	/** Ends any flight and forgets an abandoned one, for a new danger episode. */
@@ -386,7 +395,13 @@ final class UnarmedFlight {
 			}
 		}
 		else clearSinceTick = -1L;
-		if (tick - startedTick > MAX_TICKS) return giveUp("timeout", tick, navigation);
+		if (tick - startedTick > MAX_TICKS) {
+			// Untouched after a full minute the flight is working; turning to fight bare-handed is what killed a
+			// playtest body that had outrun a zombie villager for 1200 ticks without a hit.
+			if (!keepsRunning(hitsTaken, extensions)) return giveUp("timeout", tick, navigation);
+			extensions++;
+			startedTick = tick;
+		}
 		if (outrun(hitsTaken, threats)) return giveUp("outrun", tick, navigation);
 		double px = player.getX(), pz = player.getZ();
 		boolean legOver = legTarget == null || resumed || !navigation.processActive()
