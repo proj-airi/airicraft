@@ -687,6 +687,15 @@
       "extraWake": null
     },
     {
+      "type": "reflex.bunker_intruder",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "reflex.close_quarter_attack",
       "producers": [
         "SurvivalReflexRuntime"
