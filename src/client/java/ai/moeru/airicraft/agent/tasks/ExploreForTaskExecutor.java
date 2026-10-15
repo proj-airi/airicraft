@@ -209,6 +209,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			case SHELTER_DIG -> shelterDig(body);
 			case SHELTER_WAIT -> shelterWait(body);
 			case SHELTER_EXIT -> shelterExit(body);
+			case SHELTER_RETURN -> shelterReturn(body);
 			case NIGHT_WAIT -> nightWait(body);
 		};
 		if (ended.isPresent()) return ended;
@@ -235,7 +236,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		boolean hunting = phase == Phase.HUNT || phase == Phase.LOOT;
 		if ((starving || body.health() < Math.min(HURT_HEALTH, body.maxHealth()) && body.food() < HEAL_FOOD)
 			&& !hunting && canEat && environment.hasFood(body.food() <= 2)) return startEating(body);
-		if (phase == Phase.SHELTER_WAIT || phase == Phase.SHELTER_GO) return Optional.empty();
+		if (phase == Phase.SHELTER_WAIT || phase == Phase.SHELTER_GO || phase == Phase.SHELTER_RETURN) return Optional.empty();
 		if (body.food() <= HUNT_FOOD && !body.night() && phase != Phase.HUNT && phase != Phase.LOOT && phase != Phase.APPROACH
 			&& huntFailures < MAX_HUNT_FAILURES && !environment.hasFood(body.food() <= 2)) {
 			Optional<Animal> animal = environment.animals(body.feet(), HUNT_RADIUS).stream().findFirst();
@@ -250,7 +251,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		}
 		if (!body.night()) failuresTonight = 0;
 		if (body.night() && failuresTonight >= MAX_SHELTER_FAILURES) walkingAtNight = true;
-		if (body.night() && !body.inWater() && phase != Phase.APPROACH && phase != Phase.HUNT && phase != Phase.LOOT
+		// Under rock already (a tunnel or a cave): no surface mob reaches it and a pit there would not lead back up.
+		if (body.night() && !body.inWater() && !environment.underground(body.feet()) && phase != Phase.APPROACH && phase != Phase.HUNT && phase != Phase.LOOT
 			&& phase != Phase.NIGHT_WAIT && failuresTonight < MAX_SHELTER_FAILURES && activeTicks - lastShelterLook >= SHELTER_RETRY_TICKS) {
 			lastShelterLook = activeTicks;
 			if (!environment.hasRoofBlock()) {
@@ -513,6 +515,26 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			TaskFailureCode.TRANSIENT);
 	}
 
+	/** Walks back from a tunnel into the remembered pit to wait out the night there. */
+	private Optional<TaskTerminalEvent> shelterReturn(Body body) {
+		var top = shelter.top();
+		boolean inside = (int) Math.floor(body.feet().x) == top.getX() && (int) Math.floor(body.feet().z) == top.getZ()
+			&& body.feet().y < top.getY() - 1.0D;
+		if (inside || !body.night()) {
+			stopNavigation();
+			enter(inside && body.night() ? Phase.SHELTER_WAIT : Phase.SHELTER_EXIT);
+			return Optional.empty();
+		}
+		var bottom = top.below(ExploreShelter.DEPTH);
+		boolean moving = navigate(new GoalPosition(bottom.getX(), bottom.getY(), bottom.getZ(), true), 0, EXIT_OPTIONS);
+		if ((moving || navigationArrived) && phaseTicks <= SHELTER_EXIT_TICKS) return Optional.empty();
+		stopNavigation();
+		shelter = null;
+		note = "shelter_return_failed: could not get back into the pit at " + pos(top);
+		enter(Phase.SEARCH);
+		return Optional.empty();
+	}
+
 	/** Stands still until morning, then looks again (a crossing by day). */
 	private Optional<TaskTerminalEvent> nightWait(Body body) {
 		environment.stopMoving();
@@ -546,12 +568,13 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 			return;
 		}
 		boolean inPit = (int) Math.floor(body.feet().x) == top.getX() && (int) Math.floor(body.feet().z) == top.getZ();
-		if (body.night() && !inPit) return;
 		shelter = pit;
-		if (body.night()) {
+		if (body.night() && inPit) {
 			note = "waiting_in_shelter";
 			enter(Phase.SHELTER_WAIT);
 		}
+		// Out in a tunnel dug from the pit: back into the pit for the rest of the night, not a new pit in the tunnel.
+		else if (body.night()) enter(Phase.SHELTER_RETURN);
 		else enter(Phase.SHELTER_EXIT);
 	}
 
@@ -883,7 +906,7 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 	@Override
 	public void shutdown() { release(); }
 
-	enum Phase { SEARCH, WALK, APPROACH, EAT, HUNT, LOOT, SHELTER_GO, SHELTER_DIG, SHELTER_WAIT, SHELTER_EXIT, NIGHT_WAIT }
+	enum Phase { SEARCH, WALK, APPROACH, EAT, HUNT, LOOT, SHELTER_GO, SHELTER_DIG, SHELTER_WAIT, SHELTER_EXIT, SHELTER_RETURN, NIGHT_WAIT }
 
 	enum ConsumeResult { CONSUMING, DONE, NOTHING }
 
@@ -936,6 +959,8 @@ public final class ExploreForTaskExecutor implements WorldTaskExecutor {
 		void melee(int entityId);
 		/** Whether a block that does not fall (and can roof a shelter) is carried. */
 		boolean hasRoofBlock();
+		/** Whether rock is over the body: a tunnel or a cave, where no shelter pit is dug. */
+		default boolean underground(Vec3 feet) { return false; }
 		/** A shelter column near the feet, or null. */
 		ExploreShelter.Plan shelterNear(Vec3 feet);
 		/** Digs or roofs the shelter for one tick. */

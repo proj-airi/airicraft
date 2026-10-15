@@ -169,6 +169,22 @@ class ExploreForTaskExecutorTest {
 		assertTrue(world.optionsSeen.contains(ExploreForTaskExecutor.EXIT_OPTIONS), "went up through the pit first");
 	}
 
+	@Test void aNightCallFromATunnelGoesBackIntoThePitInsteadOfDiggingAnother() {
+		World world = new World();
+		world.roofBlocks = true;
+		world.nightAt = 40;
+		world.dayAt = 600;
+		world.feature = World.ring(200);
+		TaskTerminalEvent night = world.run(new ExploreForStepArgs("forest", 320), 5_000);
+		assertTrue(night.message().startsWith("sheltered_for_night"), night.message());
+		world.feet = world.feet.add(12, 0, 0);
+		world.underground = true;
+		TaskTerminalEvent morning = world.run(new ExploreForStepArgs("forest", 320), 5_000, "explore-2");
+		assertTrue(morning.message().startsWith("feature_found"), morning.message());
+		assertEquals(1, world.sheltersDug, "no pit dug in the tunnel");
+		assertTrue(world.ticksInShelter > 200, "waited in the pit: " + world.ticksInShelter);
+	}
+
 	@Test void withNothingToRoofWithItWalksOnThroughTheNight() {
 		World world = new World();
 		world.nightAt = 40;
@@ -354,7 +370,7 @@ class ExploreForTaskExecutorTest {
 		Vec3 feet = new Vec3(0.5, 64, 0.5);
 		float health = 20;
 		int food = 20, foodItems;
-		boolean roofBlocks;
+		boolean roofBlocks, underground;
 		int nightAt = Integer.MAX_VALUE, dayAt = Integer.MAX_VALUE, pauseAt = -1;
 		/** Where the feature is once the body stands at the given feet, or null while it is not there. */
 		java.util.function.Function<Vec3, int[]> feature = feet -> null;
@@ -414,7 +430,9 @@ class ExploreForTaskExecutorTest {
 		private void step() {
 			if (inShelter) ticksInShelter++;
 			if (goal == null) return;
-			Vec3 center = new Vec3(goal.x() + 0.5, 64, goal.z() + 0.5);
+			// Exact goals below the ground are cells in the pit; everything else is on the surface.
+			boolean down = goal.exactY() && goal.y() < 64;
+			Vec3 center = new Vec3(goal.x() + 0.5, down ? goal.y() : 64, goal.z() + 0.5);
 			Vec3 delta = center.subtract(feet);
 			Vec3 before = feet;
 			if (delta.horizontalDistance() <= Math.max(goalRadius, 4)) {
@@ -422,7 +440,7 @@ class ExploreForTaskExecutorTest {
 				goal = null;
 				events.add("AT_GOAL");
 			} else feet = feet.add(delta.normalize().scale(4));
-			if (inShelter) {
+			if (inShelter && !down) {
 				// Climbing out.
 				inShelter = false;
 				feet = new Vec3(feet.x, 64, feet.z);
@@ -480,6 +498,7 @@ class ExploreForTaskExecutorTest {
 			}
 		}
 		public boolean hasRoofBlock() { return roofBlocks; }
+		public boolean underground(Vec3 at) { return underground && at.y < 64; }
 		public ExploreShelter.Plan shelterNear(Vec3 at) {
 			BlockPos top = BlockPos.containing(at);
 			return new ExploreShelter.Plan(top, List.of(top.below(), top.below(2), top.below(3)), top.below(), top.below().east());

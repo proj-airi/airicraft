@@ -312,6 +312,15 @@ final class MinecraftExploreEnvironment implements ExploreForTaskExecutor.Enviro
 	}
 
 	@Override
+	public boolean underground(Vec3 feet) {
+		ClientLevel level = client().level;
+		if (level == null) return false;
+		BlockPos at = BlockPos.containing(feet);
+		// More than a roofed pit's worth of blocks overhead, leaves not counted.
+		return at.getY() + 3 < level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, at.getX(), at.getZ());
+	}
+
+	@Override
 	public ExploreShelter.Plan shelterNear(Vec3 feet) {
 		LocalPlayer player = client().player;
 		ClientLevel level = client().level;
