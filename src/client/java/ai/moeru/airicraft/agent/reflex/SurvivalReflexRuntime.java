@@ -140,6 +140,8 @@ public final class SurvivalReflexRuntime {
 	private boolean bunkerIntruderReported;
 	private final ReflexArchery archery = new ReflexArchery();
 	private final UnarmedFlight flight = new UnarmedFlight();
+	private final RangedCover cover = new RangedCover();
+	private String coverStartReason;
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -418,6 +420,7 @@ public final class SurvivalReflexRuntime {
 	public void reset(Minecraft minecraft) {
 		bunker.reset();
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
 		extinguishPour = null;
 		extinguishAttempts = 0;
 		foodRetreatStartedTick = -1L;
@@ -473,6 +476,7 @@ public final class SurvivalReflexRuntime {
 	) {
 		bunker.allowRetry();
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
 		noContactHold = false;
 		foodRetreatStartedTick = -1L;
 		foodRetreatAbandoned = false;
@@ -944,10 +948,12 @@ public final class SurvivalReflexRuntime {
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
 		if (tickBunker(minecraft, player, threats, tick, combatEating)) {
-			// Digging in outranks running; a failed bunker lets the flight start again.
+			// Digging in outranks running and hiding; a failed bunker lets the flight start again.
 			flight.reset(navigationFacade);
+			cover.reset(navigationFacade);
 			return;
 		}
+		if (tickCover(minecraft, player, threats, tick, combatEating)) return;
 		if (tickFlight(minecraft, player, threats, tick)) return;
 		if (combatProgress != null && combatProgress.stalled()) {
 			tacticalWindow = new TacticalWindow(tick + 1200, tick);
@@ -1034,16 +1040,14 @@ public final class SurvivalReflexRuntime {
 	 */
 	private boolean tickFlight(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
 		if (navigationFacade == null || !navigationFacade.isLoaded()) {
-			if (flight.active()) flight.abandon("navigation_unavailable", navigationFacade);
+			if (flight.active()) flight.abandon("navigation_unavailable", tick, navigationFacade);
 			return false;
 		}
 		ItemStack weapon = combatWeapon(player);
 		double damage = UnarmedFlight.attackDamage(weapon);
-		List<UnarmedFlight.Threat> view = threats.stream().map(threat -> new UnarmedFlight.Threat(
-			threat.entity().getX(), threat.entity().getZ(), threat.entity().getHealth(), isRangedThreat(threat.entity()),
-			threat.entity() instanceof net.minecraft.world.entity.monster.Creeper, threat.distance(), threat.lineOfSight())).toList();
+		List<UnarmedFlight.Threat> view = flightView(threats);
 		if (!flight.active()) {
-			if (flight.abandoned() || archeryTarget(player, threats) != null) return false;
+			if (flight.abandoned() && !flight.mayRetry(tick) || archeryTarget(player, threats) != null) return false;
 			String reason = UnarmedFlight.fleeReason(damage, player.getHealth(), player.getMaxHealth(), view);
 			if (reason == null) return false;
 			flight.start(tick, lastMobDamageTick, UnarmedFlight.OUTMATCHED.equals(reason));
@@ -1061,9 +1065,10 @@ public final class SurvivalReflexRuntime {
 				"threatCount", threats.size(),
 				"entityTypeIds", threats.stream().map(threat -> threat.observed().entityTypeId()).distinct().toList(),
 				"nearestDistance", threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(-1D),
+				"retry", flight.retries(),
 				"tick", tick)));
 		}
-		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE && !flight.armedFlight()) flight.abandon("armed", navigationFacade);
+		else if (damage >= UnarmedFlight.MIN_WEAPON_DAMAGE && !flight.armedFlight()) flight.abandon("armed", tick, navigationFacade);
 		UnarmedFlight.Outcome outcome = flight.active()
 			? flight.tick(minecraft, player, view, tick, lastMobDamageTick, config.threatCooldownTicks(), navigationFacade)
 			: UnarmedFlight.Outcome.ABANDONED;
@@ -1090,6 +1095,117 @@ public final class SurvivalReflexRuntime {
 				return false;
 			}
 		}
+	}
+
+	private static List<UnarmedFlight.Threat> flightView(List<ResolvedThreat> threats) {
+		return threats.stream().map(threat -> new UnarmedFlight.Threat(
+			threat.entity().getX(), threat.entity().getZ(), threat.entity().getHealth(), isRangedThreat(threat.entity()),
+			threat.entity() instanceof net.minecraft.world.entity.monster.Creeper, threat.distance(), threat.lineOfSight())).toList();
+	}
+
+	/**
+	 * Hides from shooters instead of punching at them (see {@link RangedCover}): first against shooters alone, and
+	 * after a flight from a mixed group was given up. The low-health bunker runs before this; a melee mob within reach,
+	 * a creeper, a weapon or a bow shot hand the tick back to fighting. Returns whether cover handled this tick.
+	 */
+	private boolean tickCover(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		if (navigationFacade == null || !navigationFacade.isLoaded()) {
+			if (cover.active()) endCover("navigation_unavailable", false, player, threats, tick);
+			return false;
+		}
+		double damage = UnarmedFlight.attackDamage(combatWeapon(player));
+		List<UnarmedFlight.Threat> view = flightView(threats);
+		boolean bowShot = archeryTarget(player, threats) != null;
+		if (!cover.active()) {
+			if (flight.active() || escapingCreeper != null || !cover.mayStart(tick)) return false;
+			String reason = RangedCover.startReason(damage, bowShot, view, flight.abandoned());
+			if (reason == null) return false;
+			cover.start(tick);
+			coverStartReason = reason;
+			archery.cancel(minecraft, actuator);
+			releaseShield(minecraft);
+			stopCombatNavigation();
+			combatPositioning = null;
+			movementController.stop(minecraft);
+		}
+		else {
+			String blocker = RangedCover.blocker(damage, bowShot, view);
+			if (blocker != null) {
+				endCover(blocker, false, player, threats, tick);
+				return false;
+			}
+		}
+		List<Vec3> shooterEyes = new ArrayList<>();
+		int shootersInSight = 0;
+		for (ResolvedThreat threat : threats) {
+			if (!isRangedThreat(threat.entity())) continue;
+			shooterEyes.add(threat.entity().getEyePosition());
+			if (threat.lineOfSight()) shootersInSight++;
+		}
+		RangedCover.Outcome outcome;
+		try {
+			outcome = cover.tick(minecraft.level, player, view, shooterEyes, shootersInSight, coverStartReason, tick,
+				recentlyDamagedByMob(tick, lastMobDamageTick, config.threatCooldownTicks()), navigationFacade, pendingEvents);
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("take_cover", exception, tick);
+			endCover("failed", true, player, threats, tick);
+			return false;
+		}
+		// Hiding is neither progress against a target nor a stalled approach.
+		combatProgress = null;
+		progressThreats = null;
+		combatStalemate = null;
+		if ((outcome == RangedCover.Outcome.MOVING || outcome == RangedCover.Outcome.HIDDEN)
+			&& snapshot.action() != SurvivalReflexAction.TAKE_COVER) changeAction(SurvivalReflexCause.MOB_ATTACK, SurvivalReflexAction.TAKE_COVER, tick);
+		switch (outcome) {
+			case CLEAR -> {
+				resolve(minecraft, player, threats, tick, "hidden_from_ranged", false);
+				return true;
+			}
+			case ABANDONED -> {
+				reportCoverAbandoned(cover.abandonReason(), player, threats, tick);
+				return false;
+			}
+			case HIDDEN -> {
+				if (!(coverEatingSafe(minecraft, player, threats, tick, combatEating)
+					&& tickCombatEating(minecraft, player, threats, tick, combatEating, true))) movementController.stop(minecraft);
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			default -> {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+		}
+	}
+
+	/**
+	 * Eating in cover follows the combat-eating rule (no shooter in sight, none within ten blocks, no recent hit or
+	 * incoming arrow), checked here so the eating path never walks the body out of its cell to find a safer place.
+	 */
+	private boolean coverEatingSafe(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		if (combatEating == null) return false;
+		if (combatEating.eating()) return true;
+		double nearest = threats.stream().mapToDouble(ResolvedThreat::distance).min().orElse(Double.POSITIVE_INFINITY);
+		return safeToEatDuringCombat(player.onGround(), player.isInWater(), immediateCombatDanger(minecraft, player, threats, tick),
+			false, threats.stream().anyMatch(ResolvedThreat::lineOfSight), nearest);
+	}
+
+	private void endCover(String reason, boolean gaveUp, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		cover.abandon(reason, tick, gaveUp, navigationFacade);
+		reportCoverAbandoned(reason, player, threats, tick);
+	}
+
+	private void reportCoverAbandoned(String reason, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		var payload = new LinkedHashMap<String, Object>(cover.summary(tick));
+		payload.put("reason", reason);
+		payload.put("health", player.getHealth());
+		payload.put("threatCount", threats.size());
+		payload.put("tick", tick);
+		pendingEvents.add(new SurvivalReflexEvent("reflex.cover_abandoned", payload));
 	}
 
 	/** What the reflex fights with: the weapon it would equip, or whatever is in hand when it carries none. */
@@ -1647,6 +1763,7 @@ public final class SurvivalReflexRuntime {
 		wetFighting = false;
 		archery.cancel(minecraft, actuator);
 		flight.reset(navigationFacade);
+		cover.reset(navigationFacade);
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();

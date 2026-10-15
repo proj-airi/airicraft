@@ -16,11 +16,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.tags.BlockTags;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
@@ -34,13 +31,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -143,9 +135,9 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 				if (horizontal < CollectBlazeRodsTaskExecutor.SPOT_MIN_DISTANCE - 0.5D || horizontal > max + 0.5D) continue;
 				for (int dy = -4; dy <= 6; dy++) {
 					BlockPos cell = anchorPos.offset(dx, dy, dz);
-					if (!level.hasChunkAt(cell) || !standable(level, cell)) continue;
+					if (!level.hasChunkAt(cell) || !CoverCells.standable(level, cell)) continue;
 					Vec3 eye = new Vec3(cell.getX() + 0.5D, cell.getY() + player.getEyeHeight(), cell.getZ() + 0.5D);
-					boolean sight = clear(level, player, eye, target, anchor.spawner() ? anchorPos : null);
+					boolean sight = CoverCells.clear(level, player, eye, target, anchor.spawner() ? anchorPos : null);
 					spots.add(spot(level, player, cell, arena, sight, Math.hypot(cell.getX() + 0.5D - target.x, cell.getZ() + 0.5D - target.z)));
 				}
 			}
@@ -166,7 +158,7 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 				if (Math.hypot(dx, dz) > radius + 0.5D) continue;
 				for (int dy = -2; dy <= 2; dy++) {
 					BlockPos cell = feet.offset(dx, dy, dz);
-					if (!level.hasChunkAt(cell) || !standable(level, cell)) continue;
+					if (!level.hasChunkAt(cell) || !CoverCells.standable(level, cell)) continue;
 					spots.add(spot(level, player, cell, arena, false, 0.0D));
 				}
 			}
@@ -177,15 +169,9 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 	private Spot spot(ClientLevel level, LocalPlayer player, BlockPos cell, Arena arena, boolean sight, double anchorDistance) {
 		Vec3 eye = new Vec3(cell.getX() + 0.5D, cell.getY() + player.getEyeHeight(), cell.getZ() + 0.5D);
 		int seen = 0;
-		for (Blaze blaze : arena.blazes()) if (clear(level, player, eye, blaze.position(), null)) seen++;
-		int cover = 0;
-		for (Direction side : Direction.Plane.HORIZONTAL) {
-			BlockPos head = cell.above().relative(side);
-			if (!level.getBlockState(head).getCollisionShape(level, head).isEmpty()) cover++;
-		}
-		BlockPos roof = cell.above(2);
-		if (!level.getBlockState(roof).getCollisionShape(level, roof).isEmpty()) cover += 2;
-		return new Spot(goal(cell), true, hazardNear(level, cell, 2), edgeDrop(level, cell), sight, seen, cover, anchorDistance);
+		for (Blaze blaze : arena.blazes()) if (CoverCells.clear(level, player, eye, blaze.position(), null)) seen++;
+		int cover = CoverCells.cover(level, cell);
+		return new Spot(goal(cell), true, CoverCells.hazardNear(level, cell, 2), CoverCells.edgeDrop(level, cell, CollectBlazeRodsTaskExecutor.MAX_SAFE_FALL), sight, seen, cover, anchorDistance);
 	}
 
 	@Override
@@ -200,7 +186,7 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 	private static boolean safeStep(ClientLevel level, Vec3 feet, Vec3 direction) {
 		for (double distance : new double[] {0.8D, 1.5D}) {
 			BlockPos cell = BlockPos.containing(feet.add(direction.scale(distance)).add(0.0D, 0.1D, 0.0D));
-			if (!level.hasChunkAt(cell) || !standable(level, cell) || hazardNear(level, cell, 1) || edgeDrop(level, cell)) return false;
+			if (!level.hasChunkAt(cell) || !CoverCells.standable(level, cell) || CoverCells.hazardNear(level, cell, 1) || CoverCells.edgeDrop(level, cell, CollectBlazeRodsTaskExecutor.MAX_SAFE_FALL)) return false;
 		}
 		return true;
 	}
@@ -399,59 +385,10 @@ final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.En
 
 	// ---- terrain ----
 
-	/** Solid floor (not magma), room for the body, no fluid or fire in it. */
-	private static boolean standable(ClientLevel level, BlockPos cell) {
-		BlockPos below = cell.below();
-		BlockState floor = level.getBlockState(below);
-		if (!floor.isFaceSturdy(level, below, Direction.UP) || floor.is(Blocks.MAGMA_BLOCK) || !floor.getFluidState().isEmpty()) return false;
-		for (BlockPos body : List.of(cell, cell.above())) {
-			BlockState state = level.getBlockState(body);
-			if (!state.getCollisionShape(level, body).isEmpty() || !state.getFluidState().isEmpty() || state.is(BlockTags.FIRE)
-				|| state.is(Blocks.CAMPFIRE) || state.is(Blocks.SOUL_CAMPFIRE)) return false;
-		}
-		return true;
-	}
-
-	/** Lava, fire or magma within {@code radius} blocks to the side, two below or one above. */
-	private static boolean hazardNear(ClientLevel level, BlockPos cell, int radius) {
-		for (BlockPos pos : BlockPos.betweenClosed(cell.offset(-radius, -2, -radius), cell.offset(radius, 1, radius))) {
-			BlockState state = level.getBlockState(pos);
-			if (state.getFluidState().is(FluidTags.LAVA) || state.is(BlockTags.FIRE) || state.is(Blocks.MAGMA_BLOCK)) return true;
-		}
-		return false;
-	}
-
-	/** A neighbouring open cell whose floor is more than the safe fall below: a knockback off the edge. */
-	private static boolean edgeDrop(ClientLevel level, BlockPos cell) {
-		for (int dx = -1; dx <= 1; dx++) {
-			for (int dz = -1; dz <= 1; dz++) {
-				if (dx == 0 && dz == 0) continue;
-				BlockPos side = cell.offset(dx, 0, dz);
-				if (!level.getBlockState(side).getCollisionShape(level, side).isEmpty()
-					|| !level.getBlockState(side.above()).getCollisionShape(level, side.above()).isEmpty()) continue;
-				boolean floor = false;
-				for (int down = 1; down <= CollectBlazeRodsTaskExecutor.MAX_SAFE_FALL + 1 && !floor; down++) {
-					BlockPos below = side.below(down);
-					BlockState state = level.getBlockState(below);
-					if (state.getFluidState().is(FluidTags.LAVA)) break;
-					floor = state.isFaceSturdy(level, below, Direction.UP);
-				}
-				if (!floor) return true;
-			}
-		}
-		return false;
-	}
-
 	/** A rod on standable ground with no lava or fire beside it. */
 	private static boolean safeRod(ClientLevel level, ItemEntity item) {
 		BlockPos cell = BlockPos.containing(item.position().add(0.0D, 0.1D, 0.0D));
-		return level.hasChunkAt(cell) && standable(level, cell) && !hazardNear(level, cell, 1) && !edgeDrop(level, cell);
-	}
-
-	/** Whether nothing solid stands between the points; a hit on {@code allowed} (the spawner itself) still counts as seen. */
-	private static boolean clear(ClientLevel level, LocalPlayer player, Vec3 from, Vec3 to, BlockPos allowed) {
-		BlockHitResult hit = level.clip(new ClipContext(from, to, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-		return hit.getType() == HitResult.Type.MISS || allowed != null && hit.getBlockPos().equals(allowed);
+		return level.hasChunkAt(cell) && CoverCells.standable(level, cell) && !CoverCells.hazardNear(level, cell, 1) && !CoverCells.edgeDrop(level, cell, CollectBlazeRodsTaskExecutor.MAX_SAFE_FALL);
 	}
 
 	// ---- inventory ----

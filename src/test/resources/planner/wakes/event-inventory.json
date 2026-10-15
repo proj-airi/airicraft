@@ -759,6 +759,24 @@
       "extraWake": "W3"
     },
     {
+      "type": "reflex.took_cover",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
+      "type": "reflex.cover_abandoned",
+      "producers": [
+        "SurvivalReflexRuntime"
+      ],
+      "profile": null,
+      "observeVisible": true,
+      "extraWake": null
+    },
+    {
       "type": "reflex.creeper_run",
       "producers": [
         "SurvivalReflexRuntime"

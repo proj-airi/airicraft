@@ -106,6 +106,8 @@ public final class EventCatalog {
 			new EventTypeSpec("reflex.extinguished", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.extinguished")),
 			new EventTypeSpec("reflex.fled_unarmed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.fled_unarmed")),
 			new EventTypeSpec("reflex.flight_abandoned", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.flight_abandoned")),
+			new EventTypeSpec("reflex.took_cover", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.took_cover")),
+			new EventTypeSpec("reflex.cover_abandoned", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.cover_abandoned")),
 			new EventTypeSpec("reflex.creeper_run", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.creeper_run")),
 			new EventTypeSpec("reflex.food_eat_failed", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_failed")),
 			new EventTypeSpec("reflex.food_eat_interrupted", false, EventFamily.INTERNAL, Set.of("SurvivalReflexRuntime"), EventVisibility.PLANNER, EventRoutingProfile.rawOnly("reflex.food_eat_interrupted")),

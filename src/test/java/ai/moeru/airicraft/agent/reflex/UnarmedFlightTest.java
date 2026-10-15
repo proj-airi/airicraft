@@ -140,6 +140,33 @@ class UnarmedFlightTest {
 	}
 
 	@Test
+	void triesAgainAfterNoEscapeRouteButKeepsOtherVerdicts() {
+		assertFalse(UnarmedFlight.retryable("no_escape_route", 100, 159, 0), "too soon: the body has hardly moved");
+		assertTrue(UnarmedFlight.retryable("no_escape_route", 100, 160, 0));
+		assertFalse(UnarmedFlight.retryable("no_escape_route", 100, 400, UnarmedFlight.MAX_RETRIES), "a few retries an episode");
+		for (String reason : List.of("armed", "outrun", "timeout", "navigation_unavailable"))
+			assertFalse(UnarmedFlight.retryable(reason, 100, 10_000, 0), reason);
+	}
+
+	@Test
+	void aRetriedFlightCountsItsRetriesUntilTheEpisodeEnds() {
+		UnarmedFlight flight = new UnarmedFlight();
+		flight.start(0, Long.MIN_VALUE);
+		flight.abandon("no_escape_route", 49, null);
+		assertTrue(flight.abandoned());
+		assertFalse(flight.mayRetry(60));
+		assertTrue(flight.mayRetry(109));
+		flight.start(109, Long.MIN_VALUE);
+		assertFalse(flight.abandoned());
+		assertEquals(1, flight.retries());
+		flight.abandon("outrun", 200, null);
+		assertFalse(flight.mayRetry(10_000), "outrun stands for the episode");
+		flight.reset(null);
+		assertFalse(flight.abandoned());
+		assertEquals(0, flight.retries());
+	}
+
+	@Test
 	void flightRoutesSprintButNeverEditTerrainOrDropFar() {
 		assertTrue(UnarmedFlight.OPTIONS.noEdits());
 		assertFalse(UnarmedFlight.OPTIONS.walkOnly(), "walkOnly would forbid sprinting");

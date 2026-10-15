@@ -57,6 +57,15 @@ final class UnarmedFlight {
 	static final int HEADINGS = 16;
 	/** Headings back toward the threats are never taken; sideways ones are, when nothing better is open. */
 	static final double MIN_ALIGNMENT = -0.25D;
+	/**
+	 * Ticks after a flight found no escape route before another is tried: the body has moved since (to cover, or
+	 * knocked about while fighting), and what was a dead end may be open from here. A playtest body gave up running
+	 * from one skeleton when a second appeared and punched at both until four arrows killed it.
+	 */
+	static final long RETRY_TICKS = 60L;
+	/** New flights one episode may start after giving up for want of a route. */
+	static final int MAX_RETRIES = 3;
+	static final String NO_ESCAPE_ROUTE = "no_escape_route";
 	static final NavigationOptions OPTIONS = NavigationOptions.DEFAULT.withNoEdits().withMaxSafeFall(MAX_DROP)
 		.withWaterPenalty(WATER_PENALTY);
 
@@ -83,6 +92,8 @@ final class UnarmedFlight {
 	private int failedLegs;
 	private int legs;
 	private boolean armedFlight;
+	private long abandonedTick = Long.MIN_VALUE;
+	private int retries;
 
 	/**
 	 * Why the body should run rather than fight, or null to fight: a real weapon, or one weak melee mob while the body
@@ -269,9 +280,27 @@ final class UnarmedFlight {
 		return active;
 	}
 
-	/** A flight given up in this episode is not tried again until the next one. */
+	/** A flight given up in this episode; only one given up for want of a route may be tried again (see {@link #mayRetry}). */
 	boolean abandoned() {
 		return abandonReason != null;
+	}
+
+	/** Whether a flight given up earlier in this episode may start again now. */
+	boolean mayRetry(long tick) {
+		return abandonReason != null && retryable(abandonReason, abandonedTick, tick, retries);
+	}
+
+	/**
+	 * Only a flight that found no route is tried again, {@value #RETRY_TICKS} ticks after it gave up and at most
+	 * {@value #MAX_RETRIES} times an episode. A weapon in hand, a pursuer that outruns the body and a flight that ran
+	 * out of time keep their verdict until the episode ends.
+	 */
+	static boolean retryable(String reason, long abandonedTick, long tick, int retries) {
+		return NO_ESCAPE_ROUTE.equals(reason) && retries < MAX_RETRIES && tick - abandonedTick >= RETRY_TICKS;
+	}
+
+	int retries() {
+		return retries;
 	}
 
 	String abandonReason() {
@@ -289,6 +318,7 @@ final class UnarmedFlight {
 
 	void start(long tick, long lastMobDamageTick, boolean armedFlight) {
 		this.armedFlight = armedFlight;
+		if (abandonReason != null) retries++;
 		active = true;
 		abandonReason = null;
 		startedTick = tick;
@@ -305,12 +335,14 @@ final class UnarmedFlight {
 	void reset(NavigationFacade navigation) {
 		stop(navigation);
 		abandonReason = null;
+		retries = 0;
 	}
 
-	/** Gives up on this flight: the reflex fights instead until the episode ends. */
-	void abandon(String reason, NavigationFacade navigation) {
+	/** Gives up on this flight: the reflex fights (or takes cover) instead, until the episode ends or a retry. */
+	void abandon(String reason, long tick, NavigationFacade navigation) {
 		stop(navigation);
 		abandonReason = reason;
+		abandonedTick = tick;
 	}
 
 	private void stop(NavigationFacade navigation) {
@@ -344,8 +376,8 @@ final class UnarmedFlight {
 			}
 		}
 		else clearSinceTick = -1L;
-		if (tick - startedTick > MAX_TICKS) return giveUp("timeout", navigation);
-		if (outrun(hitsTaken, threats)) return giveUp("outrun", navigation);
+		if (tick - startedTick > MAX_TICKS) return giveUp("timeout", tick, navigation);
+		if (outrun(hitsTaken, threats)) return giveUp("outrun", tick, navigation);
 		double px = player.getX(), pz = player.getZ();
 		boolean legOver = legTarget == null || resumed || !navigation.processActive()
 			|| tick - legStartedTick >= LEG_TIMEOUT_TICKS;
@@ -353,13 +385,13 @@ final class UnarmedFlight {
 		if (legOver) {
 			if (legTarget != null && !resumed) {
 				failedLegs = legStartDistance - distance(legTarget, px, pz) < MIN_LEG_PROGRESS ? failedLegs + 1 : 0;
-				if (failedLegs >= MAX_FAILED_LEGS) return giveUp("no_escape_route", navigation);
+				if (failedLegs >= MAX_FAILED_LEGS) return giveUp(NO_ESCAPE_ROUTE, tick, navigation);
 			}
 			var feet = player.blockPosition();
 			if (classifier == null) classifier = MinecraftCellClassifier.forPlayer(null);
 			Leg leg = fleeTarget(new LiveWorldTerrain(minecraft.level, classifier), new GridPos(feet.getX(), feet.getY(), feet.getZ()),
 				threats, LEG_BLOCKS);
-			if (leg == null) return giveUp("no_escape_route", navigation);
+			if (leg == null) return giveUp(NO_ESCAPE_ROUTE, tick, navigation);
 			navigation.startNavigateNear(new GoalPosition(leg.stand().x(), leg.stand().y(), leg.stand().z(), false), 2, OPTIONS);
 			legTarget = leg.stand();
 			legStartedTick = tick;
@@ -369,8 +401,8 @@ final class UnarmedFlight {
 		return Outcome.FLEEING;
 	}
 
-	private Outcome giveUp(String reason, NavigationFacade navigation) {
-		abandon(reason, navigation);
+	private Outcome giveUp(String reason, long tick, NavigationFacade navigation) {
+		abandon(reason, tick, navigation);
 		return Outcome.ABANDONED;
 	}
 

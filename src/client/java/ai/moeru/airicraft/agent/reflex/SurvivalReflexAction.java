@@ -6,5 +6,6 @@ public enum SurvivalReflexAction {
 	REACH_SAFE_LAND,
 	STAY_AFLOAT,
 	DEFEND,
-	FLEE
+	FLEE,
+	TAKE_COVER
 }
