@@ -48,11 +48,12 @@ class EntityInteractionTaskExecutorTest {
 	void refreshesNavigationChaseGoalWhenTargetMovedEnoughOrRefreshIntervalElapsed() {
 		GoalPosition current = new GoalPosition(10, 64, 20, false);
 
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(null, current, 0));
-		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 0));
-		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(11, 64, 20, false), 0));
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(12, 64, 20, false), 0));
-		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(null, current, 0, true));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 0, false));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(11, 64, 20, false), 0, false));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, new GoalPosition(12, 64, 20, false), 0, true));
+		assertTrue(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10, false));
+		assertFalse(EntityInteractionTaskExecutor.shouldRefreshChaseGoal(current, current, 10, true), "a running route to a target that stayed put is kept");
 	}
 
 	@Test

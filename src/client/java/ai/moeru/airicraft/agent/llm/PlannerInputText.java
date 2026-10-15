@@ -46,7 +46,7 @@ public final class PlannerInputText {
 		JsonElement currentWork = current != null && current.isJsonObject() ? current.getAsJsonObject().get("work") : null;
 		if (current != null && current.isJsonObject()) {
 			Fields facts = new Fields(current.getAsJsonObject());
-			for (String key : List.of("session", "dimension", "objective", "inventory", "inventoryCapacity", "vitals", "physical", "reflex",
+			for (String key : List.of("session", "dimension", "time", "objective", "inventory", "inventoryCapacity", "vitals", "physical", "reflex",
 				"reflexPolicy", "foodPolicy", "armorPolicy", "travelRestrictions", "work")) {
 				JsonElement value = facts.take(key);
 				if (value == null) continue;
@@ -63,6 +63,7 @@ public final class PlannerInputText {
 					case "reflex" -> "Reflex: " + reflex(value);
 					case "work" -> "Current work: " + workList(value);
 					case "dimension" -> "Dimension: " + PlannerStateText.item(value.getAsString());
+					case "time" -> "Time of day: " + value.getAsString();
 					default -> key + ": " + text(value);
 				}).append('\n');
 			}

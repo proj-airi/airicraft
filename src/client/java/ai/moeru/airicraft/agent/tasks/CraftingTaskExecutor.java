@@ -31,6 +31,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -193,7 +194,7 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 	private static CraftingPlan toCraftingPlan(CraftingOpportunityResolver.CraftingRecipeResolution resolved) {
 		if (resolved.failureReason() != null) {
-			return CraftingPlan.failure(resolved.failureReason(), TaskFailureCode.MISSING_FACT);
+			return CraftingPlan.failure(resolved.failureReason(), TaskFailureCode.fromLegacyCode(resolved.failureReason().split(" ", 2)[0]));
 		}
 		return new CraftingPlan(
 			resolved.networkRecipeId(),
@@ -451,8 +452,13 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 
 		AbstractContainerMenu menu = player.containerMenu;
 		if (phase == CraftPhase.IDLE || phase == placingPhase) {
+			// Manual placement takes the exact planned items; check them first so a short craft never half-fills the grid.
+			Optional<TaskFailure> shortfall = plan.networkRecipeId() == null ? ingredientShortfall(plan, tracker, player) : Optional.empty();
+			if (shortfall.isPresent()) {
+				return CraftAdvanceResult.failed(shortfall.get());
+			}
 			if (!placeRecipeInputs(minecraft, menu, gridSpec, plan)) {
-				return CraftAdvanceResult.failed(TaskFailure.of(TaskFailureCode.MISSING_FACT, "recipe_not_found"));
+				return CraftAdvanceResult.failed(TaskFailure.of(TaskFailureCode.UNKNOWN, "crafting_inputs_not_placed"));
 			}
 			phase = waitingForResultPhase;
 			waitTicks = 0;
@@ -470,7 +476,8 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_result_taken");
 				return CraftAdvanceResult.running();
 			}
-			return waitCraftAdvance(request, TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
+			// A recipe-book fill leaves the grid empty when the inventory no longer holds a full set.
+			return waitCraftAdvance(request, () -> ingredientShortfall(plan, tracker, player).orElse(TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy")));
 		}
 
 		if (phase == waitingForTakePhase) {
@@ -483,19 +490,41 @@ public final class CraftingTaskExecutor implements WorldTaskExecutor {
 				snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_next_batch");
 				return CraftAdvanceResult.running();
 			}
-			return waitCraftAdvance(request, TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
+			return waitCraftAdvance(request, () -> TaskFailure.of(TaskFailureCode.BUSY, "crafting_busy"));
 		}
 
 		return CraftAdvanceResult.running();
 	}
 
-	private CraftAdvanceResult waitCraftAdvance(WorldTaskRequest request, TaskFailure failure) {
+	private CraftAdvanceResult waitCraftAdvance(WorldTaskRequest request, Supplier<TaskFailure> failure) {
 		waitTicks++;
 		if (waitTicks > WAIT_TIMEOUT_TICKS) {
-			return CraftAdvanceResult.failed(failure);
+			return CraftAdvanceResult.failed(failure.get());
 		}
 		snapshot = snapshot(TaskExecutionState.RUNNING, request, "crafting_wait");
 		return CraftAdvanceResult.running();
+	}
+
+	private static Optional<TaskFailure> ingredientShortfall(CraftingPlan plan, CraftingProgressTracker tracker, LocalPlayer player) {
+		return ingredientShortfall(
+			plan.placements().stream().map(CraftingOpportunityResolver.CraftingIngredientPlacement::itemId).toList(),
+			plan.outputCount(),
+			plan.requestedTimes(),
+			tracker.craftedOutputCount(),
+			CraftingOpportunityResolver.inventoryItemIdCounts(player)
+		);
+	}
+
+	/** The next craft's inputs the inventory lacks, reported with how many of the requested crafts are done. */
+	static Optional<TaskFailure> ingredientShortfall(List<String> inputItemIds, int outputCount, int requestedTimes, int craftedOutputCount, Map<String, Integer> inventory) {
+		Map<String, Integer> missing = CraftingOpportunityResolver.missingIngredients(inputItemIds, inventory);
+		if (inputItemIds.isEmpty() || missing.isEmpty()) {
+			return Optional.empty();
+		}
+		return Optional.of(TaskFailure.of(TaskFailureCode.MISSING_ITEM, "ingredients_ran_out"
+			+ " crafted=" + (outputCount <= 0 ? 0 : craftedOutputCount / outputCount)
+			+ " requested=" + requestedTimes
+			+ " missing=" + CraftingOpportunityResolver.formatItemCounts(missing)));
 	}
 
 	private static boolean requestRecipeFill(Minecraft minecraft, AbstractContainerMenu menu, CraftingPlan plan) {

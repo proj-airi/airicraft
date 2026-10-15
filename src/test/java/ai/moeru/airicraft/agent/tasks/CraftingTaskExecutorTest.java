@@ -202,6 +202,33 @@ class CraftingTaskExecutorTest {
 	}
 
 	@Test
+	void craftsThatRunOutMidwayReportWhatWasCraftedAndWhatIsMissing() {
+		java.util.List<String> torch = java.util.List.of("minecraft:coal", "minecraft:stick");
+
+		Optional<TaskFailure> shortfall = CraftingTaskExecutor.ingredientShortfall(torch, 4, 2, 4, java.util.Map.of("minecraft:coal", 2));
+
+		assertEquals(TaskFailureCode.MISSING_ITEM, shortfall.orElseThrow().code());
+		assertEquals("ingredients_ran_out crafted=1 requested=2 missing=minecraft:stick x1", shortfall.orElseThrow().detail());
+		assertEquals(TaskFailureCode.MISSING_ITEM, TaskFailureCode.fromLegacyDetail(shortfall.orElseThrow().detail()));
+		assertEquals(Optional.empty(), CraftingTaskExecutor.ingredientShortfall(torch, 4, 2, 4, java.util.Map.of("minecraft:coal", 2, "minecraft:stick", 1)));
+	}
+
+	@Test
+	void knownButUncraftableRecipeFailsAsMissingItem() {
+		CraftingTaskExecutor.CraftingPlan plan = CraftingTaskExecutor.toCraftingPlanForTests(new CraftingOpportunityResolver.CraftingRecipeResolution(
+			null, null, 0, 0, null, java.util.List.of(),
+			"missing_ingredients recipe=coal_and_stick_to_torch missing=minecraft:stick x1"
+		));
+		CraftingTaskExecutor.CraftingPlan unknown = CraftingTaskExecutor.toCraftingPlanForTests(new CraftingOpportunityResolver.CraftingRecipeResolution(
+			null, null, 0, 0, null, java.util.List.of(), "recipe_not_found"
+		));
+
+		assertEquals(TaskFailureCode.MISSING_ITEM, plan.failure().code());
+		assertEquals("missing_ingredients recipe=coal_and_stick_to_torch missing=minecraft:stick x1", plan.failure().detail());
+		assertEquals(TaskFailureCode.MISSING_FACT, unknown.failure().code());
+	}
+
+	@Test
 	void recipeFillRequestUsesHandlerSyncId() {
 		RecipeDisplayId recipeDisplayId = new RecipeDisplayId(7);
 

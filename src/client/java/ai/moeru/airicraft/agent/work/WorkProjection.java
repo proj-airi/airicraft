@@ -87,6 +87,8 @@ public final class WorkProjection {
 			case EXPLORE_FOR -> job.exploreFor();
 			case COLLECT_BLAZE_RODS -> job.collectBlazeRods();
 			case COLLECT_FLINT -> job.collectFlint();
+			case SHELTER_FOR_NIGHT -> job.shelterForNight();
+			case COLLECT_ENDER_PEARLS -> job.collectEnderPearls();
 			case RETURN_TO_SURFACE -> job.returnToSurface();
 			case ASK_USER -> job.askPrompt();
 			case IDLE -> null;

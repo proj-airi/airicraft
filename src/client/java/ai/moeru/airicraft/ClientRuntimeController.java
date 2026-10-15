@@ -521,7 +521,9 @@ public final class ClientRuntimeController {
 			new ai.moeru.airicraft.agent.tasks.LocateStrongholdTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.ExploreForTaskExecutor(navigationFacade, cameraController),
 			new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsTaskExecutor(navigationFacade, cameraController),
-			new ai.moeru.airicraft.agent.tasks.CollectFlintTaskExecutor(navigationFacade, cameraController)
+			new ai.moeru.airicraft.agent.tasks.CollectFlintTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor(navigationFacade, cameraController),
+			new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsTaskExecutor(navigationFacade, cameraController)
 		),
 			navigationFacade
 		);

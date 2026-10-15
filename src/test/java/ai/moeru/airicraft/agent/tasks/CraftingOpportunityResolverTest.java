@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -89,6 +90,58 @@ class CraftingOpportunityResolverTest {
 		assertEquals(
 			"recipe_not_found",
 			CraftingOpportunityResolver.resolve(List.of(RecipeCollection.EMPTY), new StackedItemContents(), "not an id", 1).failureReason()
+		);
+	}
+
+	@Test
+	void knownRecipeWithoutIngredientsNamesWhatIsMissing() {
+		CraftingOpportunity bed = new CraftingOpportunity(
+			"white_wool_x3_and_oak_planks_x3_to_white_bed",
+			"minecraft:white_bed",
+			1,
+			List.of("minecraft:white_wool", "minecraft:white_wool", "minecraft:white_wool", "minecraft:oak_planks", "minecraft:oak_planks", "minecraft:oak_planks"),
+			CraftingGridKind.WORKBENCH_3X3
+		);
+		Map<String, Integer> inventory = Map.of("minecraft:white_wool", 1, "minecraft:red_wool", 2, "minecraft:oak_planks", 8);
+
+		assertEquals(
+			Optional.of("missing_ingredients recipe=white_wool_x3_and_oak_planks_x3_to_white_bed missing=minecraft:white_wool x2"),
+			CraftingOpportunityResolver.unavailableKnownRecipe(List.of(bed), inventory, "white_wool_x3_and_oak_planks_x3_to_white_bed")
+		);
+		assertEquals(
+			Optional.of("missing_ingredients recipe=white_wool_x3_and_oak_planks_x3_to_white_bed missing=minecraft:oak_planks x3,minecraft:white_wool x3"),
+			CraftingOpportunityResolver.unavailableKnownRecipe(List.of(bed), Map.of(), "minecraft:white_bed")
+		);
+		assertEquals(TaskFailureCode.MISSING_ITEM, TaskFailureCode.fromLegacyCode("missing_ingredients"));
+		assertEquals(TaskFailureCode.MISSING_ITEM, TaskFailureCode.fromLegacyDetail("missing_ingredients recipe=x missing=minecraft:stick x1"));
+	}
+
+	@Test
+	void outputItemRequestPicksTheKnownRecipeClosestToCraftable() {
+		CraftingOpportunity charcoalTorch = new CraftingOpportunity("charcoal_and_stick_to_torch", "minecraft:torch", 4, List.of("minecraft:charcoal", "minecraft:stick"));
+		CraftingOpportunity coalTorch = new CraftingOpportunity("coal_and_stick_to_torch", "minecraft:torch", 4, List.of("minecraft:coal", "minecraft:stick"));
+
+		assertEquals(
+			Optional.of("missing_ingredients recipe=coal_and_stick_to_torch missing=minecraft:stick x1"),
+			CraftingOpportunityResolver.unavailableKnownRecipe(List.of(charcoalTorch, coalTorch), Map.of("minecraft:coal", 3), "torch")
+		);
+	}
+
+	@Test
+	void unknownRecipeIdStaysRecipeNotFound() {
+		CraftingOpportunity coalTorch = new CraftingOpportunity("coal_and_stick_to_torch", "minecraft:torch", 4, List.of("minecraft:coal", "minecraft:stick"));
+
+		assertEquals(Optional.empty(), CraftingOpportunityResolver.unavailableKnownRecipe(List.of(coalTorch), Map.of(), "diamond_to_torch"));
+		assertEquals(Optional.empty(), CraftingOpportunityResolver.unavailableKnownRecipe(List.of(), Map.of(), "coal_and_stick_to_torch"));
+	}
+
+	@Test
+	void knownRecipeWithEveryIngredientSaysItIsNotCraftable() {
+		CraftingOpportunity coalTorch = new CraftingOpportunity("coal_and_stick_to_torch", "minecraft:torch", 4, List.of("minecraft:coal", "minecraft:stick"));
+
+		assertEquals(
+			Optional.of("recipe_not_craftable recipe=coal_and_stick_to_torch missing=none"),
+			CraftingOpportunityResolver.unavailableKnownRecipe(List.of(coalTorch), Map.of("minecraft:coal", 1, "minecraft:stick", 1), "coal_and_stick_to_torch")
 		);
 	}
 

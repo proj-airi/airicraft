@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 
 public final class CraftingOpportunityResolver {
@@ -153,7 +154,64 @@ public final class CraftingOpportunityResolver {
 		if (player == null || request == null) {
 			return CraftingRecipeResolution.failure("recipe_not_found");
 		}
-		return resolve(resolvedOptions(player), request.recipeId(), request.times());
+		CraftingRecipeResolution resolved = resolve(resolvedOptions(player), request.recipeId(), request.times());
+		if (resolved.failureReason() == null) {
+			return resolved;
+		}
+		return unavailableKnownRecipe(knownCrafts(player), inventoryItemIdCounts(player), request.recipeId())
+			.map(CraftingRecipeResolution::failure)
+			.orElse(resolved);
+	}
+
+	/** Why a known recipe (by recipe id, else by output item) cannot be crafted now; empty when no known recipe matches. */
+	static Optional<String> unavailableKnownRecipe(List<CraftingOpportunity> known, Map<String, Integer> inventory, String recipeId) {
+		if (known == null || known.isEmpty()) {
+			return Optional.empty();
+		}
+		String requestedRecipeId = normalizeRequestedRecipeId(recipeId);
+		List<CraftingOpportunity> matches = known.stream().filter(recipe -> recipe.recipeId().equals(requestedRecipeId)).toList();
+		if (matches.isEmpty()) {
+			String outputId = requestedOutputItemId(recipeId);
+			matches = known.stream().filter(recipe -> recipe.outputItemId().equals(outputId)).toList();
+		}
+		return matches.stream()
+			.min(Comparator.comparingInt((CraftingOpportunity recipe) -> missingIngredients(recipe.inputItemIds(), inventory).values().stream().mapToInt(Integer::intValue).sum())
+				.thenComparing(CraftingOpportunity::recipeId))
+			.map(recipe -> {
+				String missing = formatItemCounts(missingIngredients(recipe.inputItemIds(), inventory));
+				return missing.isEmpty()
+					? "recipe_not_craftable recipe=" + recipe.recipeId() + " missing=none"
+					: "missing_ingredients recipe=" + recipe.recipeId() + " missing=" + missing;
+			});
+	}
+
+	/** Input items one craft needs beyond what the inventory holds, by item id. */
+	static Map<String, Integer> missingIngredients(List<String> inputItemIds, Map<String, Integer> inventory) {
+		Map<String, Integer> needed = new TreeMap<>();
+		for (String inputItemId : inputItemIds == null ? List.<String>of() : inputItemIds) {
+			needed.merge(inputItemId, 1, Integer::sum);
+		}
+		Map<String, Integer> missing = new TreeMap<>();
+		needed.forEach((itemId, count) -> {
+			int lacking = count - (inventory == null ? 0 : inventory.getOrDefault(itemId, 0));
+			if (lacking > 0) missing.put(itemId, lacking);
+		});
+		return missing;
+	}
+
+	static String formatItemCounts(Map<String, Integer> counts) {
+		return counts.entrySet().stream().map(entry -> entry.getKey() + " x" + entry.getValue()).collect(java.util.stream.Collectors.joining(","));
+	}
+
+	static Map<String, Integer> inventoryItemIdCounts(LocalPlayer player) {
+		Map<String, Integer> counts = new HashMap<>();
+		if (player != null) inventoryCounts(player).forEach((item, count) -> counts.merge(itemId(item), count, Integer::sum));
+		return counts;
+	}
+
+	private static String requestedOutputItemId(String recipeId) {
+		String outputId = recipeId == null ? "" : recipeId.trim().toLowerCase(Locale.ROOT);
+		return !outputId.isBlank() && !outputId.contains(":") ? "minecraft:" + outputId : outputId;
 	}
 
 	static CraftingRecipeResolution resolve(List<RecipeCollection> collections, StackedItemContents stackedContents, String recipeId, int times) {
@@ -183,8 +241,7 @@ public final class CraftingOpportunityResolver {
 		}
 		// Recipe ids read like "oak_planks_x8_to_chest", so callers often pass the output item instead; take
 		// the first craftable recipe for it, as a player clicking that item in the recipe book would.
-		String outputId = recipeId == null ? "" : recipeId.trim().toLowerCase(Locale.ROOT);
-		if (!outputId.isBlank() && !outputId.contains(":")) outputId = "minecraft:" + outputId;
+		String outputId = requestedOutputItemId(recipeId);
 		for (ResolvedCraftingOption option : options) {
 			if (itemId(option.outputItem()).equals(outputId)) {
 				return CraftingRecipeResolution.success(

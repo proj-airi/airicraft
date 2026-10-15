@@ -7,13 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FoodPolicyTest {
-	@Test void movementGoalWaitsUntilSprintingIsLost() {
+	@Test void movementGoalTopsUpWellBeforeSprintingIsLost() {
 		var policy = FoodPolicy.defaults();
-		assertFalse(policy.shouldEatIdle(7, 20F, 20F));
+		assertFalse(policy.shouldEatIdle(13, 20F, 20F));
+		assertTrue(policy.shouldEatIdle(12, 20F, 20F));
 		assertTrue(policy.shouldEatIdle(6, 20F, 20F));
-		assertTrue(policy.shouldEatIdle(8, 13.5F, 20F));
+		assertTrue(policy.shouldEatIdle(16, 13.5F, 20F));
 		assertFalse(policy.shouldEatIdle(18, 10F, 20F));
-		assertFalse(policy.shouldEatIdle(8, 16F, 20F));
+		assertFalse(policy.shouldEatIdle(16, 16F, 20F));
 		assertEquals(FoodPolicy.FoodChoice.ANY, policy.foodChoice());
 	}
 
@@ -24,6 +25,15 @@ class FoodPolicyTest {
 		assertFalse(policy.shouldEatIdle(6, 20F, 20F));
 		assertFalse(new FoodPolicy(FoodPolicy.Goal.OFF, FoodPolicy.FoodChoice.ANY)
 			.shouldEatIdle(0, 1F, 20F));
+	}
+
+	@Test void restingTopsUpAnyHurtSoHealthComesBack() {
+		var policy = FoodPolicy.defaults();
+		assertFalse(policy.shouldEatIdle(17, 14.6F, 20F), "walking: only hurt below 70% is worth a stop");
+		assertTrue(policy.shouldEatIdle(17, 14.6F, 20F, true));
+		assertFalse(policy.shouldEatIdle(18, 14.6F, 20F, true), "18 food already regenerates");
+		assertFalse(policy.shouldEatIdle(17, 20F, 20F, true));
+		assertFalse(new FoodPolicy(FoodPolicy.Goal.OFF, FoodPolicy.FoodChoice.ANY).shouldEatIdle(10, 5F, 20F, true));
 	}
 
 	@Test void combatHealingRequiresSevereInjuryAndMissingRegenerationFood() {

@@ -356,7 +356,9 @@ public final class ActiveJobRuntime {
 			activeJob.locateStronghold(),
 			activeJob.exploreFor(),
 			activeJob.collectBlazeRods(),
-			activeJob.collectFlint()
+			activeJob.collectFlint(),
+			activeJob.shelterForNight(),
+			activeJob.collectEnderPearls()
 		);
 		collectResourceDebugSnapshot = activeJob.type() == ActiveJobType.COLLECT_RESOURCE
 			? collectResourceProbe(activeJob, activeJob.baselineResourceCount() + activeJob.collectedCount(), false, lastPrimitiveExecution.state(), reason, tick)
@@ -413,7 +415,7 @@ public final class ActiveJobRuntime {
 			case COLLECT_RESOURCE -> tickCollectResource(activeJob, lastPrimitiveExecution, lastEvidence, actuationAllowed, nearbyResourceTargetAvailable, tick);
 			case CRAFT_RECIPE -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case DROP_ITEMS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, true, tick);
-			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
+			case SMELT_ITEMS, COLLECT_SMELTED_ITEMS, RETURN_TO_SURFACE, PLACE_BLOCK, USE_BLOCK, BREAK_BLOCKS, TEND_CROPS, LURE_ENTITIES, FIGHT_ENDER_DRAGON, COLLECT_OBSIDIAN, LOCATE_STRONGHOLD, EXPLORE_FOR, COLLECT_BLAZE_RODS, COLLECT_FLINT, SHELTER_FOR_NIGHT, COLLECT_ENDER_PEARLS -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ATTACK_ENTITY, USE_ENTITY -> tickPrimitiveJob(activeJob, desiredPrimitiveTask, lastPrimitiveExecution, actuationAllowed, tick);
 			case ASK_USER -> tickAskUser(activeJob, tick);
 			case MINE_BLOCKS -> tickMineBlocks(activeJob, lastPrimitiveExecution, actuationAllowed, tick);
@@ -492,6 +494,16 @@ public final class ActiveJobRuntime {
 		if (activeJob.type() == ActiveJobType.COLLECT_FLINT && activeJob.collectFlint() != null) {
 			clearAttemptState();
 			desiredPrimitiveTask = WorldTaskRequest.collectFlint(activeJob.jobId(), activeJob.jobId(), activeJob.collectFlint());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.COLLECT_ENDER_PEARLS && activeJob.collectEnderPearls() != null) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.collectEnderPearls(activeJob.jobId(), activeJob.jobId(), activeJob.collectEnderPearls());
+			return;
+		}
+		if (activeJob.type() == ActiveJobType.SHELTER_FOR_NIGHT && activeJob.shelterForNight() != null) {
+			clearAttemptState();
+			desiredPrimitiveTask = WorldTaskRequest.shelterForNight(activeJob.jobId(), activeJob.jobId(), activeJob.shelterForNight());
 			return;
 		}
 		if (activeJob.type() == ActiveJobType.COLLECT_BLAZE_RODS && activeJob.collectBlazeRods() != null) {
@@ -1349,6 +1361,12 @@ public final class ActiveJobRuntime {
 			case COLLECT_FLINT -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.COLLECT_FLINT, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, null, proposal.collectFlint());
+			case SHELTER_FOR_NIGHT -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.SHELTER_FOR_NIGHT, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, null, null, proposal.shelterForNight());
+			case COLLECT_ENDER_PEARLS -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.COLLECT_ENDER_PEARLS, ActiveJobStatus.QUEUED,
+				null, null, null, null, null, null, null, null, null, null, null, null,
+				-1L, 0, 0, source, null, null, tick, null, null, null, null, null, null, null, null, proposal.collectEnderPearls());
 			case FIGHT_ENDER_DRAGON -> new ActiveJob(newJobId(proposal.type()), ActiveJobType.FIGHT_ENDER_DRAGON, ActiveJobStatus.QUEUED,
 				null, null, null, null, null, null, null, null, null, null, null, null,
 				-1L, 0, 0, source, null, null, tick);
@@ -1396,7 +1414,9 @@ public final class ActiveJobRuntime {
 			next.locateStronghold(),
 			next.exploreFor(),
 			next.collectBlazeRods(),
-			next.collectFlint()
+			next.collectFlint(),
+			next.shelterForNight(),
+			next.collectEnderPearls()
 			);
 		}
 		return next;
@@ -1433,6 +1453,8 @@ public final class ActiveJobRuntime {
 		if (left.exploreFor() != null || right.exploreFor() != null) return Objects.equals(left.exploreFor(), right.exploreFor());
 		if (left.collectBlazeRods() != null || right.collectBlazeRods() != null) return Objects.equals(left.collectBlazeRods(), right.collectBlazeRods());
 		if (left.collectFlint() != null || right.collectFlint() != null) return Objects.equals(left.collectFlint(), right.collectFlint());
+		if (left.shelterForNight() != null || right.shelterForNight() != null) return Objects.equals(left.shelterForNight(), right.shelterForNight());
+		if (left.collectEnderPearls() != null || right.collectEnderPearls() != null) return Objects.equals(left.collectEnderPearls(), right.collectEnderPearls());
 		if (left.cropTending() != null || right.cropTending() != null) return Objects.equals(left.cropTending(), right.cropTending());
 		if (left.returnToSurface() != null || right.returnToSurface() != null) {
 			return Objects.equals(left.returnToSurface(), right.returnToSurface());
@@ -1486,6 +1508,8 @@ public final class ActiveJobRuntime {
 			case LOCATE_STRONGHOLD -> "Locate the stronghold with eyes of ender";
 			case COLLECT_BLAZE_RODS -> activeJob.collectBlazeRods() == null ? "Collect blaze rods" : "Collect " + activeJob.collectBlazeRods().count() + " blaze rods";
 			case COLLECT_FLINT -> activeJob.collectFlint() == null ? "Collect flint" : "Collect " + activeJob.collectFlint().count() + " flint from gravel";
+			case SHELTER_FOR_NIGHT -> "Dig in and wait out the night";
+			case COLLECT_ENDER_PEARLS -> activeJob.collectEnderPearls() == null ? "Collect ender pearls" : "Collect " + activeJob.collectEnderPearls().count() + " ender pearls";
 			case EXPLORE_FOR -> activeJob.exploreFor() == null ? "Explore for a feature" : "Explore for " + activeJob.exploreFor().featureKind().replace('_', ' ');
 			case BREAK_BLOCKS -> activeJob.blockBreak() == null ? "Break blocks" : "Break " + activeJob.blockBreak().targets().size() + " target blocks";
 			case ATTACK_ENTITY -> activeJob.entityInteraction() == null ? "Attack entity" : "Attack " + activeJob.entityInteraction().selector();
@@ -1507,8 +1531,8 @@ public final class ActiveJobRuntime {
 			case RETURN_TO_SURFACE -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.NAVIGATE_TO_POSITION;
 			case PLACE_BLOCK -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.PLACE_BLOCK;
 			case USE_BLOCK, TEND_CROPS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_BLOCK;
-			case BREAK_BLOCKS, COLLECT_OBSIDIAN, COLLECT_FLINT -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
-			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_BLAZE_RODS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
+			case BREAK_BLOCKS, COLLECT_OBSIDIAN, COLLECT_FLINT, SHELTER_FOR_NIGHT -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.MINE_BLOCKS;
+			case ATTACK_ENTITY, FIGHT_ENDER_DRAGON, COLLECT_BLAZE_RODS, COLLECT_ENDER_PEARLS -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ATTACK_ENTITY;
 			case USE_ENTITY -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.USE_ENTITY;
 			case ASK_USER -> ai.moeru.airicraft.agent.tasks.LedgerStepKind.ASK_USER;
 			case IDLE -> null;
@@ -1605,7 +1629,9 @@ public final class ActiveJobRuntime {
 			job.locateStronghold(),
 			job.exploreFor(),
 			job.collectBlazeRods(),
-			job.collectFlint()
+			job.collectFlint(),
+			job.shelterForNight(),
+			job.collectEnderPearls()
 		);
 	}
 

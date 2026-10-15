@@ -780,6 +780,27 @@ class ActiveJobRuntimeTest {
 	}
 
 	@Test
+	void enderPearlPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs(14);
+		runtime.applyPlannerResponse(new DialogueResponse("Hunting endermen.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.collectEnderPearls(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.COLLECT_ENDER_PEARLS, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.CollectEnderPearls(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().collectEnderPearls());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.CollectEnderPearls(args), runtime.activeTaskRequest().orElseThrow().task());
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same hunt");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().collectEnderPearls());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
 	void flintPayloadSurvivesPauseResumeAndCancellation() {
 		ActiveJobRuntime runtime = runtime();
 		var args = new ai.moeru.airicraft.agent.tasks.CollectFlintStepArgs(3);
@@ -796,6 +817,27 @@ class ActiveJobRuntimeTest {
 		runtime.cancel("test_cancel", 4L);
 		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
 		assertEquals(args, runtime.current().collectFlint());
+		assertTrue(runtime.activeTaskRequest().isEmpty());
+	}
+
+	@Test
+	void shelterPayloadSurvivesPauseResumeAndCancellation() {
+		ActiveJobRuntime runtime = runtime();
+		var args = new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(6_000);
+		runtime.applyPlannerResponse(new DialogueResponse("Digging in for the night.",
+			new DialogueIntent(DialogueIntentType.JOB_UPDATE, ActiveJobProposal.shelterForNight(args)), 1L), 0, "test", 1L);
+		assertEquals(WorldTaskType.SHELTER_FOR_NIGHT, runtime.activeTaskRequest().orElseThrow().type());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		String id = runtime.current().jobId();
+		runtime.pauseForReflex(2L);
+		assertEquals(args, runtime.current().shelterForNight());
+		runtime.resumeAfterReflex(3L);
+		assertEquals(id, runtime.current().jobId());
+		assertEquals(new WorldTaskRequest.ShelterForNight(args), runtime.activeTaskRequest().orElseThrow().task());
+		assertEquals(id, runtime.activeTaskRequest().orElseThrow().taskId(), "the executor resumes the same shelter");
+		runtime.cancel("test_cancel", 4L);
+		assertEquals(ActiveJobStatus.CANCELLED, runtime.current().status());
+		assertEquals(args, runtime.current().shelterForNight());
 		assertTrue(runtime.activeTaskRequest().isEmpty());
 	}
 

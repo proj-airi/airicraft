@@ -95,6 +95,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -109,6 +110,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EmbodiedAgentRuntimeTest {
+	@Test
+	void fightingTasksOwnTheirMobTypesUntilTheyEnd() {
+		assertEquals(Set.of(), EmbodiedAgentRuntime.taskOwnedThreatTypes(null));
+		ActiveJobRuntime pearls = new ActiveJobRuntime();
+		pearls.applyPlannerResponse(new DialogueResponse("Hunting endermen.", new DialogueIntent(DialogueIntentType.JOB_UPDATE,
+			ActiveJobProposal.collectEnderPearls(new ai.moeru.airicraft.agent.tasks.CollectEnderPearlsStepArgs(12))), 1L), 0, "test", 1L);
+		assertEquals(Set.of("minecraft:enderman"), EmbodiedAgentRuntime.taskOwnedThreatTypes(pearls.current()));
+		pearls.pauseForReflex(2L);
+		assertEquals(Set.of("minecraft:enderman"), EmbodiedAgentRuntime.taskOwnedThreatTypes(pearls.current()),
+			"a reflex pause keeps endermen with the task");
+		pearls.cancel("test_cancel", 3L);
+		assertEquals(Set.of(), EmbodiedAgentRuntime.taskOwnedThreatTypes(pearls.current()), "the reflex takes them back once it ends");
+		ActiveJobRuntime blaze = new ActiveJobRuntime();
+		blaze.applyPlannerResponse(new DialogueResponse("Blazes.", new DialogueIntent(DialogueIntentType.JOB_UPDATE,
+			ActiveJobProposal.collectBlazeRods(new ai.moeru.airicraft.agent.tasks.CollectBlazeRodsStepArgs(7))), 1L), 0, "test", 1L);
+		assertEquals(Set.of("minecraft:blaze"), EmbodiedAgentRuntime.taskOwnedThreatTypes(blaze.current()));
+	}
+
+	@Test void eatingIsAllowedWhileASafetyHoldWaits() {
+		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("eat_food"));
+		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("configure_reflex"));
+		assertFalse(EmbodiedAgentRuntime.allowedDuringSafetyHold("navigate_to"));
+	}
+
 	@Test void rawEventsRetainProducerAndRuntimeClock() {
 		try (var harness = new WakeScenarioHarness()) {
 			harness.runtime.onPlayerPickedUpItem("minecraft:apple", 1);

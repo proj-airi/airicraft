@@ -9,6 +9,8 @@ While it runs it sends task.progress milestones (land in sight, distance walked,
 
 Before a long walk, carry a few blocks of dirt, cobblestone or sandstone if you can: they roof the night shelter (sand and gravel cannot, they fall). With none it walks on through the night.
 
+It shelters by itself, so do not call shelter_for_night while it runs or after it hands the night back: that would dig a second hole.
+
 At dusk it digs a 3-deep pit, roofs it and ends with sheltered_for_night: the trip is paused, not done, and the night is yours. Either:
 - stay put: call explore_for again with the same featureKind; it waits in the pit and walks on at dawn;
 - or mine to pass the night: with a pickaxe, dig a tunnel from the pit floor (strip mining for coal and iron), placing a torch every few blocks so nothing spawns in it, and stay within 48 blocks of the pit. Without torches, stay in the pit. At dawn (perception.environment_changed dawn) call explore_for again: it climbs back out through the pit and walks on.

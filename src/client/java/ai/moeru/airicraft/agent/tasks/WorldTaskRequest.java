@@ -37,6 +37,8 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 			case ExploreFor ignored -> WorldTaskType.EXPLORE_FOR;
 			case CollectBlazeRods ignored -> WorldTaskType.COLLECT_BLAZE_RODS;
 			case CollectFlint ignored -> WorldTaskType.COLLECT_FLINT;
+			case ShelterForNight ignored -> WorldTaskType.SHELTER_FOR_NIGHT;
+			case CollectEnderPearls ignored -> WorldTaskType.COLLECT_ENDER_PEARLS;
 			case ReturnToSurface ignored -> WorldTaskType.RETURN_TO_SURFACE;
 		};
 	}
@@ -168,6 +170,16 @@ public record WorldTaskRequest(String taskId, String sourceJobId, Task task) {
 		return new WorldTaskRequest(taskId, sourceJobId, new CollectFlint(args));
 	}
 	public record CollectFlint(CollectFlintStepArgs args) implements Task { public CollectFlint { Objects.requireNonNull(args, "collectFlint"); } }
+
+	public static WorldTaskRequest shelterForNight(String taskId, String sourceJobId, ShelterForNightStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new ShelterForNight(args));
+	}
+	public record ShelterForNight(ShelterForNightStepArgs args) implements Task { public ShelterForNight { Objects.requireNonNull(args, "shelterForNight"); } }
+
+	public static WorldTaskRequest collectEnderPearls(String taskId, String sourceJobId, CollectEnderPearlsStepArgs args) {
+		return new WorldTaskRequest(taskId, sourceJobId, new CollectEnderPearls(args));
+	}
+	public record CollectEnderPearls(CollectEnderPearlsStepArgs args) implements Task { public CollectEnderPearls { Objects.requireNonNull(args, "collectEnderPearls"); } }
 
 	public sealed interface Task {
 	}

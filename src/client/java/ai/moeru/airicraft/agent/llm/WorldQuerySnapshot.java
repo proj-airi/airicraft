@@ -105,6 +105,7 @@ record WorldQuerySnapshot(JsonObject data, List<BlockPos> observedPositions, Cli
 		int requestedBlocks = includeBlocks ? (2 * radius + 1) * (2 * radius + 1) * (2 * vertical + 1) : 0;
 		JsonObject metadata = JSON.toJsonTree(Map.of(
 			"source", "client_loaded_snapshot", "serverTick", serverTick, "worldTime", level.getGameTime(),
+			"timeOfDay", Math.floorMod(level.getDayTime(), 24_000L), "day", Math.floorDiv(level.getDayTime(), 24_000L),
 			"dimension", level.dimension().location().toString(), "bounds", Map.of("min", position(min), "max", position(max)),
 			"blocks", Map.of("included", includeBlocks, "requested", requestedBlocks, "returned", blocks.size(), "unloaded", unloaded,
 				"outsideWorld", outsideWorld, "truncated", false),
