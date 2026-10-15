@@ -17,6 +17,16 @@ public record FoodPolicy(Goal goal, FoodChoice foodChoice) {
 	}
 
 	public boolean shouldEatIdle(int hunger, float health, float maxHealth) {
+		return shouldEatIdle(hunger, health, maxHealth, false);
+	}
+
+	/**
+	 * {@code resting}: the body waits with nothing to do (a night shelter, a quiet hold). Health only comes back at 18
+	 * food, and a playtest body sat a whole night in its shelter at 14.6 health and 17 food; at rest any hurt is worth a
+	 * bite unless eating is off.
+	 */
+	public boolean shouldEatIdle(int hunger, float health, float maxHealth, boolean resting) {
+		if (resting && goal != Goal.OFF && health > 0 && health < maxHealth && hunger < 18) return true;
 		return switch (goal) {
 			case OFF -> false;
 			// Also eat when hurt: health only comes back at 18 food, and playtest bodies walked into fights at

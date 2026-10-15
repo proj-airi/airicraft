@@ -1229,7 +1229,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			&& !minecraft.gameMode.isDestroying()
 			&& player.containerMenu == player.inventoryMenu
 			&& player.containerMenu.getCarried().isEmpty();
-		var decision = foodRuntime.evaluateIdle(idle, player.getFoodData().getFoodLevel(),
+		boolean resting = quietHold || ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor.waitingInShelter(taskExecutionSnapshot);
+		var decision = foodRuntime.evaluateIdle(idle, resting, player.getFoodData().getFoodLevel(),
 			player.getHealth(), player.getMaxHealth(), foodCandidates(player), tickCount);
 		if (decision.missingFood()) {
 			var event = eventBus.from("EmbodiedAgentRuntime").publish(tickCount, "food.unavailable", Map.of(

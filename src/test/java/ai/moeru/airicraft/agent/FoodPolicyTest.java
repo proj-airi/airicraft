@@ -27,6 +27,15 @@ class FoodPolicyTest {
 			.shouldEatIdle(0, 1F, 20F));
 	}
 
+	@Test void restingTopsUpAnyHurtSoHealthComesBack() {
+		var policy = FoodPolicy.defaults();
+		assertFalse(policy.shouldEatIdle(17, 14.6F, 20F), "walking: only hurt below 70% is worth a stop");
+		assertTrue(policy.shouldEatIdle(17, 14.6F, 20F, true));
+		assertFalse(policy.shouldEatIdle(18, 14.6F, 20F, true), "18 food already regenerates");
+		assertFalse(policy.shouldEatIdle(17, 20F, 20F, true));
+		assertFalse(new FoodPolicy(FoodPolicy.Goal.OFF, FoodPolicy.FoodChoice.ANY).shouldEatIdle(10, 5F, 20F, true));
+	}
+
 	@Test void combatHealingRequiresSevereInjuryAndMissingRegenerationFood() {
 		var policy = new FoodPolicy(FoodPolicy.Goal.OFF, FoodPolicy.FoodChoice.ANY);
 		assertTrue(policy.shouldSeekCombatHeal(17, 9F, 20F));
