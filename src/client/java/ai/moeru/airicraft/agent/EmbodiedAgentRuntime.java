@@ -1185,6 +1185,8 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		// collect_blaze_rods fights blazes and collect_ender_pearls endermen itself, paused by a reflex hold or not; the reflex
 		// takes them back once the task ends.
 		survivalReflexRuntime.taskOwnsThreatTypes(taskOwnedThreatTypes(activeJob));
+		// shelter_for_night, sleep_in_bed and explore_for dig in or sleep themselves: no night bunker of the reflex's under them.
+		survivalReflexRuntime.taskHandlesNight(taskHandlesNight(activeJob));
 		survivalReflexRuntime.tick(
 			minecraft,
 			interruptedWork,
@@ -1324,6 +1326,15 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 			case COLLECT_BLAZE_RODS -> BLAZE_TASK_THREATS;
 			case COLLECT_ENDER_PEARLS -> ENDER_PEARL_TASK_THREATS;
 			default -> Set.of();
+		};
+	}
+
+	/** Whether the running job waits out the night itself, paused by a reflex hold or not; false once it is terminal. */
+	static boolean taskHandlesNight(ActiveJob activeJob) {
+		if (activeJob == null || activeJob.status().terminal()) return false;
+		return switch (activeJob.type()) {
+			case SHELTER_FOR_NIGHT, SLEEP_IN_BED, EXPLORE_FOR -> true;
+			default -> false;
 		};
 	}
 

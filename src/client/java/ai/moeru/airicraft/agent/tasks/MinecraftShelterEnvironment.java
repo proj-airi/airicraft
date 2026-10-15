@@ -48,8 +48,8 @@ import java.util.Optional;
 final class MinecraftShelterEnvironment implements ShelterForNightTaskExecutor.Environment {
 	private static final float ALIGNED_DEGREES = 6.0F;
 	private static final String OWNER = "shelter_for_night";
-	private final Actuator actuator = new Actuator(OWNER, Priority.FOREGROUND);
-	private final MovementController movement = new MovementController(OWNER, Priority.FOREGROUND);
+	private final Actuator actuator;
+	private final MovementController movement;
 	private final CameraController camera;
 	private BlockPos breaking;
 	private BlockPos climbTarget;
@@ -57,7 +57,14 @@ final class MinecraftShelterEnvironment implements ShelterForNightTaskExecutor.E
 	private long ticks;
 
 	MinecraftShelterEnvironment(CameraController camera) {
+		this(camera, OWNER, Priority.FOREGROUND);
+	}
+
+	/** Leases under {@code owner} at {@code priority}: the survival reflex climbs out of its night bunker at its own priority. */
+	MinecraftShelterEnvironment(CameraController camera, String owner, Priority priority) {
 		this.camera = Objects.requireNonNull(camera, "camera");
+		this.actuator = new Actuator(owner, priority);
+		this.movement = new MovementController(owner, priority);
 	}
 
 	private static Minecraft client() { return Minecraft.getInstance(); }

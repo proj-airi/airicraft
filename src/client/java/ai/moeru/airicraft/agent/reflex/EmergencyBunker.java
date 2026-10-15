@@ -210,6 +210,24 @@ public final class EmergencyBunker {
 		return true;
 	}
 
+	/**
+	 * Whether {@link #tick} would start a bunker where the body stands now: on the ground, with a roof block carried or soil
+	 * underfoot that drops one, and a column that fits. Bare hands dig dirt, grass and sand in time, not stone.
+	 */
+	boolean canDig(Level level, LocalPlayer player) {
+		if (level == null || player == null || !player.onGround()) return false;
+		if (!hasThrowaway(player) && !dropsDirt(level.getBlockState(player.blockPosition().below()))) return false;
+		return plan(cells(level, player), player.blockPosition()) != null;
+	}
+
+	/** Drops a bunker still being dug without counting it a failure, so the body can run from a lit creeper. */
+	void cancel(Minecraft minecraft, Actuator actuator) {
+		if (plan != null && diggingAt != null) actuator.stopDestroy(minecraft);
+		plan = null;
+		diggingAt = null;
+		reported = false;
+	}
+
 	/** Whether the body sits in a closed bunker, so the fight around it can wait. */
 	boolean closed(Level level, LocalPlayer player) {
 		return plan != null && reported && level != null && player.blockPosition().getY() <= plan.bottom().getY()

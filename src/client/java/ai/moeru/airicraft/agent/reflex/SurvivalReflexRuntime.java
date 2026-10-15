@@ -9,6 +9,11 @@ import ai.moeru.airicraft.agent.control.MovementController;
 import ai.moeru.airicraft.control.Priority;
 import ai.moeru.airicraft.agent.goals.GoalPosition;
 import ai.moeru.airicraft.agent.tasks.MinecraftUnderwaterEscapeController;
+import ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs;
+import ai.moeru.airicraft.agent.tasks.ShelterForNightTaskExecutor;
+import ai.moeru.airicraft.agent.tasks.TaskExecutionState;
+import ai.moeru.airicraft.agent.tasks.TaskTerminalEvent;
+import ai.moeru.airicraft.agent.tasks.WorldTaskRequest;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeNavigator;
 import ai.moeru.airicraft.agent.tasks.UnderwaterEscapeSearch;
 import ai.moeru.airicraft.agent.tasks.UnderwaterHarvestPolicy;
@@ -163,6 +168,16 @@ public final class SurvivalReflexRuntime {
 	private final UnarmedFlight flight = new UnarmedFlight();
 	private final RangedCover cover = new RangedCover();
 	private String coverStartReason;
+	private final NightBunker nightBunker = new NightBunker();
+	/** A running task waits out the night itself; see {@link #taskHandlesNight}. */
+	private boolean taskHandlesNight;
+	/** Waits in a closed night bunker until morning and climbs out, built on first use. */
+	private ShelterForNightTaskExecutor nightShelter;
+	/** The night stay under way in a closed night bunker, or null. */
+	private WorldTaskRequest nightStay;
+	private String nightStayReason;
+	/** The bunker under way was dug at night with the night bunker due, so once closed it is kept until morning. */
+	private boolean bunkerForNight;
 
 	public interface CombatEating {
 		boolean needed(LocalPlayer player);
@@ -237,6 +252,14 @@ public final class SurvivalReflexRuntime {
 		observedThreats.values().removeIf(threat -> owned.contains(threat.entityTypeId()));
 	}
 
+	/**
+	 * Whether the running task waits out the night itself: {@code shelter_for_night} and {@code explore_for} dig in and
+	 * {@code sleep_in_bed} sleeps, so the reflex never digs a night bunker of its own under them (see {@link NightBunker}).
+	 */
+	public void taskHandlesNight(boolean handles) {
+		taskHandlesNight = handles;
+	}
+
 	private boolean reflexThreat(String entityTypeId) {
 		return reflexThreatType(entityTypeId) && !taskOwnedThreatTypes.contains(entityTypeId);
 	}
@@ -259,6 +282,10 @@ public final class SurvivalReflexRuntime {
 		evidence.put("secureEscapeTicks", secureEscapeTicks);
 		evidence.put("mobRoutesTick", mobRoutesTick);
 		evidence.put("mobRoutes", Map.copyOf(mobRoutes));
+		Map<String, Object> night = new LinkedHashMap<>(nightBunker.evidence());
+		night.put("taskHandlesNight", taskHandlesNight);
+		night.put("stay", nightStay == null ? null : nightShelter.snapshot().lastPathEvent());
+		evidence.put("nightBunker", night);
 		return evidence;
 	}
 
@@ -447,7 +474,10 @@ public final class SurvivalReflexRuntime {
 	}
 
 	public void reset(Minecraft minecraft) {
+		endNightStay();
+		nightBunker.reset();
 		bunker.reset();
+		bunkerForNight = false;
 		flight.reset(navigationFacade);
 		cover.reset(navigationFacade);
 		extinguishPour = null;
@@ -1007,6 +1037,7 @@ public final class SurvivalReflexRuntime {
 
 	private void tickMobAttack(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats,
 		long tick, CombatEating combatEating) {
+		updateNightBunker(minecraft, player, threats, tick);
 		if (tickBunker(minecraft, player, threats, tick, combatEating)) {
 			// Digging in outranks running and hiding; a failed bunker lets the flight start again.
 			flight.reset(navigationFacade);
@@ -1110,6 +1141,8 @@ public final class SurvivalReflexRuntime {
 			// An armed flight (outmatched, or from a creeper) is not ended by the weapon it already has.
 			flight.start(tick, lastMobDamageTick, damage >= UnarmedFlight.MIN_WEAPON_DAMAGE);
 			armedCreeperFlight = damage >= UnarmedFlight.MIN_WEAPON_DAMAGE && UnarmedFlight.CREEPER.equals(reason);
+			// An armed body's run from a creeper ends in keeping away; every other flight counts toward digging in at night.
+			if (!armedCreeperFlight) nightBunker.flightStarted(tick);
 			archery.cancel(minecraft, actuator);
 			releaseShield(minecraft);
 			stopCombatNavigation();
@@ -1141,10 +1174,17 @@ public final class SurvivalReflexRuntime {
 				return true;
 			}
 			case ESCAPED -> {
+				if (!armedCreeperFlight && nightBunkerSiteHere(minecraft, player)) {
+					// At night the next mob is only twenty blocks on: dig in here, where the pursuers were shaken off.
+					movementController.stop(minecraft);
+					refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+					return true;
+				}
 				resolve(minecraft, player, threats, tick, armedCreeperFlight ? "escaped_creeper" : "escaped_unarmed", false);
 				return true;
 			}
 			default -> {
+				if (!armedCreeperFlight) nightBunker.flightGaveUp(flight.abandonReason(), tick);
 				var payload = new LinkedHashMap<String, Object>(flight.summary(tick));
 				payload.put("reason", flight.abandonReason());
 				payload.put("health", player.getHealth());
@@ -1321,9 +1361,22 @@ public final class SurvivalReflexRuntime {
 		boolean canHeal = player.getFoodData().getFoodLevel() >= 18
 			|| combatEating != null && combatEating.hasEligibleFood(player);
 		boolean losing = losingFight(player.getHealth(), threats.size(), canHeal);
-		if (!bunker.active() && (threats.isEmpty()
+		if (nightStay != null) return tickNightStay(minecraft, player, threats, tick, combatEating);
+		boolean nightDue = nightBunker.due() != null;
+		if (!bunker.active()) bunkerForNight = false;
+		boolean litCreeper = (nightDue || bunkerForNight) && litCreeperNear(player, threats);
+		if (litCreeper && bunker.active() && !bunker.closed(minecraft.level, player)) {
+			// A lit fuse still means run, even half way down the night bunker; it is dug again afterwards.
+			bunker.cancel(minecraft, actuator);
+			return false;
+		}
+		boolean nightDig = nightDue && !litCreeper && !bunker.active() && nightBunker.mayAttempt()
+			&& NightBunker.digNow(flight.active(), nearestMeleeDistance(threats), cornered);
+		if (!bunker.active() && !nightDig && (threats.isEmpty()
 			|| player.getHealth() > EmergencyBunker.HEALTH_THRESHOLD && !cornered && !losing)) return false;
-		if (!bunker.active() && !cornered && !roomToDig(nearestMeleeDistance(threats))) return false;
+		if (!bunker.active() && !nightDig && !cornered && !roomToDig(nearestMeleeDistance(threats))) return false;
+		// A night bunker that failed (knocked out of its column, too slow) is dug again from where the body stands now.
+		if (nightDig) bunker.allowRetry();
 		var shaft = bunker.shaft();
 		if (shaft != null && EmergencyBunker.intruded(shaft, threats.stream().map(t -> t.entity().getBoundingBox()).toList())) {
 			// Shut in with a mob, standing still only lets it hit; fight it where it stands.
@@ -1333,21 +1386,156 @@ public final class SurvivalReflexRuntime {
 			return false;
 		}
 		bunkerIntruderReported = false;
+		boolean wasActive = bunker.active();
 		try {
 			if (!bunker.closed(minecraft.level, player)) {
 				releaseShield(minecraft);
 				stopCombatNavigation();
 			}
-			if (!bunker.tick(minecraft, player, tick, actuator, cameraController, movementController,
-				item -> selectInventoryItem(minecraft, player, item), pendingEvents)) return false;
+			boolean handled = bunker.tick(minecraft, player, tick, actuator, cameraController, movementController,
+				item -> selectInventoryItem(minecraft, player, item), pendingEvents);
+			if (nightDig && !wasActive && bunker.active()) nightBunker.attempted();
+			bunkerForNight = bunker.active() && (bunkerForNight || nightDue);
+			if (!handled) return false;
 		}
 		catch (RuntimeException exception) {
 			recordActuatorFailure("bunker", exception, tick);
 			return false;
 		}
-		if (bunker.closed(minecraft.level, player)) tickCombatEating(minecraft, player, threats, tick, combatEating, true);
+		if (bunker.closed(minecraft.level, player)) {
+			// Shut in at night: wait for the morning there and climb out, rather than hold the hole for good.
+			if (bunkerForNight && startNightStay(tick)) {
+				refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+				return true;
+			}
+			tickCombatEating(minecraft, player, threats, tick, combatEating, true);
+		}
 		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
 		return true;
+	}
+
+	/**
+	 * Decides each tick whether the night bunker is due (see {@link NightBunker}) and reports when it becomes due. The
+	 * hungry-and-unarmed case is the same one {@link #tickBunker} digs in for at once.
+	 */
+	private void updateNightBunker(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick) {
+		boolean cannotSprint = !canSprint(player) && UnarmedFlight.attackDamage(combatWeapon(player)) < UnarmedFlight.MIN_WEAPON_DAMAGE
+			&& threats.stream().anyMatch(threat -> !isRangedThreat(threat.entity()));
+		long dayTime = minecraft.level.getDayTime();
+		String reason = nightBunker.update(tick, Level.OVERWORLD.equals(minecraft.level.dimension()), dayTime, taskHandlesNight,
+			cannotSprint);
+		if (reason == null) return;
+		pendingEvents.add(new SurvivalReflexEvent("reflex.night_bunker", mapOfNullable(
+			"reason", reason,
+			"flights", nightBunker.flightsInWindow(),
+			"windowTicks", NightBunker.WINDOW_TICKS,
+			"flightGaveUpReason", NightBunker.FLIGHT_GAVE_UP.equals(reason) ? nightBunker.gaveUpReason() : null,
+			"dayTime", Math.floorMod(dayTime, 24_000L),
+			"health", player.getHealth(),
+			"food", player.getFoodData().getFoodLevel(),
+			"threatCount", threats.size(),
+			"nearestMeleeDistance", Double.isFinite(nearestMeleeDistance(threats)) ? nearestMeleeDistance(threats) : null,
+			"position", goal(player.blockPosition()),
+			"tick", tick)));
+	}
+
+	/** The night bunker is due and could be dug where the body stands, so an escaped flight digs in rather than walking on. */
+	private boolean nightBunkerSiteHere(Minecraft minecraft, LocalPlayer player) {
+		return nightBunker.due() != null && nightBunker.mayAttempt() && !bunker.active()
+			&& bunker.canDig(minecraft.level, player);
+	}
+
+	/** A creeper whose fuse the creeper rules answer now (run or shield). */
+	private boolean litCreeperNear(LocalPlayer player, List<ResolvedThreat> threats) {
+		for (ResolvedThreat threat : threats) {
+			if (threat.entity() instanceof net.minecraft.world.entity.monster.Creeper creeper
+				&& creeperResponse(player, threat, creeper) != CreeperEvasion.Response.NONE) return true;
+		}
+		return false;
+	}
+
+	/** Hands the closed night bunker to the shelter logic, which waits for the morning and climbs out. */
+	private boolean startNightStay(long tick) {
+		if (navigationFacade == null) return false;
+		try {
+			if (nightShelter == null) nightShelter = ShelterForNightTaskExecutor.forReflex(navigationFacade, cameraController);
+			// The reflex's own stay: it is its own source, not a planner job.
+			String id = ReadableIds.next("night-bunker");
+			nightStay = WorldTaskRequest.shelterForNight(id, id, new ShelterForNightStepArgs(ShelterForNightStepArgs.MAX_WAIT_TICKS));
+		}
+		catch (RuntimeException exception) {
+			// Without the stay the closed bunker is held as the low-health bunker holds it.
+			recordActuatorFailure("night_bunker", exception, tick);
+			nightStay = null;
+			return false;
+		}
+		nightStayReason = Objects.requireNonNullElse(nightBunker.due(), "night");
+		return true;
+	}
+
+	/**
+	 * One tick in the closed night bunker: a mob inside the shaft is fought as in the low-health bunker; otherwise the
+	 * body eats while it waits, and the shelter logic waits for the morning (and for mobs to leave the shaft top), breaks
+	 * the roof and pillars or digs steps out. Its end resolves the reflex.
+	 */
+	private boolean tickNightStay(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		CombatEating combatEating) {
+		var shaft = bunker.shaft();
+		if (shaft != null && EmergencyBunker.intruded(shaft, threats.stream().map(t -> t.entity().getBoundingBox()).toList())) {
+			if (!bunkerIntruderReported) pendingEvents.add(new SurvivalReflexEvent("reflex.bunker_intruder", Map.of(
+				"tick", tick, "health", player.getHealth())));
+			bunkerIntruderReported = true;
+			return false;
+		}
+		bunkerIntruderReported = false;
+		boolean waiting = ShelterForNightTaskExecutor.waitingInShelter(nightShelter.snapshot());
+		// A meal is finished before the climb starts: the climb changes the held item.
+		if (combatEating != null && (combatEating.eating() || waiting && bunker.closed(minecraft.level, player))
+			&& tickCombatEating(minecraft, player, threats, tick, combatEating, true)) {
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+			return true;
+		}
+		java.util.Optional<TaskTerminalEvent> end;
+		try {
+			end = nightShelter.tickForReflex(nightStay);
+		}
+		catch (RuntimeException exception) {
+			recordActuatorFailure("night_bunker", exception, tick);
+			refreshSnapshot(player, threats, lastMobDamageTick, 0, failureText(exception));
+			return true;
+		}
+		if (end.isPresent()) {
+			finishNightStay(minecraft, player, threats, tick, end.get());
+			return true;
+		}
+		refreshSnapshot(player, threats, lastMobDamageTick, 0, null);
+		return true;
+	}
+
+	private void finishNightStay(Minecraft minecraft, LocalPlayer player, List<ResolvedThreat> threats, long tick,
+		TaskTerminalEvent end) {
+		boolean out = end.terminalState() == TaskExecutionState.COMPLETED;
+		pendingEvents.add(new SurvivalReflexEvent("reflex.night_bunker_exited", mapOfNullable(
+			"success", out,
+			"reason", nightStayReason,
+			"result", end.message(),
+			"dayTime", Math.floorMod(minecraft.level.getDayTime(), 24_000L),
+			"health", player.getHealth(),
+			"position", goal(player.blockPosition()),
+			"tick", tick)));
+		nightStay = null;
+		nightStayReason = null;
+		nightBunker.finished();
+		bunker.reset();
+		bunkerForNight = false;
+		resolve(minecraft, player, threats, tick, out ? "night_bunker_morning" : "night_bunker_exit_failed", false);
+	}
+
+	/** Lets go of the body if a night stay is under way (a new danger, a reset, a resolution for another reason). */
+	private void endNightStay() {
+		if (nightStay != null && nightShelter != null) nightShelter.shutdown();
+		nightStay = null;
+		nightStayReason = null;
 	}
 
 	/**
@@ -1935,6 +2123,7 @@ public final class SurvivalReflexRuntime {
 		archery.cancel(minecraft, actuator);
 		flight.reset(navigationFacade);
 		cover.reset(navigationFacade);
+		endNightStay();
 		releaseShield(minecraft);
 		underwaterEscape.reset(minecraft);
 		stopCombatNavigation();

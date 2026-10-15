@@ -128,6 +128,27 @@ class EmbodiedAgentRuntimeTest {
 		assertEquals(Set.of("minecraft:blaze"), EmbodiedAgentRuntime.taskOwnedThreatTypes(blaze.current()));
 	}
 
+	@Test void tasksThatWaitOutTheNightKeepTheReflexsNightBunkerAwayUntilTheyEnd() {
+		assertFalse(EmbodiedAgentRuntime.taskHandlesNight(null));
+		for (ActiveJobProposal proposal : List.of(
+			ActiveJobProposal.shelterForNight(new ai.moeru.airicraft.agent.tasks.ShelterForNightStepArgs(14_000)),
+			ActiveJobProposal.sleepInBed(new ai.moeru.airicraft.agent.tasks.SleepInBedStepArgs(null)),
+			ActiveJobProposal.exploreFor(new ai.moeru.airicraft.agent.tasks.ExploreForStepArgs("forest", 640, 3, true)))) {
+			ActiveJobRuntime jobs = new ActiveJobRuntime();
+			jobs.applyPlannerResponse(new DialogueResponse("Night.", new DialogueIntent(DialogueIntentType.JOB_UPDATE, proposal), 1L),
+				0, "test", 1L);
+			assertTrue(EmbodiedAgentRuntime.taskHandlesNight(jobs.current()), proposal.toString());
+			jobs.pauseForReflex(2L);
+			assertTrue(EmbodiedAgentRuntime.taskHandlesNight(jobs.current()), "a reflex pause keeps the night with the task");
+			jobs.cancel("test_cancel", 3L);
+			assertFalse(EmbodiedAgentRuntime.taskHandlesNight(jobs.current()), "once it ends the reflex may dig in");
+		}
+		ActiveJobRuntime walk = new ActiveJobRuntime();
+		walk.applyPlannerResponse(new DialogueResponse("Walking.", new DialogueIntent(DialogueIntentType.JOB_UPDATE,
+			ActiveJobProposal.navigateTo(new GoalPosition(10, 64, 10, false))), 1L), 0, "test", 1L);
+		assertFalse(EmbodiedAgentRuntime.taskHandlesNight(walk.current()), "a walk at night does not dig in");
+	}
+
 	@Test void eatingIsAllowedWhileASafetyHoldWaits() {
 		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("eat_food"));
 		assertTrue(EmbodiedAgentRuntime.allowedDuringSafetyHold("configure_reflex"));

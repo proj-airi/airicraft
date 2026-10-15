@@ -390,7 +390,70 @@ class ShelterForNightTaskExecutorTest {
 		assertTrue(f.snapshotText().startsWith("phase=WAIT "), f.snapshotText());
 	}
 
+	// ---- Driven by the survival reflex in its own night bunker ----
+
+	@Test void theReflexsClosedNightBunkerIsWaitedInUntilMorningAndClimbedOutOf() {
+		ReflexFixture f = new ReflexFixture(true);
+		f.tick(100);
+		assertEquals(List.of(), f.events, f.snapshotText());
+		assertTrue(ShelterForNightTaskExecutor.waitingInShelter(f.executor.snapshot()), f.snapshotText());
+		assertEquals(0, f.env.digCalls, "the reflex dug it; nothing is dug again");
+		assertTrue(f.nav.goals.isEmpty());
+		f.env.dayTime = 400;
+		f.tick(80);
+		assertEquals(1, f.events.size(), f.snapshotText());
+		assertEquals(TaskExecutionState.COMPLETED, f.events.getFirst().terminalState());
+		assertTrue(f.events.getFirst().message().startsWith("sheltered_until_morning waited="), f.events.getFirst().message());
+		assertEquals(64, f.env.block.getY(), "out on the surface");
+	}
+
+	@Test void aReflexBunkerClosedInTheMorningIsClimbedOutOfNotLeftAsAlreadyDay() {
+		ReflexFixture f = new ReflexFixture(true);
+		f.env.dayTime = 24_000L + 350;
+		f.tick(80);
+		assertEquals(1, f.events.size(), f.snapshotText());
+		assertTrue(f.events.getFirst().message().startsWith("sheltered_until_morning"), f.events.getFirst().message());
+		assertEquals(64, f.env.block.getY());
+	}
+
+	@Test void aReflexShelterThatIsNotClosedFailsWithoutDiggingAnother() {
+		ReflexFixture f = new ReflexFixture(false);
+		f.tick(ShelterForNightTaskExecutor.REFLEX_SETTLE_TICKS);
+		assertEquals(List.of(), f.events, "a moment for a bounce to land");
+		f.tick(5);
+		assertEquals(1, f.events.size(), f.snapshotText());
+		assertEquals(TaskExecutionState.FAILED, f.events.getFirst().terminalState());
+		assertTrue(f.events.getFirst().message().startsWith("not_enclosed"), f.events.getFirst().message());
+		assertEquals(0, f.env.digCalls);
+		assertTrue(f.nav.goals.isEmpty());
+	}
+
 	// ---- Fakes ----
+
+	/** A body at the bottom of the reflex's closed bunker (or, when not {@code enclosed}, on the surface). */
+	private static final class ReflexFixture {
+		final Environment env = new Environment();
+		final Navigation nav = new Navigation(env);
+		final ShelterForNightTaskExecutor executor = ShelterForNightTaskExecutor.forReflex(nav, env);
+		final WorldTaskRequest request = WorldTaskRequest.shelterForNight("night-bunker-1", "night-bunker-1",
+			new ShelterForNightStepArgs(ShelterForNightStepArgs.MAX_WAIT_TICKS));
+		final List<TaskTerminalEvent> events = new ArrayList<>();
+
+		ReflexFixture(boolean enclosed) {
+			if (!enclosed) return;
+			BlockPos bottom = new BlockPos(0, 61, 0);
+			env.ground.air.addAll(List.of(bottom, bottom.above()));
+			env.enclosed = ShelterForNightTaskExecutor.enclosedShelter(env.ground, bottom);
+			env.block = bottom;
+			env.roof = true;
+		}
+
+		void tick(int n) {
+			for (int i = 0; i < n; i++) executor.tickForReflex(request).ifPresent(events::add);
+		}
+
+		String snapshotText() { return executor.snapshot().lastPathEvent(); }
+	}
 
 	private static final class Fixture {
 		final Environment env = new Environment();
@@ -439,6 +502,7 @@ class ShelterForNightTaskExecutorTest {
 		BlockPos block = FEET;
 		long dayTime = 13_000;
 		boolean overworld = true, roof, hostile, intruder, pillarBlocked, stairsStuck;
+		EmergencyBunker.Plan enclosed;
 		int blocks = 4, digCalls, stairCalls, progress;
 
 		public ShelterForNightTaskExecutor.Body observe() {
@@ -446,7 +510,9 @@ class ShelterForNightTaskExecutorTest {
 				overworld ? "minecraft:overworld" : "minecraft:the_nether", blocks);
 		}
 		public ShelterForNightTaskExecutor.SiteFacts siteFacts(BlockPos top) { return ground.facts(top); }
-		public EmergencyBunker.Plan enclosedShelter(BlockPos feet) { return null; }
+		public EmergencyBunker.Plan enclosedShelter(BlockPos feet) {
+			return enclosed != null && feet.equals(enclosed.bottom()) ? enclosed : null;
+		}
 		public void approach(BlockPos top) { block = top; }
 		public ShelterForNightTaskExecutor.DigTick dig(EmergencyBunker.Plan plan) {
 			if (block.getY() > plan.bottom().getY()) {

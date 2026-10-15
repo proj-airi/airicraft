@@ -63,9 +63,13 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 	static final long NAVIGATION_STALL_TICKS = 70;
 	/** Time for walking to a site, digging, roofing and climbing out, on top of the wait. */
 	static final int WORK_BUDGET_TICKS = 3_000;
+	/** Ticks a reflex-owned shelter waits for the body to stand in the closed bunker it was handed. */
+	static final int REFLEX_SETTLE_TICKS = 20;
 
 	private final NavigationFacade navigation;
 	private final Environment environment;
+	/** Driven by the survival reflex in the bunker it dug (see {@link #forReflex}): it may be morning already when it starts. */
+	private final boolean reflexOwned;
 	private WorldTaskRequest request;
 	private TaskTerminalEvent terminal;
 	private boolean emitted;
@@ -91,8 +95,27 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 	}
 
 	ShelterForNightTaskExecutor(NavigationFacade navigation, Environment environment) {
+		this(navigation, environment, false);
+	}
+
+	private ShelterForNightTaskExecutor(NavigationFacade navigation, Environment environment, boolean reflexOwned) {
 		this.navigation = Objects.requireNonNull(navigation, "navigation");
 		this.environment = Objects.requireNonNull(environment, "environment");
+		this.reflexOwned = reflexOwned;
+	}
+
+	/**
+	 * A shelter driven by the survival reflex rather than the task dispatcher, acting through reflex-priority leases. The
+	 * reflex digs its night bunker itself; this then waits in it until morning and climbs out the way the task does, through
+	 * {@link #tickForReflex}. Unlike the task it never answers already_day: a body shut in a hole climbs out in the morning.
+	 */
+	public static ShelterForNightTaskExecutor forReflex(NavigationFacade navigation, ai.moeru.airicraft.agent.control.CameraController camera) {
+		return forReflex(navigation, new MinecraftShelterEnvironment(camera, "reflex_night_bunker",
+			ai.moeru.airicraft.control.Priority.REFLEX));
+	}
+
+	static ShelterForNightTaskExecutor forReflex(NavigationFacade navigation, Environment environment) {
+		return new ShelterForNightTaskExecutor(navigation, environment, true);
 	}
 
 	/**
@@ -126,6 +149,25 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 			setSnapshot(TaskExecutionState.PAUSED_BY_SESSION_GATE, null);
 			return Optional.empty();
 		}
+		return advance();
+	}
+
+	/**
+	 * One tick of a reflex-owned shelter (see {@link #forReflex}); the reflex only ticks it while it owns the body, so there
+	 * is no session gate. A new {@code request} id starts a fresh shelter.
+	 */
+	public Optional<TaskTerminalEvent> tickForReflex(WorldTaskRequest next) {
+		Objects.requireNonNull(next, "request");
+		if (request == null || !request.taskId().equals(next.taskId())) {
+			release();
+			request = next;
+			reset();
+		}
+		if (terminal != null) return finishRelease();
+		return advance();
+	}
+
+	private Optional<TaskTerminalEvent> advance() {
 		if (!navigation.isLoaded()) return finish(false, "navigation_unavailable", TaskFailureCode.ENVIRONMENT_CHANGED, null);
 		Body body = environment.observe();
 		if (body == null) return finish(false, "world_unavailable", TaskFailureCode.ENVIRONMENT_CHANGED, null);
@@ -137,7 +179,7 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 			if (!body.overworld())
 				return finish(false, "wrong_dimension; shelter_for_night waits out the overworld night. In " + body.dimension()
 					+ " there is no night to wait out", TaskFailureCode.INVALID_ACTION, body);
-			if (!shelterTime(body.dayTime()))
+			if (!shelterTime(body.dayTime()) && !reflexOwned)
 				return finish(true, "already_day dayTime=" + Math.floorMod(body.dayTime(), DAY_LENGTH) + " duskIn="
 					+ (DUSK_FROM - Math.floorMod(body.dayTime(), DAY_LENGTH)) + "; nothing dug. Call shelter_for_night again at dusk"
 					+ " (day time " + DUSK_FROM + " or later)", null, body);
@@ -170,6 +212,12 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 			lastNote = "already_enclosed";
 			enter(Phase.WAIT);
 			return Optional.empty();
+		}
+		if (reflexOwned) {
+			// The reflex hands over a closed bunker; give a bounce a moment to land rather than dig a new shaft from its floor.
+			if (phaseTicks <= REFLEX_SETTLE_TICKS) return Optional.empty();
+			return finish(false, "not_enclosed; the survival reflex's night bunker at " + body.block().toShortString()
+				+ " is not closed (open side or no roof). Break out or roof it by hand", TaskFailureCode.ENVIRONMENT_CHANGED, body);
 		}
 		SiteChoice choice = chooseSite(body.block(), body.buildingBlocks(), environment::siteFacts, rejectedSites);
 		if (choice.plan() == null) {
@@ -418,7 +466,7 @@ public final class ShelterForNightTaskExecutor implements WorldTaskExecutor {
 	// ---- Pure decisions ----
 
 	/** Whether {@code dayTime} is dusk or night, when the body should be in a shelter: [11,000, 24,000) and [0, 300). */
-	static boolean shelterTime(long dayTime) {
+	public static boolean shelterTime(long dayTime) {
 		long time = Math.floorMod(dayTime, DAY_LENGTH);
 		return time >= DUSK_FROM || time < MORNING_FROM;
 	}

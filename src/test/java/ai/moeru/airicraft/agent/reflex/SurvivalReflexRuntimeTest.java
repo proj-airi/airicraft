@@ -224,6 +224,24 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(threats.containsKey("blaze"), "once the task ends a burning blaze is a reflex threat again");
 	}
 
+	@Test void theNightBunkerStateShowsInTheEvidenceAndIsForgottenOnReset() throws Exception {
+		var runtime = new SurvivalReflexRuntime(null);
+		var field = SurvivalReflexRuntime.class.getDeclaredField("nightBunker");
+		field.setAccessible(true);
+		var night = (NightBunker) field.get(runtime);
+		for (long tick : new long[]{1, 2, 3}) night.flightStarted(tick);
+		assertEquals(NightBunker.REPEATED_FLIGHT, night.update(4, true, 18_000, false, false));
+		runtime.taskHandlesNight(true);
+		var evidence = (java.util.Map<?, ?>) runtime.decisionEvidence().get("nightBunker");
+		assertEquals(NightBunker.REPEATED_FLIGHT, evidence.get("due"));
+		assertEquals(3, evidence.get("flights"));
+		assertEquals(true, evidence.get("taskHandlesNight"));
+		assertNull(evidence.get("stay"), "nothing dug yet");
+		runtime.reset(null);
+		assertNull(night.due(), "a death or world leave forgets the night");
+		assertEquals(0, night.flightsInWindow());
+	}
+
 	@Test void combatRoutingStartsOnceAndReplansOnlyWhenTheTargetMoves() {
 		var routes = new java.util.ArrayList<ai.moeru.airicraft.agent.goals.GoalPosition>();
 		var facade = (ai.moeru.airicraft.agent.navigation.NavigationFacade) java.lang.reflect.Proxy.newProxyInstance(
