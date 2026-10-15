@@ -80,6 +80,37 @@ class UnarmedFlightTest {
 	}
 
 	@Test
+	void anArmedBodyRunsFromACreeperInsteadOfWalkingUpToIt() {
+		// Death #4: an iron sword (6 damage) at 17.5 health against one creeper at 5.9 blocks.
+		var creeper = new UnarmedFlight.Threat(5.9, 0, 20F, false, true, 5.9, true);
+		assertEquals(UnarmedFlight.CREEPER, UnarmedFlight.fleeReason(6.0D, 17.5F, 20F, List.of(creeper)));
+		assertEquals(UnarmedFlight.CREEPER, UnarmedFlight.fleeReason(6.0D, 17.5F, 20F, List.of(creeper, zombie(-2, 0))),
+			"a zombie alongside is run from too");
+		assertNull(UnarmedFlight.fleeReason(6.0D, 17.5F, 20F, List.of(new UnarmedFlight.Threat(12, 0, 20F, false, true, 12, true))),
+			"a creeper well away does not stop the fight");
+		assertEquals(UnarmedFlight.OUTMATCHED, UnarmedFlight.fleeReason(4.0D, 6F, 20F, List.of(creeper, zombie(-2, 0), zombie(0, 2))),
+			"outmatched keeps its own reason");
+		assertEquals(UnarmedFlight.CREEPER, UnarmedFlight.fleeReason(6.0D, 17.5F, 20F, List.of(creeper), false),
+			"too hungry to sprint, it still walks away from a creeper");
+		assertTrue(UnarmedFlight.creeperNear(List.of(creeper)));
+		assertFalse(UnarmedFlight.creeperNear(List.of(zombie(2, 0))));
+	}
+
+	@Test
+	void aStraightRunFromACreeperTakesOnlyAWayWithNoWallInIt() {
+		// A two-high wall across the straight way west, x=-5 from z=-6 to z=6.
+		TerrainView walled = terrain((x, y, z) -> x == -5 && Math.abs(z) <= 6 && (y == 64 || y == 65) ? STONE : null);
+		var creeper = List.of(new UnarmedFlight.Threat(3.5, 0.5, 20F, false, true, 3, true));
+		UnarmedFlight.Leg any = UnarmedFlight.fleeTarget(walled, FEET, creeper, 12);
+		assertNotNull(any);
+		assertTrue(any.blockedColumns() > 0, "a routed leg may cross the wall: " + any);
+		UnarmedFlight.Leg straight = UnarmedFlight.fleeTarget(walled, FEET, creeper, 12, true);
+		assertNotNull(straight);
+		assertEquals(0, straight.blockedColumns(), straight.toString());
+		assertTrue(straight.alignment() > 0, "still away from the creeper: " + straight);
+	}
+
+	@Test
 	void stopsRunningOnceThreatsAreFarOrOutOfSight() {
 		assertTrue(UnarmedFlight.clear(List.of()));
 		assertTrue(UnarmedFlight.clear(List.of(new UnarmedFlight.Threat(20, 0, 20F, false, false, 20, true))));

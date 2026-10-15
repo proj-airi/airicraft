@@ -99,8 +99,8 @@ final class UnarmedFlight {
 	private int retries;
 
 	/**
-	 * Why the body should run rather than fight, or null to fight: a real weapon, or one weak melee mob while the body
-	 * is near full health.
+	 * Why the body should run rather than fight, or null to fight: a real weapon with no creeper within
+	 * {@value #CREEPER_FLEE_DISTANCE} blocks, or one weak melee mob while the body is near full health.
 	 */
 	static String fleeReason(double weaponDamage, float health, float maxHealth, List<Threat> threats) {
 		return fleeReason(weaponDamage, health, maxHealth, threats, true);
@@ -113,14 +113,15 @@ final class UnarmedFlight {
 	 */
 	static String fleeReason(double weaponDamage, float health, float maxHealth, List<Threat> threats, boolean canSprint) {
 		if (threats.isEmpty()) return null;
-		if (!canSprint) return threats.stream().allMatch(Threat::creeper) ? "creeper" : null;
+		if (!canSprint) return threats.stream().allMatch(Threat::creeper) ? CREEPER : null;
 		if (weaponDamage >= MIN_WEAPON_DAMAGE) {
-			return health <= maxHealth / 2.0F && outmatched(weaponDamage, health, threats) ? OUTMATCHED : null;
+			if (health <= maxHealth / 2.0F && outmatched(weaponDamage, health, threats)) return OUTMATCHED;
+			return creeperNear(threats) ? CREEPER : null;
 		}
 		if (threats.size() > 1) return "outnumbered";
 		Threat only = threats.getFirst();
 		if (only.ranged()) return "ranged_mob";
-		if (only.creeper()) return "creeper";
+		if (only.creeper()) return CREEPER;
 		if (only.health() > TRIVIAL_MOB_HEALTH) return "strong_mob";
 		if (health < maxHealth * NEAR_FULL_HEALTH) return "hurt";
 		return null;
@@ -148,6 +149,21 @@ final class UnarmedFlight {
 	}
 
 	static final String OUTMATCHED = "outmatched";
+	static final String CREEPER = "creeper";
+	/**
+	 * An armed body runs from a creeper this close rather than walk up to it with a sword (see {@link CreeperEvasion}):
+	 * a playtest body with an iron sword and a shield closed in to melee one and was blown up from full health. A bow
+	 * shot at a shooter still comes first, and a creeper the body cannot run from is kept at a distance instead.
+	 */
+	static final double CREEPER_FLEE_DISTANCE = 10.0D;
+
+	/** A creeper is close enough to run from. */
+	static boolean creeperNear(List<Threat> threats) {
+		for (Threat threat : threats) {
+			if (threat.creeper() && threat.distance() <= CREEPER_FLEE_DISTANCE) return true;
+		}
+		return false;
+	}
 	/** A sword's full-strength swing interval, a little rounded up for aiming. */
 	static final int SWING_TICKS = 12;
 	static final int MOB_ATTACK_TICKS = 20;
@@ -175,6 +191,14 @@ final class UnarmedFlight {
 	 * centroid wins; water and walls on the way cost a little. Null when no heading is open.
 	 */
 	static Leg fleeTarget(TerrainView terrain, GridPos feet, List<Threat> threats, int legBlocks) {
+		return fleeTarget(terrain, feet, threats, legBlocks, false);
+	}
+
+	/**
+	 * Like the above; with {@code clearWay} only a leg whose straight way has no wall or deep drop in it, so the body
+	 * can sprint it with the keys alone instead of waiting for a route (see {@link CreeperEvasion}).
+	 */
+	static Leg fleeTarget(TerrainView terrain, GridPos feet, List<Threat> threats, int legBlocks, boolean clearWay) {
 		double ox = feet.x() + 0.5D, oz = feet.z() + 0.5D;
 		double cx = 0, cz = 0;
 		for (Threat threat : threats) {
@@ -193,7 +217,7 @@ final class UnarmedFlight {
 			for (int reach : new int[]{legBlocks, legBlocks * 3 / 4, legBlocks / 2}) {
 				Leg leg = leg(terrain, feet, feet.x() + (int) Math.round(dx * reach), feet.z() + (int) Math.round(dz * reach),
 					threats, alignment, (legBlocks - reach) * 0.15D);
-				if (leg == null) continue;
+				if (leg == null || clearWay && leg.blockedColumns() > 0) continue;
 				if (best == null || leg.score() > best.score()) best = leg;
 				break;
 			}
