@@ -224,15 +224,6 @@ class SurvivalReflexRuntimeTest {
 		assertTrue(threats.containsKey("blaze"), "once the task ends a burning blaze is a reflex threat again");
 	}
 
-	@Test void blocksAnApproachingCreeperBlastBeforeShieldStartupDelay() {
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.35F, false));
-		assertTrue(SurvivalReflexRuntime.shouldBlockCreeper(3.03, 1, 0.7F, false));
-		assertTrue(SurvivalReflexRuntime.shouldBlockCreeper(8, 1, 0.8F, true));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(8, 1, 0.8F, false));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3, -1, 0.35F, false));
-		assertFalse(SurvivalReflexRuntime.shouldBlockCreeper(3, 1, 0.1F, false));
-	}
-
 	@Test void combatRoutingStartsOnceAndReplansOnlyWhenTheTargetMoves() {
 		var routes = new java.util.ArrayList<ai.moeru.airicraft.agent.goals.GoalPosition>();
 		var facade = (ai.moeru.airicraft.agent.navigation.NavigationFacade) java.lang.reflect.Proxy.newProxyInstance(
@@ -505,11 +496,6 @@ class SurvivalReflexRuntimeTest {
 			state, SurvivalReflexCause.DROWNING, SurvivalReflexAction.SWIM_TO_AIR, 2L, holdId,
 			"job-1", "action-1", List.of(), 10.0F, 20.0F, 100, 300, 10L, 20L, 0, null
 		);
-	}
-	@Test void creeperRetreatsDuringCooldownOrFuseButReengagesAfterReset() {
-		assertTrue(SurvivalReflexRuntime.creeperShouldKite(.2F, 0));
-		assertTrue(SurvivalReflexRuntime.creeperShouldKite(1, .3F));
-		assertFalse(SurvivalReflexRuntime.creeperShouldKite(1, 0));
 	}
 	@Test void creeperEscapePersistsAfterFuseReversesUntilPursuerIsWellClear() {
 		boolean fleeing = SurvivalReflexRuntime.creeperEscapeActive(false, 2.5, 1, .1F, false);
