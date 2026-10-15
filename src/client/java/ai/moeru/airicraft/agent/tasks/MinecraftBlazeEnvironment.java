@@ -45,7 +45,7 @@ import java.util.function.Predicate;
 /** Reads a blaze fight from the client world, as a player would see it, and acts through foreground leases. */
 final class MinecraftBlazeEnvironment implements CollectBlazeRodsTaskExecutor.Environment {
 	private static final double ENTITY_RADIUS = 32.0D;
-	private static final int SPAWNER_SEARCH_BLOCKS = 64;
+	private static final int SPAWNER_SEARCH_BLOCKS = 128;
 	private static final int FORTRESS_SEARCH_BLOCKS = 128;
 	private static final float ALIGNED_DEGREES = 1.5F;
 	private static final int CONSUME_TIMEOUT_TICKS = 80;
