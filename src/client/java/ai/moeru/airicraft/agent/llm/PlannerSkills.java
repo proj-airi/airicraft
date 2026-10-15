@@ -16,7 +16,7 @@ import java.util.Optional;
  * {@code /skills/index.txt}. The system prompt carries only the one-line index; {@code use_skill} returns a body.
  */
 public final class PlannerSkills {
-	public record Skill(String name, String description, String body, List<String> blocks) {}
+	public record Skill(String name, String description, String body, List<String> mods) {}
 
 	private static final java.util.regex.Pattern ID = java.util.regex.Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+");
 
@@ -33,8 +33,9 @@ public final class PlannerSkills {
 		return BUNDLED;
 	}
 
+	/** Skills the planner chooses from. Skills bound to a mod are attached automatically and not listed. */
 	public List<String> names() {
-		return List.copyOf(skills.keySet());
+		return skills.values().stream().filter(skill -> skill.mods().isEmpty()).map(Skill::name).toList();
 	}
 
 	public Optional<Skill> find(String name) {
@@ -42,30 +43,24 @@ public final class PlannerSkills {
 	}
 
 	/**
-	 * Skills whose {@code blocks} frontmatter ({@code namespace:*} or an exact id) names a block id found in {@code text}.
-	 * Lets a tool result point at the rules for the block it just touched without any always-on prompt text.
+	 * Skills bound to a mod (frontmatter {@code mod}: the mod id, which is also its block namespace) whose id appears in
+	 * {@code text}. A tool result that touches one of the mod's blocks carries the skill without the planner asking.
 	 */
-	public List<Skill> matchingBlocks(String text) {
+	public List<Skill> boundTo(String text) {
 		if (text == null || text.isEmpty()) return List.of();
 		List<Skill> found = new ArrayList<>();
 		for (Skill skill : skills.values()) {
-			if (skill.blocks().isEmpty()) continue;
+			if (skill.mods().isEmpty()) continue;
 			var ids = ID.matcher(text);
-			while (ids.find()) if (matchesBlock(skill, ids.group())) { found.add(skill); break; }
+			while (ids.find()) if (skill.mods().contains(ids.group().substring(0, ids.group().indexOf(':')))) { found.add(skill); break; }
 		}
 		return found;
-	}
-
-	private static boolean matchesBlock(Skill skill, String id) {
-		for (String pattern : skill.blocks())
-			if (pattern.endsWith(":*") ? id.startsWith(pattern.substring(0, pattern.length() - 1)) : pattern.equals(id)) return true;
-		return false;
 	}
 
 	/** One line per skill, for the system prompt. */
 	public String index() {
 		StringBuilder text = new StringBuilder();
-		for (Skill skill : skills.values()) text.append("- ").append(skill.name()).append(": ").append(skill.description()).append('\n');
+		for (Skill skill : skills.values()) if (skill.mods().isEmpty()) text.append("- ").append(skill.name()).append(": ").append(skill.description()).append('\n');
 		return text.toString().stripTrailing();
 	}
 
@@ -85,18 +80,18 @@ public final class PlannerSkills {
 		int end = normalized.indexOf("\n---\n", 4);
 		if (end < 0) throw new IllegalStateException("skill " + expectedName + " frontmatter is not closed");
 		String name = null, description = null;
-		List<String> blocks = new ArrayList<>();
+		List<String> mods = new ArrayList<>();
 		for (String line : normalized.substring(4, end).split("\n")) {
 			int colon = line.indexOf(':');
 			if (colon < 0) continue;
 			String key = line.substring(0, colon).strip(), value = line.substring(colon + 1).strip();
 			if (key.equals("name")) name = value;
 			if (key.equals("description")) description = value;
-			if (key.equals("blocks")) for (String id : value.split(",")) if (!id.isBlank()) blocks.add(id.strip());
+			if (key.equals("mod")) for (String id : value.split(",")) if (!id.isBlank()) mods.add(id.strip());
 		}
 		if (!expectedName.equals(name)) throw new IllegalStateException("skill " + expectedName + " declares name " + name);
 		if (description == null || description.isBlank()) throw new IllegalStateException("skill " + expectedName + " has no description");
-		return new Skill(name, description, normalized.substring(end + 5).strip(), List.copyOf(blocks));
+		return new Skill(name, description, normalized.substring(end + 5).strip(), List.copyOf(mods));
 	}
 
 	private static String read(String resource) {

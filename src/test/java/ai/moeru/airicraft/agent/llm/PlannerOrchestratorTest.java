@@ -585,7 +585,7 @@ class PlannerOrchestratorTest {
 
 
 	@Test
-	void queuedMachineBlockResultNamesItsSkillOnce() throws Exception {
+	void queuedMachineBlockResultCarriesItsBoundSkillOnce() throws Exception {
 		var backend = new RecordingBackend();
 		var provider = new PlannerToolProvider() {
 			public String id() { return "block_fixture"; }
@@ -605,7 +605,8 @@ class PlannerOrchestratorTest {
 				new PlannerToolCall("C", "use_block", stone, null), new PlannerToolCall("checkpoint", "report_to_me", new JsonObject(), null)), null));
 			awaitBackendCallCount(orchestrator, backend, 2, Duration.ofSeconds(2));
 			String text = conversationText(backend.conversation(1));
-			assertEquals(1, text.split("Skill hint: rules for these blocks are in modded-machines", -1).length - 1, text);
+			assertEquals(1, text.split("Skill create-machines \\(attached automatically", -1).length - 1, text);
+			assertTrue(text.contains("hand crank turns only while clicked"), text);
 		} finally { orchestrator.shutdown(); }
 	}
 

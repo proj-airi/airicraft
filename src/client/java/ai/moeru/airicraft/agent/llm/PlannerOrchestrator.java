@@ -1221,7 +1221,7 @@ public final class PlannerOrchestrator {
 	}
 
 	private void queueReport(PlannerToolCall call, ToolExecutionOutcome outcome) {
-		outcome = withSkillHint(outcome, List.of(call));
+		outcome = withBoundSkills(outcome, List.of(call));
 		if (!List.of(PlannerObservation.TOOL_NAME, PlannerQueueToolProvider.CONTINUE, PlannerQueueToolProvider.CLEAR,
 			PlannerQueueToolProvider.REPORT).contains(call.name())) {
 			var notice = loopWatchdog.onResult(call.name(), outcome.toolResultText());
@@ -1687,7 +1687,7 @@ public final class PlannerOrchestrator {
 			captureInFlight = false;
 		}
 
-		toolOutcome = withSkillHint(toolOutcome, toolExecution.toolCalls());
+		toolOutcome = withBoundSkills(toolOutcome, toolExecution.toolCalls());
 		PlannerContextSnapshot snapshot = sessionCoordinator.contextSnapshotFor(toolExecution.generation());
 		if (snapshot == null) {
 			return null;
@@ -2325,16 +2325,16 @@ public final class PlannerOrchestrator {
 		debugRecorder.recordConversationSources(conversationDebugSnapshot(), projectedConversationDebugSnapshot());
 	}
 
-	/** Names the skill for a block the call touched, once per skill per session; see {@link PlannerSkills#matchingBlocks}. */
-	private ToolExecutionOutcome withSkillHint(ToolExecutionOutcome outcome, List<PlannerToolCall> calls) {
+	/** Attaches the skill bound to a mod when a call first touches one of its blocks, once per skill per session; see {@link PlannerSkills#boundTo}. */
+	private ToolExecutionOutcome withBoundSkills(ToolExecutionOutcome outcome, List<PlannerToolCall> calls) {
 		if (!(outcome instanceof TextToolExecutionOutcome text) || calls == null || calls.size() != 1) return outcome;
 		String name = normalizedToolName(calls.getFirst());
 		if (!"use_block".equals(name) && !"place_block".equals(name)) return outcome;
-		var skills = PlannerSkills.bundled().matchingBlocks(calls.getFirst().arguments() + " " + text.toolResultText());
-		List<String> fresh = skills.stream().map(PlannerSkills.Skill::name).filter(hintedSkills::add).toList();
+		var fresh = PlannerSkills.bundled().boundTo(calls.getFirst().arguments() + " " + text.toolResultText()).stream().filter(skill -> hintedSkills.add(skill.name())).toList();
 		if (fresh.isEmpty()) return outcome;
-		return new TextToolExecutionOutcome(text.toolResultText() + "\nSkill hint: rules for these blocks are in " + String.join(", ", fresh)
-			+ "; call use_skill (alone) before the next attempt.");
+		StringBuilder attached = new StringBuilder(text.toolResultText());
+		for (var skill : fresh) attached.append("\nSkill ").append(skill.name()).append(" (attached automatically for ").append(String.join(", ", skill.mods())).append(" blocks):\n").append(skill.body());
+		return new TextToolExecutionOutcome(attached.toString());
 	}
 
 	private record ToolExecutionResult(
