@@ -20,4 +20,10 @@ public class GameRendererMixin {
 	private void airicraft$captureFirstPersonFrame(DeltaTracker deltaTracker, CallbackInfo ci) {
 		AiricraftClient.runtimeController().onFirstPersonFrameRendered();
 	}
+
+	// Capture the composed game window, after the hand, HUD, screens and GUI flush.
+	@Inject(method = "render", at = @At("RETURN"))
+	private void airicraft$captureClientFrame(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
+		AiricraftClient.runtimeController().onClientFrameRendered();
+	}
 }

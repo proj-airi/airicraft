@@ -403,6 +403,12 @@ public final class ClientRuntimeController {
 		Minecraft minecraft = Minecraft.getInstance();
 		if (minecraft != null) {
 			screenshotService.onWorldRendered(minecraft);
+		}
+	}
+
+	public void onClientFrameRendered() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft != null) {
 			try {
 				dashboardObservationCollector.onRenderedFrame(minecraft, currentAgentRuntime());
 			}
