@@ -53,7 +53,45 @@ class ExploreForTaskExecutorTest {
 		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
 		assertTrue(end.message().contains("reached=false"), end.message());
 		assertTrue(end.message().contains("dy=24"), end.message());
-		assertEquals(List.of(new GoalPosition(40, 88, -20, true)), world.legGoals, "walks to the stand cell itself");
+		GoalPosition stand = new GoalPosition(40, 88, -20, true);
+		assertEquals(List.of(stand, stand), world.legGoals, "walks to the stand cell itself, then climbs to it once");
+		assertEquals(ExploreForTaskExecutor.OPTIONS, world.optionsAt.get(0));
+		assertEquals(ExploreForTaskExecutor.CLIMB_OPTIONS, world.optionsAt.get(1));
+		assertTrue(world.milestones().contains("climbing"), world.milestones().toString());
+	}
+
+	@Test void anApproachAReflexCutShortClimbsNextTime() {
+		World world = new World();
+		world.withStand = true;
+		world.feature = feet -> new int[]{40, 88, -20};
+		// Swimming up a flooded column toward the find, the body ran out of air and the reflex took over.
+		world.reflexAt = 3;
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320), 200);
+		assertEquals(TaskExecutionState.COMPLETED, end.terminalState(), end.message());
+		assertTrue(end.message().contains("reached=false"), end.message());
+		assertEquals(ExploreForTaskExecutor.OPTIONS, world.optionsAt.getFirst());
+		assertEquals(ExploreForTaskExecutor.CLIMB_OPTIONS, world.optionsAt.get(1), "not the same swim again");
+		assertEquals(2, world.legGoals.size(), "the climb that also falls short hands back: " + world.legGoals);
+	}
+
+	@Test void feetAFewBlocksUnderAStandCellHaveNotReachedIt() {
+		World world = new World();
+		world.withStand = true;
+		// Three blocks under the forest's edge, still in the staircase dug up to it.
+		world.feature = feet -> new int[]{40, 67, -20};
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320), 100);
+		assertTrue(end.message().contains("reached=false"), end.message());
+		assertTrue(end.message().contains("dy=3"), end.message());
+	}
+
+	@Test void aFindLevelWithTheFeetIsNotClimbedTo() {
+		World world = new World();
+		world.withStand = true;
+		world.feature = feet -> new int[]{40, 64, -20};
+		world.blocked = goal -> true;
+		TaskTerminalEvent end = world.run(new ExploreForStepArgs("forest", 320), 100);
+		assertTrue(end.message().contains("reached=false"), end.message());
+		assertEquals(Set.of(ExploreForTaskExecutor.OPTIONS), world.optionsSeen, "no digging toward a find level with the feet");
 	}
 
 	@Test void goesAroundALakeOnDryLand() {
@@ -409,7 +447,7 @@ class ExploreForTaskExecutorTest {
 		float health = 20;
 		int food = 20, foodItems;
 		boolean roofBlocks, underground, ceiling, withStand;
-		int nightAt = Integer.MAX_VALUE, dayAt = Integer.MAX_VALUE, pauseAt = -1;
+		int nightAt = Integer.MAX_VALUE, dayAt = Integer.MAX_VALUE, pauseAt = -1, reflexAt = -1;
 		/** Where the feature is once the body stands at the given feet, or null while it is not there. */
 		java.util.function.Function<Vec3, int[]> feature = feet -> null;
 		BiPredicate<Integer, Integer> water = (x, z) -> false;
@@ -421,6 +459,7 @@ class ExploreForTaskExecutorTest {
 		final List<GoalPosition> legGoals = new ArrayList<>();
 		final Set<String> searchedKinds = new HashSet<>();
 		final Set<NavigationOptions> optionsSeen = new HashSet<>();
+		final List<NavigationOptions> optionsAt = new ArrayList<>();
 		final List<TaskProgress> progress = new ArrayList<>();
 		NavigationOptions lastOptions;
 		int wetTicks, sheltersDug, ticksInShelter, hits, eatTicks;
@@ -457,6 +496,12 @@ class ExploreForTaskExecutorTest {
 						executor.onWorldLeave();
 						feet = feet.add(5, 0, 5);
 					}
+					continue;
+				}
+				if (ticks == reflexAt) {
+					// The reflex pauses the task and hands the same request back on the next tick.
+					executor.pauseForReflex();
+					goal = null;
 					continue;
 				}
 				var end = executor.tick(session, Optional.of(request));
@@ -570,6 +615,7 @@ class ExploreForTaskExecutorTest {
 			legGoals.add(p);
 			lastOptions = o;
 			optionsSeen.add(o);
+			optionsAt.add(o);
 			goalRadius = r;
 			if (blocked.test(p)) {
 				goal = null;

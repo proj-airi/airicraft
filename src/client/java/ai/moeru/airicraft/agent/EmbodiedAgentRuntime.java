@@ -1213,7 +1213,9 @@ public final class EmbodiedAgentRuntime implements PlannerActionToolExecutor {
 		if (reflex.state() == SurvivalReflexState.AWAITING_PLANNER && reflex.holdId() != null) {
 			ActiveJob job = activeJobRuntime.current();
 			boolean paused = job != null && job.status() == ActiveJobStatus.BLOCKED && "reflex".equals(job.blockedReason());
-			boolean quiet = reflex.threats().isEmpty() && !reflex.ownsActuation() && !survivalReflexRuntime.combatDeferredToPlanner()
+			boolean quiet = reflex.threats().isEmpty()
+				&& (!reflex.ownsActuation() || ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.breathingInWater(reflex))
+				&& !survivalReflexRuntime.combatDeferredToPlanner()
 				&& sessionSnapshot.companionActuationAllowed() && !sessionSnapshot.requiresRespawn();
 			hold = new ai.moeru.airicraft.agent.reflex.QuietHoldAutoResume.Hold(reflex.holdId(), quiet, sessionSnapshot.dimensionId(),
 				reflex.health(), paused ? job.jobId() : null, paused ? job.type() : null, actionGraphCoordinator.hasNonterminal(),

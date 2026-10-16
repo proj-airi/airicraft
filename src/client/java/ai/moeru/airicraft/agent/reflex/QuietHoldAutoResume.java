@@ -78,6 +78,19 @@ public final class QuietHoldAutoResume {
 		ActiveJobType pausedJobType, boolean otherPausedWork, boolean plannerTurnRunning) {
 	}
 
+	/**
+	 * A drowning hold over paused work keeps the body at the surface ({@code SWIM_TO_AIR}) for as long as it touches
+	 * water, so it owns actuation even when the body breathes. On a flooded canyon floor that was forever, and the paused
+	 * task never resumed. A full air supply means the danger is over and the hold is as quiet as any other; a hold still
+	 * walking the body to land ({@code REACH_SAFE_LAND}) is left to finish.
+	 */
+	public static boolean breathingInWater(SurvivalReflexSnapshot reflex) {
+		return reflex != null && reflex.state() == SurvivalReflexState.AWAITING_PLANNER
+			&& reflex.cause() == SurvivalReflexCause.DROWNING && reflex.action() != SurvivalReflexAction.REACH_SAFE_LAND
+			&& reflex.air() != null && reflex.maxAir() != null
+			&& reflex.air() >= reflex.maxAir();
+	}
+
 	/** The pure rule; the counts are what happened before this tick. */
 	public static Decision decide(long quietTicks, Float health, ActiveJobType pausedJobType, boolean otherPausedWork,
 		boolean plannerTurnRunning, int jobResumes, int recentResumes) {
