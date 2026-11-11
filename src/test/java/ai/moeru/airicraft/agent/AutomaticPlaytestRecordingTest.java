@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
@@ -95,6 +96,51 @@ class AutomaticPlaytestRecordingTest {
 		assertEquals(2, Files.readAllLines(recording.pendingDirectory().resolve("screen-frames.jsonl")).size());
 		assertTrue(Files.size(recording.pendingDirectory().resolve("screen.mp4")) > 0);
 		assertFalse(JsonParser.parseString(lines.getLast()).getAsJsonObject().get("truncated").getAsBoolean());
+	}
+
+	@Test void pausedHostRetainsFramesAheadOfTheObservationClock() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new NoopExecutor());
+		var recording = new AutomaticPlaytestRecording(root, Map.of());
+		var history = new DashboardObservationStore(1024 * 1024);
+		history.advanceClock(1, false, true);
+		history.appendFrame(history.sessionId(), 1, 1, 100, Map.of("imageBase64", jpeg(1)));
+		recording.recordVisualHistory(history);
+
+		// Rendering keeps sampling the server clock while the client tick is gated.
+		history.appendFrame(history.sessionId(), 1, 3, 200, Map.of("imageBase64", jpeg(2)));
+		recording.recordVisualHistory(history);
+		history.advanceClock(4, false, true);
+		recording.finish(runtime, history, "testers_left");
+
+		Path dir = recording.pendingDirectory();
+		var frameTicks = Files.readAllLines(dir.resolve("screen-frames.jsonl")).stream()
+			.map(line -> JsonParser.parseString(line).getAsJsonObject().get("serverTickId").getAsLong())
+			.toList();
+		assertEquals(List.of(1L, 3L), frameTicks);
+		var lines = Files.readAllLines(dir.resolve("live-recording.jsonl"));
+		var footer = JsonParser.parseString(lines.getLast()).getAsJsonObject();
+		assertEquals(2, footer.get("observations").getAsInt());
+		assertFalse(footer.get("truncated").getAsBoolean());
+		var summary = JsonParser.parseString(Files.readString(dir.resolve("summary.json"))).getAsJsonObject();
+		assertFalse(summary.get("visualHistoryTruncated").getAsBoolean());
+	}
+
+	@Test void anUndrainedFrameEvictedFromHistoryStillMarksTheRecordingTruncated() throws Exception {
+		var runtime = EmbodiedAgentRuntime.createForTests(new NoopExecutor());
+		var recording = new AutomaticPlaytestRecording(root, Map.of());
+		var history = new DashboardObservationStore(1024 * 1024);
+		history.advanceClock(1, false, true);
+		history.appendFrame(history.sessionId(), 1, 1, 100, Map.of("imageBase64", jpeg(1)));
+		recording.recordVisualHistory(history);
+
+		history.appendFrame(history.sessionId(), 2, 2, 200, Map.of("imageBase64", jpeg(2)));
+		long laterTick = 3 + DashboardObservationStore.HISTORY_WINDOW_TICKS;
+		history.advanceClock(laterTick, false, true);
+		history.appendFrame(history.sessionId(), laterTick, laterTick, 300, Map.of("imageBase64", jpeg(3)));
+		recording.finish(runtime, history, "testers_left");
+
+		var summary = JsonParser.parseString(Files.readString(recording.pendingDirectory().resolve("summary.json"))).getAsJsonObject();
+		assertTrue(summary.get("visualHistoryTruncated").getAsBoolean());
 	}
 
 	@Test void launcherRunIdCannotOverwriteAnEarlierRecording() throws Exception {
