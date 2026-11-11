@@ -127,7 +127,6 @@ public final class AutomaticPlaytestRecording {
 		video.checkFailure();
 		var status = history.recordingStatus();
 		long through = ((Number) status.get("latestSequence")).longValue();
-		long to = ((Number) status.get("serverTickId")).longValue();
 		String session = (String) status.get("sessionId");
 		if (visualSession != null && !visualSession.equals(session)) throw new IOException("Visual recording session changed during playtest");
 		if (visualSession == null) {
@@ -143,7 +142,8 @@ public final class AutomaticPlaytestRecording {
 		if (through <= visualCursor) return;
 		try (var writer = Files.newBufferedWriter(pendingDirectory.resolve("live-recording.jsonl"), StandardOpenOption.APPEND)) {
 			while (true) {
-				var page = history.recordingPage(0, to, visualCursor, through, 100, Set.of(), true);
+				// Rendered frames can be ahead of the store clock while hosted gameplay is paused.
+				var page = history.recordingPage(0, Long.MAX_VALUE, visualCursor, through, 100, Set.of(), true);
 				for (Object observation : (java.util.List<?>) page.get("observations")) {
 					JsonObject entry = (JsonObject) observation;
 					long sequence = entry.get("sequence").getAsLong();
