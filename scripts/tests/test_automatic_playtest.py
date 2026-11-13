@@ -527,6 +527,44 @@ class PlaytestPublicationTest(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertEqual([{"serverTick": "20", "videoSeconds": 0}], result["frames"])
 
+    def test_recovery_before_atomic_publication_preserves_reported_capture(self):
+        self.assert_recovery_before_publication()
+
+    def test_recovery_before_atomic_publication_preserves_completed_capture(self):
+        (self.pending / "bug-report.json").unlink()
+        (self.pending / "summary.json").write_text(json.dumps({"status": "FINISHED"}))
+        self.assert_recovery_before_publication()
+
+    def test_recovery_before_publication_still_rejects_missing_evidence(self):
+        self.assert_recovery_before_publication(remove_evidence=True)
+
+    def assert_recovery_before_publication(self, remove_evidence=False):
+        self.write_play()
+        self.write_checkpoint()
+        rename = Path.rename
+
+        def interrupt_publication(source, destination):
+            if source.parent == self.pending / "recorder/v1":
+                raise KeyboardInterrupt
+            return rename(source, destination)
+
+        with patch.object(Path, "rename", interrupt_publication):
+            with self.assertRaises(KeyboardInterrupt):
+                playtest.finalize_recording(self.pending, self.destination, self.world,
+                    {"minecraftExited": True}, None, "bug_report")
+        journal = json.loads((self.pending / "summary.json").read_text())
+        self.assertTrue(journal["recordingComplete"])
+        self.assertIsNone(playtest.artifact.published_play(self.pending, self.destination.parent))
+        if remove_evidence:
+            (self.pending / "agent-status-final.json").unlink()
+        path, code = playtest.finalize_recording(self.pending, self.destination, self.world,
+            {"minecraftExited": True}, None, "recovered")
+        self.assertEqual(1 if remove_evidence else 0, code)
+        self.assertEqual(not remove_evidence, json.loads((path / "summary.json").read_text())["recordingComplete"])
+        self.assertEqual(not remove_evidence,
+            json.loads((self.evidence(path) / "playtest.json").read_text())["run"]["recordingComplete"])
+        self.assert_world(path, b"paused world")
+
     def test_recovery_after_atomic_publication_does_not_duplicate_or_lose_evidence(self):
         self.write_play()
         self.write_checkpoint()
