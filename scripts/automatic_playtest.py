@@ -104,7 +104,9 @@ def finalize_recording(pending: Path, destination: Path, world: Path, client_exi
         artifact.discard_published_sources(pending)
         pending.rename(destination)
         return destination, 0 if summary.get("recordingComplete") else 1
-    flight_finished = summary.get("status") in ("CAPTURE_READY", "FINISHED")
+    # Publication journals its final status before atomically moving the Recorder Play.
+    # A crash at that boundary must not turn a finished capture into an unfinished one.
+    flight_finished = summary.get("status") in ("CAPTURE_READY", "FINISHED", "COMPLETED", "REPORTED")
     reported = (pending / "bug-report.json").is_file()
     harness = {"harnessStatus": "OK", "message": failure, "clientExit": client_exit}
     evaluation.finalize_recorder_capture(harness, pending, pending / "recorder", artifact.companion_player_uuid(pending))
